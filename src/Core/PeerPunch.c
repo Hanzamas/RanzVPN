@@ -35,7 +35,8 @@
 //
 // The limits, so that the probes do not look like a scan. An attempt sends PunchBudget probes at most, round robin over
 // its targets, and fails PEER_PUNCH_LINGER after its last probe when nothing met; the node sends PunchRate punch messages
-// in any second at most, probes and answers together, across its peers. The next attempt waits PunchRetry from the end
+// in any second at most, probes and answers together, across its peers, and only the proof that completes a meeting goes
+// when the rate is spent, as nothing sends it again. The next attempt waits PunchRetry from the end
 // of the one before, so that the attempt of the peer, which began a little earlier, ended too. After PunchAttempts
 // attempts in a row that met nothing, the pair stays on the relay for PunchBackoff from the end of the last one, and a
 // punch offer that comes meanwhile is refused. The node counts the attempts, the successes and the failures, which its
@@ -338,15 +339,16 @@ static void PeerPunchUse(PEER_AGENT *a, UINT64 now, UINT num) {
 	}
 }
 
-// Whether one more punch message may go now, which then counts. Without the locks.
-static bool PeerPunchAllow(PEER_AGENT *a) {
+// Whether one more punch message may go now, which then counts; with must, it goes and counts in any case. The caller
+// may hold the lock of the layer.
+static bool PeerPunchAllow(PEER_AGENT *a, bool must) {
 	bool allow = false;
 
 	AcquireSRWLockExclusive(&a->PunchLock);
 	{
 		UINT64 now = PeerNow();
 
-		if (PeerPunchRoom(a, now, 0) != 0) {
+		if (must || PeerPunchRoom(a, now, 0) != 0) {
 			PeerPunchUse(a, now, 1);
 			allow = true;
 		}
@@ -811,7 +813,7 @@ void PeerPunchTick(PEER_AGENT *a) {
 // end's nonce from the address it went to moves the peer to the direct path there. A node already on the direct path
 // takes a message and answers none, so a late probe of a burst leaves the path on the pair that met, and a word of the
 // peer from there is its consent. A meeting counts as a prediction success and an Upgrade. The answers go within the rate
-// of the node. Called from PeerInput for a PEER_MSG_PUNCH datagram.
+// of the node, and the proof also when the rate is spent. Called from PeerInput for a PEER_MSG_PUNCH datagram.
 void PeerPunchInput(PEER_AGENT *a, const PEER_ADDR *from, const UCHAR *data, UINT size) {
 	UCHAR sender[PEER_KEY_SIZE];
 	UCHAR payload[PEER_PUNCH_PAYLOAD_SIZE];
@@ -820,6 +822,7 @@ void PeerPunchInput(PEER_AGENT *a, const PEER_ADDR *from, const UCHAR *data, UIN
 	UINT reason = PEER_OK;
 	UINT reply = 0;
 	bool connected = false;
+	bool limited = false;
 
 	ZeroMemory(nonce, sizeof(nonce));
 
@@ -863,9 +866,9 @@ void PeerPunchInput(PEER_AGENT *a, const PEER_ADDR *from, const UCHAR *data, UIN
 				if (p->HasDirect && PeerAddrEqual(&p->Direct, from))
 					InterlockedExchange64(&punch->LastHeard, (LONG64)PeerNow());
 			} else if (type == PEER_PUNCH_PROBE) {
-				reply = (leader ? (PeerPunchNonce(punch, from, nonce) ? PEER_PUNCH_CHALLENGE : 0) : PEER_PUNCH_PROBE);
+				reply = (leader ? PEER_PUNCH_CHALLENGE : PEER_PUNCH_PROBE);
 			} else if (type == PEER_PUNCH_CHALLENGE && leader == false) {
-				reply = (PeerPunchNonce(punch, from, nonce) ? PEER_PUNCH_RESPONSE : 0);
+				reply = PEER_PUNCH_RESPONSE;
 			} else if ((type == PEER_PUNCH_RESPONSE && leader) || (type == PEER_PUNCH_PROOF && leader == false)) {
 				connected = PeerPunchEcho(punch, from, echo);
 				if (connected) {
@@ -881,6 +884,17 @@ void PeerPunchInput(PEER_AGENT *a, const PEER_ADDR *from, const UCHAR *data, UIN
 					reply = (leader ? PEER_PUNCH_PROOF : 0);
 				}
 			}
+
+			// An answer goes within the rate of the node, as the probes do, but for the proof: it completes the meeting that
+			// moved the node to the direct path, once for each meeting, and nothing sends it again, so it goes and counts
+			// when the rate is spent too. A nonce is drawn only for an answer that goes, so its slots hold the nonces that
+			// went out, not the ones of the answers that the rate held back.
+			if (reply != 0 && PeerPunchAllow(a, reply == PEER_PUNCH_PROOF) == false) {
+				limited = true;
+				reply = 0;
+			}
+			if ((reply == PEER_PUNCH_CHALLENGE || reply == PEER_PUNCH_RESPONSE) && PeerPunchNonce(punch, from, nonce) == false)
+				reply = 0;
 		}
 	}
 	ReleaseSRWLockExclusive(&a->Lock);
@@ -891,15 +905,11 @@ void PeerPunchInput(PEER_AGENT *a, const PEER_ADDR *from, const UCHAR *data, UIN
 		return;
 	}
 
+	if (limited)
+		PeerDrop(a, PEER_DROP_RATE);
 	if (connected) {
 		PeerCount(a, PEER_COUNT_PUNCH_SUCCESSES);
 		PeerCount(a, PEER_COUNT_UPGRADES);
-	}
-
-	// An answer goes within the rate of the node, as the probes do
-	if (reply != 0 && PeerPunchAllow(a) == false) {
-		PeerDrop(a, PEER_DROP_RATE);
-		reply = 0;
 	}
 
 	// A challenge carries the node's nonce; a response echoes the peer's and carries the node's; a proof echoes the
