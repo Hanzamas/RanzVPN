@@ -284,8 +284,11 @@ controller/internal/servercert  ParseSetting  FuzzParseSetting
 controller/internal/servercert  Manager.Load  FuzzLoadPEM  via loadPEM
 
 # The file of the data directory that holds the TLS fingerprint of the certificate in use (AUD1-DT-13 #461), which ranz on
-# the same host reads before it sends a token to a loopback address: the Controller wrote it itself, or someone replaced it
-controller/internal/servercert  ReadFingerprint  FuzzReadFingerprint  via parseFingerprint
+# the same host reads before it sends a token to a loopback address: the Controller wrote it itself, or someone replaced it.
+# On Windows ranz opens it itself, checks who may have written it and reads it through that handle (AUD1-DT-14 #496).
+controller/internal/servercert  ReadFingerprint      FuzzReadFingerprint  via parseFingerprint
+controller/internal/servercert  ReadFingerprintFile  FuzzReadFingerprint  via parseFingerprint
+controller  ReadFingerprint  exempt  checks who owns and may write the fingerprint file of a data directory of this host and its folder, then reads the file with servercert.ReadFingerprintFile, whose parser FuzzReadFingerprint drives
 
 # The traffic test of `ranz test throughput` (SDN-53 #246): what a peer sends to a test server (the request, and the frames
 # of an upload) and to a test client (the frames of a download, the report of an upload)
