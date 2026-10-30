@@ -10,7 +10,6 @@ import (
 	"log/slog"
 	"net"
 	"os"
-	"strings"
 	"sync"
 	"time"
 
@@ -119,20 +118,17 @@ func (f *FrontDoor) handoff(p net.Conn) {
 	answer := byte(handoffNotTaken)
 	if c != nil {
 		answer = handoffTaken
-		f.log.Debug("diag: handoff rebuilt", "remote", fmt.Sprint(c.RemoteAddr()), "local", fmt.Sprint(c.LocalAddr()))
 	} else {
 		f.log.Debug("a handoff of the front door is refused", "err", err)
 	}
 	// The answer has a time of its own, also after a front door that sent nothing in time
 	_ = p.SetDeadline(time.Now().Add(handoffTimeout))
 	_, werr := p.Write([]byte{answer})
-	f.log.Debug("diag: answer written", "err", werr)
 	// The front door reads the answer and closes its end, which ends this read: a close before it
 	// would drop the answer
 	if werr == nil {
 		_, _ = p.Read(buf[:1])
 	}
-	f.log.Debug("diag: the front door closed its end")
 	f.mu.Lock()
 	delete(f.pipes, p)
 	closed := f.closed
@@ -147,88 +143,6 @@ func (f *FrontDoor) handoff(p net.Conn) {
 		return
 	}
 	go f.srv.ServeConn(c)
-}
-
-// diagRebuild is the throwaway switch of the measurement of #534 to candidate fixes of rebuild, words in one string: "check"
-// copies a handle that Winsock has a stale entry of, "retry" tries FileConn up to three times, "scan" lists the stale entries
-// before FileConn and says them when it fails, and "heal" closes the stale entries that the first handoff finds.
-var diagRebuild = os.Getenv("RANZ_DIAG_REBUILD")
-
-func diagHas(word string) bool { return strings.Contains(diagRebuild, word) }
-
-// diagSoType is SO_TYPE, which package windows has no name for.
-const diagSoType = 0x1008
-
-var diagHealOnce sync.Once
-
-// diagScan lists the handle values that Winsock answers for although they are events of this process: it makes events until
-// it has 256, asks each for the type of its socket, and closes them in the reverse order, so that the free slots of the handle
-// table come back in the order that they had.
-func diagScan() []windows.Handle {
-	var held, stale []windows.Handle
-	for i := 0; i < 256; i++ {
-		e, err := windows.CreateEvent(nil, 1, 0, nil)
-		if err != nil {
-			break
-		}
-		if _, err := windows.GetsockoptInt(e, windows.SOL_SOCKET, diagSoType); err == nil {
-			stale = append(stale, e)
-		}
-		held = append(held, e)
-	}
-	for i := len(held) - 1; i >= 0; i-- {
-		_ = windows.CloseHandle(held[i])
-	}
-	return stale
-}
-
-// diagHeal closes, with closesocket, the events of diagScan that Winsock holds an entry of a socket for.
-func diagHeal() {
-	var held []windows.Handle
-	healed := 0
-	for i := 0; i < 256; i++ {
-		e, err := windows.CreateEvent(nil, 1, 0, nil)
-		if err != nil {
-			break
-		}
-		if _, err := windows.GetsockoptInt(e, windows.SOL_SOCKET, diagSoType); err == nil {
-			_ = windows.Closesocket(e)
-			healed++
-			continue
-		}
-		held = append(held, e)
-	}
-	for i := len(held) - 1; i >= 0; i-- {
-		_ = windows.CloseHandle(held[i])
-	}
-	fmt.Fprintf(os.Stderr, "DIAG healed %d\n", healed)
-}
-
-// diagCheck takes the handle of a handoff that is not a connected socket for one that Winsock holds a stale entry of, and
-// copies it to another value: the copy has no entry, and closesocket of the old value drops the stale one.
-func diagCheck(h windows.Handle) windows.Handle {
-	if _, err := windows.Getpeername(h); err == nil {
-		return h
-	}
-	fmt.Fprintf(os.Stderr, "DIAG stale d1 h=%#x\n", uintptr(h))
-	var c windows.Handle
-	self := windows.CurrentProcess()
-	if err := windows.DuplicateHandle(self, h, self, &c, 0, false, windows.DUPLICATE_SAME_ACCESS); err != nil {
-		fmt.Fprintf(os.Stderr, "DIAG check: DuplicateHandle: %v\n", err)
-		return h
-	}
-	_ = windows.Closesocket(h)
-	if _, err := windows.Getpeername(c); err != nil {
-		fmt.Fprintf(os.Stderr, "DIAG check: getpeername of the copy %#x: %v\n", uintptr(c), err)
-	}
-	return c
-}
-
-// diagFail says what is known when FileConn fails for good.
-func diagFail(h windows.Handle, err error, stale []windows.Handle) {
-	_, nerr := windows.Getsockname(h)
-	_, perr := windows.Getpeername(h)
-	fmt.Fprintf(os.Stderr, "DIAG filecon failed: handle %#x, getsockname %v, getpeername %v, stale entries before FileConn %#x, err %v\n", uintptr(h), nerr, perr, stale, err)
 }
 
 // handleFlagProtectFromClose is HANDLE_FLAG_PROTECT_FROM_CLOSE: CloseHandle does not close a handle that has it.
@@ -255,6 +169,32 @@ func closeSocketFile(file *os.File, h windows.Handle) {
 	_ = windows.Closesocket(h)
 }
 
+// fileConnTries is how often fileConn tries net.FileConn.
+const fileConnTries = 8
+
+// fileConn is net.FileConn of file, tried again after an error.
+//
+// FileConn makes a socket of its own of the one in file: WSADuplicateSocket and WSASocket in this process, which give the
+// new socket the next free value of a handle. Winsock keeps an entry of each socket by the value of its handle until
+// closesocket, and Windows gives the value of a closed handle to the next handle that it makes. The entry of a socket that
+// was closed with CloseHandle stays, so a socket that comes by its value gets the entry of the older one, a socket that
+// was never bound, and FileConn fails in getsockname or in WSASocket. The standard library leaves such an entry in each
+// process that dials: the socket that LoadConnectEx makes is closed with CloseHandle. The next try does not meet the same
+// entry, as FileConn closes the socket of a try that failed in getsockname with closesocket, which drops the entry. Without
+// the next try about one new process in a hundred refused a handoff, and its client saw the connection reset (#534).
+func fileConn(file *os.File) (c net.Conn, err error) {
+	tries := fileConnTries
+	if os.Getenv("RANZ_DIAG_TRIES") == "1" { // THROWAWAY (#534): the measurement of the test without the next try
+		tries = 1
+	}
+	for range tries {
+		if c, err = net.FileConn(file); err == nil {
+			return c, nil
+		}
+	}
+	return nil, err
+}
+
 // rebuild makes the controller's own socket of the WSAPROTOCOL_INFOW of a handoff and returns it as
 // a TCP connection of package net.
 func rebuild(info [protocolInfoSize]byte) (net.Conn, error) {
@@ -262,46 +202,13 @@ func rebuild(info [protocolInfoSize]byte) (net.Conn, error) {
 	if err := binary.Read(bytes.NewReader(info[:]), binary.LittleEndian, &pi); err != nil {
 		return nil, err
 	}
-	if diagHas("heal") {
-		diagHealOnce.Do(diagHeal)
-	}
 	h, err := windows.WSASocket(fromProtocolInfo, fromProtocolInfo, fromProtocolInfo, &pi, 0, windows.WSA_FLAG_OVERLAPPED|windows.WSA_FLAG_NO_HANDLE_INHERIT)
 	if err != nil {
 		return nil, fmt.Errorf("port: WSASocketW of a handoff: %w", err)
 	}
-	if diagHas("probe") {
-		if _, err := windows.Getpeername(h); err != nil {
-			_, nerr := windows.Getsockname(h)
-			typ, terr := windows.GetsockoptInt(h, windows.SOL_SOCKET, diagSoType)
-			fmt.Fprintf(os.Stderr, "DIAG d1 odd: handle %#x, getpeername %v, getsockname %v, SO_TYPE %d (%v)\n", uintptr(h), err, nerr, typ, terr)
-		}
-	}
-	if diagHas("check") {
-		h = diagCheck(h)
-	}
 	// FileConn takes a socket of its own of the file, so the file closes after
 	file := os.NewFile(uintptr(h), "front door handoff")
-	var stale []windows.Handle
-	if diagHas("scan") {
-		stale = diagScan()
-	}
-	tries := 1
-	if diagHas("retry8") {
-		tries = 8
-	} else if diagHas("retry") {
-		tries = 3
-	}
-	var c net.Conn
-	for i := 1; ; i++ {
-		c, err = net.FileConn(file)
-		if err == nil || i >= tries {
-			break
-		}
-		fmt.Fprintf(os.Stderr, "DIAG filecon retry %d: %v\n", i, err)
-	}
-	if err != nil {
-		diagFail(h, err, stale)
-	}
+	c, err := fileConn(file)
 	closeSocketFile(file, h)
 	if err != nil {
 		return nil, fmt.Errorf("port: the socket of a handoff: %w", err)

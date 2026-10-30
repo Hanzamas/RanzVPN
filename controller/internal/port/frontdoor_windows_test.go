@@ -111,18 +111,13 @@ func handOver(pipe string, raw windows.Handle) (byte, error) {
 	var once sync.Once
 	closeRaw := func() { once.Do(func() { windows.Closesocket(raw) }) }
 	defer closeRaw()
-	before := closeRaw
-	if os.Getenv("RANZ_DIAG_RAW") == "after" {
-		// THROWAWAY (#534): the front door closes its handle after the pipe, as the node does
-		before = nil
-	}
 	return sendThen(pipe, func(pid uint32) ([]byte, error) {
 		var info windows.WSAProtocolInfo
 		if err := windows.WSADuplicateSocket(raw, pid, &info); err != nil {
 			return nil, err
 		}
 		return encodeHandoff(&info)
-	}, before)
+	}, closeRaw)
 }
 
 // writerFunc is an io.Writer of a function.
@@ -321,12 +316,39 @@ func TestFrontDoorHandsOver(t *testing.T) {
 	}
 }
 
-// Each connection that the front door hands over has its own client as its remote address, whatever handoffs came
-// before it: the API and the limits for a source go by that address. Winsock keeps state by the value of a socket
-// handle, the remote address among it, until closesocket drops it, and the controller once closed the handle of a
-// handoff with CloseHandle, so the next socket that came by the same handle value reported the client of an older
-// connection (#534). One connection after another, nearly every handoff that follows another one has such a value.
-func TestFrontDoorHandoffsKeepTheirClient(t *testing.T) {
+// staleSocketEntries leaves the entries of n closed sockets in Winsock, as the standard library does with the socket that it
+// makes in LoadConnectEx, in each process that dials: it makes the sockets and closes their handles with CloseHandle, not
+// with closesocket. Winsock keeps the entry of a socket by the value of its handle until closesocket, and Windows gives the
+// value of a closed handle to the next handle that it makes, so the next sockets that come by those values meet the entries
+// of sockets that were never bound.
+func staleSocketEntries(t *testing.T, n int) {
+	t.Helper()
+	sockets := make([]windows.Handle, n)
+	for i := range sockets {
+		s, err := windows.Socket(windows.AF_INET, windows.SOCK_STREAM, windows.IPPROTO_TCP)
+		if err != nil {
+			t.Fatal(err)
+		}
+		sockets[i] = s
+	}
+	for i := len(sockets) - 1; i >= 0; i-- {
+		if err := windows.CloseHandle(sockets[i]); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+// handoffsInARow hands over n connections through a front door, one after another, and checks the client of each. Before
+// each one it leaves stale entries of closed sockets in Winsock (staleSocketEntries), when stale is more than 0.
+//
+// Each connection that the front door hands over has its own client as its remote address, whatever handoffs came before
+// it: the API and the limits for a source go by that address. Winsock keeps state by the value of a socket handle, the
+// remote address among it, until closesocket drops it, and the controller once closed the handle of a handoff with
+// CloseHandle, so the next socket that came by the same value reported the client of an older connection (#534). One
+// connection after another, nearly every handoff that follows another one has such a value. And a handoff is not refused
+// for the entry of a socket that the standard library closed with CloseHandle.
+func handoffsInARow(t *testing.T, n, stale int) {
+	t.Helper()
 	remotes := make(chan string, 1)
 	s := &Server{
 		TLS: &tls.Config{Certificates: []tls.Certificate{certificate(t)}},
@@ -345,7 +367,10 @@ func TestFrontDoorHandoffsKeepTheirClient(t *testing.T) {
 	defer fd.Close()
 	addr, answers := frontDoor(t, pipe)
 
-	for i := range 100 {
+	for i := range n {
+		if stale > 0 {
+			staleSocketEntries(t, stale)
+		}
 		tc, err := tls.Dial("tcp", addr, &tls.Config{InsecureSkipVerify: true, NextProtos: []string{control.ALPN}})
 		if err != nil {
 			t.Fatalf("connection %d through the front door: %v", i, err)
@@ -360,6 +385,99 @@ func TestFrontDoorHandoffsKeepTheirClient(t *testing.T) {
 			t.Fatalf("connection %d: Control got no connection through the front door", i)
 		}
 		tc.Close()
+	}
+}
+
+// Each connection that the front door hands over has its own client as its remote address, whatever handoffs came before it.
+func TestFrontDoorHandoffsKeepTheirClient(t *testing.T) {
+	handoffsInARow(t, 100, 0)
+}
+
+// The standard library closes the socket that it makes in LoadConnectEx with CloseHandle, so Winsock keeps an entry of a
+// socket that was never bound under the value of that handle. The socket that FileConn makes of its own for a handoff fails
+// when it comes by such a value, and the handoff was refused, in one new process of a hundred: the client saw the connection
+// reset (#534). Here such entries are on the free values before each connection.
+func TestFrontDoorHandoffsSurviveStaleSocketEntries(t *testing.T) {
+	handoffsInARow(t, 30, 8)
+}
+
+// plainConnection makes one TCP connection in this process of plain Winsock sockets, as a front door and its client hold
+// them, and returns the front door's socket and the client's.
+func plainConnection(t *testing.T) (server, client windows.Handle) {
+	t.Helper()
+	loopback := [4]byte{127, 0, 0, 1}
+	ln, err := windows.Socket(windows.AF_INET, windows.SOCK_STREAM, windows.IPPROTO_TCP)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer windows.Closesocket(ln)
+	if err := windows.Bind(ln, &windows.SockaddrInet4{Addr: loopback}); err != nil {
+		t.Fatal(err)
+	}
+	if err := windows.Listen(ln, 1); err != nil {
+		t.Fatal(err)
+	}
+	sa, err := windows.Getsockname(ln)
+	if err != nil {
+		t.Fatal(err)
+	}
+	client, err = windows.Socket(windows.AF_INET, windows.SOCK_STREAM, windows.IPPROTO_TCP)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := windows.Connect(client, &windows.SockaddrInet4{Addr: loopback, Port: sa.(*windows.SockaddrInet4).Port}); err != nil {
+		t.Fatal(err)
+	}
+	r, _, _ := procAccept.Call(uintptr(ln), 0, 0)
+	if windows.Handle(r) == windows.InvalidHandle {
+		t.Fatal("accept failed")
+	}
+	return windows.Handle(r), client
+}
+
+// connAddrs is the local and the remote address of the socket h, as package net writes them.
+func connAddrs(t *testing.T, h windows.Handle) (local, remote string) {
+	t.Helper()
+	format := func(sa windows.Sockaddr) string {
+		a := sa.(*windows.SockaddrInet4)
+		return fmt.Sprintf("%d.%d.%d.%d:%d", a.Addr[0], a.Addr[1], a.Addr[2], a.Addr[3], a.Port)
+	}
+	l, err := windows.Getsockname(h)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r, err := windows.Getpeername(h)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return format(l), format(r)
+}
+
+// rebuild makes the socket of the controller of the handoff of a socket, with stale entries on the free values of the
+// handles of this process between the duplicate of the front door and rebuild, which the socket that FileConn makes meets.
+func TestRebuildSurvivesStaleSocketEntries(t *testing.T) {
+	for i := range 30 {
+		server, client := plainConnection(t)
+		local, remote := connAddrs(t, server)
+		var info windows.WSAProtocolInfo
+		if err := windows.WSADuplicateSocket(server, uint32(os.Getpid()), &info); err != nil {
+			t.Fatal(err)
+		}
+		staleSocketEntries(t, 4)
+		raw, err := DecodeHandoff(handoffBytes(t, &info))
+		if err != nil {
+			t.Fatal(err)
+		}
+		c, err := rebuild(raw)
+		if err != nil {
+			t.Fatalf("handoff %d after entries of closed sockets: %v", i, err)
+		}
+		if c.LocalAddr().String() != local || c.RemoteAddr().String() != remote {
+			t.Errorf("handoff %d: the connection of the controller is %s to %s, and the socket of the front door is %s to %s", i, c.LocalAddr(), c.RemoteAddr(), local, remote)
+		}
+		c.Close()
+		windows.Closesocket(server)
+		windows.Closesocket(client)
 	}
 }
 

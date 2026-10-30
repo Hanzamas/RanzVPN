@@ -511,73 +511,59 @@ jobs:
       with:
         go-version: ${{ env.GO_VERSION }}
         cache-dependency-path: go.sum
-    # THROWAWAY (#534): the measurement of the fixes of TestFrontDoorHandsOver, removed again before the pull request is done.
-    # It tries what Winsock does with the entry of a socket that was closed with CloseHandle, which the standard library
-    # leaves in every process that dials, runs the test in processes of their own with candidate fixes of rebuild
-    # (RANZ_DIAG_REBUILD), and fails the job on purpose.
+    # THROWAWAY (#534): the measurement of the fix of TestFrontDoorHandsOver, removed again before the pull request is done.
+    # It runs the tests of controller/internal/port in processes of their own, with the next try of FileConn and without it
+    # (RANZ_DIAG_TRIES=1), and fails the job on purpose.
     - name: Measure TestFrontDoorHandsOver (throwaway)
       shell: pwsh
-      timeout-minutes: 30
+      timeout-minutes: 35
       run: |
         $exe = Join-Path $env:RUNNER_TEMP 'port.test.exe'
         $log = Join-Path $env:RUNNER_TEMP 'port.test.log'
         go version
         Write-Host "architecture $env:PROCESSOR_ARCHITECTURE"
+        go vet ./controller/internal/port
+        Write-Host "go vet: exit code $LASTEXITCODE"
+        go test -count=1 ./controller/internal/port
+        Write-Host "go test -count=1 ./controller/internal/port: exit code $LASTEXITCODE"
         go test -c -o $exe ./controller/internal/port
         if ($LASTEXITCODE -ne 0) { throw "go test -c exited with code $LASTEXITCODE" }
-        # What an event gets of the entry of a socket that was closed with CloseHandle, once
-        & $exe '-test.run=^TestDiag534Winsock$' '-test.v' '-test.count=1' '-test.timeout=120s' *> $log
-        Write-Host "TestDiag534Winsock: exit code $LASTEXITCODE"
-        Get-Content -LiteralPath $log | Where-Object { $_ -match 'DIAG|FAIL|panic' } | ForEach-Object { Write-Host $_ }
-        # The handoff of a socket with entries of closed sockets on the free handle values, in a process of its own for each variant
-        foreach ($variant in '', 'retry', 'retry8', 'check,retry8') {
-          $env:RANZ_DIAG_REBUILD = $variant
-          & $exe '-test.run=^TestDiag534Rebuild$' '-test.v' '-test.count=1' '-test.timeout=120s' *> $log
-          Write-Host "TestDiag534Rebuild with the variant '$variant': exit code $LASTEXITCODE"
-          $lines = @(Get-Content -LiteralPath $log)
-          $lines | Where-Object { $_ -match '^DIAG rebuild|^--- |^FAIL|panic' } | ForEach-Object { Write-Host $_ }
-          Write-Host ("  FileConn tried again " + @($lines | Where-Object { $_ -match 'DIAG filecon retry' }).Count + " times, a stale handle of the handoff " + @($lines | Where-Object { $_ -match 'DIAG stale d1' }).Count + " times, FileConn failed for good " + @($lines | Where-Object { $_ -match 'DIAG filecon failed' }).Count + " times")
-          $lines | Where-Object { $_ -match 'DIAG filecon retry|DIAG filecon failed' } | Select-Object -First 3 | ForEach-Object { Write-Host "  $_" }
-        }
-        $env:RANZ_DIAG_REBUILD = ''
-        # The test binary $runs times, each time a process of its own, with the candidate fixes $rebuild (RANZ_DIAG_REBUILD);
-        # the failures by what they say, and how often a candidate found a stale entry
-        function Measure-Processes([string] $label, [string] $pattern, [int] $runs, [string] $rebuild) {
-          $env:RANZ_DIAG_REBUILD = $rebuild
-          $reset = 0
-          $wrong = 0
-          $other = 0
-          $stale = 0
-          $retried = 0
-          $odd = 0
+        # The test binary $runs times, each time a process of its own, with $tries as RANZ_DIAG_TRIES ('1' is no next try of
+        # FileConn); the processes that failed, and which tests
+        function Measure-Processes([string] $label, [string] $pattern, [int] $runs, [string] $tries) {
+          $env:RANZ_DIAG_TRIES = $tries
+          $failed = 0
+          $names = @{}
+          $shown = 0
           for ($i = 0; $i -lt $runs; $i++) {
             & $exe "-test.run=$pattern" '-test.count=1' '-test.timeout=60s' *> $log
-            $code = $LASTEXITCODE
-            $text = Get-Content -LiteralPath $log -Raw
-            if ($text -match 'DIAG stale d1') { $stale++ }
-            if ($text -match 'DIAG filecon retry') { $retried++ }
-            if ($text -match 'DIAG d1 odd') {
-              $odd++
-              if ($odd -le 3) { Write-Host (((Get-Content -LiteralPath $log) | Where-Object { $_ -match 'DIAG|^--- ' }) -join "`n") }
-            }
-            if ($code -ne 0) {
-              if ($text -match 'forcibly closed') {
-                $reset++
-                if ($reset -le 3) { Write-Host $text }
-              } elseif ($text -match 'the API answered|Control got the connection of') {
-                $wrong++
-              } else {
-                $other++
-                if ($other -le 2) { Write-Host $text }
+            if ($LASTEXITCODE -ne 0) {
+              $failed++
+              $text = Get-Content -LiteralPath $log -Raw
+              if ($text) {
+                foreach ($m in [regex]::Matches($text, '--- FAIL: (\w+)')) {
+                  $names[$m.Groups[1].Value] = 1 + [int]$names[$m.Groups[1].Value]
+                }
+                if ($shown -lt 2) {
+                  $shown++
+                  Write-Host $text
+                }
               }
             }
           }
-          $env:RANZ_DIAG_REBUILD = ''
-          Write-Host "${label}: of $runs processes $reset were reset, $wrong saw a wrong address, $other failed otherwise; $stale had a stale handle of a handoff, $retried tried FileConn again, $odd had a handle of a handoff that is not a connected socket"
+          $env:RANZ_DIAG_TRIES = ''
+          $summary = ($names.GetEnumerator() | ForEach-Object { '{0} {1}' -f $_.Key, $_.Value }) -join ', '
+          Write-Host "${label}: of $runs processes $failed failed ($summary)"
         }
-        Measure-Processes 'retry, TestFrontDoorHandsOver' '^TestFrontDoorHandsOver$' 5000 'retry'
-        Measure-Processes 'probe, TestFrontDoorHandsOver' '^TestFrontDoorHandsOver$' 2000 'probe'
-        Measure-Processes 'retry, TestFrontDoorHandoffsKeepTheirClient' '^TestFrontDoorHandoffsKeepTheirClient$' 300 'retry'
+        Measure-Processes 'with the next try, TestRebuildSurvivesStaleSocketEntries' '^TestRebuildSurvivesStaleSocketEntries$' 30 ''
+        Measure-Processes 'without the next try, TestRebuildSurvivesStaleSocketEntries' '^TestRebuildSurvivesStaleSocketEntries$' 30 '1'
+        Measure-Processes 'with the next try, TestFrontDoorHandoffsSurviveStaleSocketEntries' '^TestFrontDoorHandoffsSurviveStaleSocketEntries$' 300 ''
+        Measure-Processes 'without the next try, TestFrontDoorHandoffsSurviveStaleSocketEntries' '^TestFrontDoorHandoffsSurviveStaleSocketEntries$' 300 '1'
+        Measure-Processes 'with the next try, TestFrontDoorHandsOver' '^TestFrontDoorHandsOver$' 5000 ''
+        Measure-Processes 'without the next try, TestFrontDoorHandsOver' '^TestFrontDoorHandsOver$' 2000 '1'
+        Measure-Processes 'with the next try, TestFrontDoorHandoffsKeepTheirClient' '^TestFrontDoorHandoffsKeepTheirClient$' 300 ''
+        Measure-Processes 'without the next try, TestFrontDoorHandoffsKeepTheirClient' '^TestFrontDoorHandoffsKeepTheirClient$' 300 '1'
+        Measure-Processes 'with the next try, the whole package' '' 40 ''
         exit 1
     # rqlite publishes a Windows build for x64 only: on the arm64 runner this is the x64 rqlited.exe,
     # which Windows 11 on ARM runs under emulation, and which is the member of ranz for arm64
