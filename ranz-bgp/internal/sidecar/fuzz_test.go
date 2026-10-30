@@ -2,6 +2,7 @@ package sidecar
 
 import (
 	"bytes"
+	"net/netip"
 	"testing"
 )
 
@@ -10,11 +11,14 @@ import (
 
 // FuzzRead reads the input as what the node writes into the pipe (Reader.Read), message after
 // message until the first error, and checks the settings of each start message as the session
-// does before BGP starts (parseStart).
+// does before BGP starts (parseStart, and parseEVPN for the EVPN of a gateway).
 func FuzzRead(f *testing.F) {
 	f.Add([]byte(`{"type":"start","asn":65001,"router_id":"192.0.2.1","peers":[{"address":"192.0.2.2","asn":65002,"passive":true}],"accept":["198.51.100.0/24","2001:db8::/32"]}` + "\n" +
 		"\r\n" + `{"type":"announce","prefix":"203.0.113.0/24","next_hop":"192.0.2.1"}` + "\n" + `{"type":"withdraw","prefix":"203.0.113.0/24"}` + "\n"))
 	f.Add([]byte(`{"type":"start","asn":65001,"router_id":"192.0.2.1","listen_port":-1,"listen_addresses":["192.0.2.1"],"peers":[{"address":"2001:db8::2","asn":65002,"port":1179}]}`))
+	f.Add([]byte(`{"type":"start","asn":65001,"router_id":"192.0.2.1","listen_port":-1,"peers":[{"address":"192.0.2.2","asn":65010}],` +
+		`"evpn":{"vtep":"192.0.2.1","router_mac":"02:52:5a:00:00:05","vrfs":[{"vrf":101,"vni":10101,"rd":"192.0.2.1:101","import":["65000:10101"],"export":["65000:10101"],"accept":["172.16.0.0/12"]},` +
+		`{"vrf":102,"vni":10102,"import":["192.0.2.1:102","1.2:102"],"export":["65000:10102"]}]}}` + "\n" + `{"type":"announce","prefix":"10.10.0.0/24","vrf":101}` + "\n"))
 
 	f.Fuzz(func(t *testing.T, b []byte) {
 		r := NewReader(bytes.NewReader(b))
@@ -28,11 +32,41 @@ func FuzzRead(f *testing.F) {
 				t.Fatal("Read returned a message without a type")
 			}
 			if m.Type == TypeStart {
-				if cfg, err := parseStart(m); err == nil && len(cfg.peers) == 0 {
-					t.Fatalf("a start without peers is accepted: %+v", m)
+				// Only the peering of the standard mode, which has an address, may start without peers
+				cfg, err := parseStart(m)
+				if err == nil && len(cfg.peers) == 0 && !cfg.address.IsValid() {
+					t.Fatalf("a start without peers or an address is accepted: %+v", m)
+				}
+				if err == nil {
+					checkEVPN(t, m.EVPN, cfg.routerID)
 				}
 			}
 		}
 		t.Fatalf("Read returned more messages than the %d bytes of the input hold", len(b))
 	})
+}
+
+// checkEVPN checks the evpn object of a start as parseEVPN takes it: an evpn that it takes has VRFs, each with a VNI
+// of 24 bits that no other VRF has, its route distinguisher and its route targets, and a VTEP and a router MAC.
+func checkEVPN(t *testing.T, e *EVPN, routerID netip.Addr) {
+	st, err := parseEVPN(e, routerID)
+	if err != nil || st == nil {
+		if e == nil && (err != nil || st != nil) {
+			t.Fatalf("a start without evpn: %v, %+v", err, st)
+		}
+		return
+	}
+	if len(st.vrfs) == 0 || len(st.vrfs) != len(st.byID) || !st.vtep.IsValid() || st.mac == "" {
+		t.Fatalf("an evpn that parseEVPN took: %+v", st)
+	}
+	vnis := make(map[uint32]bool)
+	for _, v := range st.vrfs {
+		if v.id == 0 || v.vni == 0 || v.vni > maxVNI || vnis[v.vni] || v.rd == nil || len(v.imports) == 0 || len(v.exports) == 0 {
+			t.Fatalf("a VRF of an evpn that parseEVPN took: %+v", v)
+		}
+		vnis[v.vni] = true
+		if _, err := st.evpnPath(v, netip.MustParsePrefix("10.10.0.0/24")); err != nil {
+			t.Fatalf("no IP prefix route of VRF %d: %v", v.id, err)
+		}
+	}
 }
