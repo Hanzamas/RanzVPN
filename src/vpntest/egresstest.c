@@ -37,6 +37,8 @@
 //   address and port that it named.
 // - The reconcile: the NAT setting of the node taken away behind its back (its NAT network of WinNAT, or the NAT information
 //   of the adapter of corp in RRAS) is set again by the next reconcile, which the Egress counts, and the egress works again.
+// - The supernet (WinNAT, which takes one NAT network per host): once node-x is the exit of lab too, its NAT network of WinNAT
+//   holds 198.19.60.0/22, the supernet of corp and lab, in place of the prefix of corp, and the egress of node-c goes through it.
 // - Once node-x is the exit of no VRF, the NAT of Windows holds nothing of the node, and the IPv4 router of RRAS holds the NAT
 //   routing protocol as it did before node-x: the node takes out again the one that it added.
 // egressnat checks the tier that the runner gives: WinNAT where Hyper-V and WinNAT are present and no NAT network of WinNAT of
@@ -103,6 +105,10 @@
 #define	EGRESSTEST_SERVER_ISN	0x53525652	// The initial sequence number of that address ("SRVR")
 #define	EGRESSTEST_FOREIGN		L"RanzVPN-Test-Foreign"	// The NAT network of WinNAT of another program that egressnat creates
 #define	EGRESSTEST_FOREIGN_NET	L"198.18.200.0/24"		// ... over a prefix of no VRF of the test
+#define	EGRESSTEST_EXIT_NONE	0			// node-x is the exit of no VRF ...
+#define	EGRESSTEST_EXIT_CORP	1			// ... of corp ...
+#define	EGRESSTEST_EXIT_BOTH	2			// ... or of corp and lab
+#define	EGRESSTEST_SUPERNET		L"198.19.60.0/22"		// The supernet of corp and lab, which the NAT network of WinNAT of node-x holds for the two
 
 // The addresses of the test, in network byte order
 static UINT egresstest_x_corp;		// node-x in corp: 198.19.61.1
@@ -371,9 +377,9 @@ static void EgressTestAddress(CONTROL_ADDRESS *a, char *network, UINT vrf_id, UI
 	a->Length = EGRESSTEST_LENGTH;
 }
 
-// The desired state of node-x in corp and lab, with node-c as its peer in corp; with exit, node-x is the exit of corp. In the
-// order of the protocol: the addresses by Network name, the VRFs by name.
-static void EgressTestStateX(CONTROL_STATE *st, CONTROL_PEER *peer, UINT64 generation, const UCHAR *c_key, bool exit)
+// The desired state of node-x in corp and lab, with node-c as its peer in corp; node-x is the exit of the VRFs that exits names
+// (EGRESSTEST_EXIT_*). In the order of the protocol: the addresses by Network name, the VRFs by name, the exits by id.
+static void EgressTestStateX(CONTROL_STATE *st, CONTROL_PEER *peer, UINT64 generation, const UCHAR *c_key, UINT exits)
 {
 	Zero(st, sizeof(CONTROL_STATE));
 	Zero(peer, sizeof(CONTROL_PEER));
@@ -398,10 +404,13 @@ static void EgressTestStateX(CONTROL_STATE *st, CONTROL_PEER *peer, UINT64 gener
 	st->Peers = peer;
 	st->NumPeers = 1;
 
-	if (exit)
+	if (exits != EGRESSTEST_EXIT_NONE)
 	{
-		st->EgressVrfIds[0] = EGRESSTEST_CORP;
-		st->NumEgress = 1;
+		st->EgressVrfIds[st->NumEgress++] = EGRESSTEST_CORP;
+	}
+	if (exits == EGRESSTEST_EXIT_BOTH)
+	{
+		st->EgressVrfIds[st->NumEgress++] = EGRESSTEST_LAB;
 	}
 }
 
@@ -436,15 +445,16 @@ static void EgressTestStateC(CONTROL_STATE *st, CONTROL_PEER *peer, UINT64 gener
 	st->NumPeers = 1;
 }
 
-// Apply the states of a Generation to node-x and node-c, as the control stream does
-static bool EgressTestApply(NODE *x, NODE *c, UINT64 generation, const UCHAR *x_key, const UCHAR *c_key, bool exit)
+// Apply the states of a Generation to node-x and node-c, as the control stream does: node-x the exit of the VRFs that exits
+// names (EGRESSTEST_EXIT_*), and node-c with the default route of corp to node-x while node-x is the exit of corp
+static bool EgressTestApply(NODE *x, NODE *c, UINT64 generation, const UCHAR *x_key, const UCHAR *c_key, UINT exits)
 {
 	CONTROL_STATE *st = ZeroMalloc(sizeof(CONTROL_STATE));
 	CONTROL_PEER *peer = ZeroMalloc(sizeof(CONTROL_PEER));
 
-	EgressTestStateX(st, peer, generation, c_key, exit);
+	EgressTestStateX(st, peer, generation, c_key, exits);
 	bool ok = NodeOverlayApply(x, st);
-	EgressTestStateC(st, peer, generation, x_key, exit);
+	EgressTestStateC(st, peer, generation, x_key, exits != EGRESSTEST_EXIT_NONE);
 	ok = NodeOverlayApply(c, st) && ok;
 
 	Free(peer);
@@ -1347,7 +1357,7 @@ static void EgressTestRun(EGRESSTEST_CTX *ctx)
 	// node-x is the exit of corp, and node-c has the default route of corp to node-x
 	if (ok)
 	{
-		bool applied = EgressTestApply(x, c, 1, x_key.Public, c_key.Public, true);
+		bool applied = EgressTestApply(x, c, 1, x_key.Public, c_key.Public, EGRESSTEST_EXIT_CORP);
 		bool up = false;
 
 		for (UINT64 end = Tick64() + EGRESSTEST_BOUND;applied && up == false && Tick64() < end;SleepThread(EGRESSTEST_POLL))
@@ -1407,7 +1417,7 @@ static void EgressTestRun(EGRESSTEST_CTX *ctx)
 	// node-x is the exit of no VRF any more: the uplinks get back what they had
 	if (ok)
 	{
-		bool applied = EgressTestApply(x, c, 2, x_key.Public, c_key.Public, false);
+		bool applied = EgressTestApply(x, c, 2, x_key.Public, c_key.Public, EGRESSTEST_EXIT_NONE);
 		bool back = EgressTestWaitFlags(NodeWintunLuid(uplinks.A), NodeWintunLuid(uplinks.B), before_a, before_b, &flags_a, &flags_b);
 
 		NodeEgressGetStatus(x, &es);
@@ -1678,11 +1688,11 @@ static void EgressTestPairStop(EGRESSTEST_PAIR *p, EGRESSTEST_UPLINKS *u, bool p
 // What a test waits for of the Egress of node-x, given its status (EgressTestWant*)
 typedef bool (EGRESSTEST_WANT_PROC)(const NODE_EGRESS_STATUS *es);
 
-// Make node-x the exit of corp (exit) or of no VRF, with node-c routing to it, and wait until their session is up and want holds
-// of the Egress of node-x, within EGRESSTEST_NAT_BOUND: whether it did, the status into es
-static bool EgressTestExit(EGRESSTEST_PAIR *p, UINT64 generation, bool exit, EGRESSTEST_WANT_PROC *want, NODE_EGRESS_STATUS *es)
+// Make node-x the exit of the VRFs that exits names (EGRESSTEST_EXIT_*), with node-c routing to it in corp, and wait until their
+// session is up and want holds of the Egress of node-x, within EGRESSTEST_NAT_BOUND: whether it did, the status into es
+static bool EgressTestExit(EGRESSTEST_PAIR *p, UINT64 generation, UINT exits, EGRESSTEST_WANT_PROC *want, NODE_EGRESS_STATUS *es)
 {
-	bool applied = EgressTestApply(p->X, p->C, generation, p->XKey.Public, p->CKey.Public, exit);
+	bool applied = EgressTestApply(p->X, p->C, generation, p->XKey.Public, p->CKey.Public, exits);
 	bool done = false;
 
 	for (UINT64 end = Tick64() + EGRESSTEST_NAT_BOUND;applied && done == false && Tick64() < end;SleepThread(EGRESSTEST_POLL))
@@ -1700,6 +1710,16 @@ static bool EgressTestExit(EGRESSTEST_PAIR *p, UINT64 generation, bool exit, EGR
 static bool EgressTestWantNat(const NODE_EGRESS_STATUS *es)
 {
 	return (es->NumVrfs == 1 && es->NatReady);
+}
+
+// The Egress serves corp and lab through WinNAT: it holds what the two want, and the NAT network of WinNAT of the node is over
+// their supernet
+static bool EgressTestWantSupernet(const NODE_EGRESS_STATUS *es)
+{
+	wchar_t prefix[MAX_PATH];
+
+	return (es->NumVrfs == 2 && es->NatReady && NodeEgressNetNatPrefix(NODE_EGRESS_NETNAT_NAME, prefix, sizeof(prefix)) &&
+		UniStrCmpi(prefix, EGRESSTEST_SUPERNET) == 0);
 }
 
 // The Egress serves corp through the proxy: it listens on the address of node-x in corp
@@ -1817,7 +1837,7 @@ static void EgressTestNatRun(EGRESSTEST_CTX *ctx, UINT tier)
 	// node-x is the exit of corp: the NAT of Windows takes the traffic of corp
 	if (ok)
 	{
-		bool done = EgressTestExit(&pair, 1, true, EgressTestWantNat, &es);
+		bool done = EgressTestExit(&pair, 1, EGRESSTEST_EXIT_CORP, EgressTestWantNat, &es);
 
 		Format(what, sizeof(what), "node-x, the exit of corp (301), and node-c apply their states, their session is up, and the NAT of Windows holds what corp wants (%s)", name);
 		ok = EgressTestCheck(ctx, done && es.Tier == tier, what, "%u VRFs, NAT ready %u, tier %u (fell back from %u)", es.NumVrfs, (UINT)es.NatReady, es.Tier,
@@ -1869,11 +1889,29 @@ static void EgressTestNatRun(EGRESSTEST_CTX *ctx, UINT tier)
 		EgressTestNatFlows(ctx, pair.C, pair.Host, &uplinks, 41030, "after the reconcile");
 	}
 
+	// WinNAT takes one NAT network per host: once node-x is the exit of lab too, the NAT network of the node holds the supernet of
+	// corp and lab in place of the prefix of corp, and the egress of corp goes through it
+	if (ok && tier == CONTROL_EGRESS_WINNAT)
+	{
+		wchar_t prefix[MAX_PATH];
+		bool done = EgressTestExit(&pair, 2, EGRESSTEST_EXIT_BOTH, EgressTestWantSupernet, &es);
+
+		NodeEgressNetNatPrefix(NODE_EGRESS_NETNAT_NAME, prefix, sizeof(prefix));
+		ok = EgressTestCheck(ctx, done && es.Tier == tier,
+			"node-x, the exit of corp (301) and lab (302), applies its state, and the NAT network of WinNAT of the node, RanzVPN-Egress, is over 198.19.60.0/22 now, the supernet of the two",
+			"%u VRFs, NAT ready %u, tier %u (fell back from %u), the NAT network of the node over '%S'", es.NumVrfs, (UINT)es.NatReady, es.Tier, es.Fallback, prefix);
+	}
+
+	if (ok && tier == CONTROL_EGRESS_WINNAT)
+	{
+		EgressTestNatFlows(ctx, pair.C, pair.Host, &uplinks, 41040, "through the supernet of corp and lab");
+	}
+
 	// node-x is the exit of no VRF: the NAT of Windows holds nothing of it, and with RRAS the running router holds the NAT routing
 	// protocol as it did before node-x
 	if (ok)
 	{
-		bool done = EgressTestExit(&pair, 2, false, EgressTestWantNone, &es);
+		bool done = EgressTestExit(&pair, 3, EGRESSTEST_EXIT_NONE, EgressTestWantNone, &es);
 		bool empty = false;
 		bool held = protocol;
 
@@ -1944,7 +1982,7 @@ static void EgressTestForeign(EGRESSTEST_CTX *ctx)
 
 		if (ok)
 		{
-			bool done = EgressTestExit(&pair, 1, true, EgressTestWantProxy, &es);
+			bool done = EgressTestExit(&pair, 1, EGRESSTEST_EXIT_CORP, EgressTestWantProxy, &es);
 
 			ok = EgressTestCheck(ctx, done && es.Tier == CONTROL_EGRESS_PROXY && es.Fallback == CONTROL_EGRESS_WINNAT,
 				"node-x is the exit of corp: its first reconcile finds the NAT network of the other program, and it falls back from WinNAT to the proxy, which listens on its address in corp",
@@ -2086,7 +2124,7 @@ void egress_test(UINT num, char **arg)
 }
 
 // egressnat: the internet exit of a VRF on the NAT of Windows that the runner gives (SDN-12)
-RANZ_TEST("egressnat", egressnat_test, "Internet exit of a VRF on the NAT of Windows: the tier that the runner gives; WinNAT where Hyper-V is present translates the egress of a peer, has a removed NAT network set again by the next reconcile and leaves a NAT network of another program alone, the node then taking the proxy (administrator rights, wintun.dll).");
+RANZ_TEST("egressnat", egressnat_test, "Internet exit of a VRF on the NAT of Windows: the tier that the runner gives; WinNAT where Hyper-V is present translates the egress of a peer over the supernet of the VRFs of the exit, has a removed NAT network set again by the next reconcile and leaves a NAT network of another program alone, the node then taking the proxy (administrator rights, wintun.dll).");
 void egressnat_test(UINT num, char **arg)
 {
 	EgressTestMain("EGRESSNAT", "Egress test: the internet exit of a VRF on the NAT of Windows of the runner", EGRESSTEST_NAT_BUDGET, EgressTestNatHost);
