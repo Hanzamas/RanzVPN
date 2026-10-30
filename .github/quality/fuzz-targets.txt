@@ -241,6 +241,9 @@ controller/internal/activation  Install.OpenFeature   exempt  opens the sealed E
 controller/internal/activation  OpenOfflineResponse   FuzzOpenOfflineResponse
 
 controller/internal/rbac   ParseRole  exempt  compares the name with the three role names; decodes nothing
+# The stored form of a role that is held for one Network (SDN-38 #231): the text of the role column of the API tokens and of
+# the API roles of users, which is a role or a role, @ and a Network, and what an admin gives the API for either
+controller/internal/rbac   ParseGrant  FuzzParseGrant
 # The logins of users (SDN-32 #226): the query of the authorization page and the form of the device authorization
 # endpoint, which any caller sends, the user code that a person types into the device page and the code verifier that the
 # token endpoint takes. The last two have no parser word in their names and read the same kind of bytes
