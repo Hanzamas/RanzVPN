@@ -2,9 +2,10 @@
 // The peer layer of a node (ADR-0015): the peer table and the relays that the control plane sets, the binding of
 // the node to its relays, the paths to each peer, the relay role, and PeerInput, the one ingress of every datagram,
 // which delivers a datagram for the node and forwards one for another node through the same policy check. The ICE
-// sessions that move a peer to a direct path are PeerIce.c's; this file starts them from the signals, sends on
-// them, and takes what they deliver through the same ingress. The datagrams between two nodes are those of their
-// peer session (PeerSession.c): this file sends what the session writes and hands it what comes in.
+// sessions that move a peer to a direct path are PeerIce.c's; this file starts them from the signals, hands them the
+// STUN messages that come to the socket, and sends and takes the records of a peer on the pair that its session
+// validated, through the same ingress. The datagrams between two nodes are those of their peer session
+// (PeerSession.c): this file sends what the session writes and hands it what comes in.
 
 #include "Core/PeerInternal.h"
 
@@ -97,9 +98,9 @@ void PeerDefaultConfig(PEER_CONFIG *c) {
 
 // The peer layer of a node with the static key key (an identity key in it stays owned by the caller and must
 // outlive the layer) and the configuration c (NULL for PeerDefaultConfig). send sends its datagrams; recv takes
-// the data datagrams for the node and may be NULL. With c->Ice the ICE socket opens and the node gathers its
-// candidates, and with c->PortMap it asks its home gateway for a public port of that socket. NULL when the crypto
-// module cannot start or the ICE socket cannot open.
+// the data datagrams for the node and may be NULL. With c->Ice its ICE sessions run on the socket of send, and with
+// c->PortMap it asks its home gateway for a public port of that socket once its host candidates name the port.
+// NULL when the crypto module cannot start.
 PEER_AGENT *PeerNew(PEER_KEY *key, PEER_CONFIG *c, PEER_SEND_PROC *send, void *send_param, PEER_RECV_PROC *recv, void *recv_param) {
 	LARGE_INTEGER freq;
 
@@ -121,8 +122,9 @@ PEER_AGENT *PeerNew(PEER_KEY *key, PEER_CONFIG *c, PEER_SEND_PROC *send, void *s
 	else
 		PeerDefaultConfig(&a->Config);
 
-	a->Config.IceBind[PEER_HOST_SIZE - 1] = 0;
-	a->Config.StunServer[PEER_HOST_SIZE - 1] = 0;
+	// The port mapping is the public port of a candidate of ICE
+	if (a->Config.Ice == false)
+		a->Config.PortMap = false;
 
 	if (a->Config.RelayRate == 0)
 		a->Config.RelayRate = PEER_DEFAULT_RELAY_RATE;
@@ -152,16 +154,11 @@ PEER_AGENT *PeerNew(PEER_KEY *key, PEER_CONFIG *c, PEER_SEND_PROC *send, void *s
 		return NULL;
 	}
 
-	if (a->Config.Ice && PeerIceStart(a) == false) {
-		PeerFree(a);
-		return NULL;
-	}
-
 	return a;
 }
 
-// Free the peer layer. The I/O that calls PeerInput must have stopped before; the ICE sessions, the ICE socket and
-// the port mapping end here.
+// Free the peer layer. The I/O that calls PeerInput must have stopped before; the ICE sessions, which send on the
+// socket of the layer until they end, and the port mapping end here, so the socket goes after the layer.
 void PeerFree(PEER_AGENT *a) {
 	if (a == NULL)
 		return;
@@ -501,7 +498,8 @@ void PeerSetRelays(PEER_AGENT *a, PEER_RELAY_INFO *relays, UINT num) {
 	PeerBindWanted(a);
 }
 
-// Set the host candidates of the node: the addresses of its own that its signals offer
+// Set the host candidates of the node: the addresses of its own that its signals offer, the addresses of the socket of
+// the layer with its port. With Config.PortMap the first of them starts the port mapping of that port (PeerPortMap.c).
 void PeerSetHostCandidates(PEER_AGENT *a, PEER_ADDR *addrs, UINT num) {
 	if (a == NULL || (addrs == NULL && num != 0))
 		return;
@@ -516,6 +514,10 @@ void PeerSetHostCandidates(PEER_AGENT *a, PEER_ADDR *addrs, UINT num) {
 		a->NumHosts = num;
 	}
 	ReleaseSRWLockExclusive(&a->Lock);
+
+	// libplum is never called under the lock of the layer
+	if (a->Config.PortMap && num != 0)
+		PeerPortMapStart(a, addrs[0].Port);
 }
 
 // Set a direct path to the peer of key by hand, at addr on the send procedure of the layer, or remove it with addr
@@ -581,10 +583,13 @@ static UINT PeerPathOf(PEER_AGENT *a, PEER *p) {
 // Seal a signal of type (PEER_SIGNAL_OFFER or PEER_SIGNAL_ANSWER) for the peer of key, for the control plane to
 // carry: the relay assignment of the node (its home relay) and its candidates. Without ICE they are the host
 // candidates and the server reflexive one that its home relay reported. With ICE they are those of the ICE socket
-// (the public port of the home gateway, the server reflexive one of the STUN server, the host addresses), with the
-// credentials of the node's ICE session with the peer. An offer starts that session when there is none or the last
-// one failed: a new offer restarts ICE. Returns the size of the envelope in buf, 0 when peer is no peer or the
-// envelope does not fit size.
+// (the public port of the home gateway, the address that the home relay saw, the host addresses), with the
+// credentials of the node's ICE session with the peer. An offer starts that session when there is none, the last
+// one failed, or it still checks without the public port that the home gateway granted since: a new offer restarts
+// ICE. An answer carries no credentials while that session is the node's own offer that waits for the answer of the
+// peer: the node did not take the offer of the peer then, as its key is higher, and the peer takes the node's offer
+// instead (PeerIceRemote), so the two never end up both controlling. Returns the size of the envelope in buf, 0 when
+// peer is no peer or the envelope does not fit size.
 UINT PeerSealSignal(PEER_AGENT *a, const UCHAR *peer, UINT type, UCHAR *buf, UINT size) {
 	PEER_SIGNAL s;
 	UCHAR payload[PEER_MAX_SIGNAL];
@@ -604,6 +609,8 @@ UINT PeerSealSignal(PEER_AGENT *a, const UCHAR *peer, UINT type, UCHAR *buf, UIN
 		s.NumCandidates = PeerIceCandidates(a, s.Candidates, PEER_MAX_CANDIDATES);
 	}
 
+	// The side of the peer in an ICE session changes under IceLock, which comes before the lock of the layer (PeerIce.c)
+	AcquireSRWLockShared(&a->IceLock);
 	AcquireSRWLockShared(&a->Lock);
 	{
 		PEER *p = PeerFind(a, peer);
@@ -611,7 +618,9 @@ UINT PeerSealSignal(PEER_AGENT *a, const UCHAR *peer, UINT type, UCHAR *buf, UIN
 		known = (p != NULL);
 
 		if (a->Config.Ice) {
-			if (p != NULL && p->Ice != NULL) {
+			bool waiting = (p != NULL && p->Ice != NULL && p->Ice->Controlling && p->Ice->RemoteUfrag[0] == 0);
+
+			if (p != NULL && p->Ice != NULL && (type == PEER_SIGNAL_OFFER || waiting == false)) {
 				strcpy_s(s.IceUfrag, sizeof(s.IceUfrag), p->Ice->Ufrag);
 				strcpy_s(s.IcePwd, sizeof(s.IcePwd), p->Ice->Pwd);
 			}
@@ -642,6 +651,7 @@ UINT PeerSealSignal(PEER_AGENT *a, const UCHAR *peer, UINT type, UCHAR *buf, UIN
 		}
 	}
 	ReleaseSRWLockShared(&a->Lock);
+	ReleaseSRWLockShared(&a->IceLock);
 
 	if (known == false)
 		return 0;
@@ -741,13 +751,10 @@ UINT PeerOpenSignal(PEER_AGENT *a, const UCHAR *env, UINT size, PEER_SIGNAL *sig
 
 // The path that a data datagram from the address from, naming the source src, came on: from a relay that the node
 // is bound to, which checked the source at its own ingress; from a node bound to the relay role, at the address of
-// its binding; or on the direct path of the peer src. A datagram that the ICE session with the peer via delivered
-// came on the direct path of via, and of no other peer. PEER_PATH_NONE when from is none of them. The caller holds
-// the lock.
-static UINT PeerSourcePath(PEER_AGENT *a, const PEER_ADDR *from, const UCHAR *via, const UCHAR *src) {
-	if (via != NULL)
-		return (memcmp(via, src, PEER_KEY_SIZE) == 0 && PeerFind(a, via) != NULL ? PEER_PATH_DIRECT : PEER_PATH_NONE);
-
+// its binding; or on the direct path of the peer src: from the address that was set by hand or won by a punch, or
+// from the peer's address on the pair that the ICE session with the peer validated, and of no other peer.
+// PEER_PATH_NONE when from is none of them. The caller holds the lock.
+static UINT PeerSourcePath(PEER_AGENT *a, const PEER_ADDR *from, const UCHAR *src) {
 	for (UINT i = 0; i < a->NumRelays; i++) {
 		PEER_RELAY *r = &a->Relays[i];
 
@@ -764,6 +771,9 @@ static UINT PeerSourcePath(PEER_AGENT *a, const PEER_ADDR *from, const UCHAR *vi
 
 	PEER *p = PeerFind(a, src);
 	if (p != NULL && p->HasDirect && PeerAddrEqual(&p->Direct, from))
+		return PEER_PATH_DIRECT;
+
+	if (p != NULL && p->Ice != NULL && PeerIceValid(p->Ice) && PeerAddrEqual(&p->Ice->Selected, from))
 		return PEER_PATH_DIRECT;
 
 	return PEER_PATH_NONE;
@@ -819,36 +829,11 @@ static bool PeerRateAllow(PEER_AGENT *a, PEER_BINDING *b) {
 	}
 }
 
-// Send a datagram back the way that one from the peer of key came: to the address from (a relay, a node bound to the
-// relay role, or the peer's direct address), or on the ICE session with the peer when from is NULL
-static void PeerSendBack(PEER_AGENT *a, const PEER_ADDR *from, const UCHAR *key, const UCHAR *data, UINT size) {
-	bool sent = false;
-
-	if (from != NULL) {
-		PeerSendRaw(a, from, data, size);
-		return;
-	}
-
-	AcquireSRWLockShared(&a->Lock);
-	{
-		PEER *p = PeerFind(a, key);
-
-		if (p != NULL && p->Ice != NULL)
-			sent = PeerIceSend(p->Ice, data, size);
-	}
-	ReleaseSRWLockShared(&a->Lock);
-
-	if (sent)
-		PeerCount(a, PEER_COUNT_SENT);
-	else
-		PeerDrop(a, PEER_DROP_SEND);
-}
-
-// A datagram between two nodes, a handshake message or a record of a peer session: taken by the session of its
-// source when it is for the node, forwarded as it came when it is for a node bound to the relay role, after one
-// policy check either way. The relay reads the clear header only. via is the peer whose ICE session delivered it,
-// NULL for one that came from the address from.
-static void PeerInputData(PEER_AGENT *a, const PEER_ADDR *from, const UCHAR *via, const UCHAR *data, UINT size) {
+// A datagram between two nodes, a handshake message or a record of a peer session, from the address from: taken by
+// the session of its source when it is for the node, forwarded as it came when it is for a node bound to the relay
+// role, after one policy check either way. The relay reads the clear header only. What goes back goes to from: a
+// relay, a node bound to the relay role, or the peer's address on its direct path.
+static void PeerInputData(PEER_AGENT *a, const PEER_ADDR *from, const UCHAR *data, UINT size) {
 	PEER_RECORD_INFO r;
 	PEER_SESSION_OUT out;
 	PEER_ADDR to;
@@ -873,7 +858,7 @@ static void PeerInputData(PEER_AGENT *a, const PEER_ADDR *from, const UCHAR *via
 
 	AcquireSRWLockShared(&a->Lock);
 	{
-		path = PeerSourcePath(a, from, via, src);
+		path = PeerSourcePath(a, from, src);
 		reason = (path == PEER_PATH_NONE ? PEER_DROP_SOURCE : PeerPolicy(a, src, dst));
 
 		if (reason == PEER_OK && to_self) {
@@ -915,7 +900,7 @@ static void PeerInputData(PEER_AGENT *a, const PEER_ADDR *from, const UCHAR *via
 	// The response to an initiation, then the queue that new keys release, back the way the datagram came. out.Reply
 	// holds each datagram of the queue in turn once the response went.
 	if (out.ReplySize != 0)
-		PeerSendBack(a, from, src, out.Reply, out.ReplySize);
+		PeerSendRaw(a, from, out.Reply, out.ReplySize);
 
 	for (bool first = out.Keepalive; out.Flush; first = false) {
 		UINT len = 0;
@@ -931,7 +916,7 @@ static void PeerInputData(PEER_AGENT *a, const PEER_ADDR *from, const UCHAR *via
 
 		if (len == 0)
 			break;
-		PeerSendBack(a, from, src, out.Reply, len);
+		PeerSendRaw(a, from, out.Reply, len);
 	}
 
 	if (out.Deliver == false)
@@ -1059,13 +1044,19 @@ static void PeerInputBound(PEER_AGENT *a, const PEER_ADDR *from, const UCHAR *da
 }
 
 // The one ingress of the peer layer: every datagram that the node receives, on any path, from the address from.
-// A signal never comes as a datagram: the control plane carries it to PeerOpenSignal.
+// A signal never comes as a datagram: the control plane carries it to PeerOpenSignal. With ICE, a STUN message is a
+// check of an ICE session of the node or its answer, which goes to that session (PeerIce.c).
 void PeerInput(PEER_AGENT *a, const PEER_ADDR *from, const UCHAR *data, UINT size) {
 	if (a == NULL || from == NULL || data == NULL)
 		return;
 
 	if (size == 0 || size > PEER_MAX_DATAGRAM) {
 		PeerDrop(a, PEER_DROP_MALFORMED);
+		return;
+	}
+
+	if (a->Config.Ice && PeerIceIsStun(data, size)) {
+		PeerIceInput(a, from, data, size);
 		return;
 	}
 
@@ -1077,7 +1068,7 @@ void PeerInput(PEER_AGENT *a, const PEER_ADDR *from, const UCHAR *data, UINT siz
 	case PEER_MSG_INIT:
 	case PEER_MSG_RESPONSE:
 	case PEER_MSG_RECORD:
-		PeerInputData(a, from, NULL, data, size);
+		PeerInputData(a, from, data, size);
 		break;
 	case PEER_MSG_BIND:
 		PeerInputBind(a, from, data, size);
@@ -1097,33 +1088,13 @@ void PeerInput(PEER_AGENT *a, const PEER_ADDR *from, const UCHAR *data, UINT siz
 	}
 }
 
-// What the ICE session with the peer of key delivered (PeerIce.c): a datagram of a peer session on the direct path,
-// through the same checks as one from PeerInput. A datagram of the old clear form is dropped as PeerInput drops it,
-// and anything else as malformed.
-void PeerInputDirect(PEER_AGENT *a, const UCHAR *key, const UCHAR *data, UINT size) {
-	if (a == NULL || key == NULL || data == NULL)
-		return;
-
-	if (size != 0 && data[0] == PEER_MSG_DATA) {
-		PeerDrop(a, PEER_DROP_CLEAR);
-		return;
-	}
-
-	if (size == 0 || size > PEER_MAX_DATAGRAM || (data[0] != PEER_MSG_INIT && data[0] != PEER_MSG_RESPONSE && data[0] != PEER_MSG_RECORD)) {
-		PeerDrop(a, PEER_DROP_MALFORMED);
-		return;
-	}
-
-	PeerInputData(a, NULL, key, data, size);
-}
-
-// Send one datagram of a peer session, buf, to the peer of dst on its path now (PeerGetStatus): a direct path, else
-// the relay of the peer's last signal. A datagram that the ICE session cannot send, as when its direct path has just
-// failed, goes through the relay. False when dst is no peer or has no path.
+// Send one datagram of a peer session, buf, to the peer of dst on its path now (PeerGetStatus): a direct path, set by
+// hand, won by a punch or validated by ICE, else the relay of the peer's last signal. Every path is on the socket of
+// the layer: on the direct path of ICE the datagram goes to the peer's address on the validated pair. False when dst
+// is no peer or has no path.
 static bool PeerSendTo(PEER_AGENT *a, const UCHAR *dst, const UCHAR *buf, UINT size) {
 	PEER_ADDR to;
 	UINT path = PEER_PATH_NONE;
-	bool sent = false;
 
 	AcquireSRWLockShared(&a->Lock);
 	{
@@ -1131,24 +1102,15 @@ static bool PeerSendTo(PEER_AGENT *a, const UCHAR *dst, const UCHAR *buf, UINT s
 
 		if (p != NULL) {
 			path = PeerPathOf(a, p);
-			if (path == PEER_PATH_DIRECT && p->HasDirect) {
+			if (path == PEER_PATH_DIRECT && p->HasDirect)
 				to = p->Direct;
-			} else if (path == PEER_PATH_DIRECT) {
-				// On the ICE socket, under the shared lock: the session cannot end meanwhile, and libjuice sends
-				// without its own lock, which a thread of libjuice may hold while it waits for this one
-				sent = PeerIceSend(p->Ice, buf, size);
-				path = (sent ? PEER_PATH_NONE : (PeerRelayOf(a, p, &to) ? PEER_PATH_RELAY : PEER_PATH_NONE));
-			} else if (path == PEER_PATH_RELAY) {
+			else if (path == PEER_PATH_DIRECT)
+				to = p->Ice->Selected;
+			else if (path == PEER_PATH_RELAY)
 				PeerRelayOf(a, p, &to);
-			}
 		}
 	}
 	ReleaseSRWLockShared(&a->Lock);
-
-	if (sent) {
-		PeerCount(a, PEER_COUNT_SENT);
-		return true;
-	}
 
 	if (path == PEER_PATH_NONE)
 		return false;
@@ -1321,6 +1283,11 @@ void PeerGetStats(PEER_AGENT *a, PEER_STATS *st) {
 	for (UINT i = 0; i < PEER_NUM_REASONS; i++)
 		st->Drops[i] = (UINT64)ReadAcquire64(&a->Drops[i]);
 
+	// libplum is never called under the lock of the layer
+	st->PortMap = PeerPortMapState(a);
+	if (st->PortMap == PEER_PORTMAP_MAPPED && PeerPortMapGet(a, &st->Mapped) == false)
+		st->PortMap = PEER_PORTMAP_PENDING;
+
 	AcquireSRWLockShared(&a->Lock);
 	{
 		st->NumBindings = a->NumBindings;
@@ -1334,9 +1301,24 @@ void PeerGetStats(PEER_AGENT *a, PEER_STATS *st) {
 	ReleaseSRWLockShared(&a->Lock);
 }
 
+// Whether the node is bound to its home relay: its signals then name the address that the relay saw it at, its server
+// reflexive candidate
+bool PeerHomeBound(PEER_AGENT *a) {
+	bool bound = false;
+
+	if (a == NULL)
+		return false;
+
+	AcquireSRWLockShared(&a->Lock);
+	bound = (a->NumRelays != 0 && a->Relays[0].Bound);
+	ReleaseSRWLockShared(&a->Lock);
+
+	return bound;
+}
+
 // The candidates that the node's signals offer now, at most max: with ICE, those of the ICE socket (the public port
-// of the home gateway once it granted one, the server reflexive one of the STUN server, the host addresses); without,
-// the host candidates and the server reflexive one that the home relay reported. Returns their number.
+// of the home gateway once it granted one, the address that the home relay saw, the host addresses); without, the
+// host candidates and the server reflexive one that the home relay reported. Returns their number.
 UINT PeerGetCandidates(PEER_AGENT *a, PEER_CANDIDATE *c, UINT max) {
 	UINT n = 0;
 
@@ -1386,7 +1368,7 @@ bool PeerAddrEqual(const PEER_ADDR *a, const PEER_ADDR *b) {
 
 // The name of a reason of PEER_DROP_* in the counters, for logs and tests
 const char *PeerReasonName(UINT reason) {
-	static const char *names[PEER_NUM_REASONS] = {"ok", "malformed", "forged", "replay", "policy", "source", "not a relay", "not bound", "rate", "relay", "send", "clear", "session"};
+	static const char *names[PEER_NUM_REASONS] = {"ok", "malformed", "forged", "replay", "policy", "source", "not a relay", "not bound", "rate", "relay", "send", "clear", "session", "ice"};
 
 	return (reason < PEER_NUM_REASONS ? names[reason] : "unknown");
 }

@@ -113,10 +113,20 @@
 // as its only peer in the VRF, with the prefixes of the VRF as routes of the hub, and the hub sends
 // the traffic of one spoke on to another. A node gets the LAN subnets behind it in its NodeConfig
 // (NodeConfig.lan_subnets) and the ones of each gateway that shares a VRF with it as routes of that
-// Peer; when several gateways announce one prefix, the node picks a healthy one from its own probes
-// inside their Noise sessions and from the controller's health data (Peer.down), or one of the
-// healthy ones by the hash of each flow when the VRF spreads them (Vrf.ecmp). No schema version
-// changes with them: a node of an older release skips the fields it does not know.
+// Peer; when several gateways announce one prefix, the node picks a healthy one from its own probes,
+// inside their Noise sessions or on the datagram path of its peer agent (SDN-19-R1, #507), and from
+// the controller's health data (Peer.down), or one of the healthy ones by the hash of each flow when
+// the VRF spreads them (Vrf.ecmp). No schema version changes with them: a node of an older release
+// skips the fields it does not know.
+//
+// A Peer carries 16 routes at most (control.options), so a spoke reaches 16 prefixes at most through
+// its hub, its only peer in the VRF (SDN-19-R1, #507): the pools of the L3 Networks of the VRF, the
+// LAN subnets of the hub and of the other spokes and the outside prefixes of their 1:1 NAT rules,
+// besides the routes of the other VRFs that the spoke shares with the hub and of the leaks. A VRF of
+// one L3 Network with an IPv4 and an IPv6 pool and no 1:1 NAT rule so leaves 14 routes for the LAN
+// subnets that a spoke reaches through the hub: it holds 15 spokes of one LAN subnet each, or 14 when
+// the hub has a LAN subnet too, and the controller refuses an intent with one more (MaxPeerRoutes,
+// controller/internal/intent/leak.go).
 //
 // BGP peering of the standard mode (SDN-77, #357): the nodes of a VRF whose links are of kind vxlan
 // or geneve and whose peering is bgp (Vrf.peering) exchange their routes there by BGP, in a full
@@ -832,6 +842,11 @@ message Telemetry {
   // The BGP peering of the standard mode at the node (SDN-77): in a summary of its own whenever it
   // changed, and absent from the others. 7 is the groups of SDN-87 (#386), so the peering is 8.
   PeeringReport peering = 8;
+  // The Upgrades and the Fallbacks of the Paths of the node's peer agent (CORE-S5-6), absent while
+  // its peer layer does not run. The node lists them in a summary of their own after each Hello,
+  // whenever they change and again every 15 s while they stay the same, as the controller drops a
+  // counter that its node stopped listing.
+  PathCounters paths = 9;
 }
 
 // The BGP peering of the standard mode at a node (SDN-77 #357): each peer of its sidecar, in the
@@ -850,6 +865,15 @@ message PeeringPeer {
   bytes address = 1;
   string state = 2;
   repeated Route learned = 3;
+}
+
+// The Paths of the peer agent of a node since the node started (CORE-S5-6, ADR-0015 decision 4):
+// the Upgrades, each a Path that moved from the Relay to the direct path that ICE validated, and
+// the Fallbacks, each a direct path whose consent freshness failed, so that its pair went back to
+// the Relay.
+message PathCounters {
+  uint64 upgrades = 1;
+  uint64 fallbacks = 2;
 }
 
 // The WireGuard end of one Device at its gateway (SDN-80): the last handshake, in Unix time in

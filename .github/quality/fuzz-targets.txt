@@ -25,9 +25,10 @@ src/Core  NoiseLoginParse       fuzz_noise
 # in its name, listed as a parser
 src/Core  NoiseTunnelFlowHash   fuzz_noise
 
-# The peer module (CORE-S5-2 #78): datagrams, envelopes and signals; the datagrams of ICE (CORE-S5-3 #79)
+# The peer module (CORE-S5-2 #78): datagrams, envelopes and signals; the STUN messages of ICE on the socket of the layer,
+# which libjuice reads (CORE-S5-3 #79, CORE-S5-6 #412)
 src/Core  PeerInput             fuzz_peer
-src/Core  PeerInputDirect       fuzz_peer
+src/Core  PeerIceInput          fuzz_peer  via PeerInput
 src/Core  PeerOpenSignal        fuzz_peer
 src/Core  PeerOpen              fuzz_peer  via PeerOpenSignal
 src/Core  PeerEnvelopeOpen      fuzz_peer  via PeerOpenSignal
@@ -146,8 +147,12 @@ src/Cedar  NodeDhcpInput  fuzz_nodedhcp
 # The gateway HA of the Node (SDN-19 #195) reads the control records that a peer sends on its Noise session as a probe or
 # its answer, and the IP packets of the host whose flow hash picks the gateway of a flow. NodeGatewayFlowHash has no parser
 # word in its name, listed as the reader of packets that it is; NodeGatewayControl hands a record to NodeGatewayParseProbe.
-src/Cedar  NodeGatewayParseProbe  fuzz_gateway
-src/Cedar  NodeGatewayFlowHash    fuzz_gateway
+# The records of the datagram path of the peer agent carry a probe or its answer behind the VRF tag of no VRF (SDN-19-R1
+# #507): NodeGatewayDatagram hands each record to NodeGatewayParseDatagram, which reads that header and hands the rest to
+# NodeGatewayParseProbe.
+src/Cedar  NodeGatewayParseProbe     fuzz_gateway
+src/Cedar  NodeGatewayParseDatagram  fuzz_gateway
+src/Cedar  NodeGatewayFlowHash       fuzz_gateway
 # The stub resolver of overlay DNS (SDN-11 #187) reads the DNS queries that reach UDP port 53 of the node's addresses in a
 # VRF. No parser word in the name, listed as the parser it is
 src/Cedar  NodeDnsAnswer  fuzz_nodedns
@@ -161,6 +166,9 @@ src/Cedar  NodeCapsReadHost     exempt  reads no bytes of a peer or of a file: i
 # The peer agent of the overlay (CORE-S5-5 #411) takes the Signals that the Controller carries from a peer: no parser word in the
 # name, listed as the reader of a peer's bytes that it is
 src/Cedar  NodeAgentSignal  exempt  hands the envelope of a Signal as it came to PeerOpenSignal (fuzz_peer), which opens and decodes it; it reads only what that gave
+# The bridge of the L2 adapter (CORE-S3-3 #73) looks at each frame of the wire that its XDP backend takes: no parser word in the
+# name, listed as the reader of the bytes of the LAN that it is
+src/Cedar  NodeL2BridgeWay  exempt  compares the first six bytes of a frame, its destination MAC address, with the address of the NIC and tests their group bit; it reads no length and no field beyond them, and a frame shorter than six bytes is not read
 
 # The control stream and the envelopes of the controller (SDN-2 #178, control.proto)
 controller/internal/control  Open                  FuzzOpen
@@ -240,6 +248,9 @@ controller/internal/activation  Install.OpenFeature   exempt  opens the sealed E
 controller/internal/activation  OpenOfflineResponse   FuzzOpenOfflineResponse
 
 controller/internal/rbac   ParseRole  exempt  compares the name with the three role names; decodes nothing
+# The stored form of a role that is held for one Network (SDN-38 #231): the text of the role column of the API tokens and of
+# the API roles of users, which is a role or a role, @ and a Network, and what an admin gives the API for either
+controller/internal/rbac   ParseGrant  FuzzParseGrant
 # The logins of users (SDN-32 #226): the query of the authorization page and the form of the device authorization
 # endpoint, which any caller sends, the user code that a person types into the device page and the code verifier that the
 # token endpoint takes. The last two have no parser word in their names and read the same kind of bytes
@@ -262,6 +273,14 @@ controller/internal/sidecar  ReadCredential  FuzzParseCredential via parseCreden
 # which anyone who can write to the store can choose
 controller/internal/keys  Sealer.Open  FuzzSealerOpen
 
+# The Cluster key of a controller cluster (AUD1-DT-16 #501): the text of the copy of the key in the row of a member, which
+# the store reads, and the bytes of the copy, which a member opens with its own sealing key at its start and after; anyone
+# who can write to the store can choose both. Keeper.Open opens the secrets of the targets and the PresharedKeys of the
+# Devices as the Sealer of a store
+controller/internal/store       Store.ClusterKey  FuzzDecodeCopy  via decodeCopy
+controller/internal/clusterkey  Keeper.Start      FuzzOpenCopy    via openCopy
+controller/internal/clusterkey  Keeper.Open       exempt  opens a sealed secret of a target or a sealed PresharedKey of a Device with the Sealer of the Cluster key (keys.Sealer.Open), which FuzzSealerOpen drives
+
 # The CA certificate and key files of `ranz cert -signcert` and -signkey (SDN-53 #246): the operator's own files, which
 # LoadAuthority reads as PEM
 controller/internal/certgen  LoadAuthority  FuzzLoadAuthority
@@ -272,8 +291,11 @@ controller/internal/servercert  ParseSetting  FuzzParseSetting
 controller/internal/servercert  Manager.Load  FuzzLoadPEM  via loadPEM
 
 # The file of the data directory that holds the TLS fingerprint of the certificate in use (AUD1-DT-13 #461), which ranz on
-# the same host reads before it sends a token to a loopback address: the Controller wrote it itself, or someone replaced it
-controller/internal/servercert  ReadFingerprint  FuzzReadFingerprint  via parseFingerprint
+# the same host reads before it sends a token to a loopback address: the Controller wrote it itself, or someone replaced it.
+# On Windows ranz opens it itself, checks who may have written it and reads it through that handle (AUD1-DT-14 #496).
+controller/internal/servercert  ReadFingerprint      FuzzReadFingerprint  via parseFingerprint
+controller/internal/servercert  ReadFingerprintFile  FuzzReadFingerprint  via parseFingerprint
+controller  ReadFingerprint  exempt  checks who owns and may write the fingerprint file of a data directory of this host and its folder, then reads the file with servercert.ReadFingerprintFile, whose parser FuzzReadFingerprint drives
 
 # The traffic test of `ranz test throughput` (SDN-53 #246): what a peer sends to a test server (the request, and the frames
 # of an upload) and to a test client (the frames of a download, the report of an upload)

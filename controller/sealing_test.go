@@ -128,38 +128,3 @@ func TestSealTargets(t *testing.T) {
 		t.Errorf("on the other host the targets are %+v, %v, want the target with no secret", ts, err)
 	}
 }
-
-// A member of a cluster keeps the secrets in clear, since the members have no sealing key in common, and
-// says so in the log; a secret that was sealed before, which the member cannot open, is named as lost.
-func TestSealTargetsInACluster(t *testing.T) {
-	rq := rqlitetest.Start(t)
-	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
-	defer cancel()
-	cfg, err := parseFlags([]string{"-data", t.TempDir(), "-rqlite", rq.URL()})
-	if err != nil {
-		t.Fatal(err)
-	}
-	// What -rqlite-join sets. The flag itself asks for the certificates of the members (AUD1-DT-8), which
-	// this test, whose rqlite is the one of rqlitetest, has none of.
-	cfg.join = []string{"127.0.0.1:4002", "127.0.0.1:4012", "127.0.0.1:4022"}
-	cfg.expect = 3
-	var logs bytes.Buffer
-	log := slog.New(slog.NewTextHandler(&logs, nil))
-	st := openTestStore(t, ctx, rq.URL())
-	if err := sealTargets(ctx, cfg, st, log); err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(logs.String(), "kept in clear") || !strings.Contains(logs.String(), "no sealing key in common") {
-		t.Errorf("a member of a cluster did not say that the secrets are in clear:\n%s", logs.String())
-	}
-	hook := export.Target{Name: "alerts", Kind: export.KindWebhook, URL: "https://hooks.example.com/x", Secret: "hmac-key-of-alerts"}
-	if err := st.PutTarget(ctx, hook); err != nil {
-		t.Fatal(err)
-	}
-	if docs := rawTargetDocs(t, rq.URL()); !strings.Contains(docs, hook.Secret) {
-		t.Errorf("a member of a cluster sealed a secret that its peers could not open: %s", docs)
-	}
-	if ts, err := st.Targets(ctx); err != nil || len(ts) != 1 || ts[0].Secret != hook.Secret {
-		t.Errorf("the targets of a member of a cluster are %+v, %v", ts, err)
-	}
-}

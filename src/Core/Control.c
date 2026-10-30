@@ -606,6 +606,8 @@ static void ControlRun(CONTROL_CLIENT *c) {
 	ControlDevicesResend(c->Config.Devices);
 	// ... and the BGP peering of the node (ControlPeering.c; SDN-77, #357)
 	ControlPeeringResend(c->Config.Peering);
+	// ... and the Upgrades and the Fallbacks of the Paths of the peer agent (ControlPath.c; CORE-S5-6, #412)
+	ControlPathsResend(c->Config.Paths);
 
 	while (ok && ControlHalted(c) == false) {
 		ok = ControlWriteLeases(c->Config.Leases, s) && ControlWriteDevices(c->Config.Devices, s);
@@ -615,6 +617,8 @@ static void ControlRun(CONTROL_CLIENT *c) {
 		ok = ok && ControlWritePeeringReport(c->Config.Peering, s);
 		// ... and the Signals of the node for its peers, as they come (ControlSignal.c; CORE-S5-5, #411)
 		ok = ok && ControlWriteSignals(c->Config.Signals, s);
+		// ... and the Upgrades and the Fallbacks of the Paths of its peer agent when they changed (ControlPath.c; CORE-S5-6, #412)
+		ok = ok && ControlWritePaths(c->Config.Paths, s);
 		if (ok == false)
 			break;
 
