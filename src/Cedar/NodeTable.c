@@ -12,6 +12,7 @@
 
 #include <stdlib.h>
 #include <string.h>
+#include "NodeEvpn.h"
 #include "NodeInternal.h"
 
 // How a writer waits for a reader in the grace period: a pass takes microseconds, so it spins first, then
@@ -103,6 +104,8 @@ void NodeFreeTables(NODE_TABLES *t) {
 	NodeFreeTable(t->Route);
 	NodeFreeTable(t->Policy);
 	NodeFreeVrfTables(t->Vrfs);
+	// The routes of the fabric of an EVPN gateway (NodeEvpn.c; SDN-25, #201)
+	NodeEvpnFreeTable(t->Evpn);
 
 	Zero(t, sizeof(NODE_TABLES));
 	Free(t);
@@ -225,6 +228,7 @@ bool NodeSwapTables(NODE *n, NODE_TABLES *t) {
 		if (n->Tables != NULL && NodeIsReaderThread(n) == false) {
 			t->Generation = ++n->LastGeneration;
 			t->Vrfs = n->Tables->Vrfs;
+			t->Evpn = n->Tables->Evpn;
 
 			NODE_TABLES *old = InterlockedExchangePointer((PVOID volatile *)&n->Tables, t);
 			WriteRelease64(&n->Generation, (LONG64)t->Generation);
@@ -232,6 +236,7 @@ bool NodeSwapTables(NODE *n, NODE_TABLES *t) {
 			NodeWaitGracePeriod(n, InterlockedIncrement64(&n->Epoch));
 
 			old->Vrfs = NULL;
+			old->Evpn = NULL;
 			NodeFreeTables(old);
 			ret = true;
 		}
@@ -263,6 +268,8 @@ bool NodeSwapVrfs(NODE *n, NODE_VRF_TABLES *v) {
 			t->Route = old->Route;
 			t->Policy = old->Policy;
 			t->Vrfs = v;
+			// The routes of the fabric of an EVPN gateway carry over (NodeEvpn.c; SDN-25, #201)
+			t->Evpn = old->Evpn;
 
 			InterlockedExchangePointer((PVOID volatile *)&n->Tables, t);
 			WriteRelease64(&n->Generation, (LONG64)t->Generation);
@@ -273,6 +280,50 @@ bool NodeSwapVrfs(NODE *n, NODE_VRF_TABLES *v) {
 			old->Mac = NULL;
 			old->Route = NULL;
 			old->Policy = NULL;
+			old->Evpn = NULL;
+			NodeFreeTables(old);
+			ret = true;
+		}
+	}
+	Unlock(n->TableLock);
+
+	return ret;
+}
+
+// Install the IP prefix routes e of the fabric of an EVPN gateway (NodeEvpn.c; SDN-25, #201), which the node takes over, in a
+// new snapshot that keeps the other tables of the current one, as NodeSwapVrfs does for the forwarding tables of the VRFs: the
+// routes before are freed after the grace period, so a reader sees either them or e. e may be NULL: no routes. False, and e
+// stays the caller's, while the node is stopped or when the calling thread is an online reader. Never call it with a lock that
+// a reader takes.
+bool NodeSwapEvpn(NODE *n, NODE_EVPN_TABLE *e) {
+	bool ret = false;
+	if (n == NULL)
+		return false;
+
+	Lock(n->TableLock);
+	{
+		NODE_TABLES *old = n->Tables;
+
+		if (old != NULL && NodeIsReaderThread(n) == false) {
+			NODE_TABLES *t = ZeroMalloc(sizeof(NODE_TABLES));
+
+			t->Generation = ++n->LastGeneration;
+			t->Mac = old->Mac;
+			t->Route = old->Route;
+			t->Policy = old->Policy;
+			t->Vrfs = old->Vrfs;
+			t->Evpn = e;
+
+			InterlockedExchangePointer((PVOID volatile *)&n->Tables, t);
+			WriteRelease64(&n->Generation, (LONG64)t->Generation);
+
+			NodeWaitGracePeriod(n, InterlockedIncrement64(&n->Epoch));
+
+			// The new snapshot holds the other tables now; the routes before go with the old one
+			old->Mac = NULL;
+			old->Route = NULL;
+			old->Policy = NULL;
+			old->Vrfs = NULL;
 			NodeFreeTables(old);
 			ret = true;
 		}
