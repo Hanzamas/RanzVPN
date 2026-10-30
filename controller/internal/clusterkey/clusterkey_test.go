@@ -622,7 +622,14 @@ func TestRestoreKeepsTheClusterKeyOfTheCluster(t *testing.T) {
 	if !eventually(func() bool { err = b.st.PutTarget(ctx, putAgain); return !errors.Is(err, ErrNoKey) }) || err != nil {
 		t.Fatalf("a target put again after the restore: %v", err)
 	}
-	if ts, err := b.st.Targets(ctx); err != nil || len(ts) != 1 || ts[0].Secret != putAgain.Secret {
+	// That step may also end after the restore returned, and then lets go of the key between the put above
+	// and this read: the read finds the target with no secret until the member holds the key again at its
+	// next step. The put sealed the secret with that key, so it opens again, and the read waits for it
+	var ts []export.Stored
+	if !eventually(func() bool {
+		ts, err = b.st.Targets(ctx)
+		return err == nil && len(ts) == 1 && ts[0].Secret == putAgain.Secret
+	}) {
 		t.Errorf("a target put again after the restore reads %+v, %v", ts, err)
 	}
 
