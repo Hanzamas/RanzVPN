@@ -24,17 +24,22 @@
 //   Listener (Cedar/NodeListener.c), runs the QUIC of its Listener on the datapath of the host and QTIP where the XDP
 //   runtime is there, or says why not, node-c's session over the QUIC of the Listener comes up, and the ports of QTIP are
 //   free again once node-s stopped; without the settings its QUIC asks for the normal datapath and no QTIP listener runs.
-// With the argument "serve STOPFILE" or "dial THUMBPRINT", the test is one of the two server node processes of the XDP job
-// (ADR-0002 amendment of 2026-10-21: two node processes on one runner, each on its own KM-TEST adapter): node-s brings up
-// its KM-TEST adapter with the L2 adapter on XDP (198.18.83.1) and its Listener with QTIP on port 8443, prints "QTIP SERVE
-// READY" with the thumbprint of its certificate, and runs until the file STOPFILE is there; node-c brings up its own
-// KM-TEST adapter with XDP (198.18.84.1), checks from its process that TCP 8443 and UDP 8443 are held and that plain QUIC
-// over the loopback does not reach the QTIP listener of node-s, and dials node-s at 198.18.83.1:8443 over QTIP. Whether
-// that link comes up is printed as "QTIP LINK UP" or "QTIP LINK DOWN" and is no check: XDP sends the frames of an AF_XDP
-// socket below its own hooks, down to the miniport, injects received frames above them, and skips the loopback frames of
-// NDIS (send.c and recv.c of the XDP LWF of xdp-for-windows 1.4.0), and a KM-TEST adapter sends nowhere what reaches it.
-// So on a runner with no wire between the two adapters no frame of the link reaches the XDP program of node-s, and the
-// link cannot come up, which the job records.
+// With the argument "serve STOPFILE" or "dial THUMBPRINT ADDRESS", the test is one of the two server node processes of the
+// XDP job (ADR-0002 amendment of 2026-10-21: two node processes on one runner, each on its own KM-TEST adapter, with a wire
+// of the runner as the physical side): node-s brings up its KM-TEST adapter with the L2 adapter on XDP (198.18.83.1) and
+// its Listener with QTIP on port 8443, prints "QTIP SERVE READY" with the thumbprint of its certificate, and runs until the
+// file STOPFILE is there; node-c brings up its own KM-TEST adapter with XDP (198.18.84.1), checks from its process that
+// TCP 8443 and UDP 8443 are held and that plain QUIC over the loopback does not reach the QTIP listener of node-s, and
+// dials node-s over QTIP at ADDRESS:8443, the address of node-s on the wire, where the link must come up: the Noise
+// session of node-c with the static key of node-s, which only node-s holds. It prints "QTIP LINK UP" or "QTIP LINK DOWN"
+// for the job summary. The wire is the job's (.github/scripts/qtip.ps1): an internal Hyper-V switch with a host vNIC for
+// each node, since XDP sends the frames of an AF_XDP socket down to the miniport, below its own hooks, and a KM-TEST
+// adapter sends nowhere what reaches it (send.c of the XDP LWF of xdp-for-windows 1.4.0). ADDRESS is no address of the
+// host: the stack of the host would carry a packet to one of its own addresses on the loopback, never on the wire. So
+// node-c's msquic takes the route to it out of the vNIC of node-c, to the MAC of the vNIC of node-s, which the job gives
+// it as a neighbour of that vNIC (RawResolveRoute of datapath_raw_socket_win.c of msquic 2.6.2), and node-s's msquic
+// takes the frames with its rule on the port of its listener, whatever their address, and answers on the route that they
+// came on (datapath_raw_socket.c).
 // Print "QTIP TEST OK" only when every check passes; skip, passing, where msquic.dll is not present. Needs administrator
 // rights: the LocalMachine\My store and its key storage provider, and the KM-TEST adapters of serve and dial.
 
@@ -996,7 +1001,8 @@ static void QtipTestAdapterFree(QTIPTEST_ADAPTER *x)
 	x->KmTest = NULL;
 }
 
-// serve: node-s, which listens with QTIP on 8443 on its own KM-TEST adapter until the file stop is there
+// serve: node-s, a server node on its own KM-TEST adapter, which listens with QTIP on 8443, on every XDP interface of the
+// host and so on its vNIC of the wire too, until the file stop is there
 static void QtipTestServe(QTIPTEST_CTX *ctx, TRANSPORT *loopback, char *stop)
 {
 	NODE_LISTENER_STATUS st;
@@ -1045,8 +1051,9 @@ static void QtipTestServe(QTIPTEST_CTX *ctx, TRANSPORT *loopback, char *stop)
 	QtipTestDeleteDir(dir);
 }
 
-// dial: node-c, which dials node-s from its own KM-TEST adapter, the certificate of node-s by its thumbprint
-static void QtipTestDial(QTIPTEST_CTX *ctx, char *thumbprint)
+// dial: node-c, a server node on its own KM-TEST adapter, which dials node-s at wire, its address on the wire of the job,
+// the certificate of node-s by its thumbprint
+static void QtipTestDial(QTIPTEST_CTX *ctx, char *thumbprint, char *wire)
 {
 	TRANSPORT_QUIC_CONFIG cfg;
 	TRANSPORT_QUIC_XDP_STATUS xs;
@@ -1057,7 +1064,7 @@ static void QtipTestDial(QTIPTEST_CTX *ctx, char *thumbprint)
 	Zero(&x, sizeof(x));
 	Zero(&xs, sizeof(xs));
 	StrCpy(ctx->Thumbprint, sizeof(ctx->Thumbprint), thumbprint);
-	Print("[dial: node-c, a server node on its own KM-TEST adapter, to node-s]\n");
+	Print("[dial: node-c, a server node on its own KM-TEST adapter, to node-s at %s on the wire]\n", wire);
 
 	QtipTestNewDir(dir, sizeof(dir), "server", false);
 	NODE *n = QtipTestNodeStart(ctx, dir, NULL);
@@ -1074,13 +1081,14 @@ static void QtipTestDial(QTIPTEST_CTX *ctx, char *thumbprint)
 			"from the process of node-c, plain QUIC over the loopback does not reach the QTIP listener of node-s: msquic takes its packets from XDP only",
 			"the dial %s", ran ? "came up" : "did not run");
 
-		// The link of QUIC with a TCP header, from the KM-TEST adapter of node-c to the one of node-s
+		// The link of QUIC with a TCP header between the two server nodes, across the wire: a QTIP transport as the Client
+		// role makes one for an entry qtip:host:port (NodeQtipClientNew)
 		QtipTestConfig(ctx, &cfg, false, true);
 		TRANSPORT *qtip = TransportQuicClientNew(&cfg);
 		bool got = (qtip != NULL && TransportQuicGetXdpStatus(qtip, &xs));
 		QtipTestCheck(ctx, got && xs.Datapath == TRANSPORT_QUIC_DATAPATH_QTIP && xs.Qtip, "node-c's QTIP transport asks msquic for QTIP", "status %u, %s", (UINT)got,
 			QtipTestDatapath(xs.Datapath));
-		Format(address, sizeof(address), "198.18.%u.1:%u", (UINT)QTIPTEST_SERVE_NETWORK, (UINT)TRANSPORT_QUIC_QTIP_PORT);
+		Format(address, sizeof(address), "%s:%u", wire, (UINT)TRANSPORT_QUIC_QTIP_PORT);
 		// The dial gives up at QTIPTEST_TIMEOUT: a waitable timer is its cancel
 		HANDLE timer = CreateWaitableTimerW(NULL, TRUE, NULL);
 		LARGE_INTEGER due;
@@ -1091,18 +1099,20 @@ static void QtipTestDial(QTIPTEST_CTX *ctx, char *thumbprint)
 		}
 		UINT64 t0 = Tick64();
 		bool link = (qtip != NULL && QtipTestNodeSession(ctx, NULL, qtip, address, timer));
+		UINT64 took = Tick64() - t0;
 		if (timer != NULL)
 		{
 			CloseHandle(timer);
 		}
+		QtipTestCheck(ctx, link, "node-c's Noise session over QTIP reaches node-s on port 8443 across the wire, with the static key that only node-s holds",
+			"the dial to %s did not come up within %I64u ms", address, took);
 		if (link)
 		{
-			Print("QTIP LINK UP: node-c's Noise session over QTIP to %s came up in %I64u ms\n", address, Tick64() - t0);
+			Print("QTIP LINK UP: node-c's Noise session over QTIP to node-s at %s came up in %I64u ms\n", address, took);
 		}
 		else
 		{
-			Print("QTIP LINK DOWN: node-c's QTIP dial to %s did not come up within %I64u ms: a KM-TEST adapter sends nowhere what XDP injects for it to transmit, so without a wire between the two adapters no frame of the link reaches node-s\n",
-				address, Tick64() - t0);
+			Print("QTIP LINK DOWN: node-c's QTIP dial to node-s at %s did not come up within %I64u ms\n", address, took);
 		}
 		TransportQuicFree(qtip);
 	}
@@ -1115,12 +1125,13 @@ static void QtipTestDial(QTIPTEST_CTX *ctx, char *thumbprint)
 	QtipTestDeleteDir(dir);
 }
 
-RANZ_TEST_TAGS("qtip", qtip_test, "core", "The XDP datapath of msquic and QTIP (CORE-S7-2): default off, Windows Server x64 only, opt-in, the normal datapath as before, the msquic release that ships QTIP, a QTIP listener on 8443 and the node's QuicXdp and Qtip; with serve STOPFILE or dial THUMBPRINT, one of the two server node processes of the XDP job (administrator rights).");
+RANZ_TEST_TAGS("qtip", qtip_test, "core", "The XDP datapath of msquic and QTIP (CORE-S7-2): default off, Windows Server x64 only, opt-in, the normal datapath as before, the msquic release that ships QTIP, a QTIP listener on 8443 and the node's QuicXdp and Qtip; with serve STOPFILE or dial THUMBPRINT ADDRESS, one of the two server node processes of the XDP job (administrator rights).");
 void qtip_test(UINT num, char **arg)
 {
 	QTIPTEST_CTX *ctx = ZeroMalloc(sizeof(QTIPTEST_CTX));
 	bool serve = (num >= 2 && StrCmpi(arg[0], "serve") == 0);
 	bool dial = (num >= 2 && StrCmpi(arg[0], "dial") == 0);
+	char *wire = (dial && num >= 3 ? arg[2] : NULL);
 	QTIPTEST_WATCH watch;
 	NODE_CAPS_HOST host;
 	CONTROL_CAPS caps;
@@ -1157,9 +1168,10 @@ void qtip_test(UINT num, char **arg)
 
 		if (dial)
 		{
-			if (QtipTestCheck(ctx, keys, "the static keys of node-s and node-c", "a key could not be made"))
+			if (QtipTestCheck(ctx, keys, "the static keys of node-s and node-c", "a key could not be made") &&
+				QtipTestCheck(ctx, IsEmptyStr(wire) == false, "dial names the address of node-s on the wire", "dial THUMBPRINT ADDRESS: no ADDRESS"))
 			{
-				QtipTestDial(ctx, arg[1]);
+				QtipTestDial(ctx, arg[1], wire);
 			}
 		}
 		else
