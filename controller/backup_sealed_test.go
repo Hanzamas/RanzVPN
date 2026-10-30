@@ -45,6 +45,37 @@ func TestBackupMessageNamesWhatItHolds(t *testing.T) {
 	if strings.Contains(cluster, "key of this host seals") {
 		t.Errorf("the message of a cluster member says that the key of this host seals the secrets:\n%s", cluster)
 	}
+
+	// The second and third criteria of #502, for the text: the URL of a target is not sealed, and what holds for a secret that the
+	// upgrade sealed is not what holds for one that is put after it. A single controller and a member of a cluster say it alike.
+	for name, m := range map[string]string{"a single controller": msg, "a member of a cluster": cluster} {
+		for _, want := range []string{
+			"the URL of a target is not", "a token in the path or the query of a webhook URL is in this file as it was put",
+			"that this release sealed is sealed in this file too", "the backup is vacuumed", "the data of rqlite beside the store",
+			"put each such target again with a new secret", "change it at the receiver", "A backup that an earlier release made holds its secrets unsealed",
+		} {
+			if !strings.Contains(m, want) {
+				t.Errorf("the message of backup of %s does not say %q:\n%s", name, want, m)
+			}
+		}
+	}
+}
+
+// The fifth criterion of #502, for the text: a backup that an earlier release made holds the secrets of the targets unsealed, and
+// restore says that the running controller seals them without a restart, a stopped one at its start, that the file of that backup
+// keeps them as they were, and that a target whose URL was changed in the backup comes back with no secret.
+func TestRestoreMessageNamesTheSecretsOfAnEarlierBackup(t *testing.T) {
+	msg := restoreMessage("earlier.backup")
+	for _, want := range []string{
+		"earlier.backup", "and for the URL that they were sealed with",
+		"A target whose URL was changed in the backup after its secret was sealed comes back with no secret too",
+		"A backup that an earlier release made holds the secrets of the targets unsealed", "within a minute, without a restart, while it runs",
+		"at its next start when it is stopped", "the file of that backup keeps them unsealed, so delete it",
+	} {
+		if !strings.Contains(msg, want) {
+			t.Errorf("the message of restore does not say %q:\n%s", want, msg)
+		}
+	}
 }
 
 // The second half of the third criterion of #458: the backup holds the secrets of the targets sealed,

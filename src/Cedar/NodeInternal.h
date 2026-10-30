@@ -39,6 +39,10 @@ void NodeControllerStop(NODE *n);
 void NodeControllerOverlay(NODE *n, NODE_OVERLAY_CONFIG *cfg);
 struct cJSON;
 void NodeAdminState(NODE *n, struct cJSON *o);
+// The Controller settings in the status of the client role, and the enrolment through the tray (NodeController.c; SDN-55, #248)
+void NodeControllerClientJson(NODE *n, struct cJSON *o);
+bool NodeControllerEnrol(NODE *n, const char *address, const char *key, const char *fingerprint, struct cJSON *o);
+void NodeControllerRejoinStart(NODE *n);
 struct CONTROL_LEASES *NodeDhcpStart(NODE *n);
 void NodeDhcpStop(NODE *n);
 void NodeDhcpApplied(NODE *n, const struct CONTROL_STATE *st);
