@@ -2,6 +2,8 @@ param([string] $BuildDir = 'build')
 
 $ErrorActionPreference = 'Stop'
 
+# THROWAWAY (#534): this line only makes windows.yml run the Controller behind the front door on this head, and is removed again
+
 # The Controller behind the front door of a node on the same host (SDN-73, #352; ADR-0035). Two
 # processes on this runner: `ranz controller` on a test port of its own, with its handoff pipe, and
 # the node of coretest's frontdoor test (coretest frontdoor-child node, src/coretest/frontdoor.c),

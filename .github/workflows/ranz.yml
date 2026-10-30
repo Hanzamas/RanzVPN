@@ -516,6 +516,39 @@ jobs:
       with:
         go-version: ${{ env.GO_VERSION }}
         cache-dependency-path: go.sum
+    # THROWAWAY (#534): the third criterion of the ticket, go test -count=100 -run TestFrontDoorHandsOver on this runner, and the
+    # tests of the front door in processes of their own. Removed again before the pull request is done.
+    - name: TestFrontDoorHandsOver 100 times (throwaway)
+      shell: pwsh
+      timeout-minutes: 15
+      run: |
+        go version
+        Write-Host "architecture $env:PROCESSOR_ARCHITECTURE"
+        go test -count=100 -run TestFrontDoorHandsOver ./controller/internal/port
+        if ($LASTEXITCODE -ne 0) { throw "go test -count=100 -run TestFrontDoorHandsOver exited with code $LASTEXITCODE" }
+        $exe = Join-Path $env:RUNNER_TEMP 'port.test.exe'
+        $log = Join-Path $env:RUNNER_TEMP 'port.test.log'
+        go test -c -o $exe ./controller/internal/port
+        if ($LASTEXITCODE -ne 0) { throw "go test -c exited with code $LASTEXITCODE" }
+        # The test binary $runs times, each time a process of its own: how many of the processes failed
+        function Measure-Processes([string] $pattern, [int] $runs) {
+          $failed = 0
+          for ($i = 0; $i -lt $runs; $i++) {
+            & $exe "-test.run=$pattern" '-test.count=1' '-test.timeout=60s' *> $log
+            if ($LASTEXITCODE -ne 0) {
+              $failed++
+              if ($failed -le 2) { Write-Host (Get-Content -LiteralPath $log -Raw) }
+            }
+          }
+          Write-Host "${pattern}: of $runs processes $failed failed"
+          return $failed
+        }
+        $failed = 0
+        $failed += Measure-Processes '^TestFrontDoorHandsOver$' 1000
+        $failed += Measure-Processes '^TestFrontDoorHandoffsKeepTheirClient$' 100
+        $failed += Measure-Processes '^TestFrontDoorHandoffsSurviveStaleSocketEntries$' 100
+        $failed += Measure-Processes '^TestRebuildSurvivesStaleSocketEntries$' 30
+        if ($failed -ne 0) { throw "$failed processes failed" }
     # rqlite publishes a Windows build for x64 only: on the arm64 runner this is the x64 rqlited.exe,
     # which Windows 11 on ARM runs under emulation, and which is the member of ranz for arm64
     - name: Install rqlited
