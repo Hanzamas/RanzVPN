@@ -13,6 +13,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/rqlite/gorqlite"
 
@@ -27,6 +28,10 @@ import (
 // its rqlited through a proxy of its own, which closes when the test ends, once the requests that it
 // carries ended: a request that a goroutine of the test makes after the end cannot reach the database of
 // the test that has the rqlited next.
+//
+// A test that takes a database from Fresh runs in parallel with the others that do: the tests of a package
+// spend most of their time waiting (for a timer, a stream, a write that rqlited syncs to its disk), and the
+// pool has an rqlited for each of them. A test whose timing another test beside it would disturb calls Alone.
 
 // pool holds the rqlited of the pool: all of them, which StopShared stops, and the idle ones.
 var pool struct {
@@ -49,6 +54,10 @@ var leases sync.Map
 // owners are the tests that called Own, while they run.
 var owners sync.Map
 
+// alone are the tests that called Alone, and parallel the tests that Fresh made parallel, while they run: a
+// test that takes more than one database calls t.Parallel once.
+var alone, parallel sync.Map
+
 // transport carries the requests of the proxies and of empty to the rqlited of the pool, and keeps their
 // connections for the next test.
 var transport = func() *http.Transport {
@@ -57,15 +66,51 @@ var transport = func() *http.Transport {
 	return t
 }()
 
+// statusTries is how often a GET of /status is sent at most, and statusPause the pause before each new try.
+const (
+	statusTries = 30
+	statusPause = 100 * time.Millisecond
+)
+
+// steadyStatus is the transport of the proxies: it sends a GET of /status again when rqlited answers it
+// with a 5xx. For that answer rqlited adds up the sizes of the files of its data directory (Stats of its
+// store), and it answers 500 when that fails, as it can while a file of the directory goes or is locked, as
+// the files of a snapshot are. An rqlited that lives for one test hardly takes a snapshot, and one that the
+// tests of a package share does; the Windows runs of CI-SPEED-1 (#547) met the 500 now and then, with
+// nothing in the output of rqlited. The controller reads /status before it changes the intent, to count the
+// voters (store.Members), so the test whose change met the 500 failed. The answer of the last try is the one
+// that the caller gets, so a /status that stays broken still fails the test.
+type steadyStatus struct{ http.RoundTripper }
+
+func (s steadyStatus) RoundTrip(r *http.Request) (*http.Response, error) {
+	resp, err := s.RoundTripper.RoundTrip(r)
+	if r.Method != http.MethodGet || r.URL.Path != "/status" {
+		return resp, err
+	}
+	for try := 1; try < statusTries && err == nil && resp.StatusCode >= http.StatusInternalServerError; try++ {
+		resp.Body.Close()
+		select {
+		case <-time.After(statusPause):
+		case <-r.Context().Done():
+			return nil, r.Context().Err()
+		}
+		resp, err = s.RoundTripper.RoundTrip(r)
+	}
+	return resp, err
+}
+
 // Fresh returns an rqlited with an empty database for t, which t has to itself until it ends: one of the
 // pool that the tests of the package share. t reaches it at the URL of the value, and cannot stop it: the
 // value has no process, no Raft address and no data directory, and Restart and Join refuse it. A test
 // that stops, restarts or joins its rqlited, reads its data directory, restores a backup into it or runs
 // the members of a cluster on it calls Own first, and Fresh then starts an rqlited of its own, as Start
-// does. On a failure the test log shows the output of the rqlited while t had it. The TestMain of a
-// package that calls Fresh calls StopShared once its tests ran.
+// does. The first Fresh of a test makes it a parallel test (t.Parallel), which waits until the tests that
+// run alone ended, so a test that calls Fresh does not call t.Parallel itself; a test that calls Alone
+// first runs alone instead. On a failure the test log shows the output of the rqlited while t had it. The
+// TestMain of a package that calls Fresh calls StopShared once its tests ran.
 func Fresh(t testing.TB) *sidecar.Rqlited {
 	t.Helper()
+	runInParallel(t)
 	if _, ok := owners.Load(t); ok {
 		return start(t, "", "")
 	}
@@ -91,6 +136,30 @@ func Fresh(t testing.TB) *sidecar.Rqlited {
 func Own(t testing.TB) {
 	owners.Store(t, struct{}{})
 	t.Cleanup(func() { owners.Delete(t) })
+}
+
+// Alone has t run while no other test of the package runs, which Go does with a test that is not parallel:
+// the Fresh of t does not make it parallel. For a test whose timing, or whose use of the processor or of the
+// goroutines that the race detector allows, a test beside it would disturb.
+func Alone(t testing.TB) {
+	alone.Store(t, struct{}{})
+	t.Cleanup(func() { alone.Delete(t) })
+}
+
+// runInParallel makes t a parallel test, once, unless it called Alone or is not a *testing.T.
+func runInParallel(t testing.TB) {
+	p, ok := t.(interface{ Parallel() })
+	if !ok {
+		return
+	}
+	if _, ok := alone.Load(t); ok {
+		return
+	}
+	if _, done := parallel.LoadOrStore(t, struct{}{}); done {
+		return
+	}
+	t.Cleanup(func() { parallel.Delete(t) })
+	p.Parallel()
 }
 
 // StopShared stops the rqlited of the pool and removes their directories. The TestMain of a package that
@@ -246,7 +315,7 @@ func proxy(addr string) (string, func()) {
 	target := &url.URL{Scheme: "http", Host: addr}
 	s := httptest.NewServer(&httputil.ReverseProxy{
 		Rewrite:   func(r *httputil.ProxyRequest) { r.SetURL(target) },
-		Transport: transport,
+		Transport: steadyStatus{transport},
 		ErrorHandler: func(w http.ResponseWriter, _ *http.Request, err error) {
 			http.Error(w, err.Error(), http.StatusBadGateway)
 		},
