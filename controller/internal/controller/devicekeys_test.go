@@ -498,9 +498,9 @@ type lockedSealer struct{ store.Sealer }
 
 func (lockedSealer) Open(string, []byte) ([]byte, error) { return nil, errLocked }
 
-// TestDeviceWithoutASealingKey: a controller that has no sealing key to seal with, as a member of a cluster
-// has none (ADR-0026), says so in its log, makes no Device that has a PresharedKey, and makes one that has
-// none when the administrator asks for that; the sealed keys of a store that it cannot open it sends its
+// TestDeviceWithoutASealingKey: a controller that has no sealing key to seal with, neither the one of its
+// host nor the Cluster key of a cluster (ADR-0026), says so in its log, makes no Device that has a
+// PresharedKey, and makes one that has none when the administrator asks for that; the sealed keys of a store that it cannot open it sends its
 // Devices without. A controller whose key storage provider is locked seals what it cannot open, and does not
 // make a Device with a key that no gateway could be given.
 func TestDeviceWithoutASealingKey(t *testing.T) {

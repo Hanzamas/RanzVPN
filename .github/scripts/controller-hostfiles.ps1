@@ -9,7 +9,10 @@
 #   what it holds; a restore of it on the same host, under the running service, brings the target back with its
 #   secret;
 # - the service does not start in a data directory that a standard user owns, says why in the Application log,
-#   and starts again once the Administrators own the directory.
+#   and starts again once the Administrators own the directory;
+# - the TLS fingerprint file that the service writes is owned by SYSTEM, the Administrators or the account of the
+#   service, and no other account has a rule that writes it, so ranz takes it (AUD1-DT-14, #496; AP-2); the same file in
+#   a folder that the Users group may write is refused by ranz, which sends no token and names the folder.
 
 # The accounts that a protected access list of the data directory may name, as Get-Acl writes them
 $dataDirAccounts = @('BUILTIN\Administrators', 'NT AUTHORITY\SYSTEM', 'OWNER RIGHTS', 'S-1-3-4')
@@ -28,6 +31,35 @@ function Test-DataDirOwner {
 	$others = @($who | Where-Object { ($dataDirAccounts + @($account, $serviceSid)) -notcontains $_ })
 	if ($others.Count -gt 0) { throw "the access list of the data directory $data has rules for $($others -join ', ')" }
 	Write-Host "the data directory $data is owned by $($acl.Owner), and its access list is protected, with rules for $($who -join ', ') only"
+}
+
+# The TLS fingerprint file that the service wrote (AUD1-DT-14, #496). The service writes it as its own account, which then
+# owns it, in the data directory that install made, so it has the rules of that directory and no others. ranz takes the
+# file only then: where another account may have written the file or its folder, a local user could have put its own key
+# there, and listened on 127.0.0.1:443 for the token of whoever runs ranz. The same file in a folder that the Users group
+# may write is not taken: ranz exits with an error that names the folder, and sends no token
+function Test-FingerprintFile {
+	$file = Join-Path $data 'tls.fingerprint'
+	$acl = Get-Acl -LiteralPath $file
+	if (@('BUILTIN\Administrators', 'NT AUTHORITY\SYSTEM', $account, $serviceSid) -notcontains $acl.Owner) { throw "tls.fingerprint is owned by $($acl.Owner), not by SYSTEM, the Administrators or $account" }
+	$who = Get-AclAccounts $file
+	$others = @($who | Where-Object { ($dataDirAccounts + @($account, $serviceSid)) -notcontains $_ })
+	if ($others.Count -gt 0) { throw "the access list of tls.fingerprint has rules for $($others -join ', ')" }
+	Write-Host "tls.fingerprint is owned by $($acl.Owner), with rules for $($who -join ', ') only"
+
+	$untrusted = Join-Path $work 'untrusted-controller'
+	New-Item -ItemType Directory -Force -Path $untrusted | Out-Null
+	Copy-Item -LiteralPath $file -Destination (Join-Path $untrusted 'tls.fingerprint') -Force
+	& icacls $untrusted /grant 'BUILTIN\Users:(OI)(CI)W' | Out-Null
+	if ($LASTEXITCODE -ne 0) { throw "icacls $untrusted exited with code $LASTEXITCODE" }
+	$errFile = Join-Path $work 'ranz-untrusted.err'
+	& $ranz -server $api -token-file $tokenFile -controller-dir $untrusted whoami 2> $errFile | Out-Null
+	$exit = $LASTEXITCODE
+	$said = Get-Content -LiteralPath $errFile -Raw
+	if ($exit -eq 0 -or $said -notmatch 'sends no token' -or $said -notmatch 'does not trust that file' -or $said -notmatch [regex]::Escape($untrusted) -or $said -notmatch '-tls-fingerprint') {
+		throw "ranz did not refuse the fingerprint file of a folder that the Users group may write (exit code $exit): $said"
+	}
+	Write-Host "ranz refused the fingerprint file of $untrusted, which the Users group may write: $($said.Trim())"
 }
 
 # The text of a file as a string of one character for each byte, which holds what a SQLite file holds in clear

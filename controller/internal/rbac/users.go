@@ -31,6 +31,8 @@ var ErrNoRole = errors.New("the user holds no API role")
 type UserRole struct {
 	User string `json:"user"`
 	Role Role   `json:"role"`
+	// Network is the Network that the role is held for (SDN-38, grant.go), left out for a role of the whole API.
+	Network string `json:"network,omitempty"`
 }
 
 // UserToken is a user token just made: its token, its secret, which the controller shows this once,
@@ -65,47 +67,33 @@ func (t *Tokens) UserRoles(ctx context.Context) ([]UserRole, error) {
 	}
 	out := make([]UserRole, 0, len(rs))
 	for _, r := range rs {
-		role, err := ParseRole(r.Role)
+		g, err := ParseGrant(r.Role)
 		if err != nil {
 			return nil, fmt.Errorf("stored role of user %q: %w", r.Name, err)
 		}
-		out = append(out, UserRole{User: r.Name, Role: role})
+		out = append(out, UserRole{User: r.Name, Role: g.Role, Network: g.Network})
 	}
 	return out, nil
 }
 
-// UserRole returns the API role of the User name, and false when it holds none.
+// UserRole returns the API role of the User name, and false when it holds none. A role that is held for one
+// Network is the role all the same: the User holds one, whatever it is held for (UserGrant).
 func (t *Tokens) UserRole(ctx context.Context, name string) (Role, bool, error) {
-	s, ok, err := t.st.UserRole(ctx, name)
-	if err != nil || !ok {
-		return "", false, err
-	}
-	role, err := ParseRole(s)
-	if err != nil {
-		return "", false, fmt.Errorf("stored role of user %q: %w", name, err)
-	}
-	return role, true, nil
+	g, ok, err := t.UserGrant(ctx, name)
+	return g.Role, ok, err
 }
 
-// SetUserRole gives the User name the API role role, in place of the one it held; its user tokens carry
-// the new role from their next call on. The caller checks that the intent holds the User.
+// SetUserRole gives the User name the API role role, held for the whole API, in place of the one it held; its
+// user tokens carry the new role from their next call on. The caller checks that the intent holds the User.
+// SetUserGrant gives a role for one Network.
 func (t *Tokens) SetUserRole(ctx context.Context, name string, role Role) (UserRole, error) {
-	if !nameRule.MatchString(name) {
-		return UserRole{}, fmt.Errorf("%w: the user name %q must be 1 to 63 lower-case letters, digits and hyphens, not starting or ending with a hyphen", ErrInvalid, name)
-	}
-	if _, err := ParseRole(string(role)); err != nil {
-		return UserRole{}, err
-	}
-	if err := t.st.SetUserRole(ctx, name, string(role)); err != nil {
-		return UserRole{}, err
-	}
-	return UserRole{User: name, Role: role}, nil
+	return t.SetUserGrant(ctx, name, Grant{Role: role})
 }
 
 // DeleteUserRole takes the API role of the User name away, and with it every user token of the User,
 // and returns the role that it held. A User that holds none is ErrNotFound.
 func (t *Tokens) DeleteUserRole(ctx context.Context, name string) (UserRole, error) {
-	role, ok, err := t.UserRole(ctx, name)
+	g, ok, err := t.UserGrant(ctx, name)
 	if err != nil {
 		return UserRole{}, err
 	}
@@ -119,14 +107,14 @@ func (t *Tokens) DeleteUserRole(ctx context.Context, name string) (UserRole, err
 	if !deleted {
 		return UserRole{}, fmt.Errorf("%w: the user %q holds no API role", ErrNotFound, name)
 	}
-	return UserRole{User: name, Role: role}, nil
+	return UserRole{User: name, Role: g.Role, Network: g.Network}, nil
 }
 
 // IssueUserToken makes a user token of the User name that ends at expires, for a login of the User that
 // the caller checked, and returns it with its secret. A User that holds no API role gets none
 // (ErrNoRole). The token carries the role that the User holds when it is used, not the one of now.
 func (t *Tokens) IssueUserToken(ctx context.Context, name string, expires time.Time) (UserToken, error) {
-	role, ok, err := t.UserRole(ctx, name)
+	g, ok, err := t.UserGrant(ctx, name)
 	if err != nil {
 		return UserToken{}, err
 	}
@@ -142,7 +130,7 @@ func (t *Tokens) IssueUserToken(ctx context.Context, name string, expires time.T
 	if !added {
 		return UserToken{}, fmt.Errorf("%w: user %q", ErrNoRole, name)
 	}
-	return UserToken{Token: userTokenOf(name, role), Secret: secret, Expires: expires.UTC()}, nil
+	return UserToken{Token: userTokenOfGrant(name, g), Secret: secret, Expires: expires.UTC()}, nil
 }
 
 // RevokeUserToken ends the user token whose secret is secret, as its holder does at a logout, and
@@ -171,18 +159,20 @@ func (t *Tokens) RevokeUserToken(ctx context.Context, secret string) (Token, err
 }
 
 // authenticateUser returns the token of the user token whose secret is secret, or ErrUnauthenticated
-// when there is none, when it ended, or when its User holds no API role any more.
+// when there is none, when it ended, or when it carries no role and its User holds no API role any more.
+// The role is the one that the login of a provider gave the token (providergroups.go; SDN-38), else the one
+// that the User holds now.
 func (t *Tokens) authenticateUser(ctx context.Context, secret string) (Token, error) {
-	name, s, ok, err := t.st.UserTokenByHash(ctx, hash(secret), time.Now())
+	name, s, ok, err := t.st.UserTokenRoleByHash(ctx, hash(secret), time.Now())
 	if err != nil {
 		return Token{}, err
 	}
 	if !ok {
 		return Token{}, ErrUnauthenticated
 	}
-	role, err := ParseRole(s)
+	g, err := ParseGrant(s)
 	if err != nil {
 		return Token{}, fmt.Errorf("stored role of user %q: %w", name, err)
 	}
-	return userTokenOf(name, role), nil
+	return userTokenOfGrant(name, g), nil
 }

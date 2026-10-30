@@ -1,40 +1,45 @@
 // PeerIce.c
-// ICE of the peer layer (ADR-0015 decisions 1 and 4; CORE-S5-3, #79) on libjuice: a relayed peer pair moves to a
-// direct path in the background once ICE validates one, and back to the relay when that path fails.
+// ICE of the peer layer (ADR-0015 decisions 1 and 4; CORE-S5-3, #79; CORE-S5-6, #412) on libjuice: a relayed peer pair
+// moves to a direct path in the background once ICE validates one (an Upgrade), and back to the relay when that path
+// fails (a Fallback). The peer session of the pair moves with it and keeps its keys (PeerSession.c).
 //
-// Every ICE session of a node runs on one UDP socket, the ICE socket, in the mux mode of libjuice. A base agent
-// holds the socket open for the life of the layer and gathers the node's candidates (its host addresses, and the
-// server reflexive one of a STUN server), which the node's signals carry. Each peer has an agent of its own on that
-// socket, which libjuice finds by the username fragment of a check and by the address of a datagram. One socket
-// means one NAT mapping and one public port of the home gateway for all the peers (PeerPortMap.c).
+// Every ICE session of a node runs on the socket of its peer layer, the ICE socket, which its binds and its records go
+// on too: each agent of libjuice runs in the peer mode of juice-peer.c, which sends through the send procedure of the
+// layer and takes the STUN messages that come to the socket from PeerInput (PeerIceInput). One socket means one NAT
+// mapping for the relay and every peer, so the address that the home relay saw the node at, which the answer of its
+// bind gives, is its server reflexive candidate, and no STUN server is needed. The candidates of the node's signals are
+// the public port of its home gateway when it asked for one (PeerPortMap.c), then that server reflexive address, then
+// the host addresses of the socket (PeerSetHostCandidates). On the network of a test the NAT simulator of the core
+// tests carries the checks as it carries every datagram of the layer.
 //
-// An offer of the node starts its session with the peer as the controlling end; an offer of the peer starts it as
-// the controlled end, and the answer gives the offering end the peer's credentials and candidates. The checks run on
-// the thread of the ICE socket while the pair stays on the relay. Once a candidate pair validates, PeerSend sends on
-// the session (PeerIceSend), and what the session delivers goes through the ingress of the layer like a datagram of
-// PeerInput (PeerInputDirect), so the move holds back no datagram. Consent freshness (RFC 7675) keeps the direct path
-// alive and checks it: when the peer stops answering for 30 s, libjuice fails the session and the pair is on the
-// relay again; a new offer starts a new session, as libjuice has no ICE restart. A pair whose NATs let no check
-// through, as two symmetric NATs do, stays on the relay; port prediction and birthday punching are CORE-S5-4 (#266).
+// An offer of the node starts its session with the peer as the controlling end; an offer of the peer starts it as the
+// controlled end, and the answer gives the offering end the peer's credentials and candidates. A check of the peer
+// that comes before that answer is not taken, and the peer sends it again (juice-peer.c says why). The checks run on
+// the thread of each session while the pair stays on the relay. Once a candidate pair validates, PeerSend sends the records
+// of the peer session to the peer's address on that pair, on the socket of the layer, and PeerInput takes the records
+// from there as the direct path (PeerSourcePath), so the move holds back no datagram. Consent freshness (RFC 7675)
+// keeps the direct path alive and checks it: when the peer stops answering for 30 s, libjuice fails the session and the
+// pair is on the relay again. A session that failed answers no check (juice_peer_input), so the consent of the peer
+// fails too and both ends fall back. A new offer starts a new session, as libjuice has no ICE restart: after one that
+// failed, and in place of one that is still checking when the home gateway granted its public port since it started,
+// so the checks go to that port. A pair whose NATs let no check through, as two symmetric NATs do, stays on the relay;
+// port prediction and birthday punching are CORE-S5-4 (#266).
 //
-// Locks: libjuice calls back on the thread of the ICE socket under a mutex of its own, and the callbacks take the
-// lock of the layer, so nothing here calls libjuice under that lock except juice_send, which takes only a send
-// mutex. IceLock serialises the start, the remote side and the end of the sessions.
+// Locks: libjuice calls back under the mutex of the agent, on the thread of the session or on the thread of PeerInput,
+// and the callbacks take the lock of the layer, so nothing here calls libjuice under that lock. IceLock serialises the
+// start, the remote side and the end of the sessions; PeerIceInput holds it shared, so no session ends while it hands
+// one a message.
 
 #include <winsock2.h>
 #include <ws2tcpip.h>
 
 #include "Core/PeerInternal.h"
 
-#include <juice/juice.h>
-
 #include <stdio.h>
-#include <stdlib.h>
 #include <string.h>
 
 #define PEER_ICE_UFRAG_LEN 8  // The username fragment of a session of the node, in ice-chars
 #define PEER_ICE_PWD_LEN   24 // ... and its password
-#define PEER_ICE_TOKENS    8  // The fields of a candidate line up to its type
 
 // The ice-chars of RFC 8839 section 5.4, which the credentials of a session are drawn from
 static const char PeerIceChars[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
@@ -77,61 +82,63 @@ bool PeerAddrFromHost(PEER_ADDR *a, const char *host, USHORT port) {
 	return false;
 }
 
-// The text of the address of a as a candidate line names it: a.b.c.d for an IPv4-mapped address, else IPv6
-static void PeerIceHost(char *str, UINT size, const PEER_ADDR *a) {
+// Whether a is an IPv4 address as an IPv4-mapped IPv6 address
+static bool PeerIceIsV4(const PEER_ADDR *a) {
 	static const UCHAR mapped[12] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0xFF, 0xFF};
 
-	if (memcmp(a->Ip, mapped, sizeof(mapped)) == 0)
+	return memcmp(a->Ip, mapped, sizeof(mapped)) == 0;
+}
+
+// The socket address of a, IPv4 for an IPv4-mapped address, as libjuice names the addresses of its candidates; returns
+// its length
+static int PeerIceToSockaddr(SOCKADDR_STORAGE *sa, const PEER_ADDR *a) {
+	ZeroMemory(sa, sizeof(SOCKADDR_STORAGE));
+
+	if (PeerIceIsV4(a)) {
+		SOCKADDR_IN *in = (SOCKADDR_IN *)sa;
+
+		in->sin_family = AF_INET;
+		in->sin_port = htons(a->Port);
+		CopyMemory(&in->sin_addr, a->Ip + 12, 4);
+		return (int)sizeof(SOCKADDR_IN);
+	}
+
+	SOCKADDR_IN6 *in6 = (SOCKADDR_IN6 *)sa;
+	in6->sin6_family = AF_INET6;
+	in6->sin6_port = htons(a->Port);
+	CopyMemory(&in6->sin6_addr, a->Ip, sizeof(a->Ip));
+	return (int)sizeof(SOCKADDR_IN6);
+}
+
+// The PEER_ADDR of a socket address of len bytes; false for a family other than IPv4 and IPv6
+static bool PeerIceFromSockaddr(PEER_ADDR *a, const SOCKADDR *sa, int len) {
+	ZeroMemory(a, sizeof(PEER_ADDR));
+
+	if (sa->sa_family == AF_INET && len >= (int)sizeof(SOCKADDR_IN)) {
+		const SOCKADDR_IN *in = (const SOCKADDR_IN *)sa;
+		const UCHAR *b = (const UCHAR *)&in->sin_addr;
+
+		PeerAddrSetV4(a, b[0], b[1], b[2], b[3], ntohs(in->sin_port));
+		return true;
+	}
+
+	if (sa->sa_family == AF_INET6 && len >= (int)sizeof(SOCKADDR_IN6)) {
+		const SOCKADDR_IN6 *in6 = (const SOCKADDR_IN6 *)sa;
+
+		CopyMemory(a->Ip, &in6->sin6_addr, sizeof(a->Ip));
+		a->Port = ntohs(in6->sin6_port);
+		return true;
+	}
+
+	return false;
+}
+
+// The text of the address of a as a candidate line names it: a.b.c.d for an IPv4-mapped address, else IPv6
+static void PeerIceHost(char *str, UINT size, const PEER_ADDR *a) {
+	if (PeerIceIsV4(a))
 		snprintf(str, size, "%u.%u.%u.%u", a->Ip[12], a->Ip[13], a->Ip[14], a->Ip[15]);
 	else if (inet_ntop(AF_INET6, a->Ip, str, size) == NULL)
 		str[0] = 0;
-}
-
-// The type and the address of the SDP candidate line that starts at line, as libjuice writes it (RFC 8839 section
-// 5.1): "a=candidate:<foundation> <component> UDP <priority> <address> <port> typ <type>", then the rest of the line.
-// A host candidate is PEER_CANDIDATE_HOST; a server reflexive and a peer reflexive one are PEER_CANDIDATE_SRFLX.
-// False for any other line.
-static bool PeerIceParse(const char *line, PEER_CANDIDATE *c) {
-	char tok[PEER_ICE_TOKENS][PEER_HOST_SIZE];
-	UINT n = 0;
-	char *end = NULL;
-
-	if (strncmp(line, "a=", 2) == 0)
-		line += 2;
-	if (strncmp(line, "candidate:", 10) != 0)
-		return false;
-
-	while (n < PEER_ICE_TOKENS) {
-		UINT len = 0;
-
-		while (*line == ' ')
-			line++;
-		while (line[len] != 0 && line[len] != ' ' && line[len] != '\r' && line[len] != '\n')
-			len++;
-		if (len == 0 || len >= PEER_HOST_SIZE)
-			return false;
-
-		CopyMemory(tok[n], line, len);
-		tok[n][len] = 0;
-		line += len;
-		n++;
-	}
-
-	if (_stricmp(tok[2], "UDP") != 0 || strcmp(tok[6], "typ") != 0)
-		return false;
-
-	if (strcmp(tok[7], "host") == 0)
-		c->Type = PEER_CANDIDATE_HOST;
-	else if (strcmp(tok[7], "srflx") == 0 || strcmp(tok[7], "prflx") == 0)
-		c->Type = PEER_CANDIDATE_SRFLX;
-	else
-		return false;
-
-	unsigned long port = strtoul(tok[5], &end, 10);
-	if (end == tok[5] || *end != 0 || port == 0 || port > 65535)
-		return false;
-
-	return PeerAddrFromHost(&c->Addr, tok[4], (USHORT)port);
 }
 
 // Whether one of the n candidates c is at addr
@@ -170,28 +177,60 @@ static bool PeerIceRemoteSdp(char *sdp, UINT size, const PEER_SIGNAL *s) {
 	return len > 0 && (UINT)len < size;
 }
 
-// The state of a session changed: on the thread of the ICE socket, or on the one that gathers for GATHERING and
-// CONNECTING. The first validated pair moves the peer to the direct path; a failure after it moves it back.
+// The send procedure of an agent (juice_peer_io_t): a datagram of libjuice, a check or its answer, goes on the socket of
+// the layer, as every datagram of the layer goes
+static int PeerIceIoSend(void *user_ptr, const struct sockaddr *dst, int dst_len, const char *data, size_t size) {
+	PEER_ICE *ice = (PEER_ICE *)user_ptr;
+	PEER_ADDR to;
+
+	if (size == 0 || size > PEER_MAX_DATAGRAM || PeerIceFromSockaddr(&to, (const SOCKADDR *)dst, dst_len) == false)
+		return -1;
+
+	return (PeerSendRaw(ice->Agent, &to, data, (UINT)size) ? (int)size : -1);
+}
+
+// The host addresses of an agent (juice_peer_io_t): the host candidates of the layer, the addresses of its socket
+static int PeerIceIoAddrs(void *user_ptr, struct sockaddr_storage *addrs, int max) {
+	PEER_ICE *ice = (PEER_ICE *)user_ptr;
+	PEER_AGENT *a = ice->Agent;
+	int n = 0;
+
+	AcquireSRWLockShared(&a->Lock);
+	{
+		for (UINT i = 0; i < a->NumHosts && n < max; i++)
+			PeerIceToSockaddr((SOCKADDR_STORAGE *)&addrs[n++], &a->Hosts[i]);
+	}
+	ReleaseSRWLockShared(&a->Lock);
+
+	return n;
+}
+
+// The state of a session changed, under the mutex of its agent: on the thread of the session, on the thread of
+// PeerInput, or on the one that gathers for GATHERING and CONNECTING. A validated pair lets the node take the records
+// of the peer from its address; the nominated pair moves the peer to the direct path, which counts as an Upgrade; a
+// failure after it moves the peer back to the relay, which counts as a Fallback.
 static void PeerIceOnState(juice_agent_t *agent, juice_state_t state, void *user_ptr) {
 	PEER_ICE *ice = (PEER_ICE *)user_ptr;
-	char local[JUICE_MAX_CANDIDATE_SDP_STRING_LEN];
-	char remote[JUICE_MAX_CANDIDATE_SDP_STRING_LEN];
-	PEER_CANDIDATE selected;
+	SOCKADDR_STORAGE remote;
+	PEER_ADDR selected;
 
 	switch (state) {
 	case JUICE_STATE_CONNECTED:
-	case JUICE_STATE_COMPLETED:
-		// The peer's address on the validated pair, for PeerGetStatus
-		if (juice_get_selected_candidates(agent, local, sizeof(local), remote, sizeof(remote)) == JUICE_ERR_SUCCESS && PeerIceParse(remote, &selected)) {
+	case JUICE_STATE_COMPLETED: {
+		// The peer's address on the selected pair, where PeerSend sends its records and where PeerInput takes them from
+		int len = juice_peer_selected(agent, (struct sockaddr_storage *)&remote);
+
+		if (len > 0 && PeerIceFromSockaddr(&selected, (const SOCKADDR *)&remote, len)) {
 			AcquireSRWLockExclusive(&ice->Agent->Lock);
-			ice->Selected = selected.Addr;
+			ice->Selected = selected;
 			ReleaseSRWLockExclusive(&ice->Agent->Lock);
 		}
 
 		InterlockedExchange(&ice->State, (state == JUICE_STATE_CONNECTED ? PEER_ICE_CONNECTED : PEER_ICE_COMPLETED));
-		if (InterlockedCompareExchange(&ice->Upgraded, 1, 0) == 0)
+		if (state == JUICE_STATE_COMPLETED && InterlockedCompareExchange(&ice->Upgraded, 1, 0) == 0)
 			PeerCount(ice->Agent, PEER_COUNT_UPGRADES);
 		break;
+	}
 	case JUICE_STATE_FAILED:
 		InterlockedExchange(&ice->State, PEER_ICE_FAILED);
 		if (InterlockedCompareExchange(&ice->Upgraded, 2, 1) == 1)
@@ -202,19 +241,7 @@ static void PeerIceOnState(juice_agent_t *agent, juice_state_t state, void *user
 	}
 }
 
-// A datagram that the session delivered, on the thread of the ICE socket
-static void PeerIceOnRecv(juice_agent_t *agent, const char *data, size_t size, void *user_ptr) {
-	PEER_ICE *ice = (PEER_ICE *)user_ptr;
-
-	if (size > PEER_MAX_DATAGRAM) {
-		PeerDrop(ice->Agent, PEER_DROP_MALFORMED);
-		return;
-	}
-
-	PeerInputDirect(ice->Agent, ice->Key, (const UCHAR *)data, (UINT)size);
-}
-
-// End a session: libjuice destroys its agent once no callback of it runs any more. Without the lock of the layer.
+// End a session: libjuice ends its thread and destroys its agent. Without the lock of the layer.
 static void PeerIceFree(PEER_ICE *ice) {
 	if (ice->Juice != NULL)
 		juice_destroy(ice->Juice);
@@ -223,27 +250,28 @@ static void PeerIceFree(PEER_ICE *ice) {
 	HeapFree(GetProcessHeap(), 0, ice);
 }
 
-// A new session of the node with the peer of key on the ICE socket, controlling when the node offers: an agent of
-// libjuice with fresh credentials, which has not gathered yet. NULL when libjuice refuses it.
+// A new session of the node with the peer of key on the socket of the layer, controlling when the node offers: an
+// agent of libjuice in the peer mode with fresh credentials, which has not gathered yet. NULL when libjuice refuses it.
 static PEER_ICE *PeerIceNew(PEER_AGENT *a, const UCHAR *key, bool controlling) {
 	juice_config_t jc;
+	PEER_ADDR mapped;
 
 	PEER_ICE *ice = (PEER_ICE *)HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, sizeof(PEER_ICE));
 	if (ice == NULL)
 		return NULL;
 
+	ice->Io.send = PeerIceIoSend;
+	ice->Io.get_addrs = PeerIceIoAddrs;
 	ice->Agent = a;
 	CopyMemory(ice->Key, key, PEER_KEY_SIZE);
 	ice->Controlling = controlling;
+	ice->Mapped = PeerPortMapGet(a, &mapped);
 	ice->State = PEER_ICE_CHECKING;
 
+	// No STUN or TURN server: the server reflexive candidate is the address that the home relay saw
 	ZeroMemory(&jc, sizeof(jc));
-	jc.concurrency_mode = JUICE_CONCURRENCY_MODE_MUX;
-	jc.bind_address = (a->Config.IceBind[0] != 0 ? a->Config.IceBind : NULL);
-	jc.local_port_range_begin = a->Ice.Port;
-	jc.local_port_range_end = a->Ice.Port;
+	jc.concurrency_mode = JUICE_CONCURRENCY_MODE_PEER;
 	jc.cb_state_changed = PeerIceOnState;
-	jc.cb_recv = PeerIceOnRecv;
 	jc.user_ptr = ice;
 
 	if (PeerIceRandom(ice->Ufrag, PEER_ICE_UFRAG_LEN) && PeerIceRandom(ice->Pwd, PEER_ICE_PWD_LEN))
@@ -288,64 +316,22 @@ static void PeerIceInstall(PEER_AGENT *a, const UCHAR *key, PEER_ICE *ice) {
 		PeerIceFree(old);
 }
 
-// Whether the session has a validated pair: the peer is on the direct path
-bool PeerIceUp(PEER_ICE *ice) {
+// Whether the session has a validated pair and the peer's address on it, from where the node takes the records of the
+// peer as on the direct path. The caller holds the lock of the layer.
+bool PeerIceValid(PEER_ICE *ice) {
 	LONG state = InterlockedCompareExchange(&ice->State, 0, 0);
 
-	return state == PEER_ICE_CONNECTED || state == PEER_ICE_COMPLETED;
+	return (state == PEER_ICE_CONNECTED || state == PEER_ICE_COMPLETED) && ice->Selected.Port != 0;
 }
 
-// Send one datagram on the direct path of the session; false when it has none (yet, or any more). Under the shared
-// lock of the layer, which keeps the session from ending meanwhile.
-bool PeerIceSend(PEER_ICE *ice, const void *data, UINT size) {
-	return juice_send(ice->Juice, (const char *)data, size) == JUICE_ERR_SUCCESS;
+// Whether the peer is on the direct path: the controlling end nominated the pair, so both ends use the same one and
+// the node sends the records of the peer there. The caller holds the lock of the layer.
+bool PeerIceUp(PEER_ICE *ice) {
+	return InterlockedCompareExchange(&ice->State, 0, 0) == PEER_ICE_COMPLETED && ice->Selected.Port != 0;
 }
 
-// Open the ICE socket of the node: the base agent of libjuice in mux mode on Config.IceBind and Config.IcePort,
-// which gathers the node's candidates, with the server reflexive one of Config.StunServer; then, with
-// Config.PortMap, the port mapping. False when the socket cannot open.
-bool PeerIceStart(PEER_AGENT *a) {
-	juice_config_t jc;
-	char sdp[JUICE_MAX_SDP_STRING_LEN];
-	PEER_CANDIDATE c;
-
-	ZeroMemory(&jc, sizeof(jc));
-	jc.concurrency_mode = JUICE_CONCURRENCY_MODE_MUX;
-	jc.bind_address = (a->Config.IceBind[0] != 0 ? a->Config.IceBind : NULL);
-	jc.local_port_range_begin = a->Config.IcePort;
-	jc.local_port_range_end = a->Config.IcePort;
-	if (a->Config.StunServer[0] != 0) {
-		jc.stun_server_host = a->Config.StunServer;
-		jc.stun_server_port = (a->Config.StunPort != 0 ? a->Config.StunPort : 3478);
-	}
-
-	a->Ice.Base = juice_create(&jc);
-	if (a->Ice.Base == NULL || juice_gather_candidates(a->Ice.Base) != JUICE_ERR_SUCCESS)
-		return false;
-
-	// The port of the socket: the configured one, or the one of its host candidates
-	a->Ice.Port = a->Config.IcePort;
-	if (a->Ice.Port == 0 && juice_get_local_description(a->Ice.Base, sdp, sizeof(sdp)) == JUICE_ERR_SUCCESS) {
-		for (const char *line = sdp; *line != 0 && a->Ice.Port == 0;) {
-			const char *next = strchr(line, '\n');
-
-			if (PeerIceParse(line, &c))
-				a->Ice.Port = c.Addr.Port;
-			line = (next != NULL ? next + 1 : line + strlen(line));
-		}
-	}
-
-	if (a->Ice.Port == 0)
-		return false;
-
-	if (a->Config.PortMap)
-		PeerPortMapStart(a);
-
-	return true;
-}
-
-// End every ICE session of the node, then the port mapping and the ICE socket. Each session leaves the table under
-// the lock of the layer and ends without it.
+// End every ICE session of the node, then the port mapping. Each session leaves the table under the lock of the layer
+// and ends without it.
 void PeerIceStop(PEER_AGENT *a) {
 	AcquireSRWLockExclusive(&a->IceLock);
 	while (true) {
@@ -368,11 +354,6 @@ void PeerIceStop(PEER_AGENT *a) {
 	ReleaseSRWLockExclusive(&a->IceLock);
 
 	PeerPortMapStop(a);
-
-	if (a->Ice.Base != NULL) {
-		juice_destroy(a->Ice.Base);
-		a->Ice.Base = NULL;
-	}
 }
 
 // End the sessions of a peer table that the layer holds no more (PeerSetPeers). Under IceLock.
@@ -385,18 +366,21 @@ void PeerIceRetire(PEER *peers, UINT num) {
 	}
 }
 
-// Before the node seals an offer for the peer of key: a new session as the controlling end, unless one runs that
-// has not failed. Without the lock of the layer.
+// Before the node seals an offer for the peer of key: a new session as the controlling end, unless one runs that has
+// not failed and is up or knows the public port of the home gateway. Without the lock of the layer.
 void PeerIceOffer(PEER_AGENT *a, const UCHAR *key) {
+	PEER_ADDR mapped;
 	bool start = false;
+	bool has_mapped = PeerPortMapGet(a, &mapped);
 
 	AcquireSRWLockExclusive(&a->IceLock);
 	{
 		AcquireSRWLockShared(&a->Lock);
 		{
 			PEER *p = PeerFind(a, key);
+			LONG state = (p != NULL && p->Ice != NULL ? InterlockedCompareExchange(&p->Ice->State, 0, 0) : PEER_ICE_NONE);
 
-			start = (p != NULL && (p->Ice == NULL || InterlockedCompareExchange(&p->Ice->State, 0, 0) == PEER_ICE_FAILED));
+			start = (p != NULL && (p->Ice == NULL || state == PEER_ICE_FAILED || (state == PEER_ICE_CHECKING && has_mapped && p->Ice->Mapped == false)));
 		}
 		ReleaseSRWLockShared(&a->Lock);
 
@@ -449,12 +433,55 @@ void PeerIceRemote(PEER_AGENT *a, const UCHAR *key, const PEER_SIGNAL *s) {
 	ReleaseSRWLockExclusive(&a->IceLock);
 }
 
+// Whether a datagram that came to the socket is a STUN message: a check of ICE or its answer, which PeerInput hands to
+// PeerIceInput. Every other datagram of the layer starts with its kind, PEER_MSG_*, and none carries the magic cookie
+// of STUN where a STUN message has it.
+bool PeerIceIsStun(const UCHAR *data, UINT size) {
+	return juice_peer_is_stun((const char *)data, size);
+}
+
+// A STUN message that came to the socket from the address from: the ICE session that it is for takes it, a check that
+// names the username fragment of the session or the answer to one of its checks. One that no session takes is dropped
+// and counted. Called from PeerInput, without the lock of the layer.
+void PeerIceInput(PEER_AGENT *a, const PEER_ADDR *from, const UCHAR *data, UINT size) {
+	SOCKADDR_STORAGE src;
+	bool taken = false;
+
+	int len = PeerIceToSockaddr(&src, from);
+
+	// The sessions cannot end meanwhile: that takes IceLock exclusively, and so does a change of the peer table
+	AcquireSRWLockShared(&a->IceLock);
+	{
+		for (UINT i = 0; taken == false; i++) {
+			juice_agent_t *juice = NULL;
+			bool more = false;
+
+			AcquireSRWLockShared(&a->Lock);
+			{
+				more = (i < a->NumPeers);
+				if (more && a->Peers[i].Ice != NULL)
+					juice = a->Peers[i].Ice->Juice;
+			}
+			ReleaseSRWLockShared(&a->Lock);
+
+			if (more == false)
+				break;
+
+			// libjuice takes the message under the mutex of the agent, whose callbacks take the lock of the layer
+			if (juice != NULL && juice_peer_input(juice, (const char *)data, size, (const struct sockaddr *)&src, len))
+				taken = true;
+		}
+	}
+	ReleaseSRWLockShared(&a->IceLock);
+
+	if (taken == false)
+		PeerDrop(a, PEER_DROP_ICE);
+}
+
 // The candidates of the node's signals with ICE, at most max: the public port of the home gateway first, then the
-// server reflexive candidate of the STUN server, then the host addresses of the ICE socket. Without the lock of the
-// layer.
+// address that the home relay saw the node at, then the host addresses of the socket, each address once. Without the
+// lock of the layer.
 UINT PeerIceCandidates(PEER_AGENT *a, PEER_CANDIDATE *c, UINT max) {
-	char sdp[JUICE_MAX_SDP_STRING_LEN];
-	PEER_CANDIDATE found;
 	PEER_ADDR mapped;
 	UINT n = 0;
 
@@ -464,21 +491,24 @@ UINT PeerIceCandidates(PEER_AGENT *a, PEER_CANDIDATE *c, UINT max) {
 		n++;
 	}
 
-	if (a->Ice.Base == NULL || juice_get_local_description(a->Ice.Base, sdp, sizeof(sdp)) != JUICE_ERR_SUCCESS)
-		return n;
+	AcquireSRWLockShared(&a->Lock);
+	{
+		if (a->NumRelays != 0 && a->Relays[0].Bound && n < max && PeerIceHasCandidate(c, n, &a->Relays[0].Observed) == false) {
+			c[n].Type = PEER_CANDIDATE_SRFLX;
+			c[n].Addr = a->Relays[0].Observed;
+			n++;
+		}
 
-	// The server reflexive candidates in the first pass over the lines, the host ones in the second
-	for (UINT pass = 0; pass < 2; pass++) {
-		UINT type = (pass == 0 ? PEER_CANDIDATE_SRFLX : PEER_CANDIDATE_HOST);
+		for (UINT i = 0; i < a->NumHosts && n < max; i++) {
+			if (PeerIceHasCandidate(c, n, &a->Hosts[i]))
+				continue;
 
-		for (const char *line = sdp; *line != 0 && n < max;) {
-			const char *next = strchr(line, '\n');
-
-			if (PeerIceParse(line, &found) && found.Type == type && PeerIceHasCandidate(c, n, &found.Addr) == false)
-				c[n++] = found;
-			line = (next != NULL ? next + 1 : line + strlen(line));
+			c[n].Type = PEER_CANDIDATE_HOST;
+			c[n].Addr = a->Hosts[i];
+			n++;
 		}
 	}
+	ReleaseSRWLockShared(&a->Lock);
 
 	return n;
 }

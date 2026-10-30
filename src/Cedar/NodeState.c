@@ -4,8 +4,9 @@
 // since when it is connected and the Generation that the overlay runs, or why it is not), its Wintun adapters with their
 // VRFs and the addresses of the node in each VRF, the Noise sessions of its peers with their transport and their age, how it
 // reaches each peer, on its stream session or through a Relay, with the datagrams that went each way there (CORE-S5-5, #411),
-// and its listeners (the data transport of the overlay, the front door and QUIC of its Listener, the UDP port of the relay
-// role). The pipe is the local channel: only SYSTEM, the Administrators and the service account may open it.
+// its datagram path with the Upgrades and the Fallbacks of its Paths and its port mapping (CORE-S5-6, #412), and its
+// listeners (the data transport of the overlay, the front door and QUIC of its Listener, the UDP port of the relay role). The
+// pipe is the local channel: only SYSTEM, the Administrators and the service account may open it.
 
 #include "Node.h"
 
@@ -103,6 +104,31 @@ static void NodeStateSessions(NODE *n, UINT64 now, cJSON *o, char *listener, UIN
 	Free(list);
 }
 
+// The peer agent of the overlay (NodeAgent.c; CORE-S5-5 #411, CORE-S5-6 #412): whether its peer layer runs, with ICE or
+// without, and on which UDP port; the Relays of the state; the Upgrades of its Paths to a direct path and their Fallbacks to
+// the Relay since the node started; and the port mapping of the home gateway, with the public address that it granted
+static void NodeStateAgent(NODE *n, cJSON *o) {
+	NODE_AGENT_STATUS *st = ZeroMalloc(sizeof(NODE_AGENT_STATUS));
+	cJSON *a = cJSON_AddObjectToObject(o, "datagramPath");
+	char mapped[64];
+
+	NodeAgentGetStatus(n, st);
+	mapped[0] = 0;
+	if (st->Peer.PortMap == PEER_PORTMAP_MAPPED)
+		PeerAddrToStr(mapped, sizeof(mapped), &st->Peer.Mapped);
+
+	cJSON_AddBoolToObject(a, "running", st->Running);
+	cJSON_AddBoolToObject(a, "ice", st->Ice);
+	cJSON_AddNumberToObject(a, "udpPort", st->Port);
+	cJSON_AddNumberToObject(a, "relays", st->NumRelays);
+	cJSON_AddNumberToObject(a, "upgrades", (double)st->Peer.Upgrades);
+	cJSON_AddNumberToObject(a, "fallbacks", (double)st->Peer.Fallbacks);
+	cJSON_AddStringToObject(a, "portMapping", NodeAgentPortMapName(st->Peer.PortMap));
+	cJSON_AddStringToObject(a, "mappedAddress", mapped);
+
+	Free(st);
+}
+
 // What the limits for a source of one listener hold and refused (AUD1-DT-3, #451): the connections that wait for their
 // handshake now, and the refusals by reason since the node started
 static void NodeStateLimits(cJSON *o, const SOURCE_LIMIT_STATS *st) {
@@ -172,6 +198,7 @@ void NodeAdminState(NODE *n, cJSON *o) {
 	NodeStateController(n, os, now, o);
 	NodeStateAdapters(n, os, o);
 	NodeStateSessions(n, now, o, listener, sizeof(listener));
+	NodeStateAgent(n, o);
 	NodeStateListeners(n, &ns, listener, o);
 
 	Free(os);

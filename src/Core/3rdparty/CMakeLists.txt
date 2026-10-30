@@ -13,9 +13,15 @@ if(NOT EXISTS "${_ranz_juice}/include/juice/juice.h" OR NOT EXISTS "${_ranz_plum
   message(FATAL_ERROR "The submodules of src/Core/3rdparty are not initialized. Run\n\tgit submodule update --init --recursive")
 endif()
 
-# libjuice: ICE (RFC 8445) with host and server reflexive candidates, connectivity checks, consent freshness
-# (RFC 7675) as the keepalive of a direct path, and every ICE session of a node on one UDP socket (its mux mode).
-# No STUN or TURN server (NO_SERVER), and its own SHA-1 and HMAC (USE_NETTLE=0).
+# libjuice: ICE (RFC 8445) with host and server reflexive candidates, connectivity checks, and consent freshness
+# (RFC 7675) as the keepalive of a direct path. No STUN or TURN server (NO_SERVER), and its own SHA-1 and HMAC
+# (USE_NETTLE=0).
+#
+# The ICE sessions of a node run on the socket of its peer layer, the one its binds and records go on (CORE-S5-6, #412),
+# in the peer mode of juice-peer.c: that file takes the place of conn_thread.c, the thread mode of libjuice, with the
+# same interface (conn_thread.h), so an agent made with the thread mode sends through the peer layer and takes the
+# STUN messages that the peer layer hands it, and has no socket of its own. It is the one change to libjuice, and it is
+# under the licence of libjuice (MPL-2.0). juice-peer.h is its header for the peer module.
 add_library(libjuice STATIC
   "${_ranz_juice}/src/addr.c"
   "${_ranz_juice}/src/agent.c"
@@ -23,7 +29,7 @@ add_library(libjuice STATIC
   "${_ranz_juice}/src/const_time.c"
   "${_ranz_juice}/src/conn.c"
   "${_ranz_juice}/src/conn_poll.c"
-  "${_ranz_juice}/src/conn_thread.c"
+  juice-peer.c
   "${_ranz_juice}/src/conn_mux.c"
   "${_ranz_juice}/src/base64.c"
   "${_ranz_juice}/src/hash.c"
@@ -43,6 +49,7 @@ add_library(libjuice STATIC
 target_include_directories(libjuice
   PUBLIC
     "${_ranz_juice}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}"
   PRIVATE
     "${_ranz_juice}/include/juice"
     "${_ranz_juice}/src"
