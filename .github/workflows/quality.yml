@@ -5,7 +5,8 @@
 # of the new core, in C (src/Core, the Node and the configuration store of Cedar) and in Go
 # (controller/, ranz-bgp/), must have a fuzz target that runs in CI, or an exemption with its reason
 # (.github/quality/fuzz-targets.txt, .github/scripts/fuzz-registry.py). A change that adds a parser
-# without a fuzz target fails here (ADR-0040 item 1).
+# without a fuzz target fails here (ADR-0040 item 1). The fixtures of the fuzz campaign (fuzz.yml: every
+# target for a long time against a stored corpus, and every night; AUD-3, #363) run in the same job.
 #
 # formal model: the table from the models of the handshake to the code (AUD-5, #389) is checked here: every
 # function that it names is defined in its file, every field is in the body of one of the functions of its
@@ -53,6 +54,10 @@ jobs:
       run: python -I .github/scripts/quality-gates-test.py
     - name: Every parser has a fuzz target that runs in CI
       run: python .github/scripts/fuzz-registry.py check
+    # AUD-3 (#363): the fuzz campaign of fuzz.yml, which runs every target for a long time against a stored corpus and every
+    # night. Its plan, its legs, its report and its tests of a finding run here against stand-ins for libFuzzer and go.
+    - name: Fuzz campaign fixtures
+      run: python -I .github/scripts/fuzz-campaign-test.py
 
   # ONE-1 (#310): the Go programs ship as one executable, ranz. CI, the WiX packages and the docs
   # name no executable ranz-controller or ranz-bgp (.github/scripts/one-binary-check.py); the
