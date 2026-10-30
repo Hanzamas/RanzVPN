@@ -41,6 +41,7 @@
 #include "NodeCaps.h"
 #include "NodeEgress.h"
 #include "NodeEvpn.h"
+#include "NodeExit.h"
 #include "NodeGateway.h"
 #include "NodeInternal.h"
 #include "NodeLink.h"
@@ -223,8 +224,9 @@ static NODE_VRF_TABLES *NodeOverlayTables(const CONTROL_STATE *st, NODE_OVERLAY_
 }
 
 // The forwarding tables of the state st with what goes in with them, built beside the live ones and swapped in; next hop i
-// is hops[i], the peer of st->Peers[i]. Whether they went in, and the number of their VRFs into num_vrfs.
-static bool NodeOverlaySwapTables(NODE_OVERLAY *ov, const CONTROL_STATE *st, NODE_OVERLAY_PEER **hops, UINT *num_vrfs) {
+// is hops[i], the peer of st->Peers[i]. exits are the exit nodes of the state of a client (NodeExitFilter), NULL for none.
+// Whether they went in, and the number of their VRFs into num_vrfs.
+static bool NodeOverlaySwapTables(NODE_OVERLAY *ov, const CONTROL_STATE *st, const NODE_EXIT_STATE *exits, NODE_OVERLAY_PEER **hops, UINT *num_vrfs) {
 	// Built beside the live tables, then in their place: the swap returns once no reader holds the tables before
 	NODE_VRF_TABLES *v = NodeOverlayTables(st, hops);
 	// The rules of the policy of the VRFs of the Generation go in with its tables (NodePolicy.c)
@@ -241,6 +243,8 @@ static bool NodeOverlaySwapTables(NODE_OVERLAY *ov, const CONTROL_STATE *st, NOD
 	NodeProfileAttach(ov->Node, v, st);
 	// The VRFs whose internet exit the node is go in with its tables (NodeEgress.c; SDN-12, #188)
 	NodeEgressAttach(ov->Node, v, st);
+	// The exit nodes of the Generation go in with its tables (NodeExit.c; SDN-55, #248)
+	NodeExitAttach(ov->Config.Exit, v, exits);
 	*num_vrfs = (v != NULL ? v->NumVrfs : 0);
 	bool swapped = (v != NULL && NodeSwapVrfs(ov->Node, v));
 	NodePolicyApplied(ov->Node, swapped);
@@ -260,7 +264,11 @@ static void NodeOverlayState(void *param, const CONTROL_STATE *state) {
 	// One state or rebuild of the forwarding tables at a time, and the routes that the BGP peering learned go in with the state
 	// (NodePeering.c; SDN-77, #357)
 	Lock(ov->ApplyLock);
-	const CONTROL_STATE *st = NodePeeringWith(ov->Node, state);
+	const CONTROL_STATE *with = NodePeeringWith(ov->Node, state);
+	// A client takes the default route of a peer only from the exit node that its user chose: the state without them (NodeExit.c;
+	// SDN-55, #248)
+	const CONTROL_STATE *st = with;
+	NODE_EXIT_STATE *exits = NodeExitFilter(ov->Config.Exit, &st);
 	PEER_INFO *infos = ZeroMalloc(sizeof(PEER_INFO) * MAX(st->NumPeers, 1));
 	NODE_OVERLAY_PEER **hops = ZeroMalloc(sizeof(NODE_OVERLAY_PEER *) * MAX(st->NumPeers, 1));
 	LIST *dropped = NewListFast(NULL);
@@ -312,7 +320,7 @@ static void NodeOverlayState(void *param, const CONTROL_STATE *state) {
 
 	// The forwarding tables of the Generation, and what goes in with them
 	UINT num_vrfs = 0;
-	bool swapped = NodeOverlaySwapTables(ov, st, hops, &num_vrfs);
+	bool swapped = NodeOverlaySwapTables(ov, st, exits, hops, &num_vrfs);
 
 	// The host's adapter of each VRF takes the MTU of the Generation that went in, before the overlay reports it
 	if (swapped)
@@ -369,23 +377,28 @@ static void NodeOverlayState(void *param, const CONTROL_STATE *state) {
 		NodeEgressApplied(ov->Node, st);
 	// The sidecar of the BGP peering takes the Generation that went in (NodePeering.c; SDN-77, #357)
 	NodePeeringApplied(ov->Node, state, swapped);
-	NodePeeringDone(st, state);
+	NodeExitFreeState(exits);
+	NodePeeringDone(with, state);
 	Unlock(ov->ApplyLock);
 }
 
-// Build the forwarding tables of the state st anew and swap them in, as the BGP peering does when the routes that its sidecar
-// learned change (NodePeering.c; SDN-77, #357): st is the Generation in force, with those routes among the routes of its peers,
+// Build the forwarding tables of the state with anew and swap them in, as the BGP peering does when the routes that its sidecar
+// learned change (NodePeering.c; SDN-77, #357): with is the Generation in force, with those routes among the routes of its peers,
 // and the adapters of the host take it too. False when another Generation went in meanwhile, which took the routes itself, or
 // when the tables could not be built or installed.
-bool NodeOverlayRebuild(NODE *n, const CONTROL_STATE *st) {
+bool NodeOverlayRebuild(NODE *n, const CONTROL_STATE *with) {
 	NODE_OVERLAY *ov = (n != NULL ? n->Overlay : NULL);
 	bool swapped = false;
 
-	if (ov == NULL || st == NULL)
+	if (ov == NULL || with == NULL)
 		return false;
 
 	Lock(ov->ApplyLock);
 	{
+		// The tables of a client take the default route of a peer only from the exit node that its user chose here too (NodeExit.c;
+		// SDN-55, #248)
+		const CONTROL_STATE *st = with;
+		NODE_EXIT_STATE *exits = NodeExitFilter(ov->Config.Exit, &st);
 		NODE_OVERLAY_PEER **hops = ZeroMalloc(sizeof(NODE_OVERLAY_PEER *) * MAX(st->NumPeers, 1));
 		bool found = false;
 		UINT num_vrfs = 0;
@@ -402,12 +415,13 @@ bool NodeOverlayRebuild(NODE *n, const CONTROL_STATE *st) {
 		Unlock(ov->Lock);
 
 		if (found)
-			swapped = NodeOverlaySwapTables(ov, st, hops, &num_vrfs);
+			swapped = NodeOverlaySwapTables(ov, st, exits, hops, &num_vrfs);
 		Free(hops);
 
 		// The host's adapter of each VRF takes the routes too
 		if (swapped && ov->Config.State != NULL)
 			ov->Config.State(ov->Node, ov->Config.AdapterParam, st);
+		NodeExitFreeState(exits);
 	}
 	Unlock(ov->ApplyLock);
 
@@ -642,8 +656,9 @@ static void NodeOverlayDeliver(NODE_OVERLAY *ov, NODE_OVERLAY_PEER *p, const UCH
 	NODE_VRF_TABLE *vt = NodeGetVrfTable(v, vrf_id);
 
 	if (vt != NULL && NodeOverlayEnds(packet, packet_size, src, dst, &addr_size)) {
-		// A source behind a group of gateways comes from the gateway of the group that sent it (NodeGateway.c; SDN-19, #195)
-		UINT from = NodeGatewayFrom(v, NodeVrfLookup(vt, src, addr_size), p);
+		// A source behind a group of gateways comes from the gateway of the group that sent it (NodeGateway.c; SDN-19, #195), and
+		// a source of no route from the exit node that the user of a client chose (NodeExit.c; SDN-55, #248)
+		UINT from = NodeGatewayFrom(v, NodeExitHop(v, vrf_id, NodeVrfLookup(vt, src, addr_size), src, addr_size, false), p);
 		UINT to = NodeVrfLookup(vt, dst, addr_size);
 
 		// A packet of the peer to the fabric of an EVPN gateway: no route of the VRF holds its destination, an IP prefix route
@@ -1042,9 +1057,13 @@ static bool NodeOverlayForward(NODE *n, UINT vrf_id, const UCHAR *packet, UINT s
 	NODE_VRF_TABLES *v = (t != NULL ? t->Vrfs : NULL);
 	NODE_VRF_TABLE *vt = NodeGetVrfTable(v, vrf_id);
 
-	// 1:1 NAT and 4via6 (NodeNat.c; SDN-6, #182): the tables route the packet as the overlay sees it
-	if (vt != NULL && size <= NOISE_MAX_PAYLOAD - NODE_OVERLAY_VRF_TAG && NodeNatEnds(v, vrf_id, packet, size, src, dst, &addr_size) && (fabric || NodeVrfLookup(vt, src, addr_size) == NODE_VRF_LOCAL))
+	// 1:1 NAT and 4via6 (NodeNat.c; SDN-6, #182): the tables route the packet as the overlay sees it, and a destination of no
+	// route of a packet of the host goes to the exit node that the user of a client chose (NodeExit.c; SDN-55, #248)
+	if (vt != NULL && size <= NOISE_MAX_PAYLOAD - NODE_OVERLAY_VRF_TAG && NodeNatEnds(v, vrf_id, packet, size, src, dst, &addr_size) && (fabric || NodeVrfLookup(vt, src, addr_size) == NODE_VRF_LOCAL)) {
 		hop = NodeVrfLookup(vt, dst, addr_size);
+		if (fabric == false)
+			hop = NodeExitHop(v, vrf_id, hop, dst, addr_size, true);
+	}
 	// A prefix that several gateways announce goes to the gateway that their group picks (NodeGateway.c; SDN-19, #195)
 	hop = NodeGatewayPick(v, hop, packet, size);
 

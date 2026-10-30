@@ -16,8 +16,8 @@ import (
 // The backup of the store (SDN-52, #245) is rqlite's backup of its SQLite database: the whole
 // store, which is the intent with every revision, the node states, the Capabilities, the events,
 // the API tokens, the licence key and the lease. rqlite takes it on its Raft leader (GET
-// /db/backup), and a restore loads it through Raft into every member (POST /db/load), so the same
-// two calls serve a single controller and a cluster. A restore under a running controller is
+// /db/backup?vacuum), and a restore loads it through Raft into every member (POST /db/load), so the
+// same two calls serve a single controller and a cluster. A restore under a running controller is
 // internal/cluster's Restore, which first makes the leader step down.
 
 // sqliteHeader starts every SQLite database file (https://www.sqlite.org/fileformat.html).
@@ -35,9 +35,13 @@ func CheckBackup(backup []byte) error {
 	return nil
 }
 
-// Backup writes a backup of the whole store to w.
+// Backup writes a backup of the whole store to w. rqlite vacuums the backup (?vacuum): a plain copy of
+// its SQLite file holds the free space of the file, where SQLite leaves the old text of a row that was
+// changed or deleted, so the clear text of a secret that an earlier release kept in clear, and that
+// SealTargetSecrets replaced by its sealed form, would reach the backup (AUD1-DT-17, #502). A vacuumed
+// backup holds the rows that the store holds now, and nothing of the rows that it held before.
 func (s *Store) Backup(ctx context.Context, w io.Writer) error {
-	resp, err := s.rqlite(ctx, http.MethodGet, "/db/backup", "", nil)
+	resp, err := s.rqlite(ctx, http.MethodGet, "/db/backup", "vacuum", "", nil)
 	if err != nil {
 		return fmt.Errorf("store: backup: %w", err)
 	}
@@ -57,7 +61,9 @@ func (s *Store) Backup(ctx context.Context, w io.Writer) error {
 // the restore has ended, and the member that takes the lease next loads the restored store. The
 // tables that this release has and backup lacks are created, as Open creates them, and the tables
 // of the Cluster key hold what they held before (clusterkey.go). Data that is not a backup is
-// refused (CheckBackup) and changes nothing.
+// refused (CheckBackup) and changes nothing. A backup that an earlier release made holds the secrets of
+// the targets in clear, and the store holds them so after the restore, until the controller seals them
+// (SealTargetSecrets): the running controller does within a minute, a stopped one at its start.
 func (s *Store) Restore(ctx context.Context, backup []byte, epoch int64) error {
 	if err := CheckBackup(backup); err != nil {
 		return err
@@ -66,7 +72,7 @@ func (s *Store) Restore(ctx context.Context, backup []byte, epoch int64) error {
 	if err != nil {
 		return fmt.Errorf("store: restore: %w", err)
 	}
-	resp, err := s.rqlite(ctx, http.MethodPost, "/db/load", "application/octet-stream", backup)
+	resp, err := s.rqlite(ctx, http.MethodPost, "/db/load", "", "application/octet-stream", backup)
 	if err != nil {
 		return fmt.Errorf("store: restore: %w", err)
 	}
@@ -83,14 +89,14 @@ func (s *Store) Restore(ctx context.Context, backup []byte, epoch int64) error {
 	return nil
 }
 
-// rqlite makes a request of rqlite's HTTP API, beside the calls that gorqlite makes, and returns
-// the answer when it is 200 OK.
-func (s *Store) rqlite(ctx context.Context, method, path, contentType string, body []byte) (*http.Response, error) {
+// rqlite makes a request of rqlite's HTTP API, beside the calls that gorqlite makes, with the query
+// string query (none when it is empty), and returns the answer when it is 200 OK.
+func (s *Store) rqlite(ctx context.Context, method, path, query, contentType string, body []byte) (*http.Response, error) {
 	u, err := url.Parse(s.url)
 	if err != nil {
 		return nil, err
 	}
-	u.Path, u.RawQuery = path, ""
+	u.Path, u.RawQuery = path, query
 	var rd io.Reader
 	if body != nil {
 		rd = bytes.NewReader(body)
