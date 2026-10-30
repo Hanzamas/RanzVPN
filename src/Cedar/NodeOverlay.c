@@ -904,6 +904,8 @@ bool NodeOverlayStart(NODE *n, NODE_OVERLAY_CONFIG *cfg) {
 	cc.Signals = NodeAgentStart(n, cfg);
 	cc.SignalProc = NodeAgentSignal;
 	cc.SignalParam = n;
+	// ... and the Upgrades and the Fallbacks of its Paths, which the Controller exports (NodeAgent.c; CORE-S5-6, #412)
+	cc.Paths = NodeAgentPaths(n);
 	// The BGP peering of the standard mode, whose report goes on the control stream (NodePeering.c; SDN-77, #357)
 	cc.Peering = NodePeeringStart(n);
 	// The live operations of the Controller read and clear the tables of the switches of the L2 Networks, and the Hello reports

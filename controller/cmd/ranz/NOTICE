@@ -1167,3 +1167,26 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+
+
+libjuice and libplum
+--------------------
+
+ranz.exe carries ranz-node.exe, the Node, as a Payload for x64 and for arm64, and ranz-node.exe links two
+libraries of Paul-Louis Ageneau statically: libjuice (https://github.com/paullouisageneau/libjuice, the tag
+v1.7.4, the commit b89c792e3612), for ICE, and libplum (https://github.com/paullouisageneau/libplum, the tag
+v0.6.0, the commit e4be508aad42), for the port mapping of home gateways with PCP, NAT-PMP and UPnP. Both
+are licensed under the Mozilla Public License, Version 2.0: the file LICENSE of each is the text of that
+licence, which is in the section of REALITY above word for word and at https://www.mozilla.org/MPL/2.0/.
+
+  libjuice: Copyright (c) 2020-2022 Paul-Louis Ageneau
+  libplum: Copyright (c) 2021 Paul-Louis Ageneau
+
+Ranz VPN changes one file of each, and the changed files are under the same licence, with the notices of
+the files that they stand in for: juice-peer.c, which takes the place of src/conn_thread.c of libjuice so
+that the ICE sessions of a Node run on the socket of its peer layer, and plum-xml.c, which takes the place
+of the function xml_find_matching_child of src/util.c of libplum and reads the control URL of a gateway
+from its document instead of from a copy that the original had freed. Their source code form is in the
+directory src/Core/3rdparty of the source of Ranz VPN, and the source of every other file of the two
+libraries is the source of the commits above (section 3.2 of the licence). The files of Ranz VPN that call
+them are not Covered Software and are not under it (section 3.3).

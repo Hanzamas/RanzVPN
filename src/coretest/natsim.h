@@ -40,6 +40,28 @@ bool NatSimMapped(NATSIM_NAT *n, const PEER_ADDR *inside, PEER_ADDR *pub);
 void NatSimSetTimeout(NATSIM *s, NATSIM_NAT *n, UINT timeout);
 UINT NatSimExpired(NATSIM_NAT *n);
 
+// The port forward of a home gateway and the loss of the mappings of a NAT (CORE-S5-6, #412): a public port of a NAT
+// that leads to the host behind it with that port, in from anywhere and out to anywhere, never aged; and the drop of
+// every other mapping of a host, after which its next datagram out gets a new public port
+void NatSimPublic(NATSIM_NAT *n, PEER_ADDR *pub);
+bool NatSimForward(NATSIM *s, NATSIM_NAT *n, USHORT port, USHORT inside_port);
+bool NatSimUnforward(NATSIM *s, NATSIM_NAT *n, USHORT port);
+UINT NatSimDrop(NATSIM *s, NATSIM_NAT *n, const PEER_ADDR *inside);
+
+// The simulated home gateway of a NAT (homegw.c): a UPnP Internet Gateway Device that libplum finds with SSDP on the
+// loopback interfaces of the host and asks for a port mapping over HTTP on 127.0.0.1, which it grants as a port forward
+// of its NAT on the network of the simulator, with the public address of the NAT as its external address. It answers the
+// sockets of its own process only, where the nodes of a test run, and counts what they asked, so a test sees that a node
+// with port mapping off asked nothing.
+typedef struct HOMEGW HOMEGW;
+
+HOMEGW *HomeGwNew(NATSIM *s, NATSIM_NAT *nat);
+void HomeGwFree(HOMEGW *g);
+bool HomeGwMapped(HOMEGW *g, USHORT *external, USHORT *internal);
+bool HomeGwDrop(HOMEGW *g);
+UINT HomeGwSearches(HOMEGW *g);
+UINT HomeGwRequests(HOMEGW *g);
+
 // A tap of the network (natsim.c): sees every datagram that a host sends, on whatever link, before the network routes
 // it, and drops it by returning false, as an attacker on the path would; it runs on the sending thread. Hold stops the
 // delivery until it is released, so that datagrams sent meanwhile cross on the way.

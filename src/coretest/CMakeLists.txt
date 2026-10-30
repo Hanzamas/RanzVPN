@@ -1,13 +1,15 @@
 # natsim: the NAT simulator of the core tests (natsim.c, natsim.h; CORE-S5-2, #78), a library of its own so that the peer
 # tests of coretest and the relay path test of vpntest (src/vpntest/relaypathtest.c; CORE-S5-5, #411) run their worlds on
-# the same one. It calls the peer module and nothing else; its users keep their own build options, so ranz_core_options
-# stays PRIVATE, as for corepeer.
-add_library(natsim STATIC natsim.c natsim.h)
+# the same one, with the simulated home gateway of a NAT (homegw.c; CORE-S5-6, #412), which libplum finds on the loopback
+# interfaces of the host. It calls the peer module, Winsock and IP Helper and nothing else; its users keep their own build
+# options, so ranz_core_options stays PRIVATE, as for corepeer.
+add_library(natsim STATIC natsim.c natsim.h homegw.c)
 
 target_include_directories(natsim PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}")
 
 target_link_libraries(natsim PUBLIC corepeer)
 target_link_libraries(natsim PRIVATE ranz_core_options ranz_warnings)
+target_link_libraries(natsim PRIVATE "ws2_32.lib" "iphlpapi.lib")
 
 set_target_properties(natsim
   PROPERTIES
@@ -36,8 +38,9 @@ ranz_add_executable(coretest CORE
     noise.c session.c interop.c
     # Envelopes, the relay role and the relay-first bring-up on the NAT simulator (natsim), CORE-S5-2 (#78)
     envelope.c relay.c
-    # ICE and the port mapping of home gateways, with the simulated gateway, CORE-S5-3 (#79)
-    ice.c homegw.c
+    # ICE and the port mapping of home gateways on the NAT simulator, with its simulated gateway, CORE-S5-3 (#79),
+    # CORE-S5-6 (#412)
+    ice.c
     # Port prediction and birthday punching for symmetric NAT on the NAT simulator, CORE-S5-4 (#266)
     punch.c
     # The peer sessions of the data datagrams on the NAT simulator, CORE-H2 (#399)

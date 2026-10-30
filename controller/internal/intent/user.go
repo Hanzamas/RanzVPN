@@ -67,6 +67,9 @@ type User struct {
 	// profile.go), over the one of a Group of the user. Left out, the user runs under the profile of
 	// its first Group that names one, or none.
 	SessionProfile string `json:"sessionProfile,omitempty"`
+	// Scope is the Network whose scoped roles administer the User (SDN-38, scope.go): they make it, change it and
+	// count it against their quota of users. Left out, only the global roles administer the User.
+	Scope string `json:"scope,omitempty"`
 }
 
 // Group is a named set of users. Its name is the tag.
@@ -76,6 +79,8 @@ type Group struct {
 	// SessionProfile is the SessionProfile that the devices of its members run under when a member
 	// names none of its own (SDN-40, profile.go). Left out, the group gives none.
 	SessionProfile string `json:"sessionProfile,omitempty"`
+	// Scope is the Network whose scoped roles administer the Group (SDN-38, scope.go), as for a User.
+	Scope string `json:"scope,omitempty"`
 }
 
 // DeviceRef names one device of a User: the kind and the name of a resource that has the user as its

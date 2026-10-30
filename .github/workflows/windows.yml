@@ -1749,8 +1749,11 @@ jobs:
   # bind and falls back to SeLow. Then the XDP runtime too, whose xdp.sys passes signtool verify /kp: TX inspect, RX
   # inject, LAN discovery through an L2 switch with per-VLAN broadcast limits, recovery and shutdown, the soak (an hour
   # on the nightly run of a Sunday), ranz uninstall and install after the traffic, and then the paused consumer and the
-  # benchmark of the batch sizes. Each run of vpntest has a time limit. arm64 is L3 only (no XDP runtime and no SeLow
-  # package for it): the l2adapter test of build_and_test shows that no L2 adapter is offered there.
+  # benchmark of the batch sizes. Between them, the bridge of an L2 Network (CORE-S3-3, #73: vpntest nicbridge) on the
+  # runner's NIC, on a KM-TEST adapter standing in for a Hyper-V switch and on an internal Hyper-V switch that the job
+  # makes, with SeLow, XDP, and Npcap through a stand-in of its pcap API; ranz install puts no Npcap on the machine.
+  # Each run of vpntest has a time limit. arm64 is L3 only (no XDP runtime and no SeLow package for it): the l2adapter
+  # test of build_and_test shows that no L2 adapter is offered there.
   # .github/scripts/kmtest.ps1. Then QTIP between two server node processes, each on its own KM-TEST adapter with XDP
   # (CORE-S7-2, #83): .github/scripts/qtip.ps1.
   kmtest:
