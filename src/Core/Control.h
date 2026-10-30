@@ -59,6 +59,10 @@
 #define CONTROL_MAX_ENVELOPE 1024 // The envelope of a Signal (Signal.envelope of control.options; PEER_MAX_ENVELOPE)
 #define CONTROL_MAX_SIGNALS  64   // The Signals that wait for the stream at most; the oldest goes first, as at the controller
 
+// The Paths of the peer agent of a node (CORE-S5-6, #412)
+#define CONTROL_PATH_REPORT  1000  // ms between two reports of the Upgrades and the Fallbacks of the Paths of a node, at least ...
+#define CONTROL_PATH_REFRESH 15000 // ... and at most, while they stay the same: the controller drops a counter that its node does not report again
+
 // The TLS fingerprints of the certificate of the Controller that a state names (SDN-92, #397)
 #define CONTROL_TLS_PINS     4  // The fingerprints of a state (NodeConfig.controller_tls of control.options)
 #define CONTROL_TLS_PIN_SIZE 65 // A fingerprint: 64 hex digits and the terminating NUL
@@ -473,6 +477,10 @@ typedef void(CONTROL_SIGNAL_PROC)(void *param, const char *peer, const UCHAR *en
 // The Signals that a client sends to the controller for the peers of the node (CONTROL_CONFIG.Signals), ControlSignal.c
 typedef struct CONTROL_SIGNALS CONTROL_SIGNALS;
 
+// The Upgrades and the Fallbacks of the Paths of the peer agent that a client reports to the controller (CONTROL_CONFIG.Paths;
+// CORE-S5-6, #412), ControlPath.c
+typedef struct CONTROL_PATHS CONTROL_PATHS;
+
 // The desired state that the client applied, as its owner takes it (CONTROL_STATE_PROC). The
 // Networks of the state stay in the client until a module of the node needs them: the DHCP
 // responders of the Networks are the first (SDN-43, #236). The Relays go to the peer agent of the
@@ -703,6 +711,10 @@ typedef struct CONTROL_CONFIG {
 	// client (SDN-77, #357)
 	CONTROL_PEERING_REPORT *Peering;
 
+	// The Upgrades and the Fallbacks of the Paths of the peer agent that the client reports, NULL for none: the owner's, which
+	// must outlive the client (CORE-S5-6, #412)
+	CONTROL_PATHS *Paths;
+
 	// Does the live operations of the Controller on the tables of the L2 Networks, NULL for none: the Hello then reports no
 	// Capability operations (SDN-50-N, #492) ...
 	CONTROL_OPERATION_PROC *OperationProc;
@@ -807,5 +819,16 @@ void ControlFreePeeringReport(CONTROL_PEERING_REPORT *r);
 void ControlSetPeeringReport(CONTROL_PEERING_REPORT *r, const CONTROL_PEERING_PEER *peers, UINT num, UINT64 refused);
 UINT ControlGetPeeringReport(CONTROL_PEERING_REPORT *r, CONTROL_PEERING_PEER *list, UINT max, UINT64 *refused);
 bool ControlWritePeeringReport(CONTROL_PEERING_REPORT *r, TRANSPORT_STREAM *s);
+
+// The Paths of the peer agent of a node (CORE-S5-6, #412), ControlPath.c. NewPaths makes the report that a client sends
+// (CONTROL_CONFIG.Paths), FreePaths frees it once no client uses it. SetPaths puts the Upgrades and the Fallbacks of the
+// Paths of the node since it started in place of the ones before: the client sends them in one Telemetry message after
+// each Hello once they were set, whenever they changed, at most every CONTROL_PATH_REPORT ms, and again every
+// CONTROL_PATH_REFRESH ms while they stay the same, as the controller drops a counter that its node did not report for a
+// while (5 minutes). WritePaths writes that message when it is due, as the client does on its stream.
+CONTROL_PATHS *ControlNewPaths();
+void ControlFreePaths(CONTROL_PATHS *p);
+void ControlSetPaths(CONTROL_PATHS *p, UINT64 upgrades, UINT64 fallbacks);
+bool ControlWritePaths(CONTROL_PATHS *p, TRANSPORT_STREAM *s);
 
 #endif // CORE_CONTROL_H

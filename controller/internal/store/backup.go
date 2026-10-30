@@ -55,11 +55,16 @@ func (s *Store) Backup(ctx context.Context, w io.Writer) error {
 // Restore replaces the whole store with backup, which Backup wrote, and frees the lease of the
 // leader with an epoch above epoch and above the epoch that backup holds: every lease of before
 // the restore has ended, and the member that takes the lease next loads the restored store. The
-// tables that this release has and backup lacks are created, as Open creates them. Data that is
-// not a backup is refused (CheckBackup) and changes nothing.
+// tables that this release has and backup lacks are created, as Open creates them, and the tables
+// of the Cluster key hold what they held before (clusterkey.go). Data that is not a backup is
+// refused (CheckBackup) and changes nothing.
 func (s *Store) Restore(ctx context.Context, backup []byte, epoch int64) error {
 	if err := CheckBackup(backup); err != nil {
 		return err
+	}
+	keep, err := s.ClusterKey(ctx)
+	if err != nil {
+		return fmt.Errorf("store: restore: %w", err)
 	}
 	resp, err := s.rqlite(ctx, http.MethodPost, "/db/load", "application/octet-stream", backup)
 	if err != nil {
@@ -70,6 +75,7 @@ func (s *Store) Restore(ctx context.Context, backup []byte, epoch int64) error {
 	for _, q := range schemaStatements() {
 		stmts = append(stmts, statement(q))
 	}
+	stmts = append(stmts, keep.statements()...)
 	stmts = append(stmts, statement(`UPDATE lease SET epoch = MAX(epoch, ?) + 1, renewal = renewal + 1, holder = '', address = '', fingerprint = '' WHERE id = 1`, epoch))
 	if _, err := s.conn.WriteParameterizedContext(ctx, stmts); err != nil {
 		return fmt.Errorf("store: restore: %w", err)

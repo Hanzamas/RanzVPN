@@ -49,6 +49,9 @@ type Result struct {
 	ExpiresIn   int64     `json:"expires_in,omitempty"`
 	User        string    `json:"user"`
 	Role        rbac.Role `json:"role,omitempty"`
+	// Network is the Network that the role of the user token is held for (SDN-38), left out for a role of the
+	// whole API.
+	Network string `json:"network,omitempty"`
 	// Node is the Node resource of the enrolled device, and Revision the revision of the intent that
 	// made it, or the one in force when the device was enrolled already.
 	Node     string `json:"node,omitempty"`
@@ -323,7 +326,7 @@ func (s *Server) deliver(w http.ResponseWriter, r *http.Request, g *grant) {
 		oauthError(w, statusOf(err), "server_error", err.Error())
 		return
 	}
-	reply(w, http.StatusOK, Result{AccessToken: tok.Secret, TokenType: "Bearer", ExpiresIn: max(seconds(tok.Expires.Sub(s.now())), 1), User: g.acct.Name, Role: tok.Role})
+	reply(w, http.StatusOK, Result{AccessToken: tok.Secret, TokenType: "Bearer", ExpiresIn: max(seconds(tok.Expires.Sub(s.now())), 1), User: g.acct.Name, Role: tok.Role, Network: tok.Network})
 }
 
 // deviceCode serves the device authorization endpoint: a device code for a device that asks to be
