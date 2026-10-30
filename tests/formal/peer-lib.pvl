@@ -39,9 +39,10 @@
    its source is the peer of the ICE session, and its connectivity checks are those of libjuice, which the model does
    not have.
 
-   No production code runs the peer layer yet: the only PeerNew is the relay role (NodeRelayStart), which takes binds
-   and forwards, and nothing in production calls PeerSend, PeerSealSignal, PeerOpenSignal or PeerSetRelays. The
-   answers of this model are about the code of the module and its tests.
+   Production code runs the peer layer: the relay role (NodeRelayStart) takes binds and forwards, and since CORE-S5-5
+   (#411) the peer agent of the overlay of every node (NodeAgent.c) binds to its relays (PeerSetRelays), seals and opens
+   the signals that the controller carries (PeerSealSignal, PeerOpenSignal) and sends the records of the overlay in the
+   peer session of each pair (PeerSend). The answers of this model are about that code, the code that the nodes run.
 
    A process makes its fresh values (ephemeral keys, sequences, nonces) before its first input, where the code makes
    them when it sends. A fresh value is as fresh either way; a name made after an input carries that input in
