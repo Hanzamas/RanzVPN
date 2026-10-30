@@ -30,9 +30,10 @@
 // A datagram can carry the source group of its frame (SDN-87, #386; VxlanGroup.c): its group ID, in the group policy
 // extension of VXLAN (draft-smith-vxlan-group-policy, which Linux and Open vSwitch implement), or its group ID, its tag
 // set and the group generation of its sender, in the option of the source group of Geneve, whose critical bit is clear,
-// so that a tunnel endpoint that does not know it skips it. The extension of VXLAN has no room for the group generation. VxlanSendToGroup sends a frame with one, and VxlanInput reads the one of each datagram and hands
-// it to a receiver that takes it (VxlanSetGroupReceiver). A tunnel endpoint that does not know the extension ignores its
-// bits, which RFC 7348 reserves.
+// so that a tunnel endpoint that does not know it skips it. The extension of VXLAN has no room for the group generation.
+// VxlanSendToGroup sends a frame with one, and VxlanInput reads the one of each datagram and hands it to a receiver that
+// takes it (VxlanSetGroupReceiver). A tunnel endpoint that does not know the extension ignores its bits, which RFC 7348
+// reserves.
 //
 // The VXLAN header (RFC 7348 section 5) in front of the frame in the UDP datagram:
 //   byte 0     the flags: the I flag (VXLAN_FLAG_VNI) set, the other bits zero when sent and ignored when received; the

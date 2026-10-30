@@ -9,7 +9,9 @@
 
 #include "Core/Control.h"
 
-// The record of frame version 1 of a Noise session (NodeFrameWrite, NodeFrameParse)
+// The record of frame version 1 of a Noise session (NodeFrameWrite, NodeFrameParse). No frame version is 0xFF: after the
+// VRF tag of no VRF, it marks a control record of the datagram path of the peer agent (NODE_GATEWAY_DATAGRAM; SDN-19-R1,
+// #507), which the node takes before it reads the frame version (NodeOverlayAgentDeliver)
 #define NODE_FRAME_VERSION    1    // The frame version of a record that carries the source group of its packet
 #define NODE_FRAME_HEADER     8    // Bytes of its header before its options: the VRF tag of no VRF, the version, the length of the options and two reserved bytes
 #define NODE_FRAME_CRITICAL   0x80 // The critical bit of the type of an option: a node that does not know the option drops the record
