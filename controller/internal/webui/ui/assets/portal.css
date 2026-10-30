@@ -1,0 +1,67 @@
+/* The header of the pages of the portal: the pages, and who is signed in. It is the console's navigation without
+   its Web Component, drawn by portal.js, with the same look. */
+
+header.portal {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 16px;
+  padding: 8px 16px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--line);
+}
+
+header.portal nav {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 16px;
+}
+
+header.portal ul {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+header.portal a {
+  display: inline-block;
+  padding: 6px 10px;
+  border-radius: 4px;
+  color: var(--text);
+  text-decoration: none;
+}
+
+header.portal a:hover {
+  background: var(--code-bg);
+}
+
+header.portal a[aria-current="page"] {
+  background: var(--accent);
+  color: var(--accent-text);
+}
+
+header.portal a.brand {
+  font-weight: 600;
+}
+
+header.portal .who {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted);
+}
+
+/* The command that a join token goes with, which is meant to be copied */
+
+code.command {
+  display: block;
+  margin-top: 6px;
+  padding: 6px 8px;
+  background: var(--code-bg);
+  border-radius: 4px;
+}
