@@ -25,7 +25,9 @@ import (
 // a device of that user, under -name or a name that it draws. The answer of the login holds the keys of
 // the Controller: with the host and the port of -server they become the Controller settings of the Node
 // (as ranz node controller set makes them), and the service restarts to take them, so the Node joins on
-// its next control stream. The verb needs administrator rights, as every verb of ranz node does.
+// its next control stream. A browser login checks the Controller with one call before it opens the browser,
+// as ranz login does (browserLogin), so no browser opens at a loopback address that the Controller is not on.
+// The verb needs administrator rights, as every verb of ranz node does.
 
 const nodeLoginUsage = `usage: ranz node login [-server URL] [-tls-fingerprint HEX] [-controller-dir DIR] [-device] [-name NAME]`
 

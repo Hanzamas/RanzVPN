@@ -26,7 +26,9 @@ import (
 //
 // The flags -server, -tls-fingerprint and -controller-dir are the connection flags of the CLI, with the same
 // environment variables, and a loopback address is checked as the CLI checks it (loopback.go; AUD1-DT-13,
-// #461): a login sends a password or a code, which must not reach another program of this host. A user token
+// #461): a login sends a password or a code, which must not reach another program of this host. A browser
+// login sends the user to a page where a password is typed, so it makes one call through that check before it
+// opens the browser, and opens none when the call is refused (browserLogin; AUD1-DT-19, #506). A user token
 // lasts 12 hours, and no longer than its user; ranz user role (userrole.go) gives a user its API role.
 func init() {
 	register("login", func(args []string) int { return runLogin(context.Background(), args, os.Stdin, os.Stdout, os.Stderr) })
@@ -40,6 +42,10 @@ var openBrowser = browse
 
 // loginWait bounds the wait for the user of a browser login.
 const loginWait = 5 * time.Minute
+
+// checkWait bounds the call that checks the controller before the browser opens: a program that accepts the
+// connection and says nothing must not keep ranz waiting.
+const checkWait = 30 * time.Second
 
 // signedIn is what ranz login prints when it wrote the user token to a file: the token without its
 // secret, its end, and the file.
@@ -139,8 +145,18 @@ func loginClient(server, fingerprint, controllerDir string) (*login.Client, erro
 }
 
 // browserLogin runs a browser login with the controller of c for device, or for a user token when
-// device is nil: it listens on a port of 127.0.0.1, opens the browser at the authorization page, says
-// which page that is in case no browser opens, and exchanges the code that the redirect brings.
+// device is nil: it listens on a port of 127.0.0.1, checks the controller with one call, opens the
+// browser at the authorization page, says which page that is in case no browser opens, and exchanges
+// the code that the redirect brings.
+//
+// The call comes first because the user types a password into the page that the browser shows, and a browser
+// cannot check the certificate that it is shown by its fingerprint. A Controller on a loopback address may not
+// be what answers there: it fell back to 5555, or it is stopped, and another program of this host listens on
+// 443. So ranz calls the page through the client of c (loginClient), which checks the certificate as the CLI
+// checks it for a token, with the same refusal, and it opens no browser and shows no page when that call fails
+// (AUD1-DT-19, #506). What is left is the instant between that call and the connection of the browser, in
+// which another program could take the port: the browser would show its page. The exchange of the code goes
+// through the same client, so ranz itself sends it nothing.
 func browserLogin(ctx context.Context, c *login.Client, device *login.Device, stderr io.Writer) (login.Result, error) {
 	state := rand.Text()
 	cb, err := login.ListenCallback(state)
@@ -149,7 +165,11 @@ func browserLogin(ctx context.Context, c *login.Client, device *login.Device, st
 	}
 	defer cb.Close()
 	verifier, challenge := login.NewVerifier()
-	page := c.AuthorizeURL(login.Request{RedirectURI: cb.URL(), State: state, Challenge: challenge, Device: device})
+	req := login.Request{RedirectURI: cb.URL(), State: state, Challenge: challenge, Device: device}
+	if err := checkBeforeBrowser(ctx, c, req); err != nil {
+		return login.Result{}, err
+	}
+	page := c.AuthorizeURL(req)
 	fmt.Fprintf(stderr, "Sign in on the page that opens in your browser. If none opens, open this page:\n  %s\n", page)
 	if err := openBrowser(page); err != nil {
 		fmt.Fprintf(stderr, "The browser did not open: %v\n", err)
@@ -164,6 +184,23 @@ func browserLogin(ctx context.Context, c *login.Client, device *login.Device, st
 		return login.Result{}, err
 	}
 	return c.Exchange(ctx, code, cb.URL(), verifier)
+}
+
+// checkBeforeBrowser makes the one call that a browser login makes before it opens the browser: the page of req
+// through the client of c, within checkWait. A call that is refused is told as the CLI tells it for a token: the
+// refusal of a Controller on this host (loopback.go) without the call that the HTTP client names around it,
+// or the error of the call.
+func checkBeforeBrowser(ctx context.Context, c *login.Client, req login.Request) error {
+	ctx, cancel := context.WithTimeout(ctx, checkWait)
+	defer cancel()
+	err := c.CheckAuthorize(ctx, req)
+	if err == nil {
+		return nil
+	}
+	if refusal := loopbackRefusal(err); refusal != nil {
+		err = refusal
+	}
+	return fmt.Errorf("no browser was opened: %w", err)
 }
 
 // deviceLogin runs a device code login with the controller of c for device, or for a user token when
