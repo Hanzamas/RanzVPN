@@ -69,4 +69,14 @@ typedef bool(NATSIM_TAP)(void *param, NATSIM_HOST *from, const PEER_ADDR *dst, c
 void NatSimSetTap(NATSIM *s, NATSIM_TAP *tap, void *param);
 void NatSimHold(NATSIM *s, bool hold);
 
+// The symmetric-NAT punch in the world of a carrier-grade NAT (CORE-S5-7, #413): the other subscribers of a NAT take
+// public ports between two mappings of a host, as many as a seeded draw of the NAT's generator gives, so a test is
+// reproducible for its seed; a cut loses every datagram between the public address of a NAT and that of another NAT on
+// the way, after the NAT that sent it mapped it, while the datagrams to and from the public hosts pass; and an attacker
+// on the link of a host hands it a datagram from any address, past its NAT.
+UINT NatSimTake(NATSIM *s, NATSIM_NAT *n, UINT max);
+void NatSimCut(NATSIM *s, NATSIM_NAT *n, bool cut);
+UINT NatSimCutCount(NATSIM *s);
+bool NatSimInject(NATSIM_HOST *to, const PEER_ADDR *from, const void *data, UINT size);
+
 #endif // NATSIM_H

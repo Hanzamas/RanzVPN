@@ -168,11 +168,12 @@ static bool FuzzPeerSetup()
 	PeerSend(fuzz_a, fuzz_b_key.Public, "fuzz", 4);
 
 	// B with ICE on: its offer to A starts its ICE session with A, whose agent of libjuice takes the STUN messages of
-	// an input (Core/PeerIce.c)
+	// an input (Core/PeerIce.c); and with punching on, so that a punch message of an input is opened (Core/PeerPunch.c)
 	UCHAR env[PEER_MAX_ENVELOPE];
 
 	PeerDefaultConfig(&c);
 	c.Ice = true;
+	c.Punch = true;
 	fuzz_ice = PeerNew(&fuzz_b_key, &c, FuzzPeerSend, &fuzz_ice, NULL, NULL);
 	if (fuzz_ice == NULL)
 	{

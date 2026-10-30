@@ -17,6 +17,8 @@
 #define NODE_AGENT_ICE_RETRY 20000
 // ... and at most: the delay doubles while the new sessions fail too, and is NODE_AGENT_ICE_RETRY again once one is up
 #define NODE_AGENT_ICE_RETRY_MAX 1800000
+// With punching, ms between two looks of the thread for a punch that is due (CORE-S5-7, #413)
+#define NODE_AGENT_PUNCH 1000
 
 typedef struct NODE_AGENT NODE_AGENT;
 
