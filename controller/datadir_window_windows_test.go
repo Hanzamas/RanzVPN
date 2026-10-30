@@ -11,6 +11,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"golang.org/x/sys/windows"
 )
@@ -92,11 +93,43 @@ func (w *watcher) end() int64 {
 	return w.opened.Load()
 }
 
+// openedWhileMade makes rounds new folders in parent, one after the other, each with create, while a watcher that acts as
+// a standard user tries as fast as it can to open the folder that is being made with the right to add files and folders
+// to it. It returns in how many of the rounds the watcher opened the folder, whatever the moment.
+func openedWhileMade(t *testing.T, parent, label string, rounds int, create func(string) error) int {
+	t.Helper()
+	token := standardUserToken(t)
+	defer token.Close()
+	w := watch(t, token)
+	defer w.end()
+	caught := 0
+	for i := range rounds {
+		dir := filepath.Join(parent, fmt.Sprintf("%s-%d", label, i))
+		name, err := windows.UTF16PtrFromString(dir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		w.target.Store(name)
+		before := w.opened.Load()
+		if err := create(dir); err != nil {
+			t.Fatalf("making %s: %v", dir, err)
+		}
+		if w.opened.Load() > before {
+			caught++
+		}
+	}
+	w.end()
+	return caught
+}
+
 // A user that waits for the data directory does not get it open for adding files and folders at any moment while it is
 // made, by the install or by the start of the service. The folder is made in a folder that has the access list of
 // C:\ProgramData, so a folder that is made with that list first and gets its own after is open to the Users group in
 // between, and the watcher, a thread with the token of a standard user, tries to open each new folder as fast as it can
-// while it is made, 300 times for each way of making one.
+// while it is made, 300 times for each way of making one. Two controls show that the watcher sees what it is there for:
+// a folder with the list of its folder is open to a standard user, and a folder that is made as the install made it
+// before, with the list of its folder first and its own after, is caught by the watcher when the two steps are 5 ms
+// apart, so a window that the watcher can see is a window that it does see.
 func TestNoStandardUserOpensANewDataDirWhileItIsMade(t *testing.T) {
 	requireAdministrator(t)
 	parent := filepath.Join(t.TempDir(), "ProgramData")
@@ -121,6 +154,19 @@ func TestNoStandardUserOpensANewDataDirWhileItIsMade(t *testing.T) {
 		t.Fatalf("a standard user cannot open %s, which has the security %s, for adding files and folders (%v): this test shows nothing", plain, securityOf(t, plain), opened)
 	}
 
+	// The two steps of before, 5 ms apart: the watcher must catch the folder in the moment between them
+	const controls = 20
+	twoSteps := func(dir string) error {
+		if err := os.Mkdir(dir, 0o700); err != nil {
+			return err
+		}
+		time.Sleep(5 * time.Millisecond)
+		return ownDataDir(dir)
+	}
+	if caught := openedWhileMade(t, parent, "two-steps", controls, twoSteps); caught == 0 {
+		t.Fatalf("the watcher opened none of %d folders that had the list of their folder for 5 ms: this test shows nothing", controls)
+	}
+
 	const rounds = 300
 	for _, c := range []struct {
 		name   string
@@ -130,28 +176,7 @@ func TestNoStandardUserOpensANewDataDirWhileItIsMade(t *testing.T) {
 		{"the start of the service", makeDataDir},
 	} {
 		t.Run(c.name, func(t *testing.T) {
-			token := standardUserToken(t)
-			defer token.Close()
-			w := watch(t, token)
-			defer w.end()
-			caught := 0
-			for i := range rounds {
-				dir := filepath.Join(parent, fmt.Sprintf("%s-%d", strings.ReplaceAll(c.name, " ", "-"), i))
-				name, err := windows.UTF16PtrFromString(dir)
-				if err != nil {
-					t.Fatal(err)
-				}
-				w.target.Store(name)
-				before := w.opened.Load()
-				if err := c.create(dir); err != nil {
-					t.Fatalf("making %s: %v", dir, err)
-				}
-				if w.opened.Load() > before {
-					caught++
-				}
-			}
-			w.end()
-			if caught > 0 {
+			if caught := openedWhileMade(t, parent, strings.ReplaceAll(c.name, " ", "-"), rounds, c.create); caught > 0 {
 				t.Errorf("a standard user opened the new data directory for adding files and folders while %s made it, in %d of %d rounds: the folder had the access list of its folder before its own", c.name, caught, rounds)
 			}
 		})

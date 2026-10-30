@@ -136,10 +136,11 @@ func checkDataDirOwner(dir string) error {
 	return nil
 }
 
-// ownDataDir makes the Administrators the owner of the data directory dir and gives it the protected
-// access list of dataDirSDDL, which the files and folders in it inherit.
-func ownDataDir(dir string) error {
-	sd, err := windows.SecurityDescriptorFromString(installDataDirSDDL)
+// setDataDirSecurity sets the security that the text sddl gives to the folder dir, which is there: its protected
+// access list and, when the text names one, its owner. SetNamedSecurityInfo passes the list down to what the folder
+// holds, as an access list that is set on a folder with files in it must.
+func setDataDirSecurity(dir, sddl string) error {
+	sd, err := windows.SecurityDescriptorFromString(sddl)
 	if err != nil {
 		return fmt.Errorf("data directory ACL: %w", err)
 	}
@@ -151,13 +152,20 @@ func ownDataDir(dir string) error {
 	if err != nil {
 		return fmt.Errorf("data directory ACL: %w", err)
 	}
-	err = windows.SetNamedSecurityInfo(dir, windows.SE_FILE_OBJECT,
-		windows.OWNER_SECURITY_INFORMATION|windows.DACL_SECURITY_INFORMATION|windows.PROTECTED_DACL_SECURITY_INFORMATION,
-		owner, nil, dacl, nil)
-	if err != nil {
+	info := windows.SECURITY_INFORMATION(windows.DACL_SECURITY_INFORMATION | windows.PROTECTED_DACL_SECURITY_INFORMATION)
+	if owner != nil {
+		info |= windows.OWNER_SECURITY_INFORMATION
+	}
+	if err := windows.SetNamedSecurityInfo(dir, windows.SE_FILE_OBJECT, info, owner, nil, dacl, nil); err != nil {
 		return fmt.Errorf("the owner and the access list of the data directory %s: %w", dir, err)
 	}
 	return nil
+}
+
+// ownDataDir makes the Administrators the owner of the data directory dir and gives it the protected
+// access list of dataDirSDDL, which the files and folders in it inherit.
+func ownDataDir(dir string) error {
+	return setDataDirSecurity(dir, installDataDirSDDL)
 }
 
 // makeProtectedDir makes the folder dir, which is not there, with the security that sddl gives it, its owner
@@ -169,6 +177,11 @@ func ownDataDir(dir string) error {
 // The call fails when the name was taken meanwhile, so that a directory that somebody else made in that
 // moment is never taken for the one that this call made. A volume that keeps no access lists, such as a FAT
 // drive, takes the folder and ignores the descriptor: the folder is removed again, and the error says so.
+//
+// The same list is set once more, with SetNamedSecurityInfo, which is how every later change of the list is made
+// (the install over the folder): it gives the folder the state that a list that was set by it has, in which the files
+// and folders made in the folder take the list as entries that came from it, and a change of the list reaches them.
+// The folder has the list at every moment, so this changes nothing that a handle could use.
 func makeProtectedDir(dir, sddl string) error {
 	sd, err := windows.SecurityDescriptorFromString(sddl)
 	if err != nil {
@@ -183,6 +196,10 @@ func makeProtectedDir(dir, sddl string) error {
 		return &fs.PathError{Op: "mkdir", Path: dir, Err: err}
 	}
 	if _, err := dataDirOwner(dir); err != nil {
+		_ = os.Remove(dir)
+		return err
+	}
+	if err := setDataDirSecurity(dir, sddl); err != nil {
 		_ = os.Remove(dir)
 		return err
 	}

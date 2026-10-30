@@ -1,0 +1,51 @@
+# A throwaway experiment of AUD1-DT-18 (#503), removed once its numbers are in the pull request. The head 91649abd made the
+# data directory of the Controller with CreateDirectory and a security descriptor, and a file that the Controller then made
+# in it did not take the Users group from its folder when the test gave the folder a list with that group in it (the step
+# Test of ranz (Windows x64), TestReadFingerprintTakesTheFilesOfTheInstallAndTheService). A folder that is made with Mkdir and
+# SetNamedSecurityInfo does. The test TestExp503Inheritance of controller/exp503_windows_test.go prints the owner and the
+# access list of the folder, of a file and of a folder in it after each step, for five ways of making the folder, and
+# TestExp503Window counts how often a thread with the token of a standard user opens a new folder for adding files and folders
+# while it is made, for the way of before and for the new ways.
+#
+# It runs when this file changes in a push to the branch of #503, and tests only the experiment.
+
+name: exp-datadir-sd
+
+on:
+  push:
+    branches:
+    - aud/503-data-dir-window
+    paths:
+    - '.github/workflows/exp-datadir-sd.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  experiment:
+    name: ${{ matrix.arch }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+        - arch: x64
+          runner: windows-latest
+        - arch: arm64
+          runner: windows-11-arm
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    env:
+      # The Go code builds without cgo; the gcc of the arm64 runner builds x64 code only
+      CGO_ENABLED: '0'
+      RANZ_EXP503: '1'
+    steps:
+    - uses: actions/checkout@v4
+    - uses: actions/setup-go@v5
+      with:
+        go-version: '1.27.3'
+        cache-dependency-path: go.sum
+    - name: The access lists of a data directory that is made in five ways
+      shell: pwsh
+      run: |
+        go test -count=1 -v -run '^TestExp503' ./controller
+        if ($LASTEXITCODE -ne 0) { throw "go test exited with code $LASTEXITCODE" }
