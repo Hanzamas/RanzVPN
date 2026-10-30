@@ -51,9 +51,16 @@ var (
 	shortID2  = []byte{9, 10, 11, 12, 13, 14, 15, 16}
 )
 
-// newMimicHarness returns a harness whose controller draws the short ids of the mimic servers from counting.
-func newMimicHarness(t *testing.T) *harness {
-	h := &harness{t: t, rq: rqlitetest.Fresh(t), random: new(counting)}
+// newMimicHarness returns a harness whose controller draws the short ids of the mimic servers from counting, and the clock that it
+// runs on, which starts now and which a test moves. The controller applies one change of the keys of a Node in
+// controller.PinsInterval (AUD1-DT-20), by that clock, so a test whose Node changes its keys a second time moves the clock by the
+// interval first. The controller looks at the reports that wait every 10 ms.
+func newMimicHarness(t *testing.T) (*harness, *keyClock) {
+	clk := &keyClock{now: time.Now().UTC().Truncate(time.Millisecond)}
+	h := &harness{t: t, rq: rqlitetest.Fresh(t), random: new(counting), tune: func(c *controller.Config) {
+		c.Now = clk.Now
+		c.KeyCheck = 10 * time.Millisecond
+	}}
 	var err error
 	if h.key, err = keys.GenerateSoft(); err != nil {
 		t.Fatal(err)
@@ -63,7 +70,7 @@ func newMimicHarness(t *testing.T) *harness {
 	}
 	h.start()
 	t.Cleanup(h.stop)
-	return h
+	return h, clk
 }
 
 // mimicInput is what the controller keeps for the mimic server hub: its short id and the public key that its Node reported.
@@ -127,19 +134,21 @@ func (h *harness) checkMimicState(s *sim, m desired.Mimic) {
 }
 
 // mimicNet is the network of mimic.json with its four Nodes connected: hub, the mimic server, gw-1 and gw-2, which share VRF corp
-// with it, and lab-1, which shares none.
+// with it, and lab-1, which shares none. clk is the clock of its controller (newMimicHarness).
 type mimicNet struct {
 	h                  *harness
+	clk                *keyClock
 	gw1, gw2, hub, lab *sim
 }
 
 // startMimicNet applies mimic.json, connects the four Nodes, has hub report mimicKey1, and takes the updates that they applied.
-// Then gw-1 and gw-2 are at generation 2, which gave each its link, and hub and lab-1 at generation 1.
+// Then gw-1 and gw-2 are at generation 2, which gave each its link, and hub and lab-1 at generation 1. The report of hub started
+// its interval (controller.PinsInterval) at the time of the clock that the net holds.
 func startMimicNet(t *testing.T) *mimicNet {
 	t.Helper()
-	h := newMimicHarness(t)
+	h, clk := newMimicHarness(t)
 	h.apply("mimic.json")
-	n := &mimicNet{h: h, gw1: h.sim("gw-1", keyBranch1), gw2: h.sim("gw-2", keyRelay1), hub: h.sim("hub", keyBranch2), lab: h.sim("lab-1", keyLab1)}
+	n := &mimicNet{h: h, clk: clk, gw1: h.sim("gw-1", keyBranch1), gw2: h.sim("gw-2", keyRelay1), hub: h.sim("hub", keyBranch2), lab: h.sim("lab-1", keyLab1)}
 	for _, s := range []*sim{n.gw1, n.gw2, n.hub, n.lab} {
 		s.update(t)
 	}
@@ -158,7 +167,7 @@ func startMimicNet(t *testing.T) *mimicNet {
 // and the short id, and no other Node gets a Generation. A mimic part of a state holds no private key: no message has a field for one.
 func TestMimicServerAndClientsGetTheirState(t *testing.T) {
 	ctx := context.Background()
-	h := newMimicHarness(t)
+	h, clk := newMimicHarness(t)
 	res := h.apply("mimic.json")
 	if want := []controller.NodeGeneration{{Name: "gw-1", Generation: 1}, {Name: "gw-2", Generation: 1}, {Name: "hub", Generation: 1}, {Name: "lab-1", Generation: 1}}; !equalGenerations(res.Nodes, want) {
 		t.Errorf("mimic.json changed %+v, want %+v", res.Nodes, want)
@@ -233,7 +242,9 @@ func TestMimicServerAndClientsGetTheirState(t *testing.T) {
 	}
 
 	// A report replaces the one before: one that holds no key, as a Node that has none sends, takes the key away and with it the
-	// links, and the Node stays connected; the key reported again gives them back
+	// links, and the Node stays connected; the key reported again gives them back. Each is a change of the keys of hub, which the
+	// controller applies once in controller.PinsInterval, so the clock moves by that between them.
+	clk.Advance(controller.PinsInterval)
 	if err := hub.ReportKeys(nil); err != nil {
 		t.Fatal(err)
 	}
@@ -243,6 +254,7 @@ func TestMimicServerAndClientsGetTheirState(t *testing.T) {
 		}
 	}
 	h.settle(map[string]uint64{"gw-1": 3, "gw-2": 3, "hub": 1, "lab-1": 1})
+	clk.Advance(controller.PinsInterval)
 	if err := hub.ReportKeys(&controlpb.Pins{MimicKey: mimicKey1}); err != nil {
 		t.Fatal(err)
 	}
@@ -265,7 +277,9 @@ func TestMimicChangesReachTheServerAndItsClientsOnly(t *testing.T) {
 	n := startMimicNet(t)
 	h := n.h
 
-	// A new key: the links of gw-1 and gw-2 hold it, and hub has no new Generation, since its state holds no key
+	// A new key, an interval after the first report of hub (controller.PinsInterval): the links of gw-1 and gw-2 hold it, and hub
+	// has no new Generation, since its state holds no key
+	n.clk.Advance(controller.PinsInterval)
 	if err := n.hub.ReportKeys(&controlpb.Pins{MimicKey: mimicKey2}); err != nil {
 		t.Fatal(err)
 	}
@@ -527,7 +541,9 @@ func TestMimicKeyOfANodeThatIsNoServer(t *testing.T) {
 	}
 	h.settle(map[string]uint64{"gw-1": 3, "gw-2": 3, "hub": 2, "lab-1": 1})
 
-	// The report is kept, and nobody gets a Generation for it
+	// The report is kept, and nobody gets a Generation for it. It comes an interval after the first report of hub
+	// (controller.PinsInterval), so the controller applies it at once.
+	n.clk.Advance(controller.PinsInterval)
 	if err := n.hub.ReportKeys(&controlpb.Pins{MimicKey: mimicKey2}); err != nil {
 		t.Fatal(err)
 	}
@@ -611,7 +627,7 @@ func TestMimicShortIDAndKeySurviveARestart(t *testing.T) {
 // TestMimicRefusesAKeyThatIsNoKey is the seventh criterion of SDN-94 at the controller: the report of a node holds the public
 // key only, 32 bytes or none; a node that reports a key of another size has its stream ended with the reason PROTOCOL.
 func TestMimicRefusesAKeyThatIsNoKey(t *testing.T) {
-	h := newMimicHarness(t)
+	h, _ := newMimicHarness(t)
 	h.apply("mimic.json")
 	hub := h.sim("hub", keyBranch2)
 	hub.update(t)
@@ -625,7 +641,7 @@ func TestMimicRefusesAKeyThatIsNoKey(t *testing.T) {
 // TestMimicRefusesANodeThatWouldHaveTooManyLinks: a Node takes 8 links at most, and an apply that gives one more is refused with
 // the name of the Node, whether or not any key was reported, and the intent stays as it was.
 func TestMimicRefusesANodeThatWouldHaveTooManyLinks(t *testing.T) {
-	h := newMimicHarness(t)
+	h, _ := newMimicHarness(t)
 	h.apply("mimic.json")
 	before := h.resources()
 

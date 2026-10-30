@@ -45,7 +45,8 @@ import (
 // Config.KeyCheck, and again at every change that it commits. At each look it also says what comes before it does, with an
 // Event for a Node that waits, for a key that is to end and for a key that ended (keyevents.go; SDN-56-R1).
 
-// DefaultKeyCheck is how often the controller looks for keys that ended, when Config.KeyCheck is 0.
+// DefaultKeyCheck is how often the controller looks for keys that ended, and for reports of Pins that wait for their interval
+// (mimic.go), when Config.KeyCheck is 0.
 const DefaultKeyCheck = 10 * time.Second
 
 // The states of the key of a Node, as NodeKeyInfo says them.
@@ -160,7 +161,8 @@ func (c *Controller) stopKeys() {
 }
 
 // sweepKeys is one look at the lives of the keys: a Node whose key ended since the last look is left out of the desired
-// states of the others and its stream is refused, and a life that the store did not take at its change is written again.
+// states of the others and its stream is refused, and a life that the store did not take at its change is written again. The
+// look also applies the reports of Pins that waited for the end of their interval (flushPins; AUD1-DT-20).
 func (c *Controller) sweepKeys() {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -172,6 +174,7 @@ func (c *Controller) sweepKeys() {
 	if err := c.reconcileKeys(ctx); err != nil {
 		c.log.Error("applying the lives of the node keys", "err", err)
 	}
+	c.flushPins()
 }
 
 // reconcileKeys brings the lives of the keys and the desired states in line with the clock: it writes the lives that the
