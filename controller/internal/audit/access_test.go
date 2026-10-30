@@ -66,6 +66,98 @@ func TestAccessIsRecordedOnceAMinuteForEachTokenAndRead(t *testing.T) {
 	}
 }
 
+// A HEAD of a thing is the same read as a GET of it (AUD1-DT-19, #506): an actor that reads the audit log and the
+// licence with both leaves one record for each of the two things in a minute, the one of its first call, whichever
+// method that was. Another actor and another thing are not held back by it, and after the minute the read is
+// recorded again, once.
+func TestAHeadIsTheSameReadAsAGet(t *testing.T) {
+	s := &memStore{}
+	l := NewLog(s, nil)
+	now := time.Unix(1760000000, 0)
+	l.now = func() time.Time { return now }
+	read := func(actor, action string) {
+		t.Helper()
+		if err := l.Record(context.Background(), Record{Kind: Access, Outcome: Success, Actor: actor, Action: action}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	stored := func() []string {
+		var out []string
+		for _, r := range s.all() {
+			out = append(out, r.Actor+" "+r.Action)
+		}
+		return out
+	}
+
+	read("token:viewer", "GET /api/v1/audit")
+	read("token:viewer", "HEAD /api/v1/audit")
+	read("token:viewer", "HEAD /api/v1/licence")
+	read("token:viewer", "GET /api/v1/licence")
+	want := []string{"token:viewer GET /api/v1/audit", "token:viewer HEAD /api/v1/licence"}
+	if got := stored(); !slices.Equal(got, want) {
+		t.Fatalf("the log holds %q, want the first read of each thing: %q", got, want)
+	}
+
+	// Another actor reads the same thing, and the same actor reads a thing that it did not read yet
+	read("token:other", "HEAD /api/v1/audit")
+	read("token:viewer", "HEAD /api/v1/tokens")
+	read("token:viewer", "GET /api/v1/tokens")
+	want = append(want, "token:other HEAD /api/v1/audit", "token:viewer HEAD /api/v1/tokens")
+	if got := stored(); !slices.Equal(got, want) {
+		t.Fatalf("the log holds %q, want %q", got, want)
+	}
+
+	// A minute after the first read the audit log is recorded again, once, by the first call of the minute
+	now = now.Add(accessEvery)
+	read("token:viewer", "HEAD /api/v1/audit")
+	read("token:viewer", "GET /api/v1/audit")
+	want = append(want, "token:viewer HEAD /api/v1/audit")
+	if got := stored(); !slices.Equal(got, want) {
+		t.Errorf("the log holds %q after the minute, want %q", got, want)
+	}
+}
+
+// What a read is, for the throttle: the path of its action, and an action with no method is its own read.
+func TestReadOf(t *testing.T) {
+	for action, want := range map[string]string{
+		"GET /api/v1/audit":  "/api/v1/audit",
+		"HEAD /api/v1/audit": "/api/v1/audit",
+		"/api/v1/audit":      "/api/v1/audit",
+		"GET":                "GET",
+		"":                   "",
+	} {
+		if got := readOf(action); got != want {
+			t.Errorf("readOf(%q) = %q, want %q", action, got, want)
+		}
+	}
+}
+
+// The claim that a caller that polls cannot push the records of changes out of the retention policy holds for a
+// viewer, who reads two of the three things that are recorded: with a GET and a HEAD of each, polled every few
+// seconds, it leaves two records a minute, which is a little over a million a year and under the 2,000,000 of the
+// default retention. With the method in the key it left four a minute, over two million a year (AUD1-DT-19, #506).
+func TestOneViewerThatPollsLeavesTwoRecordsAMinute(t *testing.T) {
+	s := &memStore{}
+	l := NewLog(s, nil)
+	start := time.Unix(1760000000, 0)
+	now := start
+	l.now = func() time.Time { return now }
+	for ; now.Before(start.Add(time.Hour)); now = now.Add(5 * time.Second) {
+		for _, action := range []string{"GET /api/v1/audit", "HEAD /api/v1/audit", "GET /api/v1/licence", "HEAD /api/v1/licence"} {
+			if err := l.Record(context.Background(), Record{Kind: Access, Outcome: Success, Actor: "token:viewer", Action: action}); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	perHour := len(s.all())
+	if perHour != 2*60 {
+		t.Fatalf("a viewer that polled for an hour left %d records, want 2 a minute, 120", perHour)
+	}
+	if perYear := perHour * 24 * 365; perYear >= DefaultRetention.MaxRecords {
+		t.Errorf("a viewer that polls leaves %d records a year, which the default retention of %d records does not hold", perYear, DefaultRetention.MaxRecords)
+	}
+}
+
 // A read that was dropped is no failure of the caller: Record gives no error for it.
 func TestAReadThatIsHeldBackIsNoError(t *testing.T) {
 	l := NewLog(&memStore{}, nil)
