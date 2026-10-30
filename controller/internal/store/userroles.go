@@ -80,12 +80,14 @@ func (s *Store) DeleteUserRole(ctx context.Context, name string) (bool, error) {
 	return len(wrs) == 2 && wrs[1].RowsAffected > 0, nil
 }
 
-// DeleteUserRoles deletes the API roles and the user tokens of the users names, in one transaction. A
-// user that has none is no error.
+// DeleteUserRoles deletes the API roles and the user tokens of the users names, and with them what the
+// portal gave them (SDN-58): the tokens of their self scope and their join tokens, in one transaction. A
+// user that has none is no error. The controller calls it for the users that a change of the intent removes.
 func (s *Store) DeleteUserRoles(ctx context.Context, names []string) error {
 	var stmts []gorqlite.ParameterizedStatement
 	for _, name := range names {
-		stmts = append(stmts, statement(`DELETE FROM user_tokens WHERE name = ?`, name), statement(`DELETE FROM user_roles WHERE name = ?`, name))
+		stmts = append(stmts, statement(`DELETE FROM user_tokens WHERE name = ?`, name), statement(`DELETE FROM user_roles WHERE name = ?`, name),
+			statement(`DELETE FROM self_tokens WHERE name = ?`, name), statement(`DELETE FROM join_tokens WHERE owner = ?`, name))
 	}
 	if len(stmts) == 0 {
 		return nil

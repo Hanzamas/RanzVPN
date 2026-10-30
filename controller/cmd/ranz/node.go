@@ -21,6 +21,8 @@ import (
 //	ranz node state [-o json|table]                            what it does now (nodestate.go; SDN-91)
 //	ranz node login [-device] [-name NAME]                     enrol it as a device of the user who signs in
 //	                                                           (nodelogin.go; SDN-32)
+//	ranz node join [-token-file FILE] [-name NAME]             enrol it with a join token that a user made in the
+//	                                                           portal (nodejoin.go; SDN-58)
 //
 // The Node service ranzvpnserver does the work. It answers one command a line on its admin pipe,
 // which only SYSTEM, the Administrators and the service itself may open, so the verbs need
@@ -78,6 +80,7 @@ const nodeUsage = `usage:
   ranz node key
   ranz node state [-o json|table]
   ranz node login [-server URL] [-tls-fingerprint HEX] [-controller-dir DIR] [-device] [-name NAME]
+  ranz node join [-server URL] [-tls-fingerprint HEX] [-controller-dir DIR] [-token-file FILE] [-name NAME]
 <host:port>, <key> and <fingerprint> are the TLS port, publicKey and tlsFingerprint of ranz status on the Controller.`
 
 func runNode(args []string, stdout, stderr io.Writer, agent nodeAgent) int {
@@ -100,6 +103,9 @@ func runNode(args []string, stdout, stderr io.Writer, agent nodeAgent) int {
 	case len(args) >= 1 && args[0] == "login":
 		// The enrolment of this Node by a login of its user (nodelogin.go; SDN-32)
 		return nodeLogin(context.Background(), args[1:], stdout, stderr, agent)
+	case len(args) >= 1 && args[0] == "join":
+		// The enrolment of this Node with a join token of its user's portal (nodejoin.go; SDN-58)
+		return nodeJoin(context.Background(), args[1:], os.Stdin, stdout, stderr, agent)
 	case len(args) == 1 && (args[0] == "-h" || args[0] == "-help" || args[0] == "--help"):
 		fmt.Fprintln(stdout, nodeUsage)
 		return 0

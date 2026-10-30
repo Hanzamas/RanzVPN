@@ -34,7 +34,7 @@ ranz device create -network lab-net -gateway gw -tags phones -o phone.conf -qr p
 
 That writes the configuration to `phone.conf`, readable by its owner only, and draws the QR code on the terminal. With `-qr-file phone.png` it writes the QR code as a PNG file, and without `-o` it prints the configuration on standard output.
 
-A Device can have an owner, a User (`-owner alice`, the field Owner of the form). It then carries the groups of the User as tags, besides its own, and it counts against the maximum devices of the User. A standalone Device, for example a router, has no owner and takes the tags that you set on it (`-tags`).
+A Device can have an owner, a User (`-owner alice`, the field Owner of the form). It then carries the groups of the User as tags, besides its own, and it counts against the maximum devices of the User. The owner sees the Device on the page My devices of the portal (`/portal`), with the last handshake that its gateway reported, and can remove it there; making a Device is still the work of an administrator. A standalone Device, for example a router, has no owner and takes the tags that you set on it (`-tags`).
 
 ### A router, or your own key
 
