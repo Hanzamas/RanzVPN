@@ -113,10 +113,20 @@
 // as its only peer in the VRF, with the prefixes of the VRF as routes of the hub, and the hub sends
 // the traffic of one spoke on to another. A node gets the LAN subnets behind it in its NodeConfig
 // (NodeConfig.lan_subnets) and the ones of each gateway that shares a VRF with it as routes of that
-// Peer; when several gateways announce one prefix, the node picks a healthy one from its own probes
-// inside their Noise sessions and from the controller's health data (Peer.down), or one of the
-// healthy ones by the hash of each flow when the VRF spreads them (Vrf.ecmp). No schema version
-// changes with them: a node of an older release skips the fields it does not know.
+// Peer; when several gateways announce one prefix, the node picks a healthy one from its own probes,
+// inside their Noise sessions or on the datagram path of its peer agent (SDN-19-R1, #507), and from
+// the controller's health data (Peer.down), or one of the healthy ones by the hash of each flow when
+// the VRF spreads them (Vrf.ecmp). No schema version changes with them: a node of an older release
+// skips the fields it does not know.
+//
+// A Peer carries 16 routes at most (control.options), so a spoke reaches 16 prefixes at most through
+// its hub, its only peer in the VRF (SDN-19-R1, #507): the pools of the L3 Networks of the VRF, the
+// LAN subnets of the hub and of the other spokes and the outside prefixes of their 1:1 NAT rules,
+// besides the routes of the other VRFs that the spoke shares with the hub and of the leaks. A VRF of
+// one L3 Network with an IPv4 and an IPv6 pool and no 1:1 NAT rule so leaves 14 routes for the LAN
+// subnets that a spoke reaches through the hub: it holds 15 spokes of one LAN subnet each, or 14 when
+// the hub has a LAN subnet too, and the controller refuses an intent with one more (MaxPeerRoutes,
+// controller/internal/intent/leak.go).
 //
 // Egress (SDN-12 #188, ADR-0025 decision 13): the node that is the internet exit of a VRF gets the
 // id of the VRF in its NodeConfig (NodeConfig.egress_vrf_ids), and every other node of the VRF gets

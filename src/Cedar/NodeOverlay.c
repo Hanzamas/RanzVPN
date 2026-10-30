@@ -697,6 +697,10 @@ void NodeOverlayAgentDeliver(NODE *n, const UCHAR *key, const UCHAR *record, UIN
 
 	if (ov == NULL || key == NULL)
 		return;
+	// A probe of gateway HA or its answer, which the datagram path carries in place of a Noise session (NodeGateway.c;
+	// SDN-19-R1, #507)
+	if (NodeGatewayDatagram(n, key, record, size))
+		return;
 
 	for (UINT i = 0; v != NULL && i < v->NumHops; i++) {
 		NODE_OVERLAY_PEER *p = (NODE_OVERLAY_PEER *)v->Hops[i];
@@ -1228,9 +1232,9 @@ bool NodeOverlaySendControl(NODE *n, void *peer, const UCHAR *data, UINT size) {
 }
 
 // Send the data record of size bytes, the VRF id and then an IP packet, to the next hop hop of the tables v, over its
-// session or its link of kind vxlan or geneve: the packet of one spoke that the hub of their VRF sends on to another
-// (NodeGateway.c; SDN-19, #195). False when it went nowhere. The caller is an online reader of the node's table snapshot,
-// which holds v.
+// session, its link of kind vxlan or geneve, or the datagram path of the peer agent while it has no session (SDN-19-R1,
+// #507): the packet of one spoke that the hub of their VRF sends on to another (NodeGateway.c; SDN-19, #195). False when
+// it went nowhere. The caller is an online reader of the node's table snapshot, which holds v.
 bool NodeOverlaySendRecord(NODE *n, NODE_VRF_TABLES *v, UINT hop, const UCHAR *record, UINT size) {
 	if (n == NULL || n->Overlay == NULL || v == NULL || hop >= v->NumHops || record == NULL || size < NODE_OVERLAY_VRF_TAG)
 		return false;
@@ -1242,6 +1246,10 @@ bool NodeOverlaySendRecord(NODE *n, NODE_VRF_TABLES *v, UINT hop, const UCHAR *r
 	bool plain = (NodeLinkKind(v, hop, READ_UINT(record)) != CONTROL_LINK_NOISE);
 	bool ok = (plain ? NodeLinkSend(v, hop, record, size - NODE_OVERLAY_VRF_TAG) : (s != NULL && TransportNoiseSend(s, NOISE_RECORD_DATA, record, size)));
 	InterlockedDecrement(&peer->Senders);
+
+	// The datagram path of the peer agent carries it to a peer that has no Noise session (NodeAgent.c; SDN-19-R1, #507)
+	if (plain == false && s == NULL)
+		ok = NodeAgentSend(n, peer->Key, record, size);
 
 	return ok;
 }

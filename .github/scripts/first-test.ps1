@@ -535,6 +535,17 @@ try {
 		# (the log writer quotes a value that holds an equals sign, as a base64 key does)
 		$log = Get-Content -LiteralPath (Join-Path $controllerData 'controller.log') -Raw
 		if ($log -notmatch ('publicKey="?' + [regex]::Escape($status.publicKey) + '"?') -or $log -notmatch ('tlsFingerprint="?' + [regex]::Escape($status.tlsFingerprint) + '"?')) { throw 'controller.log does not name the key and the fingerprint that ranz status prints' }
+		# ranz took the file that the Controller wrote to its data directory to check the certificate of the call above
+		# (AUD1-DT-14, #496). It takes it because SYSTEM, the Administrators or the account of the service own it and no other
+		# account has a rule that writes it, so no other account can have put its own key there
+		$fingerprintFile = Join-Path $controllerData 'tls.fingerprint'
+		$fingerprintOwner = (Get-Acl -LiteralPath $fingerprintFile).Owner
+		if (@('BUILTIN\Administrators', 'NT AUTHORITY\SYSTEM', "NT SERVICE\$controllerService") -notcontains $fingerprintOwner) { throw "tls.fingerprint is owned by $fingerprintOwner, not by SYSTEM, the Administrators or the account of the service" }
+		$fingerprintRules = @((Get-Acl -LiteralPath $fingerprintFile).Access | ForEach-Object { $_.IdentityReference.Value } | Sort-Object -Unique)
+		$strangers = @($fingerprintRules | Where-Object { @('BUILTIN\Administrators', 'NT AUTHORITY\SYSTEM', 'OWNER RIGHTS', 'S-1-3-4', "NT SERVICE\$controllerService") -notcontains $_ })
+		if ($strangers.Count -gt 0) { throw "the access list of tls.fingerprint has rules for $($strangers -join ', ')" }
+		if ((Get-Content -LiteralPath $fingerprintFile -Raw).Trim() -ne $status.tlsFingerprint) { throw "tls.fingerprint does not hold the fingerprint that ranz status prints, $($status.tlsFingerprint)" }
+		Write-Host "tls.fingerprint: owned by $fingerprintOwner, with rules for $($fingerprintRules -join ', ') only, and ranz takes it"
 		$values['FINGERPRINT'] = $status.tlsFingerprint
 		$values['CONTROLLER-KEY'] = $status.publicKey
 		$values['PORT'] = [string] $status.capabilities.tlsPort

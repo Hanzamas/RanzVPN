@@ -147,8 +147,12 @@ src/Cedar  NodeDhcpInput  fuzz_nodedhcp
 # The gateway HA of the Node (SDN-19 #195) reads the control records that a peer sends on its Noise session as a probe or
 # its answer, and the IP packets of the host whose flow hash picks the gateway of a flow. NodeGatewayFlowHash has no parser
 # word in its name, listed as the reader of packets that it is; NodeGatewayControl hands a record to NodeGatewayParseProbe.
-src/Cedar  NodeGatewayParseProbe  fuzz_gateway
-src/Cedar  NodeGatewayFlowHash    fuzz_gateway
+# The records of the datagram path of the peer agent carry a probe or its answer behind the VRF tag of no VRF (SDN-19-R1
+# #507): NodeGatewayDatagram hands each record to NodeGatewayParseDatagram, which reads that header and hands the rest to
+# NodeGatewayParseProbe.
+src/Cedar  NodeGatewayParseProbe     fuzz_gateway
+src/Cedar  NodeGatewayParseDatagram  fuzz_gateway
+src/Cedar  NodeGatewayFlowHash       fuzz_gateway
 # The stub resolver of overlay DNS (SDN-11 #187) reads the DNS queries that reach UDP port 53 of the node's addresses in a
 # VRF. No parser word in the name, listed as the parser it is
 src/Cedar  NodeDnsAnswer  fuzz_nodedns
@@ -172,6 +176,9 @@ src/Cedar  NodeEgressEchoReply  fuzz_egress
 src/Cedar  NodeEgressRefuses    fuzz_egress
 src/Cedar  NodeEgressDeliver    exempt  reads the version and the destination of a packet of a peer only once it holds the 20 bytes of an IPv4 header, then hands it to NodeEgressParse (fuzz_egress) and the copy that goes to the host to NodeEgressRewrite (fuzz_egress)
 src/Cedar  NodeEgressFromHost   exempt  a packet of the host's own IP stack, which it hands to NodeEgressParse (fuzz_egress) and, when it answers a flow of the proxy, to NodeEgressRewrite (fuzz_egress); it reads no byte that NodeEgressParse did not check
+# The bridge of the L2 adapter (CORE-S3-3 #73) looks at each frame of the wire that its XDP backend takes: no parser word in the
+# name, listed as the reader of the bytes of the LAN that it is
+src/Cedar  NodeL2BridgeWay  exempt  compares the first six bytes of a frame, its destination MAC address, with the address of the NIC and tests their group bit; it reads no length and no field beyond them, and a frame shorter than six bytes is not read
 
 # The control stream and the envelopes of the controller (SDN-2 #178, control.proto)
 controller/internal/control  Open                  FuzzOpen
@@ -294,8 +301,11 @@ controller/internal/servercert  ParseSetting  FuzzParseSetting
 controller/internal/servercert  Manager.Load  FuzzLoadPEM  via loadPEM
 
 # The file of the data directory that holds the TLS fingerprint of the certificate in use (AUD1-DT-13 #461), which ranz on
-# the same host reads before it sends a token to a loopback address: the Controller wrote it itself, or someone replaced it
-controller/internal/servercert  ReadFingerprint  FuzzReadFingerprint  via parseFingerprint
+# the same host reads before it sends a token to a loopback address: the Controller wrote it itself, or someone replaced it.
+# On Windows ranz opens it itself, checks who may have written it and reads it through that handle (AUD1-DT-14 #496).
+controller/internal/servercert  ReadFingerprint      FuzzReadFingerprint  via parseFingerprint
+controller/internal/servercert  ReadFingerprintFile  FuzzReadFingerprint  via parseFingerprint
+controller  ReadFingerprint  exempt  checks who owns and may write the fingerprint file of a data directory of this host and its folder, then reads the file with servercert.ReadFingerprintFile, whose parser FuzzReadFingerprint drives
 
 # The traffic test of `ranz test throughput` (SDN-53 #246): what a peer sends to a test server (the request, and the frames
 # of an upload) and to a test client (the frames of a download, the report of an upload)
