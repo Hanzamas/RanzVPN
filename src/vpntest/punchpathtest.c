@@ -26,8 +26,9 @@
 // c. Limits: the path between the NATs is cut. The Node that offers the pair sends a punch offer, the other takes it and
 //    answers, and both probe; each attempt spends its budget and fails, within the rate per second and the budget per
 //    attempt. A captured probe of node-b that an attacker sends from its own address moves node-a to no direct path there,
-//    and a probe of a node that is no peer is dropped and counted. After the attempts that met nothing the pair stays on
-//    relay-1 until the backoff ends, its traffic going on in the same peer session.
+//    the same probe with a byte of its tag changed is dropped as forged and counted, and a probe of a node that is no peer
+//    is dropped and counted. After the attempts that met nothing the pair stays on relay-1 until the backoff ends, its
+//    traffic going on in the same peer session.
 // d. The punch: the cut is lifted before the backoff ends, and the attempt after it meets: both ends move to the direct
 //    path, in the same peer session, at the mapping of the peer that proved itself; relay-1 carries no data of the pair
 //    after the move.
@@ -1350,8 +1351,9 @@ static UINT PunchPathWatched(PUNCHPATH_CTX *ctx)
 }
 
 // While node-a has an attempt open: an attacker on the link of node-a sends a captured probe of node-b again from an address
-// of its own, and a node that is no peer sends a probe of its own. node-a moves to no direct path at the attacker's address,
-// and drops and counts the probe of the stranger, which it answers nothing.
+// of its own, then the same probe with one byte of its tag changed, and a node that is no peer sends a probe of its own.
+// node-a moves to no direct path at the attacker's address, drops and counts the altered probe as forged, and drops and
+// counts the probe of the stranger; it answers neither.
 static void PunchPathAttacker(PUNCHPATH_CTX *ctx)
 {
 	PEER_STATUS ab;
@@ -1360,6 +1362,7 @@ static void PunchPathAttacker(PUNCHPATH_CTX *ctx)
 	PEER_KEY stranger;
 	UCHAR scalar[PEER_KEY_SIZE];
 	UCHAR probe[PEER_MAX_DATAGRAM];
+	UCHAR altered[PEER_MAX_DATAGRAM];
 	UCHAR env[PEER_MAX_ENVELOPE];
 	UCHAR payload[PUNCHPATH_PAYLOAD_SIZE];
 	FILETIME ft;
@@ -1384,6 +1387,24 @@ static void PunchPathAttacker(PUNCHPATH_CTX *ctx)
 	PunchPathCheck(ctx, injected && ab.Path == PEER_PATH_RELAY && PeerAddrEqual(&ab.Direct, &attacker) == false && answers <= 1,
 		"A punch does not set the direct path of node-b at an address that only a probe names: the captured probe of node-b that an attacker sends from its own address moves node-a to no direct path there, as only node-b can echo the nonce of node-a",
 		"open %u, injected %u, %u answers to the attacker; %s", (UINT)open, (UINT)injected, answers, words);
+
+	// The probes are authenticated: the same probe with one byte of its tag changed opens at no Node, so node-a drops it as
+	// forged, counts it and answers it nothing
+	Copy(altered, probe, size);
+	if (size != 0)
+	{
+		altered[size - 1] ^= 0x80;
+	}
+	PunchPathWatch(ctx, &attacker);
+	PunchPathStats(ctx, PUNCHPATH_A, &before);
+	bool forged = open && size != 0 && NatSimInject(ctx->Nodes[PUNCHPATH_A].Host, &attacker, altered, size);
+	NatSimWaitIdle(ctx->Sim, PUNCHPATH_BOUND);
+	PunchPathStats(ctx, PUNCHPATH_A, &after);
+	answers = PunchPathWatched(ctx);
+	PunchPathCheck(ctx, forged && after.Drops[PEER_DROP_FORGED] == before.Drops[PEER_DROP_FORGED] + 1 && answers == 0,
+		"The probes are authenticated: the captured probe of node-b with one byte of its tag changed is dropped as forged and counted, and node-a answers it nothing",
+		"injected %u; drops as forged %I64u before, %I64u after; %u datagrams of node-a to the attacker", (UINT)forged, before.Drops[PEER_DROP_FORGED],
+		after.Drops[PEER_DROP_FORGED], answers);
 
 	// A probe of a node that is no peer of node-a
 	for (UINT j = 0;j < PEER_KEY_SIZE;j++)
