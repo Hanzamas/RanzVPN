@@ -183,11 +183,7 @@ const fileConnTries = 8
 // entry, as FileConn closes the socket of a try that failed in getsockname with closesocket, which drops the entry. Without
 // the next try about one new process in a hundred refused a handoff, and its client saw the connection reset (#534).
 func fileConn(file *os.File) (c net.Conn, err error) {
-	tries := fileConnTries
-	if os.Getenv("RANZ_DIAG_TRIES") == "1" { // THROWAWAY (#534): the measurement of the test without the next try
-		tries = 1
-	}
-	for range tries {
+	for range fileConnTries {
 		if c, err = net.FileConn(file); err == nil {
 			return c, nil
 		}
