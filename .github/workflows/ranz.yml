@@ -609,11 +609,14 @@ jobs:
       run: |
         go test -count=1 -v -run 'TestPipe|TestNoPipe|TestMitigations' ./ranz-bgp
         if ($LASTEXITCODE -ne 0) { throw "go test exited with code $LASTEXITCODE" }
+    # controller/internal/controller starts an rqlited of its own for each of its tests, one after the other: on this
+    # runner it took 490 s to 545 s on integration, and with the tests of SDN-87 (#386) it ran past the 10 minutes that
+    # go test gives a test binary by default, so the timeout is 20 minutes, well within the job's
     - name: Test
       if: matrix.platform.ARCHITECTURE == 'x64'
       shell: pwsh
       run: |
-        go test -count=1 ./...
+        go test -count=1 -timeout 20m ./...
         if ($LASTEXITCODE -ne 0) { throw "go test exited with code $LASTEXITCODE" }
     - name: Test the BGP sidecar
       if: matrix.platform.ARCHITECTURE != 'x64'
