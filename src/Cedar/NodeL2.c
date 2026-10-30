@@ -586,10 +586,22 @@ NODE_L2 *NodeL2New(NODE *n, const NODE_L2_CONFIG *cfg) {
 	a->NoProbe = cfg->NoProbe;
 	a->NextProbe = GetTickCount64() + NODE_L2_HEALTH;
 
+	// A bridge sends no probe, whose solicitations would go onto the LAN, and is never reset: its NIC is the host's
+	a->Bridge = cfg->Bridge;
+	a->Hold = cfg->Hold;
+	a->LetGo = cfg->LetGo;
+	if (a->Bridge) {
+		a->NoProbe = true;
+		a->Reset = NULL;
+		a->ResetParam = NULL;
+	}
+
 	if (cfg->Backends != NULL) {
 		for (UINT i = 0; i < cfg->NumBackends && a->NumBackends < NODE_L2_MAX_BACKENDS; i++)
 			if (cfg->Backends[i] != NULL)
 				a->Backends[a->NumBackends++] = cfg->Backends[i];
+	} else if (a->Bridge) {
+		a->NumBackends = NodeL2BridgeBackends(a->Backends, NODE_L2_MAX_BACKENDS);
 	} else {
 		a->Backends[a->NumBackends++] = NodeL2XdpBackend();
 		a->Backends[a->NumBackends++] = NodeL2SeLowBackend();
@@ -638,8 +650,8 @@ NODE_L2 *NodeL2New(NODE *n, const NODE_L2_CONFIG *cfg) {
 		return NULL;
 	}
 
-	NodeLog(n, "L2 adapter up: interface %u, MAC %02X-%02X-%02X-%02X-%02X-%02X, the %s backend on %u queue(s), rings of %u frames, batches of %u, flush %u us",
-	        a->IfIndex, (UINT)a->Mac[0], (UINT)a->Mac[1], (UINT)a->Mac[2], (UINT)a->Mac[3], (UINT)a->Mac[4], (UINT)a->Mac[5], a->Backend->Name,
+	NodeLog(n, "L2 adapter up%s: interface %u, MAC %02X-%02X-%02X-%02X-%02X-%02X, the %s backend on %u queue(s), rings of %u frames, batches of %u, flush %u us",
+	        a->Bridge ? " as a bridge" : "", a->IfIndex, (UINT)a->Mac[0], (UINT)a->Mac[1], (UINT)a->Mac[2], (UINT)a->Mac[3], (UINT)a->Mac[4], (UINT)a->Mac[5], a->Backend->Name,
 	        (UINT)ReadAcquire(&a->DriverQueues), slots, a->Batch, a->FlushUs);
 
 	return a;
@@ -726,4 +738,7 @@ void NodeL2GetStatus(NODE_L2 *a, NODE_L2_STATUS *st) {
 	st->DriverDrops = (UINT64)ReadAcquire64(&a->DriverDrops);
 	st->WaitFailures = (UINT64)ReadAcquire64(&a->DriverWaitFailures);
 	st->WaitError = (UINT)ReadAcquire(&a->DriverWaitError);
+	st->Bridge = a->Bridge;
+	st->ToHost = (UINT64)ReadAcquire64(&a->ToHost);
+	st->ToHostDrops = (UINT64)ReadAcquire64(&a->ToHostDrops);
 }

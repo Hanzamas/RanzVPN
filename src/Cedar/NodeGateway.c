@@ -13,22 +13,38 @@
 // hashing, so a flow keeps its gateway while that one stays up, and only the flows of a gateway that goes down move. A
 // packet whose source a group holds comes from whichever gateway of the group sent it (NodeGatewayFrom).
 //
-// A gateway is up while it has its Noise session and answers the probes of the node. The thread of the overlay sends each
-// gateway of a group of the tables in force a probe every NODE_GATEWAY_PROBE ms as a control record of its Noise session,
-// which the gateway answers at once on the same session (NodeGatewayControl). A gateway whose answers stop for
-// NODE_GATEWAY_DEAD ms goes down, and one whose session closes goes down at once: its groups give its traffic to the next
-// gateway, so the node finds a failed gateway and leaves it in under a second, with probes of its own and no BFD
-// (maintainer decision of 2026-10-24). A gateway that went down while its session stayed up is up again after
-// NODE_GATEWAY_RISE answers in a row; one whose session comes back is up with it. What the node knows of a gateway stays
-// across the Generations, kept by its peer (NODE_GATEWAY_PEER), and the group tables of each Generation hold it until they
-// are freed, so the data path reads it without a lock.
+// A gateway is up while the node reaches it and it answers the probes of the node. The node reaches a gateway on its Noise
+// session, or, when the two cannot dial each other, on a Path of the datagram path of the peer agent (NodeAgent.c; CORE-S5-5,
+// #411), which carries a control record behind the VRF tag of no VRF (NODE_GATEWAY_DATAGRAM; SDN-19-R1, #507). The thread
+// of the overlay sends each gateway of a group of the tables in force a probe every NODE_GATEWAY_PROBE ms, on its Noise
+// session when it has one, else on the datagram path, and the gateway answers at once the way the probe came
+// (NodeGatewayControl, NodeGatewayDatagram). A gateway that leaves a probe without its answer for NODE_GATEWAY_DEAD ms goes
+// down, and one that the node no longer reaches goes down at once: its groups give its traffic to the next gateway, so the
+// node finds a failed gateway and leaves it in under a second, with probes of its own and no BFD (maintainer decision of
+// 2026-10-24).
+//
+// An answer counts whenever the node takes it, and it answers every probe that the node sent before it, so the time that a
+// probe waits is the time of the gateway, never the node's own. The thread of the overlay also dials and accepts, and a
+// dial blocks it while the race of the transports and the handshake run (NodeOverlay.c), up to seconds; it neither sends
+// the probes that are due then nor takes the answers that come, and takes those answers before it looks at the gateways
+// again. So a gateway that answered while the thread was held stays up, however long the dial took, and one that failed
+// meanwhile is found down at that look, as its last probe waited longer than NODE_GATEWAY_DEAD ms (SDN-19-R1, #507).
+//
+// A gateway whose Noise session comes up is up with it, as its handshake just proved it. One that went down while the node
+// still reached it, and one that the node reaches on the datagram path alone, is up after NODE_GATEWAY_RISE answers in a
+// row to fresh probes: the probes that the node sent after the gateway answered one again. The answers to the probes that
+// waited for a gateway that hung are no fresh ones, so such a gateway is up again no sooner than NODE_GATEWAY_RISE - 1
+// probe intervals after it answers again (SDN-19-R1, #507). What the node knows of a gateway stays across the Generations,
+// kept by its peer (NODE_GATEWAY_PEER), and the group tables of each Generation hold it until they are freed, so the data
+// path reads it without a lock.
 //
 // Hub-and-spoke. The controller gives each spoke of a VRF of topology hub-and-spoke the hub as its only peer in the VRF,
 // with the prefixes of the VRF as routes of the hub: the pools of its L3 Networks, the LAN subnets that the other nodes
 // advertise there and the outside prefixes of their 1:1 NAT rules. A packet of one spoke to another goes to the hub, and
-// the hub, which has every spoke as its peer, sends it on (NodeGatewayTransit): the traffic between two sites passes the
-// hub, where a Mirror of the VRF copies it to a sensor, and two spokes never talk directly. A node that is not the hub of
-// the VRF drops such a packet, as the overlay did before.
+// the hub, which has every spoke as its peer, sends it on (NodeGatewayTransit), on the Noise session of the next hop, its
+// link or the datagram path (SDN-19-R1, #507), and never back to the spoke that sent it: the traffic between two sites
+// passes the hub, where a Mirror of the VRF copies it to a sensor, and two spokes never talk directly. A node that is not
+// the hub of the VRF drops such a packet, as the overlay did before.
 //
 // The hub is the place where the policy of the VRF decides the traffic between two spokes (SDN-19-R2, #508). A spoke sees
 // the hub as the other end of a packet of another spoke; the hub sees both real ends, as both are its peers. So it judges
@@ -49,6 +65,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "NodeAgent.h"
 #include "NodeGateway.h"
 #include "NodeInternal.h"
 #include "NodeProfile.h"
@@ -60,13 +77,18 @@
 typedef struct NODE_GATEWAY_PEER {
 	void *Peer;                   // The peer of the overlay (NodeOverlay.c), which the overlay keeps until NodeGatewayForget
 	char Name[CONTROL_NAME_SIZE]; // Its name, for the node log
+	UCHAR Key[PEER_KEY_SIZE];     // Its static key, by which the datagram path of the peer agent knows it (NodeAgent.c)
 	UINT Refs;                    // The group tables that hold it: the node probes it while one does
-	volatile LONG Up;             // It has its session and answers its probes: what the data path reads
-	bool Session;                 // The thread of the overlay saw its session at its last look
-	UINT64 LastAnswer;            // When it answered a probe in time last, or its session came up
+	volatile LONG Up;             // The node reaches it and it answers its probes: what the data path reads
+	bool Session;                 // The thread of the overlay saw its Noise session at its last look ...
+	bool Path;                    // ... or, without one, a Path of the datagram path of the peer agent
+	UINT64 LastAnswer;            // When it answered a probe last, or its session came up
+	UINT64 Silent;                // When the node sent the oldest probe that has no answer yet, 0 while none waits
 	UINT64 NextProbe;             // When its next probe goes
-	UINT Sequence;                // The number of its last probe
-	UINT Rise;                    // Its answers in a row while it is down with its session up
+	UINT Sequence;                // The number of its last probe ...
+	UINT Answered;                // ... and of the last one that it answered
+	UINT Fresh;                   // While it is down, the first fresh probe: the next one after it answered again; 0 before
+	UINT Rise;                    // Its answers in a row to the fresh probes from Fresh on
 	UINT64 DownSince;             // When it went down last, 0 before
 	UINT64 Failovers;             // The times it went down
 	volatile LONG64 Picked;       // The packets of the host that its groups gave it
@@ -74,16 +96,28 @@ typedef struct NODE_GATEWAY_PEER {
 
 // The gateway HA of the overlay of a node, while the overlay runs
 struct NODE_GATEWAY {
-	LOCK *Lock;                 // Peers and what each holds
-	LIST *Peers;                // The gateways (NODE_GATEWAY_PEER)
-	UINT64 NextPass;            // When the thread of the overlay looks at them next
-	volatile LONG64 Probes;     // Probes sent
-	volatile LONG64 Answers;    // Answers to them taken in time
-	volatile LONG64 Answered;   // Probes of the peers answered
-	volatile LONG64 Failovers;  // Gateways that went down
-	volatile LONG64 Recoveries; // Gateways that came up again
-	volatile LONG64 Transit;    // Packets of one spoke that the node, their hub, sent on to another
+	LOCK *Lock;                   // Peers and what each holds
+	LIST *Peers;                  // The gateways (NODE_GATEWAY_PEER)
+	UINT64 NextPass;              // When the thread of the overlay looks at them next
+	volatile LONG64 Probes;       // Probes sent ...
+	volatile LONG64 PathProbes;   // ... of them on the datagram path
+	volatile LONG64 Answers;      // Answers to them taken
+	volatile LONG64 Answered;     // Probes of the peers answered ...
+	volatile LONG64 PathAnswered; // ... of them on the datagram path
+	volatile LONG64 Failovers;    // Gateways that went down
+	volatile LONG64 Recoveries;   // Gateways that came up again
+	volatile LONG64 Transit;      // Packets of one spoke that the node, their hub, sent on to another
 };
+
+// One gateway at one look of the thread of the overlay (NodeGatewayProbe)
+typedef struct NODE_GATEWAY_LOOK {
+	NODE_GATEWAY_PEER *Gateway; // The gateway
+	bool Session;               // It has its Noise session ...
+	bool Path;                  // ... or, without one, a Path of the datagram path
+	UINT Event;                 // What happened to it, for the node log (NODE_GATEWAY_CLOSED and on), INFINITE for nothing
+	bool Due;                   // Its next probe goes now ...
+	UINT Sequence;              // ... with this number
+} NODE_GATEWAY_LOOK;
 
 // One gateway of a group
 typedef struct NODE_GATEWAY_MEMBER {
@@ -357,9 +391,25 @@ static NODE_GATEWAY_PEER *NodeGatewayFind(NODE_GATEWAY *g, const void *peer) {
 	return NULL;
 }
 
-// What the node knows of the gateway peer of the name, which a group table that is built holds from now on: what it knew, or
-// a new gateway, up while the peer has its session. The caller holds the lock.
-static NODE_GATEWAY_PEER *NodeGatewayHold(NODE_GATEWAY *g, void *peer, const char *name) {
+// What the node knows of the gateway peer of the static key key, NULL for nothing: of two, the one that a table holds. The
+// caller holds the lock.
+static NODE_GATEWAY_PEER *NodeGatewayFindKey(NODE_GATEWAY *g, const UCHAR *key) {
+	NODE_GATEWAY_PEER *found = NULL;
+
+	for (UINT i = 0; i < LIST_NUM(g->Peers); i++) {
+		NODE_GATEWAY_PEER *e = LIST_DATA(g->Peers, i);
+
+		if (Cmp(e->Key, key, PEER_KEY_SIZE) == 0 && (found == NULL || e->Refs != 0))
+			found = e;
+	}
+
+	return found;
+}
+
+// What the node knows of the gateway peer of the name and the static key key, which a group table that is built holds from
+// now on: what it knew, or a new gateway, up while the peer has its Noise session. A gateway that the node reaches on the
+// datagram path alone is up once it answered its probes (NodeGatewayLook). The caller holds the lock.
+static NODE_GATEWAY_PEER *NodeGatewayHold(NODE_GATEWAY *g, void *peer, const char *name, const UCHAR *key) {
 	NODE_GATEWAY_PEER *e = NodeGatewayFind(g, peer);
 
 	if (e == NULL) {
@@ -368,6 +418,7 @@ static NODE_GATEWAY_PEER *NodeGatewayHold(NODE_GATEWAY *g, void *peer, const cha
 		e = ZeroMalloc(sizeof(NODE_GATEWAY_PEER));
 		e->Peer = peer;
 		StrCpy(e->Name, sizeof(e->Name), name);
+		Copy(e->Key, key, PEER_KEY_SIZE);
 		e->Session = NodeOverlayPeerUp(peer);
 		e->Up = (e->Session ? 1 : 0);
 		e->LastAnswer = now;
@@ -385,6 +436,7 @@ static void NodeGatewayDown(NODE_GATEWAY *g, NODE_GATEWAY_PEER *e, UINT64 now) {
 	InterlockedExchange(&e->Up, 0);
 	e->DownSince = now;
 	e->Failovers++;
+	e->Fresh = 0;
 	e->Rise = 0;
 	InterlockedIncrement64(&g->Failovers);
 }
@@ -392,6 +444,7 @@ static void NodeGatewayDown(NODE_GATEWAY *g, NODE_GATEWAY_PEER *e, UINT64 now) {
 // The gateway e comes up. The caller holds the lock.
 static void NodeGatewayUp(NODE_GATEWAY *g, NODE_GATEWAY_PEER *e) {
 	InterlockedExchange(&e->Up, 1);
+	e->Fresh = 0;
 	e->Rise = 0;
 	if (e->DownSince != 0)
 		InterlockedIncrement64(&g->Recoveries);
@@ -469,7 +522,7 @@ void NodeGatewayAttach(NODE *n, NODE_VRF_TABLES *v, const CONTROL_STATE *st) {
 					m->Hop = p;
 					m->Seed = READ_UINT(st->Peers[p].Key);
 					m->Down = st->Peers[p].Down;
-					m->Gateway = NodeGatewayHold(g, v->Hops[p], st->Peers[p].Name);
+					m->Gateway = NodeGatewayHold(g, v->Hops[p], st->Peers[p].Name, st->Peers[p].Key);
 				}
 			}
 			i = end;
@@ -670,9 +723,10 @@ bool NodeGatewayHub(NODE_VRF_TABLES *v, UINT vrf_id) {
 // A packet of a peer in the VRF vrf_id, the data record of size bytes, which came from the next hop from and whose
 // destination the forwarding table of the VRF leads to the next hop to, not to the host: when the node is the hub of the VRF,
 // it sends the record on to that next hop, or to the gateway that the group of to picks, once the session profiles of the two
-// peers and the policy of the VRF let it through, and a Mirror of the VRF copies the packet there, as an inspection appliance
-// at the hub sees the traffic between two spokes. True when the packet went on; false when the node is no hub of the VRF, or
-// the packet goes nowhere: never back to the peer that sent it, nor along a leaked route, nor past the policy of the VRF.
+// peers and the policy of the VRF let it through, on the Noise session of that peer, its link or the datagram path of the
+// peer agent (NodeOverlaySendRecord), and a Mirror of the VRF copies the packet there, as an inspection appliance at the hub
+// sees the traffic between two spokes. True when the packet went on; false when the node is no hub of the VRF, or the
+// packet goes nowhere: never back to the peer that sent it, nor along a leaked route, nor past the policy of the VRF.
 // source_group is the source group that the packet carried, which the node took (NodeSourceGroupTransit; SDN-87, #386), 0
 // for none; the record goes on without it. The caller is an online reader of the node's table snapshot, which holds v.
 bool NodeGatewayTransit(NODE *n, NODE_VRF_TABLES *v, UINT vrf_id, UINT from, UINT to, UINT source_group, const UCHAR *record, UINT size) {
@@ -730,21 +784,102 @@ bool NodeGatewayParseProbe(const UCHAR *data, UINT size, NODE_GATEWAY_PROBE_MSG 
 	return true;
 }
 
-// What happened to a gateway at a look of the thread of the overlay, for the node log
-#define NODE_GATEWAY_CLOSED 0 // It went down: its session closed
-#define NODE_GATEWAY_SILENT 1 // It went down: it answered no probe for NODE_GATEWAY_DEAD ms
-#define NODE_GATEWAY_BACK   2 // It came up again with its session
+// Write a probe or its answer as a control record of the datagram path of the peer agent into buf, NODE_GATEWAY_DATAGRAM_SIZE
+// bytes: the VRF tag of no VRF, the kind NODE_GATEWAY_DATAGRAM, then the probe (NodeGatewayWriteProbe). Its size.
+UINT NodeGatewayWriteDatagram(UCHAR *buf, UINT kind, UINT sequence, UINT64 time) {
+	WRITE_UINT(buf, 0);
+	buf[NODE_OVERLAY_VRF_TAG] = NODE_GATEWAY_DATAGRAM;
 
-// The gateways, at each pass of the thread of the overlay and every NODE_GATEWAY_TICK ms at most: a gateway whose session
-// closed goes down at once, one that answered no probe for NODE_GATEWAY_DEAD ms goes down, one whose session came up is up
-// with it, and each gateway of a group of the tables in force gets its next probe on its Noise session when it is due
+	return NODE_OVERLAY_VRF_TAG + 1 + NodeGatewayWriteProbe(buf + NODE_OVERLAY_VRF_TAG + 1, kind, sequence, time);
+}
+
+// Read a record of the datagram path of the peer agent, which carries the records of the overlay without a kind (NodeAgent.c),
+// as a control record between two peers: the VRF tag of no VRF and the kind NODE_GATEWAY_DATAGRAM, then a probe or its answer,
+// which goes into m. False for any other record, a data record of the overlay; true for a control record, whose m has the kind
+// 0 when it is no probe or answer that the node knows.
+bool NodeGatewayParseDatagram(const UCHAR *record, UINT size, NODE_GATEWAY_PROBE_MSG *m) {
+	if (m != NULL)
+		Zero(m, sizeof(NODE_GATEWAY_PROBE_MSG));
+
+	if (record == NULL || m == NULL || size <= NODE_OVERLAY_VRF_TAG || READ_UINT(record) != 0 || record[NODE_OVERLAY_VRF_TAG] != NODE_GATEWAY_DATAGRAM)
+		return false;
+
+	// A control record of another kind keeps the kind 0: NodeGatewayParseProbe leaves m as it is
+	if (NodeGatewayParseProbe(record + NODE_OVERLAY_VRF_TAG + 1, size - NODE_OVERLAY_VRF_TAG - 1, m) == false)
+		m->Kind = 0;
+
+	return true;
+}
+
+// What happened to a gateway at a look of the thread of the overlay, for the node log
+#define NODE_GATEWAY_CLOSED 0 // It went down: its Noise session closed, and the datagram path does not reach it
+#define NODE_GATEWAY_LOST   1 // It went down: its Path of the datagram path went
+#define NODE_GATEWAY_SILENT 2 // It went down: a probe waited NODE_GATEWAY_DEAD ms for its answer
+#define NODE_GATEWAY_BACK   3 // It came up again with its Noise session
+
+// What the thread of the overlay makes of the gateway of l at now, which the node reaches as l says: it goes down at once when
+// the node reaches it no more, and when a probe waited NODE_GATEWAY_DEAD ms for its answer; it is up with a Noise session that
+// came up; and its next probe goes when it is due. When the way that the node reaches it changed, the probes before it go
+// unanswered, and the next one goes at once. The caller holds the lock.
+static void NodeGatewayLook(NODE_GATEWAY *g, NODE_GATEWAY_LOOK *l, UINT64 now) {
+	NODE_GATEWAY_PEER *e = l->Gateway;
+	bool session = (e->Refs != 0 && l->Session);
+	bool path = (e->Refs != 0 && l->Path);
+
+	if (session == false && path == false) {
+		// A gateway that the node reaches no more goes down at once; one that no table holds any more is no longer probed
+		if (e->Refs != 0 && ReadAcquire(&e->Up) != 0) {
+			NodeGatewayDown(g, e, now);
+			l->Event = (e->Path ? NODE_GATEWAY_LOST : NODE_GATEWAY_CLOSED);
+		}
+		e->Session = false;
+		e->Path = false;
+		return;
+	}
+
+	if (session != e->Session || path != e->Path) {
+		e->Silent = 0;
+		e->Answered = e->Sequence;
+		e->Fresh = 0;
+		e->Rise = 0;
+		e->NextProbe = now;
+		// Its Noise session came up, or a table holds it again with its session: it is up with it, as its handshake proved it
+		if (session && e->Session == false) {
+			e->LastAnswer = now;
+			if (ReadAcquire(&e->Up) == 0) {
+				if (e->DownSince != 0)
+					l->Event = NODE_GATEWAY_BACK;
+				NodeGatewayUp(g, e);
+			}
+		}
+		e->Session = session;
+		e->Path = path;
+	}
+
+	// A probe that waited NODE_GATEWAY_DEAD ms for its answer, which the thread would have taken before it looks
+	if (ReadAcquire(&e->Up) != 0 && e->Silent != 0 && now - e->Silent > NODE_GATEWAY_DEAD) {
+		NodeGatewayDown(g, e, now);
+		l->Event = NODE_GATEWAY_SILENT;
+	}
+
+	if (now >= e->NextProbe) {
+		e->Sequence++;
+		e->NextProbe = now + NODE_GATEWAY_PROBE;
+		if (e->Silent == 0)
+			e->Silent = now;
+		l->Due = true;
+		l->Sequence = e->Sequence;
+	}
+}
+
+// The gateways, at each pass of the thread of the overlay and every NODE_GATEWAY_TICK ms at most (NodeGatewayLook), and the
+// probes that are due, each on the Noise session of its gateway, else on the datagram path of the peer agent. The thread took
+// the answers that waited on the sessions before it looks; the receive threads of the agent take the answers of the datagram
+// path whenever they come (NodeGatewayDatagram).
 void NodeGatewayProbe(NODE *n) {
 	NODE_GATEWAY *g = (n != NULL ? n->Gateway : NULL);
-	NODE_GATEWAY_PEER *due[NODE_GATEWAY_BATCH];
-	UINT sequences[NODE_GATEWAY_BATCH];
-	char names[NODE_GATEWAY_BATCH][CONTROL_NAME_SIZE];
-	UINT events[NODE_GATEWAY_BATCH];
-	UINT num_due = 0, num_events = 0;
+	NODE_GATEWAY_LOOK *looks = NULL;
+	UINT num = 0;
 	UINT64 now = GetTickCount64();
 
 	if (g == NULL || now < g->NextPass)
@@ -752,87 +887,136 @@ void NodeGatewayProbe(NODE *n) {
 
 	g->NextPass = now + NODE_GATEWAY_TICK;
 
+	// The gateways that a table holds; one that no table holds is no longer probed. Only this thread forgets a gateway, so the
+	// ones taken stay valid without the lock.
 	Lock(g->Lock);
 	{
-		for (UINT i = 0; i < LIST_NUM(g->Peers); i++) {
+		looks = (LIST_NUM(g->Peers) != 0 ? ZeroMalloc(sizeof(NODE_GATEWAY_LOOK) * LIST_NUM(g->Peers)) : NULL);
+		for (UINT i = 0; looks != NULL && i < LIST_NUM(g->Peers); i++) {
 			NODE_GATEWAY_PEER *e = LIST_DATA(g->Peers, i);
-			bool session = (e->Refs != 0 && NodeOverlayPeerUp(e->Peer));
-			UINT event = INFINITE;
 
-			if (session == false) {
-				// A gateway whose session closed goes down at once; one that no table holds is no longer probed
-				if (e->Refs != 0 && ReadAcquire(&e->Up) != 0) {
-					NodeGatewayDown(g, e, now);
-					event = NODE_GATEWAY_CLOSED;
-				}
-				e->Session = false;
+			if (e->Refs != 0) {
+				looks[num].Gateway = e;
+				looks[num++].Event = INFINITE;
 			} else {
-				// Its session came up, or a table holds it again: it is up with its session
-				if (e->Session == false) {
-					e->Session = true;
-					e->LastAnswer = now;
-					e->NextProbe = now;
-					if (ReadAcquire(&e->Up) == 0) {
-						if (e->DownSince != 0)
-							event = NODE_GATEWAY_BACK;
-						NodeGatewayUp(g, e);
-					}
-				}
-
-				// The answers stopped: down after NODE_GATEWAY_DEAD ms, and a gap in the answers starts the count of the ones
-				// in a row again
-				if (now - e->LastAnswer > NODE_GATEWAY_DEAD) {
-					if (ReadAcquire(&e->Up) != 0) {
-						NodeGatewayDown(g, e, now);
-						event = NODE_GATEWAY_SILENT;
-					}
-					e->Rise = 0;
-				}
-
-				if (now >= e->NextProbe && num_due < NODE_GATEWAY_BATCH) {
-					e->Sequence++;
-					e->NextProbe = now + NODE_GATEWAY_PROBE;
-					due[num_due] = e;
-					sequences[num_due++] = e->Sequence;
-				}
-			}
-
-			if (event != INFINITE && num_events < NODE_GATEWAY_BATCH) {
-				StrCpy(names[num_events], sizeof(names[num_events]), e->Name);
-				events[num_events++] = event;
+				e->Session = false;
+				e->Path = false;
 			}
 		}
 	}
 	Unlock(g->Lock);
 
-	// Only this thread forgets a gateway, so the ones due stay valid without the lock
-	for (UINT i = 0; i < num_due; i++) {
-		UCHAR buf[NODE_GATEWAY_PROBE_SIZE];
+	if (looks == NULL)
+		return;
 
-		NodeGatewayWriteProbe(buf, NODE_GATEWAY_PROBE_ASK, sequences[i], now);
-		if (NodeOverlaySendControl(n, due[i]->Peer, buf, sizeof(buf)))
-			InterlockedIncrement64(&g->Probes);
+	// How the node reaches each, asked without the lock: the peer agent takes locks of its own, and its receive threads take
+	// the answers of the datagram path under this one
+	for (UINT i = 0; i < num; i++) {
+		NODE_GATEWAY_LOOK *l = &looks[i];
+
+		l->Session = NodeOverlayPeerUp(l->Gateway->Peer);
+		l->Path = (l->Session == false && NodeAgentHasPath(n, l->Gateway->Key));
 	}
 
-	for (UINT i = 0; i < num_events; i++) {
-		if (events[i] == NODE_GATEWAY_CLOSED)
-			NodeLog(n, "Gateway HA: the gateway %s is down: its Noise session closed, so its groups move its traffic to their next gateway", names[i]);
-		else if (events[i] == NODE_GATEWAY_SILENT)
-			NodeLog(n, "Gateway HA: the gateway %s is down: it answered no probe for %u ms, so its groups move its traffic to their next gateway", names[i], (UINT)NODE_GATEWAY_DEAD);
-		else
-			NodeLog(n, "Gateway HA: the gateway %s is up again: its Noise session came up", names[i]);
+	Lock(g->Lock);
+	for (UINT i = 0; i < num; i++)
+		NodeGatewayLook(g, &looks[i], now);
+	Unlock(g->Lock);
+
+	for (UINT i = 0; i < num; i++) {
+		NODE_GATEWAY_LOOK *l = &looks[i];
+		UCHAR buf[NODE_GATEWAY_DATAGRAM_SIZE];
+
+		if (l->Due && l->Session) {
+			NodeGatewayWriteProbe(buf, NODE_GATEWAY_PROBE_ASK, l->Sequence, now);
+			if (NodeOverlaySendControl(n, l->Gateway->Peer, buf, NODE_GATEWAY_PROBE_SIZE))
+				InterlockedIncrement64(&g->Probes);
+		} else if (l->Due) {
+			UINT size = NodeGatewayWriteDatagram(buf, NODE_GATEWAY_PROBE_ASK, l->Sequence, now);
+
+			if (NodeAgentSend(n, l->Gateway->Key, buf, size)) {
+				InterlockedIncrement64(&g->Probes);
+				InterlockedIncrement64(&g->PathProbes);
+			}
+		}
+
+		if (l->Event == NODE_GATEWAY_CLOSED)
+			NodeLog(n, "Gateway HA: the gateway %s is down: its Noise session closed, so its groups move its traffic to their next gateway", l->Gateway->Name);
+		else if (l->Event == NODE_GATEWAY_LOST)
+			NodeLog(n, "Gateway HA: the gateway %s is down: its Path of the datagram path went, so its groups move its traffic to their next gateway", l->Gateway->Name);
+		else if (l->Event == NODE_GATEWAY_SILENT)
+			NodeLog(n, "Gateway HA: the gateway %s is down: a probe waited %u ms for its answer, so its groups move its traffic to their next gateway", l->Gateway->Name, (UINT)NODE_GATEWAY_DEAD);
+		else if (l->Event == NODE_GATEWAY_BACK)
+			NodeLog(n, "Gateway HA: the gateway %s is up again: its Noise session came up", l->Gateway->Name);
 	}
+
+	Free(looks);
+}
+
+// The answer m of the gateway e to a probe, which the node took at now. Whenever the node takes it, it shows that the gateway
+// lives: no probe up to it waits any more, and the probes after it wait from now on. While the gateway is down, its first
+// answer shows that it answers again, and the answers to NODE_GATEWAY_RISE fresh probes in a row, the probes that the node
+// sends from then on, bring it up; an answer to a probe that waited for it before neither counts nor breaks the row. True
+// when it came up. The caller holds the lock.
+static bool NodeGatewayAnswer(NODE_GATEWAY *g, NODE_GATEWAY_PEER *e, const NODE_GATEWAY_PROBE_MSG *m, UINT64 now) {
+	// Only the answer to a probe that it did not answer yet, which the node sent the way that it reaches it now
+	if (e->Refs == 0 || (e->Session == false && e->Path == false) || m->Sequence > e->Sequence || m->Sequence <= e->Answered)
+		return false;
+
+	InterlockedIncrement64(&g->Answers);
+	e->Answered = m->Sequence;
+	e->LastAnswer = now;
+	e->Silent = (m->Sequence == e->Sequence ? 0 : now);
+
+	if (ReadAcquire(&e->Up) != 0)
+		return false;
+
+	if (e->Fresh == 0) {
+		// It answers again: the probes that the node sends from now on are fresh
+		e->Fresh = e->Sequence + 1;
+		e->Rise = 0;
+	} else if (m->Sequence == e->Fresh + e->Rise) {
+		if (++e->Rise >= NODE_GATEWAY_RISE) {
+			NodeGatewayUp(g, e);
+			return true;
+		}
+	} else if (m->Sequence > e->Fresh + e->Rise) {
+		// A fresh probe went without its answer: the row starts again with the next probe
+		e->Fresh = e->Sequence + 1;
+		e->Rise = 0;
+	}
+
+	return false;
+}
+
+// The answer m of the gateway of the peer peer of the overlay, or of the static key key when peer is NULL (NodeGatewayAnswer),
+// and the line of the node log when it brought the gateway up
+static void NodeGatewayTake(NODE *n, NODE_GATEWAY *g, const void *peer, const UCHAR *key, const NODE_GATEWAY_PROBE_MSG *m) {
+	char name[CONTROL_NAME_SIZE];
+	bool rose = false, again = false;
+
+	Lock(g->Lock);
+	{
+		NODE_GATEWAY_PEER *e = (peer != NULL ? NodeGatewayFind(g, peer) : NodeGatewayFindKey(g, key));
+
+		if (e != NULL && NodeGatewayAnswer(g, e, m, GetTickCount64())) {
+			StrCpy(name, sizeof(name), e->Name);
+			again = (e->DownSince != 0);
+			rose = true;
+		}
+	}
+	Unlock(g->Lock);
+
+	if (rose)
+		NodeLog(n, "Gateway HA: the gateway %s is up%s: it answered %u fresh probes in a row", name, again ? " again" : "", (UINT)NODE_GATEWAY_RISE);
 }
 
 // A control record of the Noise session of the peer: a probe, which the node answers at once on the same session, or the
-// answer to a probe of the node, which keeps the gateway up while it comes in time and brings one that went down without its
-// session up again after NODE_GATEWAY_RISE answers in a row. A record that is neither is no control record that the node
-// knows, and it is left alone. On the thread of the overlay.
+// answer to a probe of the node (NodeGatewayAnswer). A record that is neither is no control record that the node knows, and
+// it is left alone. On the thread of the overlay.
 void NodeGatewayControl(NODE *n, void *peer, const UCHAR *data, UINT size) {
 	NODE_GATEWAY *g = (n != NULL ? n->Gateway : NULL);
 	NODE_GATEWAY_PROBE_MSG m;
-	char name[CONTROL_NAME_SIZE];
-	bool rose = false;
 
 	if (g == NULL || peer == NULL || NodeGatewayParseProbe(data, size, &m) == false)
 		return;
@@ -846,27 +1030,36 @@ void NodeGatewayControl(NODE *n, void *peer, const UCHAR *data, UINT size) {
 		return;
 	}
 
-	UINT64 now = GetTickCount64();
+	NodeGatewayTake(n, g, peer, NULL, &m);
+}
 
-	Lock(g->Lock);
-	{
-		NODE_GATEWAY_PEER *e = NodeGatewayFind(g, peer);
+// A record that the datagram path of the peer agent carried from the peer of the static key key (NodeOverlayAgentDeliver), on
+// a receive thread of the agent: true when it is a control record, which the node takes here: a probe, which it answers at
+// once on the datagram path, or the answer to a probe of the node (NodeGatewayAnswer); a control record of another kind is
+// dropped. False for a data record of the overlay, which goes to the host.
+bool NodeGatewayDatagram(NODE *n, const UCHAR *key, const UCHAR *record, UINT size) {
+	NODE_GATEWAY *g = (n != NULL ? n->Gateway : NULL);
+	NODE_GATEWAY_PROBE_MSG m;
 
-		// Only the answer to a probe of the last NODE_GATEWAY_DEAD ms counts: a late one tells nothing of the gateway now
-		if (e != NULL && e->Refs != 0 && m.Sequence <= e->Sequence && m.Time <= now && now - m.Time <= NODE_GATEWAY_DEAD) {
-			InterlockedIncrement64(&g->Answers);
-			e->LastAnswer = now;
-			if (ReadAcquire(&e->Up) == 0 && e->Session && ++e->Rise >= NODE_GATEWAY_RISE) {
-				NodeGatewayUp(g, e);
-				StrCpy(name, sizeof(name), e->Name);
-				rose = true;
-			}
+	if (NodeGatewayParseDatagram(record, size, &m) == false)
+		return false;
+	if (g == NULL || key == NULL || m.Kind == 0)
+		return true;
+
+	if (m.Kind == NODE_GATEWAY_PROBE_ASK) {
+		UCHAR buf[NODE_GATEWAY_DATAGRAM_SIZE];
+		UINT len = NodeGatewayWriteDatagram(buf, NODE_GATEWAY_PROBE_ANSWER, m.Sequence, m.Time);
+
+		if (NodeAgentSend(n, key, buf, len)) {
+			InterlockedIncrement64(&g->Answered);
+			InterlockedIncrement64(&g->PathAnswered);
 		}
+		return true;
 	}
-	Unlock(g->Lock);
 
-	if (rose)
-		NodeLog(n, "Gateway HA: the gateway %s is up again: it answered %u probes in a row", name, (UINT)NODE_GATEWAY_RISE);
+	NodeGatewayTake(n, g, NULL, key, &m);
+
+	return true;
 }
 
 // The overlay frees the peer (NodeOverlayReap): what the node knows of it goes with it. No group table holds it any more then:
@@ -917,8 +1110,10 @@ void NodeGatewayGetStatus(NODE *n, NODE_GATEWAY_STATUS *st) {
 	Unlock(g->Lock);
 
 	st->Probes = (UINT64)ReadAcquire64(&g->Probes);
+	st->PathProbes = (UINT64)ReadAcquire64(&g->PathProbes);
 	st->Answers = (UINT64)ReadAcquire64(&g->Answers);
 	st->Answered = (UINT64)ReadAcquire64(&g->Answered);
+	st->PathAnswered = (UINT64)ReadAcquire64(&g->PathAnswered);
 	st->Failovers = (UINT64)ReadAcquire64(&g->Failovers);
 	st->Recoveries = (UINT64)ReadAcquire64(&g->Recoveries);
 	st->Transit = (UINT64)ReadAcquire64(&g->Transit);
@@ -947,6 +1142,7 @@ bool NodeGatewayGetPeer(NODE *n, const char *name, NODE_GATEWAY_PEER_STATUS *st)
 		found = true;
 		st->Probed = (e->Refs != 0);
 		st->Up = (ReadAcquire(&e->Up) != 0);
+		st->Datagram = e->Path;
 		st->LastAnswer = e->LastAnswer;
 		st->DownSince = e->DownSince;
 		st->Failovers = e->Failovers;
