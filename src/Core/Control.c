@@ -415,6 +415,8 @@ static void ControlDeliver(CONTROL_CLIENT *c, UINT64 gen) {
 	ControlCopyPeerings(&st, c->Objects, c->NumObjects);
 	// The session profiles of the node and of its peers (ControlProfile.c; SDN-40, #233)
 	ControlCopyProfiles(&st, c->Objects, c->NumObjects);
+	// The VRFs whose internet exit the node is (ControlEgress.c; SDN-12, #188)
+	ControlCopyEgress(&st, c->Objects, c->NumObjects);
 
 	if (c->Config.Proc != NULL)
 		c->Config.Proc(c->Config.Param, &st);
@@ -542,6 +544,10 @@ static void ControlSetCaps(CONTROL_CLIENT *c, ranz_control_v1_Hello *hello) {
 	hello->capabilities.plain_links = caps.PlainLinks;
 	// The BGP peering of the standard mode (SDN-77-R2, #532)
 	hello->capabilities.bgp_peering = caps.BgpPeering;
+	// The Windows edition and Hyper-V of the host, and the Egress tier that they give the node (SDN-12, #188)
+	hello->capabilities.sku = (ranz_control_v1_Sku)caps.Sku;
+	hello->capabilities.hyper_v = caps.HyperV;
+	hello->capabilities.egress_tier = (ranz_control_v1_EgressTier)caps.EgressTier;
 	// The live operations, which the client does when its owner gives it their procedure (ControlOperation.c; SDN-50-N, #492)
 	hello->capabilities.operations = (c->Config.OperationProc != NULL);
 }

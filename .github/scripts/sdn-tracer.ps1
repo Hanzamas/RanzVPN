@@ -17,7 +17,8 @@ $ErrorActionPreference = 'Stop'
 # Generation, which the API shows, and exchange ICMP echo over the in-process loopback transport;
 # the API must also show the Capabilities that each node put in its Hello (ONE-3, #312): the architecture of
 # this runner, and SeLow and the XDP runtime as this machine holds them, which the script reads from the
-# registry and the files of Windows without the code of the node;
+# registry and the files of Windows without the code of the node, and the Windows edition, Hyper-V and the
+# Egress tier of each node (SDN-12, #188), which it reads from CIM, the services and the registry;
 # once the controller stopped, they must still exchange it: they forward on the state they applied
 # last. vpntest creates the file $pinged after the first echoes and waits for the control streams
 # to go down; this script then checks the API and stops the controller. Once it stopped, vpntest also
@@ -167,6 +168,38 @@ try {
 	$system32 = Join-Path $env:SystemRoot 'System32'
 	$haveSeLow = $Architecture -eq 'x64' -and (Test-Path -LiteralPath "$services\SeLow") -and (Test-Path -LiteralPath (Join-Path $system32 'drivers\SeLow_x64.sys'))
 	$haveXdp = $Architecture -eq 'x64' -and (Test-Path -LiteralPath "$services\xdp") -and (Test-Path -LiteralPath (Join-Path $system32 'drivers\xdp.sys')) -and (Test-Path -LiteralPath (Join-Path $system32 'xdpapi.dll'))
+	# The Windows edition, Hyper-V and the Egress tier of each node (SDN-12, #188): the edition from the product type and the
+	# SKU of the operating system as CIM reads them (Server for a host that is no workstation; the PRODUCT_* numbers of the
+	# editions that the control protocol counts as Home, Pro and Enterprise), Hyper-V from the service of its Virtual Machine
+	# Management, and the tier, the first that the runner supports: RRAS NAT (1) on a Windows Server whose Routing and Remote
+	# Access runs as a LAN router (its service runs, and its router type has LAN routing), WinNAT (2) where Hyper-V and the
+	# service of WinNAT are there, and else the proxy (3). A node counts a NAT network of WinNAT of another name than its own
+	# (RanzVPN-Egress) once it looked at them, which it does when it serves WinNAT (src/Cedar/NodeEgressNat.c); the nodes of
+	# the tracer are the exit of no VRF and never look, so the NAT networks that CIM lists here are printed and do not count
+	$os = Get-CimInstance -ClassName Win32_OperatingSystem
+	$editions = @{ 'Home' = @(98, 99, 100, 101); 'Pro' = @(48, 49, 161, 162, 164, 165); 'Enterprise' = @(4, 27, 70, 72, 84, 121, 122, 125, 126, 129, 130, 175, 188) }
+	$sku = ''
+	if ($os.ProductType -ne 1) {
+		$sku = 'Server'
+	} else {
+		foreach ($edition in $editions.Keys) { if ($editions[$edition] -contains [int] $os.OperatingSystemSKU) { $sku = $edition } }
+	}
+	$haveHyperV = Test-Path -LiteralPath "$services\vmms"
+	$rras = Get-Service -Name 'RemoteAccess' -ErrorAction SilentlyContinue
+	$routerType = (Get-ItemProperty -LiteralPath "$services\RemoteAccess\Parameters" -Name 'RouterType' -ErrorAction SilentlyContinue).RouterType
+	$haveRras = ($sku -eq 'Server') -and $rras -and ($rras.Status -eq 'Running') -and ($null -ne $routerType) -and (([int] $routerType -band 6) -ne 0)
+	$haveWinNat = Test-Path -LiteralPath "$services\WinNat"
+	$otherNats = 0
+	if ($haveHyperV -and $haveWinNat) {
+		try {
+			$otherNats = @(Get-CimInstance -Namespace 'root/StandardCimv2' -ClassName 'MSFT_NetNat' | Where-Object { $_.Name -ne 'RanzVPN-Egress' }).Count
+		} catch {
+			Write-Host "this runner: the NAT networks of WinNAT cannot be listed ($_)"
+		}
+	}
+	$tier = 3
+	if ($haveRras) { $tier = 1 } elseif ($haveHyperV -and $haveWinNat) { $tier = 2 }
+	Write-Host "this runner: $($os.Caption), product type $($os.ProductType), SKU $($os.OperatingSystemSKU): edition '$sku', Hyper-V $haveHyperV, Routing and Remote Access as a LAN router $haveRras, WinNAT $haveWinNat, $otherNats NAT networks of WinNAT of another program, which nodes that never looked do not count: Egress tier $tier"
 	foreach ($s in $states | Where-Object { $nodes.Contains($_.name) }) {
 		$caps = $s.capabilities
 		if (-not $caps) { throw "the API lists no Capabilities for node $($s.name), which its Hello carries: $($s | ConvertTo-Json -Compress -Depth 4)" }
@@ -174,6 +207,10 @@ try {
 		if ($caps.architecture -ne $Architecture) { throw "node $($s.name) reports the architecture '$($caps.architecture)' on a $Architecture runner" }
 		if ([bool] $caps.selow -ne $haveSeLow) { throw "node $($s.name) reports SeLow $($caps.selow), and this runner has it: $haveSeLow" }
 		if ([bool] $caps.xdp -ne $haveXdp) { throw "node $($s.name) reports XDP $($caps.xdp), and this runner has it: $haveXdp" }
+		Write-Host "API: node $($s.name) reports the SKU '$($caps.sku)', Hyper-V $($caps.hyperV) and the Egress tier $($caps.egressTier)"
+		if ("$($caps.sku)" -ne $sku) { throw "node $($s.name) reports the SKU '$($caps.sku)', and this runner is '$sku'" }
+		if ([bool] $caps.hyperV -ne $haveHyperV) { throw "node $($s.name) reports Hyper-V $($caps.hyperV), and this runner has it: $haveHyperV" }
+		if ([int] $caps.egressTier -ne $tier) { throw "node $($s.name) reports the Egress tier $($caps.egressTier), not $tier, the tier of this runner" }
 	}
 	Write-Host 'the Hello of each node carried its Capabilities, which are the ones of this machine'
 
