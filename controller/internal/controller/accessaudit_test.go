@@ -109,6 +109,71 @@ func TestAReadOfTheTokensTheAuditLogOrTheLicenceLeavesAnAccessRecord(t *testing.
 	}
 }
 
+// TestAViewerThatReadsWithGetAndHeadLeavesOneAccessRecordForEachRead is the third criterion of AUD1-DT-19 (#506): a
+// HEAD is the same read as a GET for the audit of access, so a viewer that reads the audit log with both, and the
+// licence the same way, leaves one access record a minute for each of the two reads, and not one for each method.
+func TestAViewerThatReadsWithGetAndHeadLeavesOneAccessRecordForEachRead(t *testing.T) {
+	h := newAuditHarness(t)
+	ctx := context.Background()
+	since := time.Now().Add(-time.Second)
+	admin := h.auditedAPI(h.admin)
+	viewer := h.auditedAPI(h.token("viewer-1", rbac.Viewer))
+
+	// head sends a HEAD of path with the token of the viewer, as a client does that only asks whether a read works
+	head := func(path string) {
+		t.Helper()
+		req, err := http.NewRequestWithContext(ctx, http.MethodHead, viewer.URL+path, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		req.Header.Set("Authorization", "Bearer "+viewer.Token)
+		resp, err := viewer.HTTP.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp.Body.Close()
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("a HEAD of %s gave %s, want 200", path, resp.Status)
+		}
+	}
+	// Twice, within the minute: the audit log with a GET and then a HEAD, the licence with a HEAD and then a GET
+	for range 2 {
+		if _, err := viewer.Audit(ctx, audit.Filter{}); err != nil {
+			t.Fatal(err)
+		}
+		head("/api/v1/audit")
+		head("/api/v1/licence")
+		if _, err := viewer.Licence(ctx); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// A call that changes something is recorded after them, so the records of the reads are in the log by the time
+	// it is
+	if _, err := admin.SetAuditRetention(ctx, audit.Retention{Days: 90, MaxRecords: 100000}); err != nil {
+		t.Fatal(err)
+	}
+
+	recs := h.waitAudit(admin, "the retention", func(rs []audit.Record) bool { return len(auditOfKind(rs, audit.Operation)) >= 1 })
+	// The first read of each thing is the one that is recorded, whichever method it had
+	want := []string{"GET /api/v1/audit", "HEAD /api/v1/licence"}
+	accesses := auditOfKind(recs, audit.Access)
+	if len(accesses) != len(want) {
+		t.Fatalf("the audit log holds %d accesses, want the %d reads of the viewer, once each:\n%s", len(accesses), len(want), auditLines(recs))
+	}
+	byAction := map[string]audit.Record{}
+	for _, r := range accesses {
+		byAction[r.Action] = r
+	}
+	for _, action := range want {
+		r, ok := byAction[action]
+		if !ok {
+			t.Errorf("the audit log has no access of %s to %s:\n%s", audit.ActorToken("viewer-1"), action, auditLines(recs))
+			continue
+		}
+		checkAuditRecord(t, r, since, audit.ActorToken("viewer-1"), "127.0.0.1", audit.Success, action, 0)
+	}
+}
+
 // TestAReadWithAUserTokenLeavesAnAccessRecordUnderTheUser: a read with a user token (SDN-32, #226) is an
 // access of its User, user:NAME, as every call of the token is, and the user token of an admin reads the
 // API roles of users too, which sit under the tokens. A user token has an end of its own, so the life of
