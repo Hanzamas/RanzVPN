@@ -178,10 +178,15 @@ func ownDataDir(dir string) error {
 // moment is never taken for the one that this call made. A volume that keeps no access lists, such as a FAT
 // drive, takes the folder and ignores the descriptor: the folder is removed again, and the error says so.
 //
-// The same list is set once more, with SetNamedSecurityInfo, which is how every later change of the list is made
-// (the install over the folder): it gives the folder the state that a list that was set by it has, in which the files
-// and folders made in the folder take the list as entries that came from it, and a change of the list reaches them.
-// The folder has the list at every moment, so this changes nothing that a handle could use.
+// CreateDirectory gives the folder its list as a protected list and no more: the flag of a list that passes a change
+// down to what the folder holds (auto-inherited, AI in the text of a descriptor) is not set, whatever the descriptor says,
+// and a file that is made in the folder has a list without it too. When SetNamedSecurityInfo then gives such a file an
+// owner, it turns the entries that the file inherited into entries of its own and protects its list, so a later change of
+// the list of the folder no longer reaches the file (measured on the hosted runners, x64 and arm64, run 41066865697 of the
+// throwaway workflow exp-datadir-sd.yml of #503). So the same list is set once more with SetNamedSecurityInfo, as the
+// install sets it over a folder that is kept: the folder gets the flag, and its files take the list the way that the
+// files of a folder of before did. The folder has its list at every moment, so this gives no handle a right that it did
+// not have.
 func makeProtectedDir(dir, sddl string) error {
 	sd, err := windows.SecurityDescriptorFromString(sddl)
 	if err != nil {

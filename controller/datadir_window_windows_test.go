@@ -129,7 +129,10 @@ func openedWhileMade(t *testing.T, parent, label string, rounds int, create func
 // while it is made, 300 times for each way of making one. Two controls show that the watcher sees what it is there for:
 // a folder with the list of its folder is open to a standard user, and a folder that is made as the install made it
 // before, with the list of its folder first and its own after, is caught by the watcher when the two steps are 5 ms
-// apart, so a window that the watcher can see is a window that it does see.
+// apart, so a window that the watcher can see is a window that it does see. Measured on the hosted runners with the
+// two steps of before and no pause (run 41066865697 of the throwaway workflow exp-datadir-sd.yml): the watcher opened
+// the folder in 300 of 300 rounds on x64 and in 283 of 300 on arm64, and it opened none of the folders that the install
+// and the start of the service make now.
 func TestNoStandardUserOpensANewDataDirWhileItIsMade(t *testing.T) {
 	requireAdministrator(t)
 	parent := filepath.Join(t.TempDir(), "ProgramData")
@@ -178,6 +181,51 @@ func TestNoStandardUserOpensANewDataDirWhileItIsMade(t *testing.T) {
 		t.Run(c.name, func(t *testing.T) {
 			if caught := openedWhileMade(t, parent, strings.ReplaceAll(c.name, " ", "-"), rounds, c.create); caught > 0 {
 				t.Errorf("a standard user opened the new data directory for adding files and folders while %s made it, in %d of %d rounds: the folder had the access list of its folder before its own", c.name, caught, rounds)
+			}
+		})
+	}
+}
+
+// A new data directory takes a later change of its list down to what it holds, as a folder that SetNamedSecurityInfo set
+// the list of does, however it was made. CreateDirectory alone makes the folder with a protected list that is not marked as
+// one that passes changes down (makeProtectedDir), and the first call of SetNamedSecurityInfo on a file that was made in it,
+// to give the file an owner, turned the entries that the file inherited into entries of its own and protected its list: the
+// change of the list of the folder, which the install makes over a folder that is kept, then did not reach the file (the
+// step Test of ranz (Windows x64) failed at the head 91649abd). So the test makes a file and a folder in each new folder,
+// gives both to the Administrators, which is such a call, adds a reader to the list of the folder and checks that both
+// took it as entries that came from the folder.
+func TestNewDataDirPassesALaterChangeOfItsListDown(t *testing.T) {
+	requireAdministrator(t)
+	for _, c := range []struct {
+		name   string
+		create func(string) error
+	}{
+		{"the install", makeOwnedDataDir},
+		{"the start of the service", makeDataDir},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			dir := filepath.Join(t.TempDir(), "Ranz", "controller")
+			if err := c.create(dir); err != nil {
+				t.Fatal(err)
+			}
+			if got := securityOf(t, dir); !strings.Contains(got, "D:PAI") {
+				t.Errorf("the new data directory has the security %s, want a protected access list that passes changes down to what the folder holds", got)
+			}
+			file := filepath.Join(dir, "admin.token")
+			if err := os.WriteFile(file, []byte("a token"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			folder := filepath.Join(dir, "payload")
+			if err := os.Mkdir(folder, 0o700); err != nil {
+				t.Fatal(err)
+			}
+			giveTo(t, file, adminsSID)
+			giveTo(t, folder, adminsSID)
+			setDACL(t, dir, "D:P(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)(A;OICI;FRFX;;;BU)")
+			for _, path := range []string{file, folder} {
+				if got := securityOf(t, path); !hasTrustee(got, "BU") || strings.Contains(got, "D:P") {
+					t.Errorf("%s has the security %s after the list of the data directory got a reader, want the reader as an entry that came from the folder and a list that is not protected", path, got)
+				}
 			}
 		})
 	}
