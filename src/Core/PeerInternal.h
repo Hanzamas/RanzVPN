@@ -109,17 +109,21 @@ typedef struct PEER_SESSION_OUT {
 	UCHAR Payload[PEER_MAX_PAYLOAD]; // ... and its bytes
 } PEER_SESSION_OUT;
 
-// The agent of libjuice (juice/juice.h), which only PeerIce.c calls
-struct juice_agent;
+// The agent of libjuice (juice/juice.h) in its peer mode, on the socket of the layer (juice-peer.h), which only
+// PeerIce.c calls
+#include "juice-peer.h"
 
-// The ICE session of a node with one peer (PeerIce.c): an agent of libjuice on the ICE socket of the node, which
-// checks the candidate pairs in the background while the peer stays on the relay. PeerIce.c creates and destroys it
-// under IceLock, never under the lock of the layer; the PEER that holds it changes under the lock of the layer.
+// The ICE session of a node with one peer (PeerIce.c): an agent of libjuice in the peer mode, on the socket of the
+// layer, which checks the candidate pairs in the background while the peer stays on the relay. PeerIce.c creates and
+// destroys it under IceLock, never under the lock of the layer; the PEER that holds it changes under the lock of the
+// layer.
 typedef struct PEER_ICE {
+	juice_peer_io_t Io;                    // First: the I/O of the agent on the socket of the layer, at its user_ptr
 	PEER_AGENT *Agent;                     // The peer layer
 	UCHAR Key[PEER_KEY_SIZE];              // The peer
-	struct juice_agent *Juice;             // The agent of libjuice
+	juice_agent_t *Juice;                  // The agent of libjuice
 	bool Controlling;                      // The node offered: its agent nominates the pair (IceLock)
+	bool Mapped;                           // The node had the public port of its home gateway when it made the session
 	char Ufrag[PEER_ICE_UFRAG_SIZE];       // The credentials of the session, which the node's signals to the peer carry
 	char Pwd[PEER_ICE_PWD_SIZE];           // ...
 	char RemoteUfrag[PEER_ICE_UFRAG_SIZE]; // The peer's username fragment, empty before its signal (IceLock)
@@ -162,11 +166,10 @@ typedef struct PEER {
 	UINT64 BindSequence;                            // The relay role: the sequence of the last bind taken from the peer
 } PEER;
 
-// The ICE side of a node (PeerIce.c, PeerPortMap.c), with Config.Ice
+// The port mapping of a node behind a home gateway (PeerPortMap.c), with Config.PortMap
 typedef struct PEER_ICE_NODE {
-	struct juice_agent *Base; // The agent that holds the ICE socket open and gathers the node's candidates
-	USHORT Port;              // The port of the ICE socket
-	int PortMap;              // The libplum mapping of that port on the home gateway, -1 for none
+	USHORT Port; // The port of the socket of the layer that it maps, 0 before the host candidates named it
+	int PortMap; // The libplum mapping of that port on the home gateway, -1 for none
 } PEER_ICE_NODE;
 
 // One relay that the node may use, and its binding to it
@@ -218,7 +221,7 @@ struct PEER_AGENT {
 	volatile LONG64 Counters[12];            // Sent, Delivered, DeliveredRelay, Forwarded, Binds, Signals, Upgrades, Fallbacks, PunchAttempts, PunchSuccesses, Handshakes, Challenges
 	volatile LONG64 Drops[PEER_NUM_REASONS]; // What the layer dropped, by reason
 	SRWLOCK IceLock;                         // Serialises the start, the remote side and the end of the ICE sessions
-	PEER_ICE_NODE Ice;                       // The ICE socket and the port mapping, with Config.Ice
+	PEER_ICE_NODE Ice;                       // The port mapping of the socket, with Config.PortMap
 	UCHAR CookieSecret[CRYPTO_SHA256_SIZE];  // The relay role: the key of its bind challenges, new at every start
 };
 
@@ -248,7 +251,6 @@ UINT64 PeerGetUint64(const UCHAR *p);
 void PeerPutUint16(UCHAR *p, USHORT v);
 USHORT PeerGetUint16(const UCHAR *p);
 PEER *PeerFind(PEER_AGENT *a, const UCHAR *key);
-void PeerInputDirect(PEER_AGENT *a, const UCHAR *key, const UCHAR *data, UINT size);
 bool PeerSendRaw(PEER_AGENT *a, const PEER_ADDR *to, const void *data, UINT size);
 void PeerBind(PEER_AGENT *a, const UCHAR *relay_key, bool answer);
 
@@ -272,20 +274,22 @@ UINT PeerSeal(PEER_AGENT *a, const UCHAR *peer, UINT kind, const void *payload, 
 bool PeerOpen(PEER_AGENT *a, const UCHAR *env, UINT size, UCHAR *sender, void *payload, UINT payload_size, UINT *payload_len);
 
 // PeerIce.c
-bool PeerIceStart(PEER_AGENT *a);
 void PeerIceStop(PEER_AGENT *a);
 void PeerIceOffer(PEER_AGENT *a, const UCHAR *key);
 void PeerIceRemote(PEER_AGENT *a, const UCHAR *key, const PEER_SIGNAL *s);
 void PeerIceRetire(PEER *peers, UINT num);
+bool PeerIceValid(PEER_ICE *ice);
 bool PeerIceUp(PEER_ICE *ice);
-bool PeerIceSend(PEER_ICE *ice, const void *data, UINT size);
+bool PeerIceIsStun(const UCHAR *data, UINT size);
+void PeerIceInput(PEER_AGENT *a, const PEER_ADDR *from, const UCHAR *data, UINT size);
 UINT PeerIceCandidates(PEER_AGENT *a, PEER_CANDIDATE *c, UINT max);
 bool PeerAddrFromHost(PEER_ADDR *a, const char *host, USHORT port);
 
 // PeerPortMap.c
-void PeerPortMapStart(PEER_AGENT *a);
+void PeerPortMapStart(PEER_AGENT *a, USHORT port);
 void PeerPortMapStop(PEER_AGENT *a);
 bool PeerPortMapGet(PEER_AGENT *a, PEER_ADDR *addr);
+UINT PeerPortMapState(PEER_AGENT *a);
 
 // PeerPunch.c
 UINT PeerPunchCandidate(PEER_AGENT *a, PEER_CANDIDATE *c, UINT max);

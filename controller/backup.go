@@ -51,14 +51,17 @@ func runBackup(args []string) error {
 
 // backupMessage is what `ranz controller backup` says once it wrote the backup file of size bytes: who
 // may read it, and everything that it holds, which is all that the controller keeps, so the operator
-// knows how safe to keep it (AUD1-DT-10, #458). A member of a cluster keeps the secrets of the targets in
-// clear, as sealTargets says.
+// knows how safe to keep it (AUD1-DT-10, #458). A member of a cluster seals the secrets of the targets
+// and the PresharedKeys of the Devices with the Cluster key of the cluster, as sealClusterTargets says
+// (AUD1-DT-16, #501).
 func backupMessage(file string, size int64, clusterMember bool) string {
 	secrets := "the secrets of the targets (the export and audit targets) and the PresharedKeys of the WireGuard Devices, which the key of this host seals: " +
 		"a restore on another host brings the targets back with no secret, and the log of the controller there names them, so that you put each one again with its secret; " +
 		"it brings the Devices back with a PresharedKey that does not open, so that you make each one again"
 	if clusterMember {
-		secrets = "the secrets of the targets (the export and audit targets) in clear, since the members of a cluster have no sealing key in common"
+		secrets = "the secrets of the targets (the export and audit targets) and the PresharedKeys of the WireGuard Devices, which the Cluster key of the cluster seals, a key that the backup holds only as copies that the key of each member opens: " +
+			"a restore into another cluster brings the targets back with no secret, and the log of the controller there names them, so that you put each one again with its secret; " +
+			"it brings the Devices back with a PresharedKey that does not open, so that you make each one again"
 	}
 	return fmt.Sprintf("ranz controller backup: the store is in %s (%d bytes), %s.\n"+
 		"  It holds everything that the controller keeps in its store: the Intent with every revision, the states and the Capabilities of the Nodes, the events and the audit log, the settings (the lists of admin sources and destinations, the certificate of the controller), the leases of DHCP, the hashes of the API tokens and of the passwords of the users, the licence key, and %s.\n"+
@@ -83,10 +86,19 @@ func runRestore(args []string) error {
 	if err := restore(ctx, cfg, file, adminRights, os.Stderr); err != nil {
 		return err
 	}
-	fmt.Fprintf(os.Stderr, "ranz controller restore: the store is the backup in %s; the leader loads it.\n"+
-		"  The secrets of the targets in it open only with the key of the host that made the backup: on another host the targets come back with no secret, and the log of the controller names them, so that you put each one again with its secret.\n"+
-		"  So do the PresharedKeys of the WireGuard Devices: on another host the log of the controller says that they do not open, and the gateway terminates those Devices without a PresharedKey until you make each one again.\n", file)
+	fmt.Fprint(os.Stderr, restoreMessage(file))
 	return nil
+}
+
+// restoreMessage is what `ranz controller restore` says once the store is the backup in file: the secrets
+// of the targets and the PresharedKeys of the Devices in it open only with the key that sealed them, which
+// a backup does not hold (AUD1-DT-10 #458, SDN-82 #377), and a restore keeps the Cluster key of the store
+// that it replaces (AUD1-DT-16 #501).
+func restoreMessage(file string) string {
+	return fmt.Sprintf("ranz controller restore: the store is the backup in %s; the leader loads it.\n"+
+		"  The secrets of the targets in it open only with the key that sealed them: the key of the host that made the backup, or the Cluster key of the cluster that made it, since a restore keeps the Cluster key that this store has. "+
+		"On another host, or in another cluster, the targets come back with no secret, and the log of the controller names them, so that you put each one again with its secret.\n"+
+		"  So do the PresharedKeys of the WireGuard Devices: on another host, or in another cluster, the log of the controller says that they do not open, and the gateway terminates those Devices without a PresharedKey until you make each one again.\n", file)
 }
 
 // backup writes a backup of the controller's store to file, for its owner only (on Windows for SYSTEM

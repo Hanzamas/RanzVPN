@@ -35,8 +35,9 @@
    here. The relay forwards a datagram of a session as it came from a node bound to it to another node bound to it,
    inside a VRF of both and under a rate limit; the attacker of the model sends any datagram from any address, which
    is all that the forwarding would give it, so the model has no forwarding process. The ICE path (PeerIce.c,
-   libjuice) delivers a datagram through PeerInputDirect only when its source is the peer of the ICE session, and its
-   connectivity checks are those of libjuice, which the model does not have.
+   libjuice) takes a datagram only from the peer's address on the pair that the ICE session validated, and only when
+   its source is the peer of the ICE session, and its connectivity checks are those of libjuice, which the model does
+   not have.
 
    No production code runs the peer layer yet: the only PeerNew is the relay role (NodeRelayStart), which takes binds
    and forwards, and nothing in production calls PeerSend, PeerSealSignal, PeerOpenSignal or PeerSetRelays. The
