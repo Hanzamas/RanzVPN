@@ -185,6 +185,9 @@ ranz.control.v1.NodeConfig.lan_subnets max_count:16
 # bytes larger.
 ranz.control.v1.SessionProfile.name max_size:64
 ranz.control.v1.SessionProfile.user max_size:64
+# The VRFs whose internet exit a node is (SDN-12): at most 16, the VRFs of a node (Peer.vrf_ids). It
+# makes the NodeConfig, and so an Object, about 70 bytes larger.
+ranz.control.v1.NodeConfig.egress_vrf_ids max_count:16
 # The BGP peering of the standard mode (SDN-77): a router id, the addresses of the sidecars, the LAN
 # subnets that a node announces, 16 at most, and what a peer may announce, its 16 addresses at most
 # and its LAN subnets (controller/internal/intent MaxPeeringAnnounce, MaxPeeringAccept). They make

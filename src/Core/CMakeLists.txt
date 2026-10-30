@@ -200,6 +200,8 @@ add_library(corecontrol STATIC
   ControlCopy.c
   # The session profiles of a node and of its peers in a desired state (SDN-40, #233)
   ControlProfile.c
+  # The VRFs whose internet exit a node is in a desired state (SDN-12, #188)
+  ControlEgress.c
   # The Upgrades and the Fallbacks of the Paths of the peer agent that the client reports (CORE-S5-6, #412)
   ControlPath.c
   # The live operations of the Controller on the tables of the L2 Networks (SDN-50-N, #492)
