@@ -26,7 +26,7 @@ typedef struct NODE_PEERING_STATUS {
 	UINT NumAnnounced;      // The prefixes that the node announces
 	UINT NumLearned;        // The routes that it learned
 	UINT NumRebuilds;       // The forwarding tables built anew with the routes that it learned
-	UINT NumDeferred;       // ... rebuilds that met an apply of the overlay: they waited for it, or took the Generation that it put in force
+	UINT NumDeferred;       // ... rebuilds that met an apply of the overlay, counted at once: they wait for it, or take the Generation that it puts in force
 	UINT NumUnsent;         // The sidecars that the node ended because a message did not reach them
 	UINT NumHung;           // The sidecars that the node ended because they did not answer whether they run
 	UINT64 Refused;         // The sessions that the sidecar refused, from an address that no peer has

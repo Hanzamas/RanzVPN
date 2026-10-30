@@ -104,6 +104,7 @@
 #define	PEERINGTEST_DUMMIES		200			// The peers that a large mesh adds to a node: no node, and their sidecars never answer
 #define	PEERINGTEST_ACCEPTS		31			// ... each with as many prefixes to accept from it, so that its peers fill a pipe
 #define	PEERINGTEST_HOSTILE		12			// The more specific prefixes of its LAN that a hostile node-b announces
+#define	PEERINGTEST_WINDOWS		2			// The windows of an apply at node-a (PeeringTestWindow)
 
 // The nodes
 #define	PEERINGTEST_A			0
@@ -217,6 +218,9 @@ typedef struct PEERINGTEST_CTX
 	bool Hostile;						// ... whether node-b announces more specific prefixes of its LAN in red,
 	UINT NumDummies[PEERINGTEST_NODES];	// ... and the peers of a large mesh that each node has
 	UINT Starts[PEERINGTEST_NODES];		// The sidecars that each node started so far
+	UINT NumWindows;					// The windows of an apply whose apply the worker of node-a met (PeeringTestHeld), each with
+	UINT64 WindowFrom[PEERINGTEST_WINDOWS];	// ... the Generation of its rebuild, which went out of force in the window,
+	UINT64 WindowTo[PEERINGTEST_WINDOWS];	// ... and the one that the apply put in force
 	bool Ran;							// The nodes started their sidecars
 	UINT Seq;							// The data of the next test packet
 } PEERINGTEST_CTX;
@@ -2172,6 +2176,8 @@ static void PeeringTestHeld(PEERINGTEST_CTX *ctx, UINT64 gen, bool announced)
 
 	Print("[Generation %I64u: node-b %s its extra LAN %s/%u while the apply at node-a holds]\n", gen, announced ? "announces" : "withdraws", x->Lan, (UINT)PEERINGTEST_LENGTH);
 
+	// The Generation that the BGP peering of node-a has until the apply is done: the one of the rebuild that meets the apply
+	UINT64 from = ctx->Generation;
 	ctx->Generation = gen;
 	ctx->Announced[PEERINGTEST_EXTRA_B] = announced;
 	NodePeeringGetStatus(a->Node, &before);
@@ -2208,9 +2214,21 @@ static void PeeringTestHeld(PEERINGTEST_CTX *ctx, UINT64 gen, bool announced)
 		SleepThread(PEERINGTEST_POLL);
 	}
 
-	// ... and the worker of node-a, which the message woke, meets the apply that holds
-	SleepThread(PEERINGTEST_QUIET);
-	NodePeeringGetStatus(a->Node, &during);
+	// ... and the worker of node-a, which the message woke, meets the apply that holds: its rebuild counts as one that met an apply
+	// at once, while the apply still holds (NODE_PEERING_STATUS.NumDeferred)
+	end = Tick64() + PEERINGTEST_BOUND;
+	bool met = false;
+	Zero(&during, sizeof(during));
+	while (held && message)
+	{
+		NodePeeringGetStatus(a->Node, &during);
+		met = (during.NumDeferred > before.NumDeferred);
+		if (met || Tick64() >= end)
+		{
+			break;
+		}
+		SleepThread(PEERINGTEST_POLL);
+	}
 
 	a->Hold = 0;
 	SetEvent(a->Release);
@@ -2225,8 +2243,15 @@ static void PeeringTestHeld(PEERINGTEST_CTX *ctx, UINT64 gen, bool announced)
 		announced ? "learned" : "withdrawn", x->Lan, (UINT)PEERINGTEST_LENGTH, gen);
 	PeeringTestCheck(ctx, held && others && message && apply.Applied, what, "held %u, node-b and node-c took the Generation %u, the message came %u, the apply at node-a went in %u",
 		(UINT)held, (UINT)others, (UINT)message, (UINT)apply.Applied);
-	PeeringTestCheck(ctx, during.NumDeferred > before.NumDeferred, "  The worker of node-a meets the apply that holds: its rebuild of the forwarding tables waits for the apply and is not lost",
+	PeeringTestCheck(ctx, met, "  The worker of node-a meets the apply that holds: its rebuild of the forwarding tables waits for the apply and is not lost",
 		"%u rebuilds met an apply before the window and %u in it", before.NumDeferred, during.NumDeferred);
+	// The node log of node-a says the rest once the node is freed (PeeringTestClose)
+	if (met && ctx->NumWindows < PEERINGTEST_WINDOWS)
+	{
+		ctx->WindowFrom[ctx->NumWindows] = from;
+		ctx->WindowTo[ctx->NumWindows] = gen;
+		ctx->NumWindows++;
+	}
 
 	// After both: the forwarding tables of node-a of the Generation have the change, at once, and the mesh is the one of the Generation
 	UINT want = (announced ? PeeringTestHop(PEERINGTEST_A, PEERINGTEST_B) : NODE_VRF_NONE);
@@ -2589,6 +2614,24 @@ static void PeeringTestClose(PEERINGTEST_CTX *ctx)
 		PeeringTestCheck(ctx, log != NULL && SearchStrEx(log, "ranz.exe bgp -pipe", 0, true) != INFINITE, what, "%s", log == NULL ? "there is no log" : "no such line");
 		Free(log);
 	}
+
+	// The node log of node-a, whole once the node is freed: the rebuild that met the apply of each window (PeeringTestHeld) found the
+	// Generation that the apply put in force and said so, and a later pass built the tables of that Generation (SDN-77-R1, #531)
+	char *node_log = (ctx->NumWindows != 0 ? PeeringTestReadLog(ctx->Nodes[PEERINGTEST_A].Dir, NULL) : NULL);
+	for (UINT k = 0;k < ctx->NumWindows;k++)
+	{
+		char stale[MAX_SIZE], built[MAX_SIZE], what[MAX_SIZE];
+
+		Format(stale, sizeof(stale), "BGP peering: generation %I64u went out of force while its forwarding tables were built anew", ctx->WindowFrom[k]);
+		Format(built, sizeof(built), "BGP peering: the forwarding tables of generation %I64u built anew", ctx->WindowTo[k]);
+		UINT at = (node_log != NULL ? SearchStrEx(node_log, stale, 0, true) : INFINITE);
+		bool rebuilt = (at != INFINITE && SearchStrEx(node_log, built, at, true) != INFINITE);
+
+		Format(what, sizeof(what), "The node log of node-a says that its rebuild with Generation %I64u found Generation %I64u in force, and a later pass built the tables of Generation %I64u",
+			ctx->WindowFrom[k], ctx->WindowTo[k], ctx->WindowTo[k]);
+		PeeringTestCheck(ctx, rebuilt, what, "%s", node_log == NULL ? "there is no log" : (at == INFINITE ? "no line of the rebuild that found another Generation" : "no rebuild of that Generation after it"));
+	}
+	Free(node_log);
 
 	for (UINT i = 0;i < PEERINGTEST_NODES;i++)
 	{

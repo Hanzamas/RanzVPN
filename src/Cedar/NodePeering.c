@@ -124,8 +124,8 @@ typedef struct NODE_PEERING_SIDECAR {
 	UCHAR RouterId[4];
 	UCHAR Address[16];
 	UINT AddressSize;
-	char *Peers;                // The peers that it took last, as the JSON array of the protocol
-	bool Dead;                  // The worker's: it gets no message any more, as one did not reach it, it hangs, or the overlay stops
+	char *Peers; // The peers that it took last, as the JSON array of the protocol
+	bool Dead;   // The worker's: it gets no message any more, as one did not reach it, it hangs, or the overlay stops
 } NODE_PEERING_SIDECAR;
 
 // A sidecar that stopped and that the worker does not wait for (NodePeeringLetGo): a wait of the thread pool closes its handles
@@ -1573,6 +1573,13 @@ static void NodePeeringRebuild(NODE_PEERING *p) {
 	const CONTROL_STATE *with = NodePeeringWith(p->Node, base);
 	UINT ret = NodeOverlayRebuild(p->Node, with);
 
+	// A rebuild that meets an apply counts at once, while the apply still runs
+	if (ret == NODE_REBUILD_BUSY || ret == NODE_REBUILD_STALE) {
+		Lock(p->Lock);
+		p->NumDeferred++;
+		Unlock(p->Lock);
+	}
+
 	// An apply runs: try again when it is done, but not past the halt
 	while (ret == NODE_REBUILD_BUSY && WaitForSingleObject(p->Halt, NODE_PEERING_BUSY) == WAIT_TIMEOUT) {
 		waited = true;
@@ -1584,9 +1591,6 @@ static void NodePeeringRebuild(NODE_PEERING *p) {
 
 	Lock(p->Lock);
 	{
-		if (waited || ret == NODE_REBUILD_STALE)
-			p->NumDeferred++;
-
 		if (ret == NODE_REBUILD_DONE) {
 			p->NumRebuilds++;
 			num = LIST_NUM(p->Routes);

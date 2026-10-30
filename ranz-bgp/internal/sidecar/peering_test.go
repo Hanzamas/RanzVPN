@@ -343,8 +343,16 @@ func TestPeeringHostile(t *testing.T) {
 	a.send(Message{Type: TypePeers, Peers: []Peer{peeringPeer("127.0.0.3", port, fromB...)}})
 	a.wait("a: 192.168.40.0/24 of VRF 102 withdrawn without c", false, isVRFRoute(TypeWithdrawn, 102, "192.168.40.0/24"))
 	a.send(Message{Type: TypePeers, Peers: []Peer{peeringPeer("127.0.0.3", port, fromB...), peeringPeer("127.0.0.4", port, fromC...)}})
+	// The routes of c come back in any order, so each wait takes the one that comes first
+	again := make(map[string]bool)
 	for _, m := range cRoutes {
-		a.wait("a learns "+m.Prefix+" of c again", false, isVRFRoute(TypeLearned, m.VRF, m.Prefix))
+		again[fmt.Sprintf("%d %s", m.VRF, m.Prefix)] = true
+	}
+	for len(again) > 0 {
+		l := a.wait("a learns the routes of c again", false, func(m Message) bool {
+			return m.Type == TypeLearned && m.Peer == "127.0.0.4" && again[fmt.Sprintf("%d %s", m.VRF, m.Prefix)]
+		})
+		delete(again, fmt.Sprintf("%d %s", l.VRF, l.Prefix))
 	}
 
 	time.Sleep(settleTime)
