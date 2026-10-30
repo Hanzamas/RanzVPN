@@ -150,6 +150,12 @@
 // the hub has a LAN subnet too, and the controller refuses an intent with one more (MaxPeerRoutes,
 // controller/internal/intent/leak.go).
 //
+// Egress (SDN-12 #188, ADR-0025 decision 13): the node that is the internet exit of a VRF gets the
+// id of the VRF in its NodeConfig (NodeConfig.egress_vrf_ids), and every other node of the VRF gets
+// the default route 0.0.0.0/0 of the VRF as a route of the Peer of the exit. The exit reports the
+// Egress tier that its host gives it, with the SKU and Hyper-V that decide it, in its Capabilities.
+// No schema version changes with them: a node of an older release skips the field it does not know.
+//
 // BGP peering of the standard mode (SDN-77, #357): the nodes of a VRF whose links are of kind vxlan
 // or geneve and whose peering is bgp (Vrf.peering) exchange their routes there by BGP, in a full
 // mesh, each with the sidecar ranz bgp on the network that the operator trusts. A node gets the
@@ -368,6 +374,10 @@ message NodeConfig {
   // The session profile that the node runs under as a device of a User (SDN-40 #233), absent for a node
   // that has no owner or whose owner runs under none: the node enforces its flags on itself.
   SessionProfile profile = 16;
+  // The VRFs whose internet exit the node is (SDN-12 #188), by id, ascending: the node takes the
+  // traffic of their other nodes to the outside with the Egress tier of its host. Empty for a node
+  // that is the exit of no VRF.
+  repeated uint32 egress_vrf_ids = 17;
 }
 
 // How the nodes of a VRF exchange their routes (SDN-77 #357).

@@ -39,6 +39,7 @@
 
 #include "NodeAgent.h"
 #include "NodeCaps.h"
+#include "NodeEgress.h"
 #include "NodeGateway.h"
 #include "NodeInternal.h"
 #include "NodeLink.h"
@@ -189,6 +190,8 @@ static NODE_VRF_TABLES *NodeOverlayTables(const CONTROL_STATE *st, NODE_OVERLAY_
 	max_routes += NodeDeviceRoutes(st, NULL);
 	// Gateway HA (NodeGateway.c; SDN-19, #195): the LAN subnets behind the node lead to its host
 	max_routes += NodeGatewayRoutes(st, NULL);
+	// The internet exits (NodeEgress.c; SDN-12, #188): the default route of each VRF whose exit the node is leads to its host
+	max_routes += NodeEgressRoutes(st, NULL);
 
 	NODE_VRF_ROUTE *routes = ZeroMalloc(sizeof(NODE_VRF_ROUTE) * MAX(max_routes, 1));
 
@@ -205,6 +208,7 @@ static NODE_VRF_TABLES *NodeOverlayTables(const CONTROL_STATE *st, NODE_OVERLAY_
 	num += NodeLeakRoutes(st, routes + num);
 	num += NodeDeviceRoutes(st, routes + num);
 	num += NodeGatewayRoutes(st, routes + num);
+	num += NodeEgressRoutes(st, routes + num);
 	// ... and a prefix that several peers announce leads to the next hop of their group of gateways
 	NodeGatewayGroupRoutes(st, routes, num);
 
@@ -237,6 +241,8 @@ static bool NodeOverlaySwapTables(NODE_OVERLAY *ov, const CONTROL_STATE *st, NOD
 	NodeProfileAttach(ov->Node, v, st);
 	// The source groups of the Generation go in with its tables (NodeSourceGroup.c; SDN-87, #386)
 	NodeSourceGroupAttach(ov->Node, v, st);
+	// The VRFs whose internet exit the node is go in with its tables (NodeEgress.c; SDN-12, #188)
+	NodeEgressAttach(ov->Node, v, st);
 	*num_vrfs = (v != NULL ? v->NumVrfs : 0);
 	bool swapped = (v != NULL && NodeSwapVrfs(ov->Node, v));
 	NodePolicyApplied(ov->Node, swapped);
@@ -360,6 +366,9 @@ static void NodeOverlayState(void *param, const CONTROL_STATE *state) {
 	// The WireGuard interface of a gateway, after the adapters of its VRFs (NodeWireGuard.c; SDN-80, #375)
 	if (swapped)
 		NodeWireGuardApplied(ov->Node, st);
+	// The proxy of the internet exit listens on the addresses of the adapters of its VRFs (NodeEgress.c; SDN-12, #188)
+	if (swapped)
+		NodeEgressApplied(ov->Node, st);
 	// The sidecar of the BGP peering takes the Generation that went in (NodePeering.c; SDN-77, #357)
 	NodePeeringApplied(ov->Node, state, swapped);
 	NodePeeringDone(st, state);
@@ -681,6 +690,10 @@ static void NodeOverlayDeliver(NODE_OVERLAY *ov, NODE_OVERLAY_PEER *p, const UCH
 	}
 
 	InterlockedIncrement64(&ov->Delivered);
+	// The internet exit takes a packet to an address outside the VRF, and puts what the host should see of it into the adapter
+	// itself (NodeEgress.c; SDN-12, #188)
+	if (NodeEgressDeliver(ov->Node, v, vrf_id, packet, packet_size, ov->Config.Adapter, ov->Config.AdapterParam))
+		return;
 	ov->Config.Adapter(ov->Node, ov->Config.AdapterParam, vrf_id, packet, packet_size);
 }
 
@@ -885,6 +898,8 @@ bool NodeOverlayStart(NODE *n, NODE_OVERLAY_CONFIG *cfg) {
 	NodeGatewayStart(n);
 	// The session profiles of the peers and of the node (NodeProfile.c; SDN-40, #233)
 	NodeProfileStart(n);
+	// The internet exit, whose VRFs the states name (NodeEgress.c; SDN-12, #188)
+	NodeEgressStart(n, cfg->EgressTier);
 	// The Listener, which listens where a state says (NodeListener.c; SDN-45, #238)
 	NodeListenerStart(n, cfg->Key);
 	n->Overlay = ov;
@@ -988,6 +1003,8 @@ void NodeOverlayStop(NODE *n) {
 	// The peer agent goes once the control stream that carried its Signals and the thread that dialled its peers stopped
 	// (NodeAgent.c; CORE-S5-5, #411)
 	NodeAgentStop(n);
+	// No packet of a peer or of the host reaches the internet exit any more: its proxy goes (NodeEgress.c; SDN-12, #188)
+	NodeEgressStop(n);
 	// The thread closed every session, the ones over the streams of the Listener too (NodeListener.c; SDN-45, #238)
 	NodeListenerStop(n);
 	// No table holds a gateway any more, and the thread forgot every peer: the gateway HA goes (NodeGateway.c; SDN-19, #195)
@@ -1066,6 +1083,9 @@ bool NodeOverlayInput(NODE *n, UINT vrf_id, const UCHAR *packet, UINT size) {
 	// A route that a VRF of the peer leaks takes the packet into that VRF (NodeLeak.c; SDN-7, #183)
 	WRITE_UINT(record, NodeLeakVrf(v, hop, vrf_id));
 	size = NodeNatCopy(v, vrf_id, record + NODE_OVERLAY_VRF_TAG, packet, size);
+	// What the host answers from the proxy of the internet exit goes from the address outside the VRF that the peer reached
+	// (NodeEgress.c; SDN-12, #188)
+	NodeEgressFromHost(n, v, vrf_id, record + NODE_OVERLAY_VRF_TAG, size);
 	// The session profile of the peer and the node's own, then the policy of the VRF, judge the packet as the overlay sees it,
 	// after the 1:1 NAT rules (NodeProfile.c; SDN-40, #233; NodePolicy.c; SDN-8, #184)
 	bool allowed = NodeProfileOutbound(n, v, vrf_id, hop, record + NODE_OVERLAY_VRF_TAG, size) && NodePolicyOutbound(n, v, vrf_id, hop, record + NODE_OVERLAY_VRF_TAG, size);

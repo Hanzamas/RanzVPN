@@ -1,5 +1,5 @@
 // ControlInternal.h
-// Module-internal declarations of the control module (Control.c, ControlDhcp.c, ControlDns.c, ControlListener.c, ControlDevice.c, ControlEndpoint.c, ControlEvent.c, ControlGateway.c, ControlLink.c, ControlPath.c, ControlPeering.c, ControlPins.c, ControlProfile.c, ControlSecurity.c, ControlSignal.c): only its own
+// Module-internal declarations of the control module (Control.c, ControlDhcp.c, ControlDns.c, ControlListener.c, ControlDevice.c, ControlEgress.c, ControlEndpoint.c, ControlEvent.c, ControlGateway.c, ControlLink.c, ControlPath.c, ControlPeering.c, ControlPins.c, ControlProfile.c, ControlSecurity.c, ControlSignal.c): only its own
 // files include this
 // header, after the messages that nanopb generates from the schema
 
@@ -63,6 +63,9 @@ void ControlPeeringResend(CONTROL_PEERING_REPORT *r);
 
 // ControlProfile.c
 void ControlCopyProfiles(CONTROL_STATE *st, const ranz_control_v1_Object *objects, UINT num);
+
+// ControlEgress.c
+void ControlCopyEgress(CONTROL_STATE *st, const ranz_control_v1_Object *objects, UINT num);
 
 // ControlPath.c
 void ControlPathsResend(CONTROL_PATHS *p);

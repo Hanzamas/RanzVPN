@@ -151,6 +151,8 @@ func Compile(in intent.Intent) (map[string]State, error) {
 		self.Peering = nodePeering(in, n, vrfs)
 		// The session profile of the node, whose flags it enforces on itself (profile.go; SDN-40)
 		self.Profile = profiles[name]
+		// The VRFs whose internet exit the node is (egress.go; SDN-12)
+		self.EgressVrfIds = egressVRFIDs(in, name, vrfs)
 		s.add(&controlpb.Object{Kind: &controlpb.Object_Node{Node: self}})
 		for other, o := range in.Nodes {
 			if other == name {
@@ -174,6 +176,8 @@ func Compile(in intent.Intent) (map[string]State, error) {
 			// The LAN subnets of a gateway and the prefixes that lead to a hub (topology.go; SDN-19)
 			peer.Routes = withGateways(peer.Routes, in.GatewayRoutes(name, other), vrfs)
 			peer.Routes = withLeaks(peer.Routes, leaked.routes[name][other])
+			// The default route of each shared VRF whose internet exit the peer is (egress.go; SDN-12)
+			peer.Routes = withEgress(peer.Routes, in, other, sharedVRFs, vrfs)
 			// The endpoints of the peer, which this node dials it at (endpoint.go; SDN-93)
 			peer.Endpoints = endpoints(o)
 			// The tunnel endpoint of the peer, for the links of kind vxlan and geneve of the shared VRFs (link.go; SDN-76)

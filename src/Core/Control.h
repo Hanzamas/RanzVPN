@@ -605,6 +605,11 @@ typedef struct CONTROL_STATE {
 	// The session profile that it runs under as a device of a User (SDN-40, #233), whose flags it enforces on itself; not
 	// Set for none
 	CONTROL_PROFILE Profile;
+
+	// The VRFs whose internet exit it is (SDN-12, #188), by id, in the order of its NodeConfig: none while it is the exit
+	// of no VRF
+	UINT NumEgress;
+	UINT EgressVrfIds[CONTROL_MAX_VRFS];
 } CONTROL_STATE;
 
 // A copy of a state that holds its own memory, for an owner that applies the state again later (the BGP peering of the node,
@@ -621,6 +626,20 @@ typedef void(CONTROL_STATE_PROC)(void *param, const CONTROL_STATE *state);
 #define CONTROL_ARCHITECTURE_UNSPECIFIED 0
 #define CONTROL_ARCHITECTURE_X64         1
 #define CONTROL_ARCHITECTURE_ARM64       2
+
+// The Windows editions of the Capabilities (Sku of the control protocol; SDN-12, #188)
+#define CONTROL_SKU_UNSPECIFIED 0
+#define CONTROL_SKU_HOME        1
+#define CONTROL_SKU_PRO         2 // also Pro for Workstations and Pro Education
+#define CONTROL_SKU_ENTERPRISE  3 // also Education and IoT Enterprise
+#define CONTROL_SKU_SERVER      4
+
+// The Egress tiers of the Capabilities (EgressTier of the control protocol; SDN-12, #188): how a node that is the internet
+// exit of a VRF takes its traffic to the outside, the first that its host supports
+#define CONTROL_EGRESS_NONE   0 // No tier reported
+#define CONTROL_EGRESS_RRAS   1 // Tier 1: RRAS NAT on Windows Server
+#define CONTROL_EGRESS_WINNAT 2 // Tier 2: WinNAT, where Hyper-V is present and no NetNat exists
+#define CONTROL_EGRESS_PROXY  3 // Tier 3: a proxy on the Windows TCP/IP stack
 
 // The Capabilities that a node reports in its Hello (Capabilities of the control protocol, ADR-0033; ONE-3,
 // #312): the facts about its host that its owner can tell. A Capability that the owner leaves out counts as
@@ -640,6 +659,11 @@ typedef struct CONTROL_CAPS {
 	bool PlainLinks;
 	// The node carries the source group of its packets to its peers and judges theirs by the one they carry (SDN-87, #386)
 	bool Tags;
+	// The Windows edition of the host (CONTROL_SKU_*), whether Hyper-V is present on it, and the Egress tier that the host
+	// gives the node as the internet exit of a VRF (CONTROL_EGRESS_*; SDN-12, #188)
+	UINT Sku;
+	bool HyperV;
+	UINT EgressTier;
 } CONTROL_CAPS;
 
 // Fills caps, which is zeroed, with the Capabilities of the node. The client calls it for each Hello, so a node
