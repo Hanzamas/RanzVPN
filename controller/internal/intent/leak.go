@@ -69,6 +69,9 @@ type LeakedRoute struct {
 	Via string `json:"via"`
 	// From is the exporting VRF.
 	From string `json:"from"`
+	// Nodes are the Nodes of VRF that hold the route, when only some do: the route that an Endpoint puts into the tables
+	// (publish.go; SDN-24). Left out, every member of VRF holds it, as for the routes of route targets.
+	Nodes []string `json:"nodes,omitempty"`
 }
 
 // ParseRouteTarget parses a route target of a VRF, in the forms of the route target extended
@@ -362,6 +365,10 @@ func (in Intent) leakedRoutes() ([]LeakedRoute, []error) {
 			}
 		}
 	}
+	// The routes that the Endpoints put into the tables of some Nodes (publish.go; SDN-24)
+	published, overlaps := in.publishedLeaks(out)
+	out = append(out, published...)
+	problems = append(problems, overlaps...)
 	slices.SortStableFunc(out, func(a, b LeakedRoute) int {
 		return cmp.Or(cmp.Compare(a.VRF, b.VRF), a.Prefix.Addr().Compare(b.Prefix.Addr()), cmp.Compare(a.Prefix.Bits(), b.Prefix.Bits()), cmp.Compare(a.Via, b.Via))
 	})
@@ -380,7 +387,7 @@ func (in Intent) validatePeerRoutes(leaked []LeakedRoute) []error {
 	for _, name := range sortedNames(in.Nodes) {
 		vrfs := in.Nodes[name].VRFs
 		for _, r := range leaked {
-			if r.Via != name && slices.Contains(vrfs, r.VRF) {
+			if r.Via != name && slices.Contains(vrfs, r.VRF) && r.HeldBy(name) {
 				count[[2]string{name, r.Via}]++
 			}
 		}
