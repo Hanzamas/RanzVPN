@@ -396,6 +396,30 @@ struct CEDAR {
 	UINT64 MaxLogSize;                         // Maximum size of a log file of the server and its hubs (LoggerMaxLogSize), 0 for MAX_LOG_SIZE_DEFAULT
 };
 
+// The SE-VPN code of the slim fork that the Hub and Session code of Cedar still calls: the cascades of a Hub
+// (Link.c), the additional connections of a client Session (ProtocolClient.c) and the UDP Acceleration of a Session
+// (UdpAccel.c). A program that runs that code fills these hooks with InitSeVpn (Server.c) before it starts any of it:
+// vpntest, whose in-process oracle is that code. ranz-node never does, so it links none of that code (CORE-S8-2,
+// #576): its Hubs have no cascade and its Sessions are server Sessions without a UDP_ACCEL, so the Hub and Session
+// code skips the hooks of the cascades and of the client Sessions while they are NULL, and reaches the UDP
+// Acceleration hooks only for a Session that has a UDP_ACCEL, which only that code creates. CORE-S8-3 (#577) deletes
+// them with that code.
+typedef struct SEVPN_HOOKS {
+	void (*StartAllLink)(HUB *h);                       // SetHubOnline
+	void (*StopAllLink)(HUB *h);                        // SetHubOffline
+	void (*ReleaseAllLink)(HUB *h);                     // CleanupHub
+	void (*ClientAdditionalConnectChance)(SESSION *s); // SessionMain of a client Session
+	void (*UdpAccelSetTick)(UDP_ACCEL *a, UINT64 tick64);
+	void (*UdpAccelPoll)(UDP_ACCEL *a);
+	UINT (*UdpAccelCalcMss)(UDP_ACCEL *a);
+	bool (*UdpAccelIsSendReady)(UDP_ACCEL *a, bool check_keepalive);
+	void (*UdpAccelSendBlock)(UDP_ACCEL *a, BLOCK *b);
+	bool (*UdpAccelIsRecvBudgetSpent)(UDP_ACCEL *a);
+	bool (*UdpAccelLogDrops)(UDP_ACCEL *a, HUB *h, char *session_name, bool final);
+} SEVPN_HOOKS;
+
+extern SEVPN_HOOKS SeVpnHooks;
+
 TRAFFIC *NewTraffic();
 void FreeTraffic(TRAFFIC *t);
 CEDAR *NewCedar(X *server_x, K *server_k);

@@ -139,9 +139,10 @@ void SessionMain(SESSION *s) {
 			}
 		}
 
-		if (is_server_session == false) {
+		// The additional connections of a client Session of the SE-VPN code (ProtocolClient.c), through its hooks
+		if (is_server_session == false && SeVpnHooks.ClientAdditionalConnectChance != NULL) {
 			if (GetGlobalServerFlag(GSF_DISABLE_SESSION_RECONNECT) == false)
-				ClientAdditionalConnectChance(s);
+				SeVpnHooks.ClientAdditionalConnectChance(s);
 		}
 
 		ConnectionReceive(c, s->Cancel1, s->Cancel2);
@@ -156,7 +157,7 @@ void SessionMain(SESSION *s) {
 
 		if (s->UseUdpAcceleration && s->UdpAccel != NULL) {
 			// Dropped datagrams of the UDP Acceleration port, at most one entry per interval
-			UdpAccelLogDrops(s->UdpAccel, udp_accel_log_hub, s->Name, false);
+			SeVpnHooks.UdpAccelLogDrops(s->UdpAccel, udp_accel_log_hub, s->Name, false);
 		}
 
 		if (lock_receive_blocks_queue)
@@ -330,7 +331,7 @@ CLEANUP:
 
 	if (s->UdpAccel != NULL) {
 		// The drops since the last entry, before the UDP Acceleration of this connection is freed
-		UdpAccelLogDrops(s->UdpAccel, udp_accel_log_hub, s->Name, true);
+		SeVpnHooks.UdpAccelLogDrops(s->UdpAccel, udp_accel_log_hub, s->Name, true);
 	}
 
 	if (s->ServerMode) {
@@ -630,8 +631,9 @@ void ReleaseSession(SESSION *s) {
 		CleanupSession(s);
 }
 
-// The fields every session constructor sets the same way
-static SESSION *NewSessionBase(CEDAR *cedar, bool server_mode) {
+// The fields every session constructor sets the same way: NewServerSession, and NewClientSession and NewRpcSession of
+// the SE-VPN client (ProtocolClient.c)
+SESSION *NewSessionBase(CEDAR *cedar, bool server_mode) {
 	SESSION *s = ZeroMalloc(sizeof(SESSION));
 
 	s->LoggingRecordCount = NewCounter();

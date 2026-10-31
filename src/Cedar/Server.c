@@ -14,6 +14,8 @@
 #include "RpcField.h"
 #include "Sam.h"
 #include "Tunables.h"
+#include "UdpAccel.h"
+#include "WaterMark.h"
 
 #include "Mayaqua/Cfg.h"
 #include "Mayaqua/DNS.h"
@@ -2277,6 +2279,34 @@ void StFree() {
 	server_lock = NULL;
 }
 
+// The SE-VPN code of the slim fork in a program that runs it: vpntest, whose in-process oracle starts its server, its
+// cascades and its client sessions. It loads the watermark that the signature of a client and a server carries, and
+// fills the hooks through which the Hub and Session code of Cedar calls the cascades, the client sessions and the
+// UDP Acceleration of that code (SEVPN_HOOKS, Cedar.h). ranz-node calls neither, so it links none of that code
+// (CORE-S8-2, #576). Called once, before the program starts any of that code
+void InitSeVpn() {
+	InitWaterMark();
+
+	SeVpnHooks.StartAllLink = StartAllLink;
+	SeVpnHooks.StopAllLink = StopAllLink;
+	SeVpnHooks.ReleaseAllLink = ReleaseAllLink;
+	SeVpnHooks.ClientAdditionalConnectChance = ClientAdditionalConnectChance;
+	SeVpnHooks.UdpAccelSetTick = UdpAccelSetTick;
+	SeVpnHooks.UdpAccelPoll = UdpAccelPoll;
+	SeVpnHooks.UdpAccelCalcMss = UdpAccelCalcMss;
+	SeVpnHooks.UdpAccelIsSendReady = UdpAccelIsSendReady;
+	SeVpnHooks.UdpAccelSendBlock = UdpAccelSendBlock;
+	SeVpnHooks.UdpAccelIsRecvBudgetSpent = UdpAccelIsRecvBudgetSpent;
+	SeVpnHooks.UdpAccelLogDrops = UdpAccelLogDrops;
+}
+
+// The end of InitSeVpn, once the program runs none of that code any more
+void FreeSeVpn() {
+	Zero(&SeVpnHooks, sizeof(SeVpnHooks));
+
+	FreeWaterMark();
+}
+
 void StStartServer(void) {
 	Lock(server_lock);
 	{
@@ -2403,6 +2433,7 @@ void SiReleaseServer(SERVER *s) {
 	SiFreeConfiguration(s);
 
 	SLog(c, "LS_STOP_CEDAR");
+	StopAllListener(s->Cedar);
 	StopCedar(s->Cedar);
 	SLog(c, "LS_STOP_CEDAR_2");
 

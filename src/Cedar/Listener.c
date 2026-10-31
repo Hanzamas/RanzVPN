@@ -633,7 +633,9 @@ void AddListener(CEDAR *c, LISTENER *r) {
 	UnlockList(c->ListenerList);
 }
 
-static void StopAllListener(CEDAR *c) {
+// Stop and release every listener in the ListenerList of c. The server stops its Cedar's listeners with it before it
+// stops the Cedar (SiReleaseServer)
+void StopAllListener(CEDAR *c) {
 	LISTENER **array;
 	UINT num;
 	if (c == NULL)

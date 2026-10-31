@@ -9,11 +9,9 @@
 #include "Connection.h"
 #include "HubLog.h"
 #include "Link.h"
-#include "Listener.h"
 #include "Protocol.h"
 #include "Sam.h"
 #include "Session.h"
-#include "WaterMark.h"
 
 #include "Mayaqua/Cfg.h"
 #include "Mayaqua/Encrypt.h"
@@ -34,7 +32,8 @@ static void MakeRoomInNoSslList(CEDAR *c);
 static NON_SSL *SearchNoSslList(CEDAR *c, const IP *ip);
 static void FreeNetSvcList(CEDAR *cedar);
 
-static UINT init_cedar_counter = 0;
+// The hooks of the SE-VPN code of the slim fork (Cedar.h): NULL until InitSeVpn fills them
+SEVPN_HOOKS SeVpnHooks;
 
 static bool IsSupportedWinVer(const RPC_WINVER *v) {
 	if (v == NULL)
@@ -591,11 +590,12 @@ UINT CedarGetCurrentTcpQueueSize(CEDAR *c) {
 	return c->CurrentTcpQueueSize;
 }
 
+// Stop the connections and the Hubs of c. The TCP listeners of the slim fork in its ListenerList are stopped by the
+// server that started them (StopAllListener, Listener.c), before it stops its Cedar
 void StopCedar(CEDAR *c) {
 	if (c == NULL)
 		return;
 
-	StopAllListener(c);
 	StopAllConnection(c);
 	StopAllHub(c);
 }
@@ -863,7 +863,8 @@ CEDAR *NewCedar(X *server_x, K *server_k) {
 
 	c->CurrentTcpConnections = GetNumTcpConnectionsCounter();
 
-	c->ListenerList = NewList(CompareListener);
+	// The TCP listeners of the slim fork (AddListener): the list is never sorted or searched, so it needs no compare
+	c->ListenerList = NewList(NULL);
 	c->HubList = NewList(CompareHub);
 	c->ConnectionList = NewList(CompareConnection);
 
@@ -966,18 +967,13 @@ void FreeTraffic(TRAFFIC *t) {
 	Free(t);
 }
 
+// Cedar has nothing of its own to start or end for the process. The watermark of the SE-VPN signature, which was
+// loaded here, belongs to the SE-VPN code: InitSeVpn (Server.c) loads it in the programs that run that code, so
+// ranz-node neither reads watermark.bin nor links WaterMark.c (CORE-S8-2, #576)
 void InitCedar() {
-	if ((init_cedar_counter++) > 0)
-		return;
-
-	InitWaterMark();
 }
 
 void FreeCedar() {
-	if ((--init_cedar_counter) > 0)
-		return;
-
-	FreeWaterMark();
 }
 
 // Machine identity (FIX-5, #101): the first SHA1_SIZE bytes of SHA-256 over MACHINE_ID_LABEL with its

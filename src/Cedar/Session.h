@@ -182,6 +182,7 @@ struct SESSION_INFO {
 	UINT64 PacketNum;
 };
 
+SESSION *NewSessionBase(CEDAR *cedar, bool server_mode);
 SESSION *NewServerSession(CEDAR *cedar, CONNECTION *c, HUB *h, char *username, POLICY *policy);
 void ReleaseSession(SESSION *s);
 void StopSession(SESSION *s);

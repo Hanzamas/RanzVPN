@@ -153,6 +153,8 @@ void SiLoadMachineIdCfg(CEDAR *c, FOLDER *f);
 void SiRebootServerEx(bool reset_setting);
 void StInit();
 void StFree();
+void InitSeVpn();
+void FreeSeVpn();
 void IncrementServerConfigRevision(SERVER *s);
 UINT SiStageConfiguration(SERVER *s, char *data, UINT size);
 
