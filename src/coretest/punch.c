@@ -32,7 +32,7 @@
 #include <string.h>
 
 #define PUNCH_WAIT          10000 // ms: a bounded wait for the network to carry everything sent
-#define PUNCH_BUDGET        64    // Probes one attempt of a punch may send before it gives up
+#define PUNCH_BUDGET        64    // Punch messages one attempt of a punch may send, its probes and its answers
 #define PUNCH_PORTS         12    // The birthday range above a predicted port
 #define PUNCH_RATE          64    // Punch messages a node sends in any second at most
 #define PUNCH_TICKS         40    // The most tick rounds a pair is given to meet

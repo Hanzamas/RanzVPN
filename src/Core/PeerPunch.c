@@ -33,10 +33,13 @@
 // one port. A probe both opens the sender's own mapping towards that address and, when it arrives, proves to the peer
 // who sent it. Two random NATs predict nothing, so their pair takes no punch.
 //
-// The limits, so that the probes do not look like a scan. An attempt sends PunchBudget probes at most, round robin over
-// its targets, and fails PEER_PUNCH_LINGER after its last probe when nothing met; the node sends PunchRate punch messages
-// in any second at most, probes and answers together, across its peers, and only the proof that completes a meeting goes
-// when the rate is spent, as nothing sends it again. The next attempt waits PunchRetry from the end
+// The limits, so that the probes do not look like a scan. An attempt sends PunchBudget punch messages at most, its probes
+// and its answers to the messages of the peer together. Its probes go round robin over its targets and leave
+// PEER_PUNCH_ANSWERS of the budget to the answers; an answer that finds the budget spent does not go. So neither the peer
+// nor an attacker that sends captured probes of the peer from addresses of its own makes the node send more. The attempt
+// fails PEER_PUNCH_LINGER after its last probe when nothing met. The node sends PunchRate punch messages in any second at
+// most, probes and answers together, across its peers, and only the proof that completes a meeting goes when the rate is
+// spent, as nothing sends it again. The next attempt waits PunchRetry from the end
 // of the one before, so that the attempt of the peer, which began a little earlier, ended too. After PunchAttempts
 // attempts in a row that met nothing, the pair stays on the relay for PunchBackoff from the end of the last one, and a
 // punch offer that comes meanwhile is refused. The node counts the attempts, the successes and the failures, which its
@@ -76,7 +79,7 @@
 #define PEER_PUNCH_TICK_MAX      64   // The most punch messages one PeerTick gathers across all the peers it is punching
 #define PEER_PUNCH_BELOW         4    // Ports under a predicted one that the range covers, for a step that came out too large
 #define PEER_PUNCH_LINGER        2000 // ms that an attempt whose budget is spent waits for the answers on their way
-#define PEER_PUNCH_ANSWERS       8    // Punch messages of the rate that the probes leave to the answers and the keepalives
+#define PEER_PUNCH_ANSWERS       8    // Punch messages of the rate that the probes leave to the answers and the keepalives, and of the budget of an attempt to its answers
 #define PEER_PUNCH_WINDOW        1500 // ms over which the rate counts: a second, and the time that sealing a burst may take
 
 // The types of a punch message
@@ -105,6 +108,14 @@ typedef struct PEER_PUNCH_SEND {
 // The limits of the punch, the configured values or the defaults
 static UINT PeerPunchBudget(PEER_AGENT *a) {
 	return (a->Config.PunchBudget != 0 ? a->Config.PunchBudget : PEER_DEFAULT_PUNCH_BUDGET);
+}
+
+// The punch messages of the budget of an attempt that its probes leave to its answers: PEER_PUNCH_ANSWERS, or half of a
+// smaller budget
+static UINT PeerPunchKeep(PEER_AGENT *a) {
+	UINT half = PeerPunchBudget(a) / 2;
+
+	return (half < PEER_PUNCH_ANSWERS ? half : PEER_PUNCH_ANSWERS);
 }
 
 static UINT PeerPunchPorts(PEER_AGENT *a) {
@@ -742,9 +753,10 @@ static bool PeerPunchEcho(PEER_PUNCH *punch, const PEER_ADDR *from, const UCHAR 
 }
 
 // The timer of the punches, from PeerTick: the next burst of probes of every attempt, within the rate of the node and the
-// budget of the attempt; an attempt that spent its budget fails PEER_PUNCH_LINGER after its last probe, and the next one
-// waits the retry, or the backoff after the last of the attempts, from then; and on a punched path the keepalive of the
-// node, or the Fallback once the peer said nothing there for PunchConsent.
+// budget of the attempt, of which the probes leave PeerPunchKeep to the answers; an attempt whose probes are spent fails
+// PEER_PUNCH_LINGER after its last probe, and the next one waits the retry, or the backoff after the last of the
+// attempts, from then; and on a punched path the keepalive of the node, or the Fallback once the peer said nothing there
+// for PunchConsent.
 void PeerPunchTick(PEER_AGENT *a) {
 	PEER_PUNCH_SEND send[PEER_PUNCH_TICK_MAX];
 	UINT num = 0;
@@ -760,6 +772,7 @@ void PeerPunchTick(PEER_AGENT *a) {
 	UINT64 retry = PeerPunchRetry(a);
 	UINT64 backoff = PeerPunchBackoff(a);
 	UINT attempts = PeerPunchAttempts(a);
+	UINT keep = PeerPunchKeep(a);
 
 	AcquireSRWLockExclusive(&a->Lock);
 	AcquireSRWLockExclusive(&a->PunchLock);
@@ -772,8 +785,8 @@ void PeerPunchTick(PEER_AGENT *a) {
 			PEER_PUNCH *punch = &p->Punch;
 
 			if (punch->State == PEER_PUNCH_PROBING) {
-				// The probes leave room in the rate for the answers and the keepalives
-				while (punch->Budget != 0 && left > PEER_PUNCH_ANSWERS && num < PEER_PUNCH_TICK_MAX) {
+				// The probes leave room in the rate for the answers and the keepalives, and in the budget for the answers
+				while (punch->Budget > keep && left > PEER_PUNCH_ANSWERS && num < PEER_PUNCH_TICK_MAX) {
 					CopyMemory(send[num].Key, p->Info.Key, PEER_KEY_SIZE);
 					send[num].To = punch->Targets[punch->Next];
 					send[num].Type = PEER_PUNCH_PROBE;
@@ -785,8 +798,8 @@ void PeerPunchTick(PEER_AGENT *a) {
 					punch->LastProbe = now;
 				}
 
-				// The budget is spent and the answers on their way had their time: the attempt met nothing
-				if (punch->Budget == 0 && now - punch->LastProbe >= PEER_PUNCH_LINGER) {
+				// The probes are spent and the answers on their way had their time: the attempt met nothing
+				if (punch->Budget <= keep && now - punch->LastProbe >= PEER_PUNCH_LINGER) {
 					punch->State = PEER_PUNCH_FAILED;
 					punch->NextAttempt = now + (punch->Failures >= attempts ? backoff : retry);
 					failed++;
@@ -833,8 +846,9 @@ void PeerPunchTick(PEER_AGENT *a) {
 // address it went to moves the peer to the direct path at the leader and draws a proof; a proof that echoes the other
 // end's nonce from the address it went to moves the peer to the direct path there. A node already on the direct path
 // takes a message and answers none, so a late probe of a burst leaves the path on the pair that met, and a word of the
-// peer from there is its consent. A meeting counts as a prediction success and an Upgrade. The answers go within the rate
-// of the node, and the proof also when the rate is spent. Called from PeerInput for a PEER_MSG_PUNCH datagram.
+// peer from there is its consent. A meeting counts as a prediction success and an Upgrade. The answers of an attempt take
+// from its budget and go within the rate of the node, and the proof also when the rate is spent. Called from PeerInput for
+// a PEER_MSG_PUNCH datagram.
 void PeerPunchInput(PEER_AGENT *a, const PEER_ADDR *from, const UCHAR *data, UINT size) {
 	UCHAR sender[PEER_KEY_SIZE];
 	UCHAR payload[PEER_PUNCH_PAYLOAD_SIZE];
@@ -881,6 +895,7 @@ void PeerPunchInput(PEER_AGENT *a, const PEER_ADDR *from, const UCHAR *data, UIN
 			reason = PEER_DROP_FORGED; // No punch is open with this peer: an unsolicited or stale message
 		} else {
 			bool leader = (memcmp(a->Key.Public, p->Info.Key, PEER_KEY_SIZE) < 0);
+			bool probing = (punch->State == PEER_PUNCH_PROBING);
 
 			punch->LastSeq = seq;
 
@@ -908,13 +923,19 @@ void PeerPunchInput(PEER_AGENT *a, const PEER_ADDR *from, const UCHAR *data, UIN
 				}
 			}
 
-			// An answer goes within the rate of the node, as the probes do, but for the proof: it completes the meeting that
-			// moved the node to the direct path, once for each meeting, and nothing sends it again, so it goes and counts
-			// when the rate is spent too. A nonce is drawn only for an answer that goes, so its slots hold the nonces that
-			// went out, not the ones of the answers that the rate held back.
-			if (reply != 0 && PeerPunchAllow(a, reply == PEER_PUNCH_PROOF) == false) {
+			// An answer of the attempt takes its share of the budget of the attempt, as a probe does, and goes within the rate
+			// of the node: one that finds the budget or the rate spent does not go, and counts as over the rate. The proof
+			// completes the meeting that moved the node to the direct path, once for each meeting, and nothing sends it
+			// again, so it goes and counts when the rate is spent too; it takes nothing of the budget of the attempt, which
+			// met. A nonce is drawn only for an answer that goes, so its slots hold the nonces that went out, not the ones of
+			// the answers that the budget or the rate held back.
+			bool answer = (reply != 0 && probing && connected == false);
+
+			if ((answer && punch->Budget == 0) || (reply != 0 && PeerPunchAllow(a, reply == PEER_PUNCH_PROOF) == false)) {
 				limited = true;
 				reply = 0;
+			} else if (answer) {
+				punch->Budget--;
 			}
 			if ((reply == PEER_PUNCH_CHALLENGE || reply == PEER_PUNCH_RESPONSE) && PeerPunchNonce(punch, from, nonce) == false)
 				reply = 0;

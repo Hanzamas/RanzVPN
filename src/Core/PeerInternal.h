@@ -147,7 +147,7 @@ typedef struct PEER_PUNCH {
 	bool IceFailed;                                         // An ICE session of the pair failed since ICE last had its direct path up
 	UINT PeerNat;                                           // The NAT of the peer, from its last punch signal (PEER_NAT_*)
 	PEER_ADDR Own;                                          // The node's predicted port when its probes began, which its punch answer names
-	UINT Budget;                                            // Probes left of the attempt
+	UINT Budget;                                            // Punch messages left of the attempt, its probes and its answers together
 	UINT Failures;                                          // Attempts in a row that met nothing, the one under way among them
 	UINT64 NextAttempt;                                     // When the next attempt may begin (PeerNow): PunchRetry after the end of one, or PunchBackoff after the last one
 	UINT64 Offered;                                         // When the node sealed its last punch offer, 0 for none or once it was answered

@@ -27,8 +27,10 @@
 //    answers, and both probe; each attempt spends its budget and fails, within the rate per second and the budget per
 //    attempt. A captured probe of node-b that an attacker sends from its own address moves node-a to no direct path there,
 //    the same probe with a byte of its tag changed is dropped as forged and counted, and a probe of a node that is no peer
-//    is dropped and counted. After the attempts that met nothing the pair stays on relay-1 until the backoff ends, its
-//    traffic going on in the same peer session.
+//    is dropped and counted. More captured probes of node-b, which the attacker sends again, draw answers of node-a only
+//    within its rate and the budget of its attempt, which counts the probes and the answers of the attempt together. After
+//    the attempts that met nothing the pair stays on relay-1 until the backoff ends, its traffic going on in the same peer
+//    session.
 // d. The punch: the cut is lifted before the backoff ends, and the attempt after it meets: both ends move to the direct
 //    path, in the same peer session, at the mapping of the peer that proved itself; relay-1 carries no data of the pair
 //    after the move.
@@ -96,6 +98,7 @@
 #define	PUNCHPATH_SWEEP_TICKS	20			// The ticks that one seed of step g is given to meet
 #define	PUNCHPATH_SWEEP_TICK	50			// ms between two of them
 #define	PUNCHPATH_ECHOES		3			// The echoes of a step
+#define	PUNCHPATH_FLOOD			16			// The captured probes of node-b that the attacker sends again at once, more than an attempt keeps room to answer
 #define	PUNCHPATH_TIMES			4096		// Punch messages of each Node whose times the tap keeps
 #define	PUNCHPATH_VRF			1			// The id of VRF default ...
 #define	PUNCHPATH_VRF_NAME		"default"	// ... its name and the name of its Network ...
@@ -476,6 +479,16 @@ static UINT PunchPathPeak(PUNCHPATH_CTX *ctx, UINT i)
 	ReleaseSRWLockShared(&ctx->TapLock);
 
 	return peak;
+}
+
+// The punch messages that node i sent in all, as the tap counted them
+static UINT PunchPathMessages(PUNCHPATH_CTX *ctx, UINT i)
+{
+	AcquireSRWLockShared(&ctx->TapLock);
+	UINT n = ctx->NumTimes[i];
+	ReleaseSRWLockShared(&ctx->TapLock);
+
+	return n;
 }
 
 // The ticker of the relays: the timers of their peer layers, which drop the Bindings that were not renewed
@@ -1353,22 +1366,46 @@ static UINT PunchPathWatched(PUNCHPATH_CTX *ctx)
 	return n;
 }
 
+// The payload of a probe with the sequence seq, as PeerPunchTick seals one: the version, the sequence, the type of a probe
+// and two empty nonces
+static void PunchPathProbe(UCHAR *payload, UINT64 seq)
+{
+	Zero(payload, PUNCHPATH_PAYLOAD_SIZE);
+	payload[0] = 1;
+	for (UINT k = 0;k < 8;k++)
+	{
+		payload[1 + k] = (UCHAR)(seq >> (56 - 8 * k));
+	}
+	payload[9] = 1;
+}
+
+// A sequence above every one that a Node sent before: the wall clock in 100 ns units, as the peer layer draws one
+static UINT64 PunchPathSequence()
+{
+	FILETIME ft;
+
+	GetSystemTimePreciseAsFileTime(&ft);
+
+	return ((UINT64)ft.dwHighDateTime << 32) | ft.dwLowDateTime;
+}
+
 // While node-a has an attempt open: an attacker on the link of node-a sends a captured probe of node-b again from an address
 // of its own, then the same probe with one byte of its tag changed, and a node that is no peer sends a probe of its own.
 // node-a moves to no direct path at the attacker's address, drops and counts the altered probe as forged, and drops and
-// counts the probe of the stranger; it answers neither.
+// counts the probe of the stranger; it answers neither. Then the attacker sends more captured probes of node-b than an
+// attempt keeps room to answer: node-a answers them only within its rate and the budget of its attempt, which step c
+// counts with the probes of the attempt.
 static void PunchPathAttacker(PUNCHPATH_CTX *ctx)
 {
 	PEER_STATUS ab;
 	PEER_STATS before, after;
-	PEER_ADDR attacker, stranger_addr;
+	PEER_ADDR attacker, stranger_addr, flooder;
 	PEER_KEY stranger;
 	UCHAR scalar[PEER_KEY_SIZE];
 	UCHAR probe[PEER_MAX_DATAGRAM];
 	UCHAR altered[PEER_MAX_DATAGRAM];
 	UCHAR env[PEER_MAX_ENVELOPE];
 	UCHAR payload[PUNCHPATH_PAYLOAD_SIZE];
-	FILETIME ft;
 	char words[MAX_SIZE * 2];
 
 	// An attempt of node-a is open, and the tap kept a probe of node-b of the attempt
@@ -1417,16 +1454,7 @@ static void PunchPathAttacker(PUNCHPATH_CTX *ctx)
 	bool keyed = PeerKeyFromScalar(&stranger, scalar);
 	Zero(scalar, sizeof(scalar));
 
-	GetSystemTimePreciseAsFileTime(&ft);
-	UINT64 seq = ((UINT64)ft.dwHighDateTime << 32) | ft.dwLowDateTime;
-	Zero(payload, sizeof(payload));
-	payload[0] = 1;
-	for (UINT k = 0;k < 8;k++)
-	{
-		payload[1 + k] = (UCHAR)(seq >> (56 - 8 * k));
-	}
-	payload[9] = 1;
-
+	PunchPathProbe(payload, PunchPathSequence());
 	UINT env_size = (keyed ? PeerEnvelopeSeal(&stranger, ctx->Nodes[PUNCHPATH_A].Key.Public, PEER_MSG_PUNCH, NULL, payload, sizeof(payload), env, sizeof(env)) : 0);
 	PeerAddrSetV4(&stranger_addr, 198, 51, 100, 77, 4000);
 	PunchPathWatch(ctx, &stranger_addr);
@@ -1440,6 +1468,34 @@ static void PunchPathAttacker(PUNCHPATH_CTX *ctx)
 		"sent %u; drops for the policy %I64u before, %I64u after; %u datagrams of node-a to its address", (UINT)sent, before.Drops[PEER_DROP_POLICY], after.Drops[PEER_DROP_POLICY], answers);
 
 	PeerKeyClose(&stranger);
+
+	// The attacker captured more probes of node-b and sends each of them again once, from an address of its own, in the
+	// order that node-b sent them (the test seals them with the key of node-b, as node-b sealed the ones that the attacker
+	// captured). Each would draw an answer of node-a to the attacker: node-a answers them only within its rate and the
+	// budget of its attempt, and drops and counts the others.
+	PeerAddrSetV4(&flooder, 198, 51, 100, 88, 4000);
+	PunchPathWatch(ctx, &flooder);
+	PunchPathStats(ctx, PUNCHPATH_A, &before);
+	UINT64 first = PunchPathSequence();
+	UINT flooded = 0;
+	for (UINT k = 0;k < PUNCHPATH_FLOOD && open;k++)
+	{
+		PunchPathProbe(payload, first + k);
+		env_size = PeerEnvelopeSeal(&ctx->Nodes[PUNCHPATH_B].Key, ctx->Nodes[PUNCHPATH_A].Key.Public, PEER_MSG_PUNCH, NULL, payload, sizeof(payload), env, sizeof(env));
+		if (env_size != 0 && NatSimInject(ctx->Nodes[PUNCHPATH_A].Host, &flooder, env, env_size))
+		{
+			flooded++;
+		}
+	}
+	NatSimWaitIdle(ctx->Sim, PUNCHPATH_BOUND);
+	PunchPathStats(ctx, PUNCHPATH_A, &after);
+	answers = PunchPathWatched(ctx);
+	UINT64 held = after.Drops[PEER_DROP_RATE] - before.Drops[PEER_DROP_RATE];
+	Print("  [INFO] the attacker sent node-a %u more captured probes of node-b from %s; node-a answered %u of them, sealed to node-b, and held back %I64u\n", flooded,
+		"198.51.100.88:4000", answers, held);
+	PunchPathCheck(ctx, flooded == PUNCHPATH_FLOOD && answers != 0 && answers + held == flooded,
+		"Captured probes of node-b that an attacker sends again from its own address draw answers of node-a only within its rate and the budget of its attempt: the others are dropped and counted",
+		"%u sent, %u answered, %I64u held back", flooded, answers, held);
 }
 
 // c. Limits: the path between the NATs is cut, so the attempts that the punch offers begin fail; each keeps to the budget
@@ -1449,6 +1505,7 @@ static bool PunchPathLimits(PUNCHPATH_CTX *ctx, UINT64 *third)
 {
 	PEER_STATS st[PUNCHPATH_NUM_NODES];
 	UINT64 probes[PUNCHPATH_NUM_NODES][PUNCHPATH_ATTEMPTS + 2];
+	UINT messages[PUNCHPATH_NUM_NODES][PUNCHPATH_ATTEMPTS + 2];
 	UINT64 failures_seen[PUNCHPATH_NUM_NODES];
 	UINT64 attempts_seen = 0;
 	UINT64 starts[PUNCHPATH_ATTEMPTS + 2];
@@ -1462,11 +1519,13 @@ static bool PunchPathLimits(PUNCHPATH_CTX *ctx, UINT64 *third)
 	Print("[c. limits: the path between the NATs is cut, the attempts fail within the budget and the rate, and the pair waits out the backoff on relay-1]\n");
 
 	Zero(probes, sizeof(probes));
+	Zero(messages, sizeof(messages));
 	Zero(failures_seen, sizeof(failures_seen));
 	Zero(starts, sizeof(starts));
 
-	// The attempts, until both ends counted PUNCHPATH_ATTEMPTS failures: the probes that each end sent in all by the failure of
-	// each of its attempts, as the next one begins after it, and the start of each attempt of the Node that offers them
+	// The attempts, until both ends counted PUNCHPATH_ATTEMPTS failures: the probes and the punch messages that each end sent
+	// in all by the failure of each of its attempts, as the next one begins after it, and the start of each attempt of the
+	// Node that offers them
 	for (UINT64 end = Tick64() + PUNCHPATH_FAIL_WAIT;Tick64() < end && failed == false;SleepThread(PUNCHPATH_POLL))
 	{
 		for (UINT i = 0;i < PUNCHPATH_NUM_NODES;i++)
@@ -1475,6 +1534,7 @@ static bool PunchPathLimits(PUNCHPATH_CTX *ctx, UINT64 *third)
 			while (failures_seen[i] < st[i].PunchFailures && failures_seen[i] < PUNCHPATH_ATTEMPTS + 1)
 			{
 				probes[i][failures_seen[i]] = st[i].PunchProbes;
+				messages[i][failures_seen[i]] = PunchPathMessages(ctx, i);
 				failures_seen[i]++;
 			}
 			while (i == lower && attempts_seen < st[i].PunchAttempts && attempts_seen < PUNCHPATH_ATTEMPTS + 1)
@@ -1505,20 +1565,23 @@ static bool PunchPathLimits(PUNCHPATH_CTX *ctx, UINT64 *third)
 	PunchPathCheck(ctx, failed && attacked && st[PUNCHPATH_A].PunchAttempts == PUNCHPATH_ATTEMPTS && st[PUNCHPATH_B].PunchAttempts == PUNCHPATH_ATTEMPTS &&
 		st[PUNCHPATH_A].PunchSuccesses == 0 && st[PUNCHPATH_B].PunchSuccesses == 0, what, "%s", words);
 
-	// The budget of each attempt: the probes from the failure of the one before to its own failure
+	// The budget of each attempt: the punch messages that the tap saw leave the Node from the failure of the one before to
+	// its own failure, its probes and its answers together, the answers of node-a to the captured probes of the attacker
+	// among them
 	bool within = true;
 	for (UINT i = 0;i < PUNCHPATH_NUM_NODES;i++)
 	{
 		for (UINT k = 0;k < PUNCHPATH_ATTEMPTS;k++)
 		{
 			UINT64 sent = probes[i][k] - (k != 0 ? probes[i][k - 1] : 0);
+			UINT all = messages[i][k] - (k != 0 ? messages[i][k - 1] : 0);
 
-			Print("  [INFO] %s, attempt %u: %I64u probes\n", ctx->Nodes[i].Name, k + 1, sent);
-			within = within && sent != 0 && sent <= PEER_DEFAULT_PUNCH_BUDGET;
+			Print("  [INFO] %s, attempt %u: %u punch messages, %I64u of them probes\n", ctx->Nodes[i].Name, k + 1, all, sent);
+			within = within && sent != 0 && all >= sent && all <= PEER_DEFAULT_PUNCH_BUDGET;
 		}
 	}
-	Format(what, sizeof(what), "Each attempt sends at most its budget of %u probes", (UINT)PEER_DEFAULT_PUNCH_BUDGET);
-	PunchPathCheck(ctx, within, what, "an attempt sent none or more");
+	Format(what, sizeof(what), "Each attempt sends at most its budget of %u punch messages, its probes and its answers together", (UINT)PEER_DEFAULT_PUNCH_BUDGET);
+	PunchPathCheck(ctx, within, what, "an attempt sent no probe, or more punch messages than its budget");
 
 	UINT peak_a = PunchPathPeak(ctx, PUNCHPATH_A);
 	UINT peak_b = PunchPathPeak(ctx, PUNCHPATH_B);

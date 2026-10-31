@@ -33,8 +33,8 @@
 // CORE-S5-7 #413): a node tells its NAT is symmetric from the answers of the binds to its first two relays, predicts the
 // port of its next mapping, and the two nodes exchange a punch offer and a punch answer, signals that carry the NAT and
 // the prediction of each, upon which both send authenticated probes to the ports that the predictions name and to a
-// range of ports around them. The probes are limited per second and per attempt, and after PunchAttempts attempts that
-// met nothing the pair stays on the relay for PunchBackoff.
+// range of ports around them. The punch messages, probes and answers together, are limited per second and per attempt,
+// and after PunchAttempts attempts that met nothing the pair stays on the relay for PunchBackoff.
 //
 // Every data datagram between two nodes goes in a peer session (PeerSession.c, CORE-H2 #399): Noise_IK between
 // the static keys of the two nodes, in the manner of WireGuard. The first datagram to a peer starts the
@@ -141,7 +141,7 @@
 #define PEER_DROP_SOURCE    5  // A data datagram from an address that is no path of its source
 #define PEER_DROP_NOT_RELAY 6  // A bind to, or a datagram to forward through, a node without the relay role
 #define PEER_DROP_NOT_BOUND 7  // A datagram to forward to a node that is not bound to the relay
-#define PEER_DROP_RATE      8  // Over a rate: of the relay for its source, or of the punch messages of the node (PunchRate)
+#define PEER_DROP_RATE      8  // Over a rate: of the relay for its source, or of the punch messages of the node (PunchRate, PunchBudget)
 #define PEER_DROP_RELAY     9  // A signal or a bound from a relay that the control plane did not assign
 #define PEER_DROP_SEND      10 // The send procedure failed
 #define PEER_DROP_CLEAR     11 // A data datagram of the old clear form (PEER_MSG_DATA): there is no downgrade to it
@@ -258,7 +258,7 @@ typedef struct PEER_CONFIG {
 	bool PortMap;                 // With Ice, ask the home gateway for a public port of the socket (libplum)
 	UINT PortMapTimeout;          // ms that the port mapping waits for a gateway, per protocol; 0 for 10 s
 	bool Punch;                   // Try port prediction and birthday punching for a symmetric-NAT peer (PeerPunch.c)
-	UINT PunchBudget;             // The most probes one attempt of a punch may send before it gives up; 0 for the default
+	UINT PunchBudget;             // The most punch messages one attempt of a punch may send, its probes and its answers; 0 for the default
 	UINT PunchPorts;              // The ports above a predicted one that the birthday range covers; 0 for the default
 	UINT PunchRate;               // The most punch messages the node sends in any second, across its peers; 0 for the default
 	UINT PunchAttempts;           // Attempts in a row that met nothing, after which the pair stays on the relay for PunchBackoff; 0 for the default
@@ -276,10 +276,11 @@ typedef struct PEER_CONFIG {
 #define PEER_DEFAULT_BIND        25000 // Below the 30 s UDP mapping timeout of common NATs (RFC 4787 REQ-5 asks 2 min)
 #define PEER_DEFAULT_BIND_RETRY  1000
 #define PEER_DEFAULT_BIND_EXPIRY 90000
-// The limits of the punch (ADR-0015 item 2; CORE-S5-7 #413), so that its probes do not look like a scan: 128 probes an
-// attempt at most, 64 punch messages a second at most, and after 3 attempts in a row that met nothing the pair stays on the
-// relay for 30 min. A punched path whose peer said nothing for 30 s falls back to the relay.
-#define PEER_DEFAULT_PUNCH_BUDGET   128     // An attempt stops here and the peer stays on the relay
+// The limits of the punch (ADR-0015 item 2; CORE-S5-7 #413), so that its probes do not look like a scan: 128 punch
+// messages an attempt at most, its probes and its answers together, 64 punch messages a second at most, and after 3
+// attempts in a row that met nothing the pair stays on the relay for 30 min. A punched path whose peer said nothing for
+// 30 s falls back to the relay.
+#define PEER_DEFAULT_PUNCH_BUDGET   128     // Punch messages of an attempt, its probes and its answers: then the peer stays on the relay
 #define PEER_DEFAULT_PUNCH_PORTS    12      // The birthday range: the next port of a sequential NAT within 12 above the predicted one
 #define PEER_DEFAULT_PUNCH_RATE     64      // Punch messages per second, probes and answers
 #define PEER_DEFAULT_PUNCH_ATTEMPTS 3       // Attempts that meet nothing before the backoff
