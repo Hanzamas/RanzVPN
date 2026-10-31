@@ -1919,3 +1919,258 @@ void OutRpcTest(PACK *p, RPC_TEST *t) {
 }
 void FreeRpcTest(RPC_TEST *t) {
 }
+
+static const RPC_FIELD rpc_traffic_ex_fields[] =
+    {
+        RPC_ROW_INT64(TRAFFIC, Recv.BroadcastBytes, "Ex.Recv.BroadcastBytes"),
+        RPC_ROW_INT64(TRAFFIC, Recv.BroadcastCount, "Ex.Recv.BroadcastCount"),
+        RPC_ROW_INT64(TRAFFIC, Recv.UnicastBytes, "Ex.Recv.UnicastBytes"),
+        RPC_ROW_INT64(TRAFFIC, Recv.UnicastCount, "Ex.Recv.UnicastCount"),
+        RPC_ROW_INT64(TRAFFIC, Send.BroadcastBytes, "Ex.Send.BroadcastBytes"),
+        RPC_ROW_INT64(TRAFFIC, Send.BroadcastCount, "Ex.Send.BroadcastCount"),
+        RPC_ROW_INT64(TRAFFIC, Send.UnicastBytes, "Ex.Send.UnicastBytes"),
+        RPC_ROW_INT64(TRAFFIC, Send.UnicastCount, "Ex.Send.UnicastCount"),
+        RPC_ROW_END};
+RPC_TABLE_DEF(rpc_traffic_ex_table, TRAFFIC, rpc_traffic_ex_fields);
+
+void InRpcTrafficEx(TRAFFIC *t, PACK *p, UINT i) {
+	RpcFieldInItem(&rpc_traffic_ex_table, t, p, i);
+}
+void OutRpcTrafficEx(TRAFFIC *t, PACK *p, UINT i, UINT num) {
+	RpcFieldOutItem(&rpc_traffic_ex_table, p, t, i, num);
+}
+
+static const RPC_FIELD rpc_traffic_fields[] =
+    {
+        RPC_ROW_INT64(TRAFFIC, Recv.BroadcastBytes, "Recv.BroadcastBytes"),
+        RPC_ROW_INT64(TRAFFIC, Recv.BroadcastCount, "Recv.BroadcastCount"),
+        RPC_ROW_INT64(TRAFFIC, Recv.UnicastBytes, "Recv.UnicastBytes"),
+        RPC_ROW_INT64(TRAFFIC, Recv.UnicastCount, "Recv.UnicastCount"),
+        RPC_ROW_INT64(TRAFFIC, Send.BroadcastBytes, "Send.BroadcastBytes"),
+        RPC_ROW_INT64(TRAFFIC, Send.BroadcastCount, "Send.BroadcastCount"),
+        RPC_ROW_INT64(TRAFFIC, Send.UnicastBytes, "Send.UnicastBytes"),
+        RPC_ROW_INT64(TRAFFIC, Send.UnicastCount, "Send.UnicastCount"),
+        RPC_ROW_END};
+RPC_TABLE_DEF(rpc_traffic_table, TRAFFIC, rpc_traffic_fields);
+
+void InRpcTraffic(TRAFFIC *t, PACK *p) {
+	RpcFieldIn(&rpc_traffic_table, t, p);
+}
+void OutRpcTraffic(PACK *p, TRAFFIC *t) {
+	RpcFieldOut(&rpc_traffic_table, p, t);
+}
+
+static const RPC_FIELD rpc_client_option_fields[] =
+    {
+        RPC_ROW_UNISTR(CLIENT_OPTION, AccountName, "AccountName"),
+        RPC_ROW_STR(CLIENT_OPTION, Hostname, "Hostname"),
+        RPC_ROW_STR(CLIENT_OPTION, ProxyName, "ProxyName"),
+        RPC_ROW_STR(CLIENT_OPTION, ProxyUsername, "ProxyUsername"),
+        RPC_ROW_STR(CLIENT_OPTION, ProxyPassword, "ProxyPassword"),
+        RPC_ROW_STR(CLIENT_OPTION, CustomHttpHeader, "CustomHttpHeader"),
+        RPC_ROW_STR(CLIENT_OPTION, HubName, "HubName"),
+        RPC_ROW_STR(CLIENT_OPTION, DeviceName, "DeviceName"),
+        RPC_ROW_INT(CLIENT_OPTION, Port, "Port"),
+        RPC_ROW_INT(CLIENT_OPTION, ProxyType, "ProxyType"),
+        RPC_ROW_INT(CLIENT_OPTION, ProxyPort, "ProxyPort"),
+        RPC_ROW_INT(CLIENT_OPTION, NumRetry, "NumRetry"),
+        RPC_ROW_INT(CLIENT_OPTION, RetryInterval, "RetryInterval"),
+        RPC_ROW_INT(CLIENT_OPTION, MaxConnection, "MaxConnection"),
+        RPC_ROW_BOOL(CLIENT_OPTION, UseEncrypt, "UseEncrypt"),
+        RPC_ROW_BOOL(CLIENT_OPTION, UseCompress, "UseCompress"),
+        RPC_ROW_BOOL(CLIENT_OPTION, HalfConnection, "HalfConnection"),
+        RPC_ROW_BOOL(CLIENT_OPTION, NoRoutingTracking, "NoRoutingTracking"),
+        RPC_ROW_INT(CLIENT_OPTION, AdditionalConnectionInterval, "AdditionalConnectionInterval"),
+        RPC_ROW_INT(CLIENT_OPTION, ConnectionDisconnectSpan, "ConnectionDisconnectSpan"),
+        RPC_ROW_BOOL(CLIENT_OPTION, RequireMonitorMode, "RequireMonitorMode"),
+        RPC_ROW_BOOL(CLIENT_OPTION, RequireBridgeRoutingMode, "RequireBridgeRoutingMode"),
+        RPC_ROW_BOOL(CLIENT_OPTION, DisableQoS, "DisableQoS"),
+        RPC_ROW_BOOL(CLIENT_OPTION, NoUdpAcceleration, "NoUdpAcceleration"),
+        RPC_ROW_IP(CLIENT_OPTION, BindLocalIP, "BindLocalIP"),      // Source IP address for outgoing connection
+        RPC_ROW_INT(CLIENT_OPTION, BindLocalPort, "BindLocalPort"), // Source port number for outgoing connection
+        RPC_ROW_END};
+RPC_TABLE_DEF(rpc_client_option_table, CLIENT_OPTION, rpc_client_option_fields);
+
+void InRpcClientOption(CLIENT_OPTION *c, PACK *p) {
+	RpcFieldIn(&rpc_client_option_table, c, p);
+}
+void OutRpcClientOption(PACK *p, CLIENT_OPTION *c) {
+	RpcFieldOut(&rpc_client_option_table, p, c);
+}
+
+void InRpcClientAuth(CLIENT_AUTH *c, PACK *p) {
+	BUF *b;
+	if (c == NULL || p == NULL)
+		return;
+
+	Zero(c, sizeof(CLIENT_AUTH));
+	c->AuthType = PackGetInt(p, "AuthType");
+	PackGetStr(p, "Username", c->Username, sizeof(c->Username));
+
+	switch (c->AuthType) {
+	case CLIENT_AUTHTYPE_ANONYMOUS:
+		break;
+
+	case CLIENT_AUTHTYPE_PASSWORD:
+		if (PackGetDataSize(p, "HashedPassword") == SHA1_SIZE)
+			PackGetData(p, "HashedPassword", c->HashedPassword);
+		break;
+
+	case CLIENT_AUTHTYPE_PLAIN_PASSWORD:
+		PackGetStr(p, "PlainPassword", c->PlainPassword, sizeof(c->PlainPassword));
+		break;
+
+	case CLIENT_AUTHTYPE_CERT:
+		b = PackGetBuf(p, "ClientX");
+		if (b != NULL) {
+			c->ClientX = BufToX(b, false);
+			FreeBuf(b);
+		}
+		b = PackGetBuf(p, "ClientK");
+		if (b != NULL) {
+			c->ClientK = BufToK(b, true, false, NULL);
+			FreeBuf(b);
+		}
+		break;
+	}
+}
+void OutRpcClientAuth(PACK *p, CLIENT_AUTH *c) {
+	BUF *b;
+	if (c == NULL || p == NULL)
+		return;
+
+	PackAddInt(p, "AuthType", c->AuthType);
+	PackAddStr(p, "Username", c->Username);
+
+	switch (c->AuthType) {
+	case CLIENT_AUTHTYPE_ANONYMOUS:
+		break;
+
+	case CLIENT_AUTHTYPE_PASSWORD:
+		PackAddData(p, "HashedPassword", c->HashedPassword, SHA1_SIZE);
+		break;
+
+	case CLIENT_AUTHTYPE_PLAIN_PASSWORD:
+		PackAddStr(p, "PlainPassword", c->PlainPassword);
+		break;
+
+	case CLIENT_AUTHTYPE_CERT:
+		b = XToBuf(c->ClientX, false);
+		if (b != NULL) {
+			PackAddBuf(p, "ClientX", b);
+			FreeBuf(b);
+		}
+		b = KToBuf(c->ClientK, false, NULL);
+		if (b != NULL) {
+			PackAddBuf(p, "ClientK", b);
+			FreeBuf(b);
+		}
+		break;
+	}
+}
+
+void InRpcPolicy(POLICY *o, PACK *p) {
+	if (o == NULL || p == NULL)
+		return;
+
+	POLICY *pol = PackGetPolicy(p);
+	Copy(o, pol, sizeof(POLICY));
+	Free(pol);
+}
+void OutRpcPolicy(PACK *p, POLICY *o) {
+	if (o == NULL || p == NULL)
+		return;
+
+	PackAddPolicy(p, o);
+}
+
+static void RpcClientGetConnectionStatusPolicyOut(const RPC_FIELD *f, PACK *p, void *base, UINT index, UINT total) {
+	OutRpcPolicy(p, (POLICY *)((UCHAR *)base + f->Offset));
+}
+static void RpcClientGetConnectionStatusPolicyIn(const RPC_FIELD *f, void *base, PACK *p, UINT index, UINT total) {
+	InRpcPolicy((POLICY *)((UCHAR *)base + f->Offset), p);
+}
+static const RPC_HOOK rpc_client_get_connection_status_policy_hook = {RpcClientGetConnectionStatusPolicyOut, RpcClientGetConnectionStatusPolicyIn, NULL};
+
+static void RpcClientGetConnectionStatusTrafficOut(const RPC_FIELD *f, PACK *p, void *base, UINT index, UINT total) {
+	OutRpcTraffic(p, (TRAFFIC *)((UCHAR *)base + f->Offset));
+}
+static void RpcClientGetConnectionStatusTrafficIn(const RPC_FIELD *f, void *base, PACK *p, UINT index, UINT total) {
+	InRpcTraffic((TRAFFIC *)((UCHAR *)base + f->Offset), p);
+}
+static const RPC_HOOK rpc_client_get_connection_status_traffic_hook = {RpcClientGetConnectionStatusTrafficOut, RpcClientGetConnectionStatusTrafficIn, NULL};
+
+// Certificate as DER data (read without the PEM fallback of PackGetX);
+// CiFreeClientGetConnectionStatus releases it
+static void RpcClientGetConnectionStatusXOut(const RPC_FIELD *f, PACK *p, void *base, UINT index, UINT total) {
+	X *x = *(X **)((UCHAR *)base + f->Offset);
+
+	if (x != NULL) {
+		BUF *b = XToBuf(x, false);
+		PackAddBuf(p, f->Key, b);
+		FreeBuf(b);
+	}
+}
+static void RpcClientGetConnectionStatusXIn(const RPC_FIELD *f, void *base, PACK *p, UINT index, UINT total) {
+	BUF *b = PackGetBuf(p, f->Key);
+
+	if (b != NULL) {
+		*(X **)((UCHAR *)base + f->Offset) = BufToX(b, false);
+		FreeBuf(b);
+	}
+}
+static const RPC_HOOK rpc_client_get_connection_status_x_hook = {RpcClientGetConnectionStatusXOut, RpcClientGetConnectionStatusXIn, NULL};
+
+static const RPC_FIELD rpc_client_get_connection_status_fields[] =
+    {
+        RPC_ROW_UNISTR(RPC_CLIENT_GET_CONNECTION_STATUS, AccountName, "AccountName"),
+        RPC_ROW_STR(RPC_CLIENT_GET_CONNECTION_STATUS, ServerName, "ServerName"),
+        RPC_ROW_STR(RPC_CLIENT_GET_CONNECTION_STATUS, ServerProductName, "ServerProductName"),
+        RPC_ROW_STR(RPC_CLIENT_GET_CONNECTION_STATUS, ProtocolName, "ProtocolVersion"),
+        RPC_ROW_STR(RPC_CLIENT_GET_CONNECTION_STATUS, CipherName, "CipherName"),
+        RPC_ROW_STR(RPC_CLIENT_GET_CONNECTION_STATUS, SessionName, "SessionName"),
+        RPC_ROW_STR(RPC_CLIENT_GET_CONNECTION_STATUS, ConnectionName, "ConnectionName"),
+        RPC_ROW_DATA(RPC_CLIENT_GET_CONNECTION_STATUS, SessionKey, "SessionKey"),
+        RPC_ROW_BOOL(RPC_CLIENT_GET_CONNECTION_STATUS, Active, "Active"),
+        RPC_ROW_BOOL(RPC_CLIENT_GET_CONNECTION_STATUS, Connected, "Connected"),
+        RPC_ROW_INT(RPC_CLIENT_GET_CONNECTION_STATUS, SessionStatus, "SessionStatus"),
+        RPC_ROW_INT(RPC_CLIENT_GET_CONNECTION_STATUS, ServerPort, "ServerPort"),
+        RPC_ROW_INT(RPC_CLIENT_GET_CONNECTION_STATUS, ServerProductVer, "ServerProductVer"),
+        RPC_ROW_INT(RPC_CLIENT_GET_CONNECTION_STATUS, ServerProductBuild, "ServerProductBuild"),
+        RPC_ROW_INT(RPC_CLIENT_GET_CONNECTION_STATUS, NumConnectionsEstablished, "NumConnectionsEstablished"),
+        RPC_ROW_BOOL(RPC_CLIENT_GET_CONNECTION_STATUS, HalfConnection, "HalfConnection"),
+        RPC_ROW_BOOL(RPC_CLIENT_GET_CONNECTION_STATUS, QoS, "QoS"),
+        RPC_ROW_INT(RPC_CLIENT_GET_CONNECTION_STATUS, MaxTcpConnections, "MaxTcpConnections"),
+        RPC_ROW_INT(RPC_CLIENT_GET_CONNECTION_STATUS, NumTcpConnections, "NumTcpConnections"),
+        RPC_ROW_INT(RPC_CLIENT_GET_CONNECTION_STATUS, NumTcpConnectionsUpload, "NumTcpConnectionsUpload"),
+        RPC_ROW_INT(RPC_CLIENT_GET_CONNECTION_STATUS, NumTcpConnectionsDownload, "NumTcpConnectionsDownload"),
+        RPC_ROW_BOOL(RPC_CLIENT_GET_CONNECTION_STATUS, UseEncrypt, "UseEncrypt"),
+        RPC_ROW_BOOL(RPC_CLIENT_GET_CONNECTION_STATUS, UseCompress, "UseCompress"),
+        RPC_ROW_STR(RPC_CLIENT_GET_CONNECTION_STATUS, UnderlayProtocol, "UnderlayProtocol"),
+        RPC_ROW_STR(RPC_CLIENT_GET_CONNECTION_STATUS, ProtocolDetails, "ProtocolDetails"),
+        RPC_ROW_BOOL(RPC_CLIENT_GET_CONNECTION_STATUS, IsUdpAccelerationEnabled, "IsUdpAccelerationEnabled"),
+        RPC_ROW_BOOL(RPC_CLIENT_GET_CONNECTION_STATUS, IsUsingUdpAcceleration, "IsUsingUdpAcceleration"),
+        RPC_ROW_BOOL(RPC_CLIENT_GET_CONNECTION_STATUS, IsBridgeMode, "IsBridgeMode"),
+        RPC_ROW_BOOL(RPC_CLIENT_GET_CONNECTION_STATUS, IsMonitorMode, "IsMonitorMode"),
+        RPC_ROW_TIME64(RPC_CLIENT_GET_CONNECTION_STATUS, StartTime, "StartTime"),
+        /* !!! Do not correct the spelling to keep the backward protocol compatibility !!!  */
+        RPC_ROW_TIME64(RPC_CLIENT_GET_CONNECTION_STATUS, FirstConnectionEstablisiedTime, "FirstConnectionEstablisiedTime"),
+        RPC_ROW_TIME64(RPC_CLIENT_GET_CONNECTION_STATUS, CurrentConnectionEstablishTime, "CurrentConnectionEstablishTime"),
+        RPC_ROW_INT64(RPC_CLIENT_GET_CONNECTION_STATUS, TotalSendSize, "TotalSendSize"),
+        RPC_ROW_INT64(RPC_CLIENT_GET_CONNECTION_STATUS, TotalRecvSize, "TotalRecvSize"),
+        RPC_ROW_INT64(RPC_CLIENT_GET_CONNECTION_STATUS, TotalSendSizeReal, "TotalSendSizeReal"),
+        RPC_ROW_INT64(RPC_CLIENT_GET_CONNECTION_STATUS, TotalRecvSizeReal, "TotalRecvSizeReal"),
+        RPC_ROW_INT(RPC_CLIENT_GET_CONNECTION_STATUS, VLanId, "VLanId"),
+        RPC_ROW_HOOK(RPC_FT_STRUCT, RPC_CLIENT_GET_CONNECTION_STATUS, Policy, NULL, 0, &rpc_client_get_connection_status_policy_hook),
+        RPC_ROW_HOOK(RPC_FT_STRUCT, RPC_CLIENT_GET_CONNECTION_STATUS, Traffic, NULL, 0, &rpc_client_get_connection_status_traffic_hook),
+        RPC_ROW_HOOK(RPC_FT_X, RPC_CLIENT_GET_CONNECTION_STATUS, ServerX, "ServerX", 0, &rpc_client_get_connection_status_x_hook),
+        RPC_ROW_HOOK(RPC_FT_X, RPC_CLIENT_GET_CONNECTION_STATUS, ClientX, "ClientX", 0, &rpc_client_get_connection_status_x_hook),
+        RPC_ROW_END};
+RPC_TABLE_DEF(rpc_client_get_connection_status_table, RPC_CLIENT_GET_CONNECTION_STATUS, rpc_client_get_connection_status_fields);
+
+void InRpcClientGetConnectionStatus(RPC_CLIENT_GET_CONNECTION_STATUS *s, PACK *p) {
+	RpcFieldIn(&rpc_client_get_connection_status_table, s, p);
+}
+void OutRpcClientGetConnectionStatus(PACK *p, RPC_CLIENT_GET_CONNECTION_STATUS *c) {
+	RpcFieldOut(&rpc_client_get_connection_status_table, p, c);
+}

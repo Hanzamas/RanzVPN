@@ -257,3 +257,46 @@ void HubSecurityLogDir(char *dir, UINT size, char *hubname) {
 void HubPacketLogDir(char *dir, UINT size, char *hubname) {
 	HubLogDir(dir, size, HUB_PACKET_LOG_DIR, hubname);
 }
+
+UINT SiGetSysLogSaveStatus(SERVER *s) {
+	SYSLOG_SETTING set;
+	if (s == NULL)
+		return SYSLOG_NONE;
+
+	SiGetSysLogSetting(s, &set);
+
+	return set.SaveType;
+}
+
+void SiWriteSysLog(SERVER *s, char *typestr, char *hubname, wchar_t *message) {
+	wchar_t tmp[1024];
+	char machinename[MAX_HOST_NAME_LEN + 1];
+	char datetime[MAX_PATH];
+	SYSTEMTIME st;
+	if (s == NULL || typestr == NULL || message == NULL)
+		return;
+
+	GetMachineName(machinename, sizeof(machinename));
+
+	LocalTime(&st);
+	if (s->StrictSyslogDatetimeFormat)
+		GetDateTimeStrRFC3339(datetime, sizeof(datetime), &st, GetCurrentTimezone());
+	else
+		GetDateTimeStrMilli(datetime, sizeof(datetime), &st);
+
+	if (IsEmptyStr(hubname) == false)
+		UniFormat(tmp, sizeof(tmp), L"[%S/VPN/%S] (%S) <%S>: %s",
+		          machinename, hubname, datetime, typestr, message);
+	else
+		UniFormat(tmp, sizeof(tmp), L"[%S/VPN] (%S) <%S>: %s",
+		          machinename, datetime, typestr, message);
+
+	SendSysLog(s->Syslog, tmp);
+}
+
+void SiGetSysLogSetting(SERVER *s, SYSLOG_SETTING *setting) {
+	if (s == NULL || setting == NULL)
+		return;
+
+	Copy(setting, &s->SyslogSetting, sizeof(SYSLOG_SETTING));
+}
