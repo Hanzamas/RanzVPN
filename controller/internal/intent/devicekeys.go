@@ -21,4 +21,7 @@ type DeviceKeys struct {
 	// HasPreshared says that the Device has a PresharedKey that the configuration does not carry: the
 	// configuration says that the controller showed it once.
 	HasPreshared bool
+	// PresharedDoesNotOpen says that the controller cannot open that PresharedKey, so that the gateway
+	// terminates the Device without it: the configuration says so (SDN-82-R1).
+	PresharedDoesNotOpen bool
 }
