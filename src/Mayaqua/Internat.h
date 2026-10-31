@@ -29,8 +29,6 @@ void UniFormatArgs(wchar_t *buf, UINT size, const wchar_t *fmt, va_list args);
 void UniPrint(const wchar_t *fmt, ...);
 void UniPrintStr(wchar_t *string);
 void UniToStru(wchar_t *str, UINT i);
-UINT UniToInt(const wchar_t *str);
-void UniToStrForSingleChars(char *dst, UINT dst_size, const wchar_t *src);
 void UniTrim(wchar_t *str);
 void UniTrimLeft(wchar_t *str);
 void UniTrimRight(wchar_t *str);
