@@ -12,6 +12,8 @@
 #include "Cedar.h"
 #include "ConfigStore.h"
 #include "Hub.h"
+#include "Listener.h"
+#include "Protocol.h"
 #include "Sam.h"
 
 #include "Mayaqua/Encrypt.h"
@@ -400,6 +402,11 @@ NODE *NewNode(wchar_t *data_dir) {
 void FreeNode(NODE *n) {
 	if (n == NULL)
 		return;
+
+	// PLANTED EDGE, reverted by the next commit (CORE-S8-2, #576): two calls into the SE-VPN code that CORE-S8-3
+	// deletes, on which the step "ranz-node links no SE-VPN code" must fail. Both return at once on NULL.
+	ConnectionAccept(NULL);
+	StopAllListener(NULL);
 
 	NodeStop(n);
 
