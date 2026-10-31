@@ -5,11 +5,11 @@ package sidecar
 // bridge of the runner (testdata/frr-stretch/stretch.sh), which stands in for the second host (ADR-0002 amendment of
 // 2026-10-21): each carries the L2 VNI 5010 of the stretched Network, with ARP suppression on its VXLAN device, and has a host
 // of the fabric behind it. The job sets RANZ_FRR_STRETCH; without it the test is skipped. The test is the gateway on the
-// runner, 172.31.26.1: its sidecar, which the leaves dial on port 1179, and its VTEP on UDP port 4789, which does with the
-// frames of the VNI what the node does (src/Cedar/NodeStretch.c, which vpntest stretch runs on Windows): a frame to a MAC
-// address of a type-2 route of the fabric goes to the VTEP of that route, and any other, a broadcast among them, to each VTEP
-// of the type-3 routes of the fabric once (ingress replication). Behind the gateway is a host of the overlay, which answers
-// ARP for its address and ICMP echo requests, as the switch of the Network hands them to it.
+// runner, 172.31.26.1: its sidecar, which the leaves dial on port 1179, and its VTEP on UDP port 4789, which stands in for the
+// forwarding of the node with the routes of the fabric that the sidecar gives it: a frame to a MAC address of a type-2 route
+// of the fabric goes to the VTEP of that route, and any other, a broadcast among them, to each VTEP of the type-3 routes of
+// the fabric once (ingress replication). Behind the gateway is a host of the overlay, which answers ARP for its address and
+// ICMP echo requests, as the switch of the Network hands them to it.
 
 import (
 	"context"
@@ -148,8 +148,8 @@ func (g *stretchGateway) answer(ip netip.Addr) string {
 	return g.answered[ip]
 }
 
-// send sends the frame to its destination MAC address as the node does: to the VTEP of the type-2 route of the address, or
-// to each VTEP of the flood list once, for a broadcast and for an address that no route holds
+// send sends the frame to its destination MAC address by the routes of the fabric: to the VTEP of the type-2 route of the
+// address, or to each VTEP of the flood list once, for a broadcast and for an address that no route holds
 func (g *stretchGateway) send(frame []byte) {
 	g.t.Helper()
 	dst := net.HardwareAddr(frame[:6]).String()

@@ -23,8 +23,8 @@ package sidecar
 // tunnel as next_hop. Of the routes that the peers offer for one MAC and IP of a VNI, or for one VTEP of a VNI, the node has
 // one: the one that it has while a peer still offers it, else the one of the lowest NLRI; a route that moves to another VTEP
 // is one learned route, without a withdraw between. The node holds the MAC addresses of the fabric behind each VTEP, and the
-// type-3 routes are the flood list of each VNI (src/Cedar/NodeStretch.c). When the pipe closes, the session ends, and the next
-// sidecar learns every route of the peers again, which is the full resync of this direction.
+// type-3 routes are the flood list of each VNI. When the pipe closes, the session ends, and the next sidecar learns every
+// route of the peers again, which is the full resync of this direction.
 
 import (
 	"context"
