@@ -1456,6 +1456,28 @@ static void EvpnTestExitCases(EVPNTEST_CTX *ctx, EVPNTEST_EXIT *cases, UINT num,
 	}
 }
 
+// Whether the counters of the EVPN of node t show sent packets to the fabric and failed ones within EVPNTEST_WAIT, with its
+// status into *st. A node counts a packet for the fabric after its send, which for a packet of a peer that it forwards runs on
+// the thread of its overlay: the harness VTEP can take that packet before the node counts it.
+static bool EvpnTestWaitSent(EVPNTEST_NODE *t, UINT64 sent, UINT64 failed, NODE_EVPN_STATUS *st)
+{
+	UINT64 end = Tick64() + EVPNTEST_WAIT;
+
+	while (true)
+	{
+		NodeEvpnGetStatus(t->Node, st);
+		if (st->Sent == sent && st->Failed == failed)
+		{
+			return true;
+		}
+		if (Tick64() >= end)
+		{
+			return false;
+		}
+		SleepThread(EVPNTEST_POLL);
+	}
+}
+
 // A VRF with an internet exit (SDN-25-R2, #550): a route of the fabric wins over the default route of red, and of two default
 // routes the one of red wins; once red has no exit again, the default routes of the fabric take what no route of red holds
 static void EvpnTestExit(EVPNTEST_CTX *ctx)
@@ -1491,9 +1513,10 @@ static void EvpnTestExit(EVPNTEST_CTX *ctx)
 	EvpnTestCheck(ctx, applied, "Generation 3: red has no internet exit again, and the state of gw no default route of red", "%s", "not applied, or the session is down");
 	EvpnTestExitCases(ctx, evpntest_no_exit, sizeof(evpntest_no_exit) / sizeof(evpntest_no_exit[0]), 800);
 
-	// Eight packets of these cases went to the fabric, and no send failed
-	NodeEvpnGetStatus(gw->Node, &after);
-	EvpnTestCheck(ctx, after.Sent == before.Sent + 8 && after.Failed == before.Failed, "The counters of the EVPN of gw: 8 more packets to the fabric, none failed",
+	// Eight packets of these cases went to the fabric, and no send failed. The last one is of peer, which gw counts on the thread
+	// of its overlay after the harness VTEP may have taken it (EvpnTestWaitSent)
+	bool counted = EvpnTestWaitSent(gw, before.Sent + 8, before.Failed, &after);
+	EvpnTestCheck(ctx, counted, "The counters of the EVPN of gw: 8 more packets to the fabric, none failed",
 		"sent %I64u and failed %I64u before, sent %I64u and failed %I64u after", before.Sent, before.Failed, after.Sent, after.Failed);
 }
 
