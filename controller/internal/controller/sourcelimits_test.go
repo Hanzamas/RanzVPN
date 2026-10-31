@@ -23,7 +23,7 @@ import (
 
 // newLimitsHarness returns a harness whose TLS port has the limits for a source that limits gives.
 func newLimitsHarness(t *testing.T, limits port.Limits) *harness {
-	h := &harness{t: t, rq: rqlitetest.Start(t), limits: limits}
+	h := &harness{t: t, rq: rqlitetest.Fresh(t), limits: limits}
 	var err error
 	if h.key, err = keys.GenerateSoft(); err != nil {
 		t.Fatal(err)
@@ -143,6 +143,10 @@ func (h *harness) hello(key keys.Static) error {
 // Hello, and the limits of the TLS port refuse none of the connections. The Nodes are none of the intent, so the
 // controller refuses each, which is the answer to a Hello that it read.
 func TestThousandNodesBehindOneAddressReachTheController(t *testing.T) {
+	// A thousand handshakes in two seconds keep the processor busy, and the handshakes that wait are near the cap of
+	// 1024 for a source, and a thousand streams are most of the goroutines that the race detector allows: so no test
+	// runs beside this one.
+	rqlitetest.Alone(t)
 	const nodes = 1000
 	h := newLimitsHarness(t, port.Limits{})
 	nodeKeys := make([]keys.Static, nodes)

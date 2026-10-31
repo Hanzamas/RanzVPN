@@ -45,7 +45,7 @@ import (
 // newTelemetryHarness returns a harness whose controller raises node-down after nodeDown, looks
 // for events every 50 ms and pushes the metrics to OTLP only when a test flushes them.
 func newTelemetryHarness(t *testing.T, nodeDown time.Duration) *harness {
-	h := &harness{t: t, rq: rqlitetest.Start(t), tune: func(c *controller.Config) {
+	h := &harness{t: t, rq: rqlitetest.Fresh(t), tune: func(c *controller.Config) {
 		c.NodeDownAfter = nodeDown
 		c.EventPoll = 50 * time.Millisecond
 		c.ExportInterval = time.Hour

@@ -43,7 +43,7 @@ library versions, move the baseline with `vcpkg x-update-baseline` and commit th
 
 1. Visual Studio's *Open a local folder* offers the same presets in the configuration dropdown.
 
-The executables (`vpnserver.exe`, `vpncmd.exe`, `vpntest.exe`) are written to the build directory. The
+The executables (`ranz-node.exe`, `vpntest.exe`, `coretest.exe`) are written to the build directory. The
 hamcore files are resources of each executable (`cmake/RanzResources.cmake`).
 
 ## Build number

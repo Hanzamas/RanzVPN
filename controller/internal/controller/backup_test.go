@@ -21,6 +21,7 @@ import (
 	"github.com/Hanzamas/RanzVPN/controller/internal/desired"
 	"github.com/Hanzamas/RanzVPN/controller/internal/intent"
 	"github.com/Hanzamas/RanzVPN/controller/internal/keys"
+	"github.com/Hanzamas/RanzVPN/controller/internal/rqlitetest"
 	"github.com/Hanzamas/RanzVPN/controller/internal/store"
 )
 
@@ -142,6 +143,7 @@ func TestImportReplacesTheIntent(t *testing.T) {
 // node and the Capabilities it reported. The node goes on from the generation it acknowledged
 // before the backup: the next change reaches it as a delta from there.
 func TestBackupRestoreBringsBackTheIntentAndRevisions(t *testing.T) {
+	rqlitetest.Own(t) // it restores a backup into rqlited
 	ctx := context.Background()
 	from := newHarness(t)
 	from.apply("apply1.json")

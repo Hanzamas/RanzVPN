@@ -16,6 +16,11 @@ func FuzzRead(f *testing.F) {
 	f.Add([]byte(`{"type":"start","asn":65001,"router_id":"192.0.2.1","peers":[{"address":"192.0.2.2","asn":65002,"passive":true}],"accept":["198.51.100.0/24","2001:db8::/32"]}` + "\n" +
 		"\r\n" + `{"type":"announce","prefix":"203.0.113.0/24","next_hop":"192.0.2.1"}` + "\n" + `{"type":"withdraw","prefix":"203.0.113.0/24"}` + "\n"))
 	f.Add([]byte(`{"type":"start","asn":65001,"router_id":"192.0.2.1","listen_port":-1,"listen_addresses":["192.0.2.1"],"peers":[{"address":"2001:db8::2","asn":65002,"port":1179}]}`))
+	// The peering of the standard mode (SDN-77 #357): a start with the node's address, peers messages with more, and ping
+	// (SDN-77-R1 #531)
+	f.Add([]byte(`{"type":"start","asn":4200000000,"router_id":"192.0.2.2","address":"127.0.0.2","peers":[{"address":"127.0.0.3","asn":4200000000,"hold_time":9,"vrfs":[{"id":101,"accept":["10.0.0.3/32","192.168.2.0/24"]}]}]}` + "\n" +
+		`{"type":"peers","more":true,"peers":[{"address":"127.0.0.4","asn":4200000000,"vrfs":[{"id":102,"accept":["fd00::4/128"]}]}]}` + "\n" +
+		`{"type":"peers"}` + "\n" + `{"type":"announce","vrf":101,"prefix":"192.168.1.0/24"}` + "\n" + `{"type":"ping"}` + "\n"))
 	f.Add([]byte(`{"type":"start","asn":65001,"router_id":"192.0.2.1","listen_port":-1,"peers":[{"address":"192.0.2.2","asn":65010}],` +
 		`"evpn":{"vtep":"192.0.2.1","router_mac":"02:52:5a:00:00:05","vrfs":[{"vrf":101,"vni":10101,"rd":"192.0.2.1:101","import":["65000:10101"],"export":["65000:10101"],"accept":["172.16.0.0/12"]},` +
 		`{"vrf":102,"vni":10102,"import":["192.0.2.1:102","1.2:102"],"export":["65000:10102"]}]}}` + "\n" + `{"type":"announce","prefix":"10.10.0.0/24","vrf":101}` + "\n"))
@@ -32,7 +37,8 @@ func FuzzRead(f *testing.F) {
 				t.Fatal("Read returned a message without a type")
 			}
 			if m.Type == TypeStart {
-				// Only the peering of the standard mode, which has an address, may start without peers
+				// Only the peering of the standard mode, which has an address, may start without peers: its node may be
+				// alone in its VRFs
 				cfg, err := parseStart(m)
 				if err == nil && len(cfg.peers) == 0 && !cfg.address.IsValid() {
 					t.Fatalf("a start without peers or an address is accepted: %+v", m)
