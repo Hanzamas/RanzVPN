@@ -31,6 +31,15 @@
 //   to the fabric, and the sensor takes its copy as peer sent it.
 // - Overlap: the fabric withdraws 172.16.1.0/24 of its red; a packet of red to it goes nowhere, and the same packet of blue
 //   still goes on the VNI of blue.
+// - The internet exit (SDN-25-R2, #550): the fabric announces 172.16.1.0/24 of its red again, and in Generation 2 peer is the
+//   internet exit of red. The state of gw routes 0.0.0.0/0 and ::/0 of red to peer, as the Controller gives every other Node
+//   of a VRF with an exit its default route (it gives 0.0.0.0/0 alone; the node takes ::/0 the same way), and the host of peer
+//   takes 198.51.100.0/24 and 2001:db8:51::/48, a LAN behind it that stands for the internet. A route of the fabric wins over
+//   the default route of red: the packets of the host of gw, and those of the host of peer that gw forwards, to 172.16.1.0/24
+//   and fd16::/64 go to the fabric, and a packet of gw to any other address still goes to the exit. Then the fabric announces
+//   0.0.0.0/0 and ::/0 of its red, which gw takes in red: of two default routes the one of red wins, for the packets of gw and
+//   of peer, while 172.16.1.0/24 of the fabric still wins over both. In Generation 3 red has no exit again, and the default
+//   routes of the fabric take what no route of red holds, as before.
 // Print "EVPN TEST OK" only when every check passes. .github/scripts/bgp-spike.ps1 runs it, with ranz.exe next to vpntest.
 
 #include "harness_int.h"
@@ -92,11 +101,12 @@ static const UCHAR evpntest_other_mac[6] = {0x02, 0x00, 0x5E, 0x99, 0x99, 0x99};
 
 // The Bgp setting of gw (its BGP port, the UDP port of its VTEP and of the VTEPs of the fabric): its sidecar listens on
 // 127.0.0.1 for the fabric, which dials it; red and blue hand the same prefixes of the overlay to the fabric, each on its L3
-// VNI and its route target, and take 172.16.0.0/12 and fd16::/48 from it
+// VNI and its route target. Red takes every prefix of the fabric, its default routes among them (SDN-25-R2, #550), and blue
+// takes 172.16.0.0/12 and fd16::/48.
 #define	EVPNTEST_GW_BGP	"{\"asn\":65001,\"router_id\":\"192.0.2.1\",\"listen_port\":%u,\"listen_addresses\":[\"127.0.0.1\"]," \
 	"\"peers\":[{\"address\":\"127.0.0.1\",\"asn\":65010,\"passive\":true}]," \
 	"\"evpn\":{\"vtep\":\"127.0.0.1\",\"port\":%u,\"fabric_port\":%u,\"vrfs\":[" \
-	"{\"vrf\":101,\"vni\":10101,\"import\":[\"65000:10101\"],\"export\":[\"65000:10101\"],\"accept\":[\"172.16.0.0/12\",\"fd16::/48\"]}," \
+	"{\"vrf\":101,\"vni\":10101,\"import\":[\"65000:10101\"],\"export\":[\"65000:10101\"],\"accept\":[\"0.0.0.0/0\",\"::/0\"]}," \
 	"{\"vrf\":102,\"vni\":10102,\"import\":[\"65000:10102\"],\"export\":[\"65000:10102\"],\"accept\":[\"172.16.0.0/12\",\"fd16::/48\"]}]}," \
 	"\"announce\":[{\"prefix\":\"10.10.0.0/24\",\"vrf\":101},{\"prefix\":\"10.10.0.0/24\",\"vrf\":102},{\"prefix\":\"fd10::/64\",\"vrf\":101}]}"
 
@@ -177,6 +187,47 @@ static EVPNTEST_IN evpntest_in[] =
 	{EVPNTEST_VNI_BLUE, evpntest_gw_mac, "172.16.1.10", "10.10.0.1", EVPNTEST_GW, EVPNTEST_BLUE},
 	{EVPNTEST_VNI_RED, evpntest_gw_mac, "fd16::10", "fd10::1", EVPNTEST_GW, EVPNTEST_RED},
 	{EVPNTEST_VNI_RED, evpntest_gw_mac, "172.16.1.20", "10.10.0.2", EVPNTEST_PEER, EVPNTEST_RED},
+};
+
+// A packet of the host of gw or of peer in red, with an internet exit of red and after it (SDN-25-R2, #550): the two ends of an
+// UDP packet, the VNI that the fabric takes it on, 0 for none, whether the host of peer, the exit, takes it, and why
+typedef struct EVPNTEST_EXIT
+{
+	UINT From;
+	char *Src;
+	char *Dst;
+	UINT Vni;
+	bool Exit;
+	char *Why;
+} EVPNTEST_EXIT;
+
+// Generation 2: peer is the internet exit of red, and the fabric announces no default route
+static EVPNTEST_EXIT evpntest_exit[] =
+{
+	{EVPNTEST_GW, "10.10.0.1", "172.16.1.10", EVPNTEST_VNI_RED, false, "172.16.1.0/24 of the fabric wins over the default route of red"},
+	{EVPNTEST_GW, "fd10::1", "fd16::10", EVPNTEST_VNI_RED, false, "fd16::/64 of the fabric wins over the default route of red"},
+	{EVPNTEST_PEER, "10.10.0.2", "172.16.1.20", EVPNTEST_VNI_RED, false, "gw forwards it: 172.16.1.0/24 of the fabric wins over the default route of red"},
+	{EVPNTEST_PEER, "fd10::2", "fd16::20", EVPNTEST_VNI_RED, false, "gw forwards it: fd16::/64 of the fabric wins over the default route of red"},
+	{EVPNTEST_GW, "10.10.0.1", "198.51.100.7", 0, true, "no route of the fabric holds it"},
+	{EVPNTEST_GW, "fd10::1", "2001:db8:51::7", 0, true, "no route of the fabric holds it"},
+};
+
+// ... and the fabric announces 0.0.0.0/0 and ::/0 of its red too
+static EVPNTEST_EXIT evpntest_defaults[] =
+{
+	{EVPNTEST_GW, "10.10.0.1", "198.51.100.7", 0, true, "the default route of red wins over the default route of the fabric"},
+	{EVPNTEST_GW, "fd10::1", "2001:db8:51::7", 0, true, "the default route of red wins over the default route of the fabric"},
+	{EVPNTEST_PEER, "10.10.0.2", "172.16.9.9", 0, false, "at gw the default route of red wins over the default route of the fabric"},
+	{EVPNTEST_PEER, "fd10::2", "fd16:0:0:1::9", 0, false, "at gw the default route of red wins over the default route of the fabric"},
+	{EVPNTEST_GW, "10.10.0.1", "172.16.1.10", EVPNTEST_VNI_RED, false, "172.16.1.0/24 of the fabric wins over both default routes"},
+};
+
+// Generation 3: red has no internet exit again, and the default routes of the fabric take what no route of red holds, as before
+static EVPNTEST_EXIT evpntest_no_exit[] =
+{
+	{EVPNTEST_GW, "10.10.0.1", "198.51.100.7", EVPNTEST_VNI_RED, false, "no route of red holds it, the default route of the fabric does"},
+	{EVPNTEST_GW, "fd10::1", "2001:db8:51::7", EVPNTEST_VNI_RED, false, "no route of red holds it, the default route of the fabric does"},
+	{EVPNTEST_PEER, "10.10.0.2", "172.16.9.9", EVPNTEST_VNI_RED, false, "gw forwards it: no route of red holds it, the default route of the fabric does"},
 };
 
 static bool EvpnTestCheck(EVPNTEST_CTX *ctx, bool ok, char *what, char *fmt, ...) RANZ_PRINTF_FORMAT(4, 5);
@@ -621,7 +672,7 @@ static void EvpnTestAddr(CONTROL_ADDRESS *a, char *network, UINT vrf_id, char *a
 	a->Length = (a->AddressSize == 4 ? 24 : 64);
 }
 
-// A route of the VRF vrf_id to prefix/length that leads to a peer
+// A route of the VRF vrf_id to prefix/length that leads to a peer, or a LAN subnet behind the node
 static void EvpnTestRoute(CONTROL_ROUTE *r, UINT vrf_id, char *prefix, UINT length)
 {
 	Zero(r, sizeof(CONTROL_ROUTE));
@@ -630,11 +681,13 @@ static void EvpnTestRoute(CONTROL_ROUTE *r, UINT vrf_id, char *prefix, UINT leng
 	r->Length = length;
 }
 
-// Apply Generation 1 of gw and peer: gw has 10.10.0.1 in red and in blue and fd10::1 in red, peer 10.10.0.2 and fd10::2 in
-// red; the state of peer routes 172.16.0.0/12 and fd16::/48 of red to gw, as the Controller routes the LAN subnets of a
-// gateway. At gw, peer runs under a session profile with no-server, and a Mirror copies TCP port 80 of red to the sensor. No
-// VRF has a policy.
-static bool EvpnTestApply(EVPNTEST_CTX *ctx)
+// Apply the Generation generation of gw and peer: gw has 10.10.0.1 in red and in blue and fd10::1 in red, peer 10.10.0.2 and
+// fd10::2 in red; the state of peer routes 172.16.0.0/12 and fd16::/48 of red to gw, as the Controller routes the LAN subnets
+// of a gateway. At gw, peer runs under a session profile with no-server, and a Mirror copies TCP port 80 of red to the sensor.
+// No VRF has a policy. With has_exit, peer is the internet exit of red (SDN-25-R2, #550): the state of gw routes 0.0.0.0/0 and
+// ::/0 of red to peer, as the Controller gives every other Node of a VRF its default route to the exit, and the host of peer
+// takes 198.51.100.0/24 and 2001:db8:51::/48, a LAN behind it that stands for the internet.
+static bool EvpnTestApply(EVPNTEST_CTX *ctx, UINT generation, bool has_exit)
 {
 	bool ok = true;
 
@@ -645,7 +698,7 @@ static bool EvpnTestApply(EVPNTEST_CTX *ctx)
 		UINT j = 1 - i;
 		bool gw = (i == EVPNTEST_GW);
 
-		st->Generation = 1;
+		st->Generation = generation;
 		StrCpy(st->Name, sizeof(st->Name), evpntest_names[i]);
 		EvpnTestAddr(&st->Addresses[0], "red", EVPNTEST_RED, gw ? "10.10.0.1" : "10.10.0.2");
 		EvpnTestAddr(&st->Addresses[1], "red", EVPNTEST_RED, gw ? "fd10::1" : "fd10::2");
@@ -677,6 +730,12 @@ static bool EvpnTestApply(EVPNTEST_CTX *ctx)
 			EvpnTestRoute(&p->Routes[0], EVPNTEST_RED, "172.16.0.0", 12);
 			EvpnTestRoute(&p->Routes[1], EVPNTEST_RED, "fd16::", 48);
 			p->NumRoutes = 2;
+			if (has_exit)
+			{
+				EvpnTestRoute(&st->LanSubnets[0], EVPNTEST_RED, "198.51.100.0", 24);
+				EvpnTestRoute(&st->LanSubnets[1], EVPNTEST_RED, "2001:db8:51::", 48);
+				st->NumLanSubnets = 2;
+			}
 		}
 		else
 		{
@@ -693,6 +752,13 @@ static bool EvpnTestApply(EVPNTEST_CTX *ctx)
 			m->Port = EVPNTEST_WEB;
 			m->SensorSize = EvpnTestAddress(m->Sensor, "127.0.0.1");
 			m->SensorPort = ctx->SensorPort;
+
+			if (has_exit)
+			{
+				EvpnTestRoute(&p->Routes[0], EVPNTEST_RED, "0.0.0.0", 0);
+				EvpnTestRoute(&p->Routes[1], EVPNTEST_RED, "::", 0);
+				p->NumRoutes = 2;
+			}
 		}
 		st->Peers = p;
 		st->NumPeers = 1;
@@ -706,8 +772,8 @@ static bool EvpnTestApply(EVPNTEST_CTX *ctx)
 	return ok;
 }
 
-// Whether gw and peer run Generation 1 with their session up, within EVPNTEST_WAIT
-static bool EvpnTestWaitLinks(EVPNTEST_CTX *ctx)
+// Whether gw and peer run the Generation generation with their session up, within EVPNTEST_WAIT
+static bool EvpnTestWaitLinks(EVPNTEST_CTX *ctx, UINT generation)
 {
 	UINT64 end = Tick64() + EVPNTEST_WAIT;
 
@@ -717,7 +783,7 @@ static bool EvpnTestWaitLinks(EVPNTEST_CTX *ctx)
 
 		NodeOverlayGetStatus(ctx->Nodes[EVPNTEST_GW].Node, &a);
 		NodeOverlayGetStatus(ctx->Nodes[EVPNTEST_PEER].Node, &b);
-		if (a.NumLinks == 1 && b.NumLinks == 1 && a.Generation == 1 && b.Generation == 1)
+		if (a.NumLinks == 1 && b.NumLinks == 1 && a.Generation == generation && b.Generation == generation)
 		{
 			return true;
 		}
@@ -901,7 +967,7 @@ static bool EvpnTestOpen(EVPNTEST_CTX *ctx, TRANSPORT *loopback)
 	}
 	ctx->Overlays = started;
 
-	bool applied = started && EvpnTestApply(ctx) && EvpnTestWaitLinks(ctx);
+	bool applied = started && EvpnTestApply(ctx, 1, false) && EvpnTestWaitLinks(ctx, 1);
 	Format(what, sizeof(what), "The overlays of gw and peer run Generation 1, with their session up");
 	ok = EvpnTestCheck(ctx, applied, what, "started %u, applied and linked %u", (UINT)started, (UINT)applied) && ok;
 
@@ -1337,8 +1403,125 @@ static void EvpnTestOverlap(EVPNTEST_CTX *ctx)
 		st.Malformed == 0, "The counters of the EVPN of gw: 6 packets to the fabric, 5 from it, one drop of each kind of the guard and of the stranger", "%s", "see the line above");
 }
 
+// One packet of each of the num cases, from the host of its node in red (SDN-25-R2, #550): it goes to the fabric on its VNI as
+// it was sent; or to peer, the exit of red, whose host takes it as it was sent, and not to the fabric; or not to the fabric.
+// The data of the packet of case k is seq + k.
+static void EvpnTestExitCases(EVPNTEST_CTX *ctx, EVPNTEST_EXIT *cases, UINT num, UINT seq)
+{
+	EVPNTEST_NODE *peer = &ctx->Nodes[EVPNTEST_PEER];
+	UCHAR d[VXLAN_MAX_DATAGRAM];
+	char what[MAX_SIZE];
+
+	for (UINT k = 0;k < num;k++)
+	{
+		EVPNTEST_EXIT *c = &cases[k];
+		EVPNTEST_NODE *t = &ctx->Nodes[c->From];
+		UCHAR packet[EVPNTEST_SIZE];
+		UINT size = EvpnTestPacket(packet, c->Src, c->Dst, seq + k);
+		LONG arrivals = InterlockedCompareExchange(&peer->Arrivals, 0, 0);
+
+		EvpnTestDrain(ctx);
+
+		NodeReaderOnline(t->Node, &t->Reader);
+		bool taken = (size != 0 && NodeOverlayInput(t->Node, EVPNTEST_RED, packet, size));
+		NodeReaderOffline(&t->Reader);
+
+		bool arrived = (c->Exit && taken && EvpnTestArrived(peer, arrivals + 1, EVPNTEST_WAIT));
+		UINT got = EvpnTestTake(ctx, d, sizeof(d), c->Vni != 0 ? EVPNTEST_WAIT : EVPNTEST_QUIET);
+		bool same = false;
+
+		AcquireSRWLockShared(&peer->Lock);
+		{
+			same = (arrived && peer->LastVrf == EVPNTEST_RED && peer->LastSize == size && Cmp(peer->Last, packet, size) == 0);
+		}
+		ReleaseSRWLockShared(&peer->Lock);
+
+		if (c->Vni != 0)
+		{
+			Format(what, sizeof(what), "%s, VRF 101: udp %s > %s goes to the fabric on VNI %u as it was sent: %s", evpntest_names[c->From], c->Src, c->Dst, c->Vni, c->Why);
+			EvpnTestCheck(ctx, taken && EvpnTestIsFrame(d, got, c->Vni, packet, size), what, "taken %u, the harness VTEP took %u bytes", (UINT)taken, got);
+		}
+		else if (c->Exit)
+		{
+			Format(what, sizeof(what), "%s, VRF 101: udp %s > %s goes to peer, the exit of red, whose host takes it as it was sent, and not to the fabric: %s",
+				evpntest_names[c->From], c->Src, c->Dst, c->Why);
+			EvpnTestCheck(ctx, same && got == 0, what, "taken %u, arrived %u, VRF %u, %u bytes, the harness VTEP took %u bytes", (UINT)taken, (UINT)arrived, peer->LastVrf,
+				peer->LastSize, got);
+		}
+		else
+		{
+			Format(what, sizeof(what), "%s, VRF 101: udp %s > %s does not go to the fabric: %s", evpntest_names[c->From], c->Src, c->Dst, c->Why);
+			EvpnTestCheck(ctx, taken && got == 0, what, "taken %u, the harness VTEP took %u bytes", (UINT)taken, got);
+		}
+	}
+}
+
+// Whether the counters of the EVPN of node t show sent packets to the fabric and failed ones within EVPNTEST_WAIT, with its
+// status into *st. A node counts a packet for the fabric after its send, which for a packet of a peer that it forwards runs on
+// the thread of its overlay: the harness VTEP can take that packet before the node counts it.
+static bool EvpnTestWaitSent(EVPNTEST_NODE *t, UINT64 sent, UINT64 failed, NODE_EVPN_STATUS *st)
+{
+	UINT64 end = Tick64() + EVPNTEST_WAIT;
+
+	while (true)
+	{
+		NodeEvpnGetStatus(t->Node, st);
+		if (st->Sent == sent && st->Failed == failed)
+		{
+			return true;
+		}
+		if (Tick64() >= end)
+		{
+			return false;
+		}
+		SleepThread(EVPNTEST_POLL);
+	}
+}
+
+// A VRF with an internet exit (SDN-25-R2, #550): a route of the fabric wins over the default route of red, and of two default
+// routes the one of red wins; once red has no exit again, the default routes of the fabric take what no route of red holds
+static void EvpnTestExit(EVPNTEST_CTX *ctx)
+{
+	EVPNTEST_NODE *gw = &ctx->Nodes[EVPNTEST_GW];
+	EVPNTEST_NODE *fabric = &ctx->Nodes[EVPNTEST_FABRIC];
+	NODE_EVPN_STATUS before, after;
+
+	Print("[a VRF with an internet exit: the routes of the fabric and the default routes]\n");
+
+	NodeEvpnGetStatus(gw->Node, &before);
+
+	// The route of red that the fabric withdrew in the case before comes back, and peer becomes the exit of red
+	bool again = NodeBgpAnnounceVrf(fabric->Node, EVPNTEST_FABRIC_RED, "172.16.1.0/24") && EvpnTestWaitRoutes(gw, 3);
+	EvpnTestCheck(ctx, again && EvpnTestHasRoute(gw, EVPNTEST_RED, "172.16.1.0/24", "127.0.0.2", EVPNTEST_VNI_RED, evpntest_fabric_mac),
+		"The fabric announces 172.16.1.0/24 of its red again: gw holds it in red again", "announced and learned %u", (UINT)again);
+
+	bool applied = EvpnTestApply(ctx, 2, true) && EvpnTestWaitLinks(ctx, 2);
+	EvpnTestCheck(ctx, applied, "Generation 2: peer is the internet exit of red, and the state of gw routes 0.0.0.0/0 and ::/0 of red to peer", "%s",
+		"not applied, or the session is down");
+	EvpnTestExitCases(ctx, evpntest_exit, sizeof(evpntest_exit) / sizeof(evpntest_exit[0]), 600);
+
+	// Two default routes: the fabric announces its own of red
+	bool defaults = NodeBgpAnnounceVrf(fabric->Node, EVPNTEST_FABRIC_RED, "0.0.0.0/0") && NodeBgpAnnounceVrf(fabric->Node, EVPNTEST_FABRIC_RED, "::/0") &&
+		EvpnTestWaitRoutes(gw, 5);
+	EvpnTestCheck(ctx, defaults && EvpnTestHasRoute(gw, EVPNTEST_RED, "0.0.0.0/0", "127.0.0.2", EVPNTEST_VNI_RED, evpntest_fabric_mac) &&
+		EvpnTestHasRoute(gw, EVPNTEST_RED, "::/0", "127.0.0.2", EVPNTEST_VNI_RED, evpntest_fabric_mac),
+		"The fabric announces 0.0.0.0/0 and ::/0 of its red: gw holds both in red, via the VTEP 127.0.0.2 on VNI 10101", "announced and learned %u", (UINT)defaults);
+	EvpnTestExitCases(ctx, evpntest_defaults, sizeof(evpntest_defaults) / sizeof(evpntest_defaults[0]), 700);
+
+	// No exit: red as in Generation 1, whose packets to an address of no route of red the default routes of the fabric take
+	applied = EvpnTestApply(ctx, 3, false) && EvpnTestWaitLinks(ctx, 3);
+	EvpnTestCheck(ctx, applied, "Generation 3: red has no internet exit again, and the state of gw no default route of red", "%s", "not applied, or the session is down");
+	EvpnTestExitCases(ctx, evpntest_no_exit, sizeof(evpntest_no_exit) / sizeof(evpntest_no_exit[0]), 800);
+
+	// Eight packets of these cases went to the fabric, and no send failed. The last one is of peer, which gw counts on the thread
+	// of its overlay after the harness VTEP may have taken it (EvpnTestWaitSent)
+	bool counted = EvpnTestWaitSent(gw, before.Sent + 8, before.Failed, &after);
+	EvpnTestCheck(ctx, counted, "The counters of the EVPN of gw: 8 more packets to the fabric, none failed",
+		"sent %I64u and failed %I64u before, sent %I64u and failed %I64u after", before.Sent, before.Failed, after.Sent, after.Failed);
+}
+
 // evpn: the EVPN of a gateway against a fabric
-RANZ_TEST("evpn", evpn_test, "EVPN gateway: a node hands two VRFs of the overlay with the same prefixes to a fabric as EVPN type-5 routes through ranz bgp (ranz.exe next to vpntest), and both ways of VXLAN reach the hosts of the overlay and the VTEP of the fabric in the VRF of their VNI.");
+RANZ_TEST("evpn", evpn_test, "EVPN gateway: a node hands two VRFs of the overlay with the same prefixes to a fabric as EVPN type-5 routes through ranz bgp (ranz.exe next to vpntest), and both ways of VXLAN reach the hosts of the overlay and the VTEP of the fabric in the VRF of their VNI; in a VRF with an internet exit a route of the fabric wins over its default route, and of two default routes the one of the VRF wins.");
 void evpn_test(UINT num, char **arg)
 {
 	EVPNTEST_CTX *ctx = ZeroMalloc(sizeof(EVPNTEST_CTX));
@@ -1360,6 +1543,7 @@ void evpn_test(UINT num, char **arg)
 		EvpnTestOuterSource(ctx);
 		EvpnTestProfile(ctx);
 		EvpnTestOverlap(ctx);
+		EvpnTestExit(ctx);
 	}
 
 	EvpnTestClose(ctx);
