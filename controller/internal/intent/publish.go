@@ -400,10 +400,10 @@ func (in Intent) publishedUsers(vrf, node string) []string {
 	return out
 }
 
-// validateEndpoint checks the Endpoint name of a completed intent: its two VRFs are VRFs of the intent and not one, and the
-// consumer VRF has overlay DNS on; its Node is a member of the source VRF; its values parse; its name is a name of a zone; and
-// its consumer tags are tags. What it compiles to is checked by validatePublished.
-func (in Intent) validateEndpoint(name string) []error {
+// validatePublishedEndpoint checks the Endpoint name of a completed intent: its two VRFs are VRFs of the intent and not one, and
+// the consumer VRF has overlay DNS on; its Node is a member of the source VRF; its values parse; its name is a name of a zone;
+// and its consumer tags are tags. What it compiles to is checked by validatePublished.
+func (in Intent) validatePublishedEndpoint(name string) []error {
 	e := in.Endpoints[name]
 	var problems []error
 	if len(name) > MaxEndpointName {
@@ -448,7 +448,7 @@ func (in Intent) validateEndpoint(name string) []error {
 	return problems
 }
 
-// validatePublished checks the Endpoints of a completed intent. Each Endpoint is checked alone (validateEndpoint). Once the rest
+// validatePublished checks the Endpoints of a completed intent. Each Endpoint is checked alone (validatePublishedEndpoint). Once the rest
 // of the intent is valid, rest, what they compile to is checked as the resources of its kinds are: the 1:1 NAT rule of an
 // Endpoint overlaps no pool, LAN subnet or outside prefix of the source VRF and no other rule of its Node, its routes overlap no
 // prefix of the VRF that they leak into, no Node has more 1:1 NAT rules, routes to a peer or records in a zone than the control
@@ -457,7 +457,7 @@ func (in Intent) validateEndpoint(name string) []error {
 func (in Intent) validatePublished(rest bool) []error {
 	var problems []error
 	for _, name := range sortedNames(in.Endpoints) {
-		problems = append(problems, in.validateEndpoint(name)...)
+		problems = append(problems, in.validatePublishedEndpoint(name)...)
 	}
 	if len(problems) > 0 || !rest || len(in.Endpoints) == 0 {
 		return problems
