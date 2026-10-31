@@ -6,6 +6,7 @@ require (
 	github.com/Microsoft/go-winio v0.6.4
 	github.com/apernet/hysteria/core/v2 v2.13.0
 	github.com/apernet/hysteria/extras/v2 v2.13.0
+	github.com/apernet/quic-go v0.63.1-0.20261004180939-a10df75c260c
 	github.com/chromedp/chromedp v0.21.0
 	github.com/flynn/noise v1.1.0
 	github.com/google/uuid v1.6.0
@@ -32,7 +33,6 @@ require (
 
 require (
 	github.com/andybalholm/brotli v1.2.3 // indirect
-	github.com/apernet/quic-go v0.63.1-0.20261004180939-a10df75c260c // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/cenkalti/backoff/v5 v5.0.3 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
