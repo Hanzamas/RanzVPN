@@ -115,14 +115,14 @@ func (s *Store) AddFirstToken(ctx context.Context, t Token) (bool, error) {
 		t.Name, t.Role, t.Hash))
 }
 
-// DeleteToken deletes the token name, unless it is the last token of the role keep, in one
-// statement, so two deletes at once cannot both pass the check, and its life with it. An empty keep
-// keeps nothing. It reports false, and deletes nothing, when there is no such token or it is the
-// last one of keep.
-func (s *Store) DeleteToken(ctx context.Context, name, keep string) (bool, error) {
+// DeleteToken deletes the token name, unless that takes the last token of the role keep that has
+// not expired at the instant now (keepsRole), in one statement, so two deletes at once cannot both
+// pass the check, and its life with it. An empty keep keeps nothing. It reports false, and deletes
+// nothing, when there is no such token or it is the last one of keep.
+func (s *Store) DeleteToken(ctx context.Context, name, keep string, now time.Time) (bool, error) {
+	cond, args := keepsRole(name, keep, now)
 	return s.writeToken(ctx,
-		statement(`DELETE FROM api_tokens WHERE name = ? AND (role != ? OR (SELECT COUNT(*) FROM api_tokens WHERE role = ?) > 1)`,
-			name, keep, keep),
+		statement(`DELETE FROM api_tokens WHERE name = ? AND (`+cond+`)`, append([]any{name}, args...)...),
 		// In the same transaction: the life goes when the token is gone, and stays when the delete was refused
 		statement(`DELETE FROM api_token_life WHERE name = ? AND NOT EXISTS (SELECT 1 FROM api_tokens WHERE name = ?)`, name, name))
 }
