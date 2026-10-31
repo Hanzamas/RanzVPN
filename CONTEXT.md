@@ -456,6 +456,15 @@ _Avoid_: VLAN id, segment id
 The Ethernet segment identifier that two gateways of one Network share for active-active multihoming (EVPN type-1 and type-4). The administrator sets it in the Stretch; the Node elects the designated forwarder.
 _Avoid_: LAG, bond, team
 
+**EVPN VRF**:
+A VRF of a gateway Node that the gateway hands to a data-centre fabric as **IP prefix routes**: its L3 VNI, route distinguisher, import and export route targets and accept list (the `vrfs` of the `evpn` object of the `Bgp` setting).
+
+**IP prefix route**:
+An EVPN route of type 5 (RFC 9136): a prefix of one VRF with its route distinguisher, route targets, L3 VNI and **Router MAC**, and the VTEP that holds it as next hop.
+
+**Router MAC**:
+The MAC address of a VTEP in an EVPN VRF, carried in the Router's MAC extended community of its IP prefix routes. It is the inner source of the frames that a gateway sends on an L3 VNI and the inner destination of the frames sent to it. The default is `02:52:5a:00:00:05`, the same in the Node and in the sidecar.
+
 **Front door**:
 The TCP 443 listener of a Node that reads the first bytes of each connection and hands the socket to the process that owns that protocol.
 _Avoid_: port sharing, reverse proxy, demultiplexer (the opt-in UDP 443 demultiplexer is a different thing)
@@ -498,9 +507,24 @@ _Avoid_: endpoint, route (the API's side of the call)
 How a Node that is an internet exit for a VRF translates its traffic: tier 1 is RRAS NAT, tier 2 is WinNAT, tier 3 is a proxy on the Windows TCP/IP stack.
 _Avoid_: SecureNAT, NAT mode
 
+**Exit (of a VRF)**:
+The member Node that the `egress` of a VRF names. It takes the traffic of the VRF to the addresses outside it, with its **Egress tier**. A VRF has one Exit at most (its **Hub node** when the topology is hub-and-spoke), and a Node can be the Exit of several VRFs (SDN-12).
+
+**Interface that carries the egress**:
+An interface of the host of an Exit, other than the loopback, that holds an IPv4 default route. It has Forwarding, WeakHostSend and WeakHostReceive on while the Node is the Exit of a VRF, and gets back what it had after.
+
+**NAT network of the Node**:
+`RanzVPN-Egress`, the one NAT network of WinNAT that tier 2 creates over the supernet of the VRFs whose Exit the Node is. A NAT network of another name is never the Node's and is never touched.
+
+**Fallback to the proxy**:
+An Exit whose NAT of Windows cannot serve its VRFs uses the proxy, tier 3, for the rest of the run. The causes are a VRF seen through 4via6, a supernet wider than /8, a NAT network of another program, and three failed reconciles in a row. Its status says from which tier it fell back.
+
 **Capability**:
 A fact that a Node reports about its host (SKU, architecture, Hyper-V, LBFO, SeLow, XDP, Egress tier, the fallback to 5555), against which the Controller checks the Intent before an apply. Only a gateway or edge feature, or one a platform cannot carry (an L2 Network on arm64), needs one.
 _Avoid_: `CAPS` (the slim fork's server capability list), feature flag
+
+**bgpPeering (a Capability)**:
+`Capabilities.bgp_peering`, reported in the Hello by a Node whose release has the BGP peering of the standard mode and whose `ranz.exe`, which holds the **BGP sidecar** that it starts, is next to it. The Controller refuses a Node that does not report it as a member of a VRF whose **Peering** is `bgp` (ADR-0033 amendment of 2026-10-30, SDN-77-R2).
 
 **Relay**:
 A Node with the relay Role (ADR-0015). It binds the nodes of its VRFs and forwards a datagram from one of them to another only when the two share a VRF, through `PeerInput`, the same ingress where a node takes its own datagrams. It holds no state beyond the Bindings that its nodes renew, so a restart loses nothing for good. The Relay objects of a node's desired state are the relays it may use; the first one is its home relay. The `relay` item of a Node resource is the address its relay role listens on.
@@ -523,10 +547,10 @@ The one UDP socket of a Node on which all of its ICE sessions run. It is the UDP
 _Avoid_: ICE port (the port alone), relay socket
 
 **Peer mode (of libjuice)**:
-An agent of libjuice that has no socket of its own. It sends through the send procedure of the peer layer and takes the STUN messages that `PeerInput` hands it (`PeerIceInput`). `src/Core/3rdparty/juice-peer.c` takes the place of `conn_thread.c` of libjuice. It is the one changed file of libjuice, and it keeps the licence of libjuice (MPL-2.0).
+An agent of libjuice that has no socket of its own. It sends through the send procedure of the peer layer and takes the STUN messages that `PeerInput` hands it (`PeerIceInput`). The peer layer reads each STUN message once, whatever the number of ICE sessions (`juice_peer_read`), and hands it to the session that it names: a check by the ufrag of its receiver, an answer by its transaction (`juice_peer_take`). `src/Core/3rdparty/juice-peer.c` takes the place of `conn_thread.c` of libjuice. It is the one changed file of libjuice, and it keeps the licence of libjuice (MPL-2.0).
 
 **ICE session**:
-A Node's ICE agent with one peer, which checks candidate pairs in the background while the Path stays on the Relay. The Node's offer starts it controlling, and the peer's offer starts it controlled. It ends when the peer goes. A new offer replaces it after it failed, which the Node that offers the pair makes 20 s after the failure (a delay that doubles up to 30 min while the new ones fail), or while it still checks when the home gateway granted its public port since it started.
+A Node's ICE agent with one peer, which checks candidate pairs in the background while the Path stays on the Relay. The Node's offer starts it controlling, and the peer's offer starts it controlled. It ends when the peer goes. A session of the Node's offer whose answer does not come in 40 s fails (`PEER_ICE_ANSWER_TIMEOUT`). A new offer replaces it after it failed, which the Node that offers the pair makes 20 s after the failure (a delay that doubles up to 30 min while the new ones fail), or while it still checks when the home gateway granted its public port since it started.
 _Avoid_: ICE connection, P2P session
 
 **Mapped candidate**:
@@ -761,6 +785,12 @@ The session id of the ClientHello of a Mimic link, which seals the version and t
 **Temporary certificate**:
 The certificate that a REALITY server presents to a client that proved the key. It is signed with the HMAC of its key under the auth key, and it is the pin check of the mimic path.
 
+**PinsInterval**:
+The least time between two changes of the keys of one Node that the Controller applies: 10 s (`controller/internal/controller/mimic.go`, AUD1-DT-20). The keys are the public key of the mimic server of the Node, which the Node reports in `Pins`. A change that is applied gives each client of that server a **Mimic link** with the new key, in one Generation. The limit is for each Node and is kept in memory.
+
+**Held report**:
+A `Pins` report that differs from the keys in force and comes within the **PinsInterval** of its Node. The Controller keeps the last one of them, drops it when the Node reports the keys in force again, and applies it at the first look at the keys after the interval ends.
+
 **Switch**:
 The forwarding plane of one L2 Network (`SWITCH`, the Switch module), in place of the forwarding of the Hub. It is not a name for the Hub, whose entry avoids "virtual switch".
 
@@ -876,7 +906,16 @@ The `Client` setting of the Configuration store: one JSON object that names the 
 The data transport of the overlay of a client Node. It dials a server by its node name through the race of the fallback list of that server, and listens nowhere.
 
 **Pipe of the logged-in user**:
-`\\.\pipe\ranz-node-client` (or the pipe of the Client setting), through which an interactive user reads the status of the client role and takes it down and up.
+`\\.\pipe\ranz-node-client` (or the pipe of the Client setting), through which an interactive user reads the status of the client role and takes it down and up. Besides `status`, `up` and `down` it takes `exit` (the choice of an **Exit node**: `exit NAME [VRF]`, or `exit none`), `key` (the public half of the static key of the Node) and `enrol` (the Controller settings that a sign-in brought, taken only while the Node has none).
+
+**Tray**:
+`ranz tray` (`controller/cmd/ranz/tray*.go`, SDN-55): the notification icon of a laptop. It is a face of the Node service on the **Pipe of the logged-in user** (status, sign-in, on and off, exit node), one for each user and session. It is a subcommand of `ranz.exe`, not an executable of its own.
+
+**Exit node**:
+A peer of the desired state of a client Node whose Peer object holds the default route of a VRF (`0.0.0.0/0`, `::/0` or both), such as the **Exit (of a VRF)** that the Controller names. The logged-in user chooses one on the Pipe of the logged-in user, and the adapter of its VRF then holds both default routes. A client takes the default route of a peer through its chosen Exit node only.
+
+**Bypass route**:
+The host route that the client role puts on a server address, and on the address of its Controller, through the interface of the default route of the host. It is there while the default routes of an **Exit node** are on the adapter, so that the streams of the role do not enter the adapter that they carry.
 
 **Controller settings**:
 The address, static key and TLS fingerprint of the Controller in the Configuration store of a Node, which `ranz node controller` sets, shows and clears.
@@ -1022,6 +1061,15 @@ The comments on the issue `Integrator heartbeat`, by which an Integrator shows t
 **Fast set, full set**:
 The two sets of CI jobs of a pull request (see `.github/scripts/ci-plan.py`).
 
+**Fuzz campaign**:
+The run of every fuzz target of the registry (`.github/quality/fuzz-targets.txt`) for a long time against a **Stored corpus** (`.github/workflows/fuzz.yml`, AUD-3). It has three kinds: the **nightly run** (15 minutes for each target), the **campaign** by hand (an hour by default) and the **smoke run** of a pull request (20 seconds). The full set of `windows.yml` and `ranz.yml` keeps its own runs of 60 and 20 seconds for each target.
+
+**Stored corpus**:
+The artifact `fuzz-corpus-<target>` of the newest run on the default branch: the inputs that reach coverage that the seeds of `src/fuzz/corpus` do not (for a Go test, the fuzz cache of its engine), and `manifest.json` with the runs, the seconds of fuzzing in all of them and the report of the last one.
+
+**Planted fault (of the fuzz campaign)**:
+A target with a known fault (`.github/scripts/fuzz-fault.c` and `fuzz-fault_test.go`) whose leg must end in a finding. So a campaign that reports nothing cannot pass for one that found nothing.
+
 **Security (of an L2 Network)**:
 The protections of the fork that the switch of an L2 Network applies to the frames of its clients: the MAC and IP checks with their limits, ARP and DHCP only, the DHCP guard and the RA guard (`Network.security`, `SWITCH_SECURITY`, SDN-41). The Policy engine enforces them as the guard of the switch.
 
@@ -1076,7 +1124,10 @@ The secret `ranz_j_` and 128 random bits that a User makes in the **Portal** for
 The Controller's own key for the secrets of its store: a persisted key of the Microsoft Software Key Storage Provider on Windows, a file `store.key` elsewhere. It sits beside the Noise static key and the TLS key. A member of a cluster seals no secret with it: it opens the member's **Copy** of the **Cluster key** with it.
 
 **Sealed secret**:
-The form in which the store keeps a secret that a reader of the store must not get: the secret of an export or audit target (`ranz-sealed:1:` and the base64 of a sealed box) and the PresharedKey of a Device (the base64 of the box, in the table `device_keys`). Only the **Sealing key** opens it, or in a cluster the **Cluster key**. The label of its row is part of what the box authenticates, so a Sealed secret copied into another row does not open.
+The form in which the store keeps a secret that a reader of the store must not get: the secret of an export or audit target (`ranz-sealed:1:` and the base64 of a sealed box) and the PresharedKey of a Device (the base64 of the box, in the table `device_keys`). Only the **Sealing key** opens it, or in a cluster the **Cluster key**. The label of its row is part of what the box authenticates, so a Sealed secret copied into another row does not open. The label of the secret of a target also holds the SHA-256 of its URL, so a Sealed secret in a row whose URL was changed does not open either.
+
+**Migrated secret**:
+The secret of a target that an earlier release kept in clear and that `SealTargetSecrets` sealed by changing its row. It is sealed in the table and in every backup that the upgraded Controller makes. But its old text stays in the data of rqlite (its Raft log, its snapshots, the free space of its file) until that is truncated, replaced or vacuumed. So the operator puts the target again with a new secret, and changes it at the receiver (AUD1-DT-17).
 
 **Cluster key**:
 The key that seals the secrets of a Controller cluster in the place of the **Sealing key** of a host: the secrets of its export and audit targets and the PresharedKeys of its Devices. It is a random X25519 key that seals as a Sealing key does (`keys.Sealer`), so a **Sealed secret** of a cluster has the form of the one of a single Controller. A member holds it in memory only. The store holds its public half (table `cluster_key`) and a **Copy** for each member, and never a private key. A member that holds none keeps no secret: it refuses a target with a secret and a Device with a PresharedKey. A restore keeps the Cluster key of the store that it replaces (`controller/internal/clusterkey`, ADR-0026 amendment of 2026-10-29, AUD1-DT-16).
