@@ -3,6 +3,7 @@ package install
 import (
 	"fmt"
 	"net"
+	"net/netip"
 	"strings"
 	"testing"
 
@@ -69,6 +70,35 @@ func TestAdminFromDefaultStaysWithinThePrivateBlocks(t *testing.T) {
 	} {
 		if got, err := AdminFrom(nil, c.addrs); err != nil || got != c.want {
 			t.Errorf("%s: the default allowlist is %q (%v), want %q", c.what, got, err, c.want)
+		}
+	}
+}
+
+// The default leaves out the global IPv6 subnets of the host, as it leaves out every public address (AUD1-DT-15, #497): a dual-stack
+// client of the same LAN that reaches the host by an AAAA name, from an address in the global /64 of the host, is refused with 403
+// until the subnet is named with --admin-from, as step 5 of docs/first-test.md says. --admin-from replaces the default, so the
+// private subnet that is still wanted is named too, and the list then holds the client of the /64 and no other /64.
+func TestAdminFromDefaultLeavesOutTheGlobalIPv6Subnets(t *testing.T) {
+	addrs := []net.Addr{ipnet(t, "192.168.1.20/24"), ipnet(t, "2001:db8:1:2::10/64"), ipnet(t, "2001:db8:1:2:aaaa:bbbb:cccc:dddd/64"), ipnet(t, "fe80::1/64")}
+	got, err := AdminFrom(nil, addrs)
+	if want := "127.0.0.0/8,192.168.1.0/24,::1/128"; err != nil || got != want {
+		t.Fatalf("the default allowlist of a host with a global IPv6 subnet is %q (%v), want %q, with no global subnet", got, err, want)
+	}
+	list, err := intent.ParseSources(strings.Split(got, ","))
+	if err != nil || intent.ContainsSource(list, netip.MustParseAddr("2001:db8:1:2:1234::77")) {
+		t.Errorf("the default list holds a client of the global /64 of the host (%v)", err)
+	}
+
+	got, err = AdminFrom([]string{"192.168.1.0/24", "2001:db8:1:2::/64"}, addrs)
+	if want := "192.168.1.0/24,2001:db8:1:2::/64"; err != nil || got != want {
+		t.Fatalf("--admin-from with the private subnet and the global /64 is %q (%v), want %q", got, err, want)
+	}
+	if list, err = intent.ParseSources(strings.Split(got, ",")); err != nil {
+		t.Fatal(err)
+	}
+	for addr, want := range map[string]bool{"2001:db8:1:2:1234::77": true, "2001:db8:1:3::1": false, "192.168.1.77": true, "192.168.2.1": false} {
+		if got := intent.ContainsSource(list, netip.MustParseAddr(addr)); got != want {
+			t.Errorf("the list of --admin-from holds %s: %v, want %v", addr, got, want)
 		}
 	}
 }

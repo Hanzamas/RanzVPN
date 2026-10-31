@@ -17,8 +17,10 @@ $ErrorActionPreference = 'Stop'
 # - once the Controller is gone, a connection through the front door is closed at once, and the
 #   front door holds no socket of it: its counters show the refusal, and it stops at the end of its
 #   input.
-# The Go test of controller/internal/port plays the front door for the malformed handoffs
-# (TestFrontDoorRefuses) and the goroutines of a closed pipe (TestFrontDoorCloseLeavesNothing).
+# The Go tests of controller/internal/port play the front door for the malformed handoffs
+# (TestFrontDoorRefuses), the goroutines of a closed pipe (TestFrontDoorCloseLeavesNothing) and the
+# client of each handoff, which the API and Control must see as the client dialed it
+# (TestFrontDoorHandsOver, TestFrontDoorHandoffsKeepTheirClient; #534).
 
 $bin = (Resolve-Path $BuildDir).Path
 $ranz = Join-Path $bin 'ranz.exe'

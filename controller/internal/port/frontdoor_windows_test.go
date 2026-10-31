@@ -10,10 +10,13 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
+	"net"
 	"net/http"
-	"net/http/httptrace"
 	"os"
 	"runtime"
+	"slices"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -117,6 +120,29 @@ func handOver(pipe string, raw windows.Handle) (byte, error) {
 	}, closeRaw)
 }
 
+// writerFunc is an io.Writer of a function.
+type writerFunc func([]byte) (int, error)
+
+func (f writerFunc) Write(p []byte) (int, error) { return f(p) }
+
+// testLog is the log of the Server of a test, which the test prints when it fails.
+func testLog(t *testing.T) *slog.Logger {
+	var mu sync.Mutex
+	var b bytes.Buffer
+	t.Cleanup(func() {
+		mu.Lock()
+		defer mu.Unlock()
+		if t.Failed() {
+			t.Logf("the log of the Server:\n%s", b.String())
+		}
+	})
+	return slog.New(slog.NewTextHandler(writerFunc(func(p []byte) (int, error) {
+		mu.Lock()
+		defer mu.Unlock()
+		return b.Write(p)
+	}), &slog.HandlerOptions{Level: slog.LevelDebug}))
+}
+
 var procAccept = windows.NewLazySystemDLL("ws2_32.dll").NewProc("accept")
 
 // frontDoor plays the front door on a test port: every connection that it accepts goes to the
@@ -169,16 +195,44 @@ func taken(t *testing.T, answers chan byte) {
 	}
 }
 
+// dialed records the local address of every connection that a client dials. A client may dial more than the one connection
+// that carries its request, and the front door hands over each of them.
+type dialed struct {
+	mu    sync.Mutex
+	local []string
+}
+
+func (d *dialed) dial(ctx context.Context, network, addr string) (net.Conn, error) {
+	c, err := (&net.Dialer{}).DialContext(ctx, network, addr)
+	if err == nil {
+		d.mu.Lock()
+		d.local = append(d.local, c.LocalAddr().String())
+		d.mu.Unlock()
+	}
+	return c, err
+}
+
+// all is the local addresses of the connections dialed so far.
+func (d *dialed) all() []string {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	return slices.Clone(d.local)
+}
+
 // A connection that the front door hands over is the controller's: its own TLS handshake with its
 // own certificate, then the API over HTTP/1.1 and h2, or the control stream by its ALPN. No byte
-// passes through the front door, whose handle is closed before the client speaks.
+// passes through the front door, whose handle is closed before the client speaks. The controller
+// sees the client of each connection as the client dialed it: the API by the remote address of
+// the request, the control stream by the one that Control gets.
 func TestFrontDoorHandsOver(t *testing.T) {
 	cert := certificate(t)
-	controls := make(chan string, 4)
+	type controlStream struct{ proto, remote string }
+	controls := make(chan controlStream, 4)
 	s := &Server{
 		TLS: &tls.Config{Certificates: []tls.Certificate{cert}},
+		Log: testLog(t),
 		Control: func(tc *tls.Conn) {
-			controls <- tc.ConnectionState().NegotiatedProtocol
+			controls <- controlStream{tc.ConnectionState().NegotiatedProtocol, tc.RemoteAddr().String()}
 			tc.Close()
 		},
 		HTTP: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -202,30 +256,36 @@ func TestFrontDoorHandsOver(t *testing.T) {
 		http2 bool
 		want  string
 	}{{"HTTP/1.1", false, "HTTP/1.1"}, {"h2", true, "HTTP/2.0"}} {
-		// The local address of the connection that carried the request, which the handler of the API sees as the remote
-		// address of the request. The transport says which connection that was: the last connection that it dialed may be
-		// another one, which it opened besides, and failed this check now and then.
-		var local string
-		trace := &httptrace.ClientTrace{GotConn: func(info httptrace.GotConnInfo) { local = info.Conn.LocalAddr().String() }}
+		// The client may dial more than the one connection that carries its request, and the front door hands over each of
+		// them, so the test does not depend on which one carried the request: it records every connection that the client
+		// dials, waits for the handoff of each, and checks the remote address that the API saw against that set.
+		var dials dialed
 		tr := &http.Transport{
+			DialContext:       dials.dial,
 			TLSClientConfig:   &tls.Config{InsecureSkipVerify: true},
 			ForceAttemptHTTP2: c.http2,
 		}
 		client := &http.Client{Transport: tr, Timeout: 10 * time.Second}
-		req, err := http.NewRequestWithContext(httptrace.WithClientTrace(context.Background(), trace), http.MethodGet, "https://"+addr+"/", nil)
-		if err != nil {
-			t.Fatal(err)
-		}
-		resp, err := client.Do(req)
+		resp, err := client.Get("https://" + addr + "/")
 		if err != nil {
 			t.Fatalf("%s through the front door: %v", c.name, err)
 		}
 		body, _ := io.ReadAll(resp.Body)
 		resp.Body.Close()
 		tr.CloseIdleConnections()
-		taken(t, answers)
-		if got := string(body); got != c.want+" "+local {
-			t.Errorf("%s through the front door: the API answered %q, not %q", c.name, got, c.want+" "+local)
+		// The front door answers once for each connection that the client dialed
+		clientAddrs := dials.all()
+		for range clientAddrs {
+			taken(t, answers)
+		}
+		// The handler answers with the protocol and the remote address of the request, which is the client of the connection
+		// that carried it: one of the connections that this leg dialed, and none of an older leg or of an older handoff
+		proto, remote, _ := strings.Cut(string(body), " ")
+		if proto != c.want {
+			t.Errorf("%s through the front door: the API answered over %q, not %q", c.name, proto, c.want)
+		}
+		if !slices.Contains(clientAddrs, remote) {
+			t.Errorf("%s through the front door: the API saw the client %q, and the client dialed from %v", c.name, remote, clientAddrs)
 		}
 		if !bytes.Equal(resp.TLS.PeerCertificates[0].Raw, cert.Certificate[0]) {
 			t.Errorf("%s through the front door: another certificate than the controller's", c.name)
@@ -239,9 +299,12 @@ func TestFrontDoorHandsOver(t *testing.T) {
 	defer tc.Close()
 	taken(t, answers)
 	select {
-	case p := <-controls:
-		if p != control.ALPN {
-			t.Errorf("Control got a connection of %q through the front door", p)
+	case got := <-controls:
+		if got.proto != control.ALPN {
+			t.Errorf("Control got a connection of %q through the front door", got.proto)
+		}
+		if got.remote != tc.LocalAddr().String() {
+			t.Errorf("Control got the connection of %s through the front door, and the client dialed from %s", got.remote, tc.LocalAddr())
 		}
 	case <-time.After(10 * time.Second):
 		t.Fatal("Control got no connection through the front door")
@@ -251,6 +314,171 @@ func TestFrontDoorHandsOver(t *testing.T) {
 	if again, err := ListenFrontDoor(pipe, s); err == nil {
 		again.Close()
 		t.Error("a second handoff pipe of the same name was made")
+	}
+}
+
+// staleSocketEntries leaves the entries of n closed sockets in Winsock, as the standard library does with the socket that it
+// makes in LoadConnectEx, in each process that dials: it makes the sockets and closes their handles with CloseHandle, not
+// with closesocket. Winsock keeps the entry of a socket by the value of its handle until closesocket, and Windows gives the
+// value of a closed handle to the next handle that it makes, so the next sockets that come by those values meet the entries
+// of sockets that were never bound.
+func staleSocketEntries(t *testing.T, n int) {
+	t.Helper()
+	sockets := make([]windows.Handle, n)
+	for i := range sockets {
+		s, err := windows.Socket(windows.AF_INET, windows.SOCK_STREAM, windows.IPPROTO_TCP)
+		if err != nil {
+			t.Fatal(err)
+		}
+		sockets[i] = s
+	}
+	for i := len(sockets) - 1; i >= 0; i-- {
+		if err := windows.CloseHandle(sockets[i]); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+// handoffsInARow hands over n connections through a front door, one after another, and checks the client of each. Before
+// each one it leaves stale entries of closed sockets in Winsock (staleSocketEntries), when stale is more than 0.
+//
+// Each connection that the front door hands over has its own client as its remote address, whatever handoffs came before
+// it: the API and the limits for a source go by that address. Winsock keeps state by the value of a socket handle, the
+// remote address among it, until closesocket drops it, and the controller once closed the handle of a handoff with
+// CloseHandle, so the next socket that came by the same value reported the client of an older connection (#534). One
+// connection after another, nearly every handoff that follows another one has such a value. And a handoff is not refused
+// for the entry of a socket that the standard library closed with CloseHandle.
+func handoffsInARow(t *testing.T, n, stale int) {
+	t.Helper()
+	remotes := make(chan string, 1)
+	s := &Server{
+		TLS: &tls.Config{Certificates: []tls.Certificate{certificate(t)}},
+		Log: testLog(t),
+		Control: func(tc *tls.Conn) {
+			remotes <- tc.RemoteAddr().String()
+			tc.Close()
+		},
+	}
+	defer s.Close()
+	pipe := testPipe()
+	fd, err := ListenFrontDoor(pipe, s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer fd.Close()
+	addr, answers := frontDoor(t, pipe)
+
+	for i := range n {
+		if stale > 0 {
+			staleSocketEntries(t, stale)
+		}
+		tc, err := tls.Dial("tcp", addr, &tls.Config{InsecureSkipVerify: true, NextProtos: []string{control.ALPN}})
+		if err != nil {
+			t.Fatalf("connection %d through the front door: %v", i, err)
+		}
+		taken(t, answers)
+		select {
+		case remote := <-remotes:
+			if remote != tc.LocalAddr().String() {
+				t.Fatalf("connection %d through the front door: Control got the connection of %s, and the client dialed from %s", i, remote, tc.LocalAddr())
+			}
+		case <-time.After(10 * time.Second):
+			t.Fatalf("connection %d: Control got no connection through the front door", i)
+		}
+		tc.Close()
+	}
+}
+
+// Each connection that the front door hands over has its own client as its remote address, whatever handoffs came before it.
+func TestFrontDoorHandoffsKeepTheirClient(t *testing.T) {
+	handoffsInARow(t, 100, 0)
+}
+
+// The standard library closes the socket that it makes in LoadConnectEx with CloseHandle, so Winsock keeps an entry of a
+// socket that was never bound under the value of that handle. The socket that FileConn makes of its own for a handoff fails
+// when it comes by such a value, and the handoff was refused, in one new process of a hundred: the client saw the connection
+// reset (#534). Here such entries are on the free values before each connection.
+func TestFrontDoorHandoffsSurviveStaleSocketEntries(t *testing.T) {
+	handoffsInARow(t, 30, 8)
+}
+
+// plainConnection makes one TCP connection in this process of plain Winsock sockets, as a front door and its client hold
+// them, and returns the front door's socket and the client's.
+func plainConnection(t *testing.T) (server, client windows.Handle) {
+	t.Helper()
+	loopback := [4]byte{127, 0, 0, 1}
+	ln, err := windows.Socket(windows.AF_INET, windows.SOCK_STREAM, windows.IPPROTO_TCP)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer windows.Closesocket(ln)
+	if err := windows.Bind(ln, &windows.SockaddrInet4{Addr: loopback}); err != nil {
+		t.Fatal(err)
+	}
+	if err := windows.Listen(ln, 1); err != nil {
+		t.Fatal(err)
+	}
+	sa, err := windows.Getsockname(ln)
+	if err != nil {
+		t.Fatal(err)
+	}
+	client, err = windows.Socket(windows.AF_INET, windows.SOCK_STREAM, windows.IPPROTO_TCP)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := windows.Connect(client, &windows.SockaddrInet4{Addr: loopback, Port: sa.(*windows.SockaddrInet4).Port}); err != nil {
+		t.Fatal(err)
+	}
+	r, _, _ := procAccept.Call(uintptr(ln), 0, 0)
+	if windows.Handle(r) == windows.InvalidHandle {
+		t.Fatal("accept failed")
+	}
+	return windows.Handle(r), client
+}
+
+// connAddrs is the local and the remote address of the socket h, as package net writes them.
+func connAddrs(t *testing.T, h windows.Handle) (local, remote string) {
+	t.Helper()
+	format := func(sa windows.Sockaddr) string {
+		a := sa.(*windows.SockaddrInet4)
+		return fmt.Sprintf("%d.%d.%d.%d:%d", a.Addr[0], a.Addr[1], a.Addr[2], a.Addr[3], a.Port)
+	}
+	l, err := windows.Getsockname(h)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r, err := windows.Getpeername(h)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return format(l), format(r)
+}
+
+// rebuild makes the socket of the controller of the handoff of a socket, with stale entries on the free values of the
+// handles of this process between the duplicate of the front door and rebuild, which the socket that FileConn makes meets.
+func TestRebuildSurvivesStaleSocketEntries(t *testing.T) {
+	for i := range 30 {
+		server, client := plainConnection(t)
+		local, remote := connAddrs(t, server)
+		var info windows.WSAProtocolInfo
+		if err := windows.WSADuplicateSocket(server, uint32(os.Getpid()), &info); err != nil {
+			t.Fatal(err)
+		}
+		staleSocketEntries(t, 4)
+		raw, err := DecodeHandoff(handoffBytes(t, &info))
+		if err != nil {
+			t.Fatal(err)
+		}
+		c, err := rebuild(raw)
+		if err != nil {
+			t.Fatalf("handoff %d after entries of closed sockets: %v", i, err)
+		}
+		if c.LocalAddr().String() != local || c.RemoteAddr().String() != remote {
+			t.Errorf("handoff %d: the connection of the controller is %s to %s, and the socket of the front door is %s to %s", i, c.LocalAddr(), c.RemoteAddr(), local, remote)
+		}
+		c.Close()
+		windows.Closesocket(server)
+		windows.Closesocket(client)
 	}
 }
 

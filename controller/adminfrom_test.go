@@ -55,16 +55,20 @@ type firstStore struct {
 	order  *startOrder
 }
 
-func (s *firstStore) SetAdminSources(ctx context.Context, prefixes []string, ev ...event.Event) error {
+// SetFirstAdminSources sets the list when the store holds none, as store.SetFirstAdminSources does: the first write wins.
+func (s *firstStore) SetFirstAdminSources(ctx context.Context, prefixes []string, ev ...event.Event) (bool, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.setErr != nil {
-		return s.setErr
+		return false, s.setErr
+	}
+	if len(s.list) > 0 {
+		return false, nil
 	}
 	s.order.add("set-sources")
 	s.list = append([]string{}, prefixes...)
 	s.events = append(s.events, ev...)
-	return nil
+	return true, nil
 }
 
 func (s *firstStore) AdminSources(ctx context.Context) ([]string, error) {

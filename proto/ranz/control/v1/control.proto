@@ -145,7 +145,10 @@
 // state of each session and the prefixes that it learned from each, with the sessions that its
 // sidecar refused, in a Telemetry message of its own whenever they change (Telemetry.peering), which
 // ranz explain shows. No schema version changes with them: a node of an older release skips the
-// fields it does not know, and a controller of an older release skips the report.
+// fields it does not know, and a controller of an older release skips the report. A node of an older
+// release reports no Capability bgp_peering either, so the controller refuses to make it a member of
+// such a VRF (SDN-77-R2, #532): it would ignore these settings and lose the LAN subnets of the VRF,
+// which the controller no longer gives it, without an error.
 syntax = "proto3";
 
 package ranz.control.v1;
@@ -763,6 +766,11 @@ message Capabilities {
   // The node answers the Operation messages of the controller: it reads and clears the MAC table and the
   // IP table of its L2 Networks (SDN-50 #243).
   bool operations = 12;
+  // The node runs the BGP peering of the standard mode (SDN-77 #357, SDN-77-R2 #532): its release has it,
+  // and ranz.exe, which holds the sidecar ranz bgp that the peering starts, is next to it. A node that does
+  // not report it is refused as a member of a VRF whose peering is bgp. 13 is the Capability tags of SDN-87
+  // (#386), so this is 14.
+  bool bgp_peering = 14;
 }
 
 // The Windows edition of a node's host.
