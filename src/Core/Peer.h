@@ -93,7 +93,11 @@
 #define PEER_ICE_CHECKING  1 // Checking candidate pairs, while the peer stays on the relay
 #define PEER_ICE_CONNECTED 2 // A candidate pair validated: the node takes the peer's records from its address there
 #define PEER_ICE_COMPLETED 3 // ... and the controlling end nominated it: the direct path is up, the same pair at both ends
-#define PEER_ICE_FAILED    4 // No pair validated, or the direct path lost consent: the peer is on the relay
+#define PEER_ICE_FAILED    4 // No pair validated, no answer came to the node's offer, or the direct path lost consent: the peer is on the relay
+
+// ms that a session of the node's offer waits for the answer of the peer before it fails (PeerIce.c): libjuice starts the
+// 39.5 s that it gives the checks of a session only once it has the credentials of the peer, which the answer brings
+#define PEER_ICE_ANSWER_TIMEOUT 40000
 
 // The symmetric-NAT hole punch of a node with a peer (PEER_STATUS; PeerPunch.c, CORE-S5-4). It runs on the peer
 // layer's own socket, not libjuice, so the simulated NATs of the harness carry it.
@@ -210,6 +214,7 @@ typedef struct PEER_STATS {
 	UINT64 PunchSuccesses;          // ... of them that reached a direct path by port prediction or birthday punching
 	UINT64 Handshakes;              // Handshakes of peer sessions that completed, as initiator or responder
 	UINT64 Challenges;              // Bind challenges that the relay role sent: binds from an address it had no cookie for
+	UINT64 StunMessages;            // STUN messages that came to the socket with ICE on, each read once whatever the number of ICE sessions
 	UINT NumBindings;               // Nodes bound to the relay role now
 	UINT NumBound;                  // Relays that the node is bound to now
 	UINT NumIce;                    // ICE sessions now
