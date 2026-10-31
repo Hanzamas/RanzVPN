@@ -296,6 +296,10 @@ void PeerAddrSetV4(PEER_ADDR *a, UCHAR b0, UCHAR b1, UCHAR b2, UCHAR b3, USHORT 
 bool PeerAddrEqual(const PEER_ADDR *a, const PEER_ADDR *b);
 const char *PeerReasonName(UINT reason);
 
+// PeerIce.c: the timer of the ICE sessions at a clock that the caller gives (ms, the clock of PeerTick), for a test of a
+// session that started after the clock of a tick
+void PeerIceTickAt(PEER_AGENT *a, UINT64 now);
+
 // PeerSignal.c
 bool PeerKeyFromScalar(PEER_KEY *k, const UCHAR *priv);
 bool PeerKeyOpen(PEER_KEY *k, const wchar_t *name);

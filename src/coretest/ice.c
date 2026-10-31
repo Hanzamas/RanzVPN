@@ -16,13 +16,15 @@
 // iceanswer (CORE-S5-6-R1, #537): A and B, each behind a port-restricted cone NAT, offer at once, as when the dial of the
 //   end of the higher key failed, and both keep the offer of the higher key; the answer to it is lost on the way. The
 //   session of that offer waits for its answer, and libjuice runs no timer before it has one: it fails after
-//   PEER_ICE_ANSWER_TIMEOUT, about 40 s, while the pair stays on the relay with its traffic flowing. ICE then runs again
-//   for the pair: the end of the lower key offers again, the other takes the offer, as its failed session waits for no
-//   answer, and the new sessions move the pair to the direct path.
+//   PEER_ICE_ANSWER_TIMEOUT, about 40 s, while the pair stays on the relay with its traffic flowing, and not before, even
+//   at a tick whose clock is earlier than the start of the session (CORE-S5-6-R2, #557). ICE then runs again for the
+//   pair: the end of the lower key offers again, the other takes the offer, as its failed session waits for no answer,
+//   and the new sessions move the pair to the direct path.
 // iceinput (CORE-S5-6-R1, #537): B holds an ICE session with A, and later ICE_MANY more. A STUN message that any sender
-//   sends to B's socket is read once, whatever the number of B's sessions: a check that names the username fragment of
-//   the session with A goes to that session, as does an answer to the last check of that session, and a check that names
-//   no session, an answer to no check and a message that does not read are dropped.
+//   sends to B's socket is read once, whatever the number of B's sessions, as the count of the reads that juice_peer_read
+//   makes shows, and nothing reads it again later (CORE-S5-6-R2, #557): a check that names the username fragment of the
+//   session with A goes to that session, as does an answer to the last check of that session, and a check that names no
+//   session, an answer to no check and a message that does not read are dropped.
 
 #include <winsock2.h>
 #include <ws2tcpip.h>
@@ -623,6 +625,16 @@ void iceanswer_test() {
 	ice_path(hi, lo, &ps_hi);
 	coretest_check(ps_lo.Path == PEER_PATH_RELAY && ps_hi.Path == PEER_PATH_RELAY && ps_lo.Ice == PEER_ICE_CHECKING && ps_hi.Ice == PEER_ICE_CHECKING, "The pair is on the relay at once, and the session of each end checks, the one of the higher end with no answer");
 
+	// The higher end ticks at a clock that its session started after, as a tick that read its clock before the offer made
+	// the session would, then at the clock 1 ms short of PEER_ICE_ANSWER_TIMEOUT after the offers: the session is younger
+	// than 40 s at both, and neither fails it (CORE-S5-6-R2, #557)
+	PeerIceTickAt(hi->Agent, t0 - 1);
+	ice_path(hi, lo, &ps_hi);
+	UINT before = ps_hi.Ice;
+	PeerIceTickAt(hi->Agent, t0 + PEER_ICE_ANSWER_TIMEOUT - 1);
+	ice_path(hi, lo, &ps_hi);
+	coretest_check(before == PEER_ICE_CHECKING && ps_hi.Ice == PEER_ICE_CHECKING, "A tick at a clock that the session of the higher end started after, as when the tick read its clock before the offer made the session, does not fail the session, nor does one 1 ms short of 40 s after the offers");
+
 	// Pings through R while the session of the higher end waits for its answer, until it fails
 	InterlockedExchange(&hi->Echo, 1);
 	ULONGLONG failed = 0;
@@ -720,7 +732,9 @@ static UINT ice_stun(UCHAR *buf, USHORT type, const UCHAR *id, const char *user,
 // One round of iceinput: five STUN messages from a stranger to B, of which the first two name B's session with A, whose
 // username fragment and A's are user: a check of that session and an answer to its last check; then a check that names no
 // session, an answer to no check, and a message whose USERNAME runs past its end, which libjuice cannot read. Whether B
-// read each once, its session took the first two and B dropped the other three.
+// read each once, its session took the first two and B dropped the other three. StunMessages counts the reads that
+// juice_peer_read makes, not the messages that PeerIceInput takes, so a message that B read again, as once for each of
+// its sessions, would count more than once here (CORE-S5-6-R2, #557).
 static bool ice_input_round(ICE_WORLD *w, const char *user, UINT sessions) {
 	static const char *what[] = {"a check that names its session with A", "an answer to the last check of that session", "a check that names no session",
 	                             "an answer to no check", "a message that does not read"};
@@ -798,6 +812,7 @@ void iceinput_test() {
 	coretest_check(checked, "B's session checks the candidate pairs with A, and the tap keeps the transaction id of its last check");
 
 	PeerGetStats(w.B.Agent, &st);
+	UINT64 reads = st.StunMessages;
 	bool one = (st.NumIce == 1 && ice_input_round(&w, user, st.NumIce));
 	coretest_check(one, "With one ICE session, B reads each of five STUN messages once: the check and the answer that name its session go to it, and the three others are dropped");
 
@@ -820,6 +835,13 @@ void iceinput_test() {
 	coretest_info("B holds %u ICE sessions", st.NumIce);
 	bool all = (offered == ICE_MANY && st.NumIce == 1 + ICE_MANY && ice_input_round(&w, user, st.NumIce));
 	coretest_check(all, "With 49 ICE sessions, B still reads each of the five STUN messages once: the check and the answer that name its session with A go to it, and the three others are dropped");
+
+	// No STUN message but the ones of the test reaches B, so the reads of B in all are the five of each round: nothing read
+	// a message again once PeerInput had returned, on the thread of a session or later
+	NatSimWaitIdle(w.Sim, ICE_WAIT);
+	PeerGetStats(w.B.Agent, &st);
+	coretest_info("B made %llu reads of STUN messages in the two rounds", st.StunMessages - reads);
+	coretest_check(st.StunMessages - reads == 2 * 5, "B made one read for each of the ten STUN messages of the two rounds, and none after them");
 
 	ice_world_stop(&w);
 
