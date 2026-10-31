@@ -6,7 +6,6 @@
 #include "Connection.h"
 #include "Hub.h"
 #include "Protocol.h"
-#include "RpcField.h"
 
 #include "Mayaqua/Cfg.h"
 #include "Mayaqua/Encrypt.h"
