@@ -29,6 +29,11 @@ type DeviceStatus struct {
 	// PresharedKey says that the Device has a PresharedKey, which the controller showed once when it made
 	// the Device and keeps sealed (SDN-82).
 	PresharedKey bool `json:"presharedKey,omitempty"`
+	// PresharedKeyDoesNotOpen says that the controller cannot open that PresharedKey: neither the sealing
+	// key of its host nor the Cluster key of a cluster opens it, as after the restore of a backup on
+	// another host, or the key storage provider did not answer. The gateway terminates the Device without
+	// it until it opens, or until the Device is made again (devicekeys.go; SDN-82-R1).
+	PresharedKeyDoesNotOpen bool `json:"presharedKeyDoesNotOpen,omitempty"`
 	// LastHandshake is the time of the last WireGuard handshake of the Device with its gateway,
 	// zero before the first one that the gateway reported.
 	LastHandshake time.Time `json:"lastHandshake,omitzero"`
@@ -91,9 +96,10 @@ func (c *Controller) Devices() []DeviceStatus {
 	c.mu.Lock()
 	in := c.intent
 	covered := in.Capped(c.force.Nodes).Devices
-	keyed := map[string]bool{}
+	keyed, shut := map[string]bool{}, map[string]bool{}
 	for name := range c.dkeys.sealed {
 		keyed[name] = true
+		shut[name] = c.deviceKeyShut(name)
 	}
 	c.mu.Unlock()
 	c.dev.mu.Lock()
@@ -103,7 +109,7 @@ func (c *Controller) Devices() []DeviceStatus {
 	for _, name := range slices.Sorted(maps.Keys(in.Devices)) {
 		d := in.Devices[name]
 		st := DeviceStatus{Name: name, Network: d.Network, Gateway: d.Gateway, Address: d.Address, IPv6Address: d.IPv6Address,
-			Owner: d.Owner, PresharedKey: keyed[name]}
+			Owner: d.Owner, PresharedKey: keyed[name], PresharedKeyDoesNotOpen: shut[name]}
 		if _, ok := covered[name]; !ok {
 			st.Unlicensed = true
 		}
@@ -125,6 +131,8 @@ func (c *Controller) DeviceConfig(name string) (string, error) {
 	if !ok {
 		return "", fmt.Errorf("%w: %s %q", intent.ErrNotFound, intent.KindDevice, name)
 	}
-	// The keys of the Device were shown once when it was made (devicekeys.go): this configuration says where they go
-	return c.intent.DeviceConfigWith(name, c.gatewayKey(d.Gateway), intent.DeviceKeys{HasPreshared: c.hasDeviceKey(name)})
+	// The keys of the Device were shown once when it was made (devicekeys.go): this configuration says where they go, and
+	// that a PresharedKey does not open (SDN-82-R1)
+	return c.intent.DeviceConfigWith(name, c.gatewayKey(d.Gateway), intent.DeviceKeys{HasPreshared: c.hasDeviceKey(name),
+		PresharedDoesNotOpen: c.deviceKeyShut(name)})
 }

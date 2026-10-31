@@ -32,7 +32,9 @@ The Devices page of the web UI (`/devices`) has the form Make a Device: choose t
 ranz device create -network lab-net -gateway gw -tags phones -o phone.conf -qr phone
 ```
 
-That writes the configuration to `phone.conf`, readable by its owner only, and draws the QR code on the terminal. With `-qr-file phone.png` it writes the QR code as a PNG file, and without `-o` it prints the configuration on standard output.
+That writes the configuration to `phone.conf`, a new file that only its owner can read (on Windows, also SYSTEM and the Administrators), and draws the QR code on the terminal. With `-qr-file phone.png` it writes the QR code as a PNG file, a new file of the same kind, and without `-o` it prints the configuration on standard output. `ranz` never writes the keys over a file that exists: it refuses such a file before it makes the Device, so name a new file.
+
+On Windows, `ranz` turns on the colour codes of the console for the QR code, so that it shows black on white. If your phone does not read the code on the terminal, for example on an old Windows console, use `-qr-file` and scan the PNG file on the screen instead.
 
 A Device can have an owner, a User (`-owner alice`, the field Owner of the form). It then carries the groups of the User as tags, besides its own, and it counts against the maximum devices of the User. The owner sees the Device on the page My devices of the portal (`/portal`), with the last handshake that its gateway reported, and can remove it there; making a Device is still the work of an administrator. A standalone Device, for example a router, has no owner and takes the tags that you set on it (`-tags`).
 
@@ -279,7 +281,8 @@ So the Controller makes a PresharedKey for every Device, by default, and carries
 
 - The PresharedKey is in the configuration file and in the QR code, with the private key. Treat both as secrets, and delete the file once the Device has imported it. Whoever has the PresharedKey and later breaks Curve25519 can read the traffic that they recorded.
 - The Controller keeps the PresharedKey sealed, as it keeps the secrets of its export and audit targets: to the sealing key of the Controller, a key of the Microsoft Software Key Storage Provider that never leaves it. A cluster of Controllers seals it with its Cluster key, which each member holds through a copy that the sealing key of its own host opens (ADR-0026). A backup of the store holds the PresharedKey sealed, and shows it to nobody. The Controller shows it once, and gives it in clear to the gateway alone, which hands it to WireGuardNT.
-- A backup that is restored on another host, or into another cluster, brings the Devices back with a PresharedKey that does not open there. The gateway then terminates those Devices without it, so no client that has it completes a handshake, and the log of the Controller says so. Make each of those Devices again.
+- A backup that is restored on another host, or into another cluster, brings the Devices back with a PresharedKey that does not open there. The gateway then terminates those Devices without it, so no client that has it completes a handshake. The Controller says so: its log names each of those Devices once, when it starts, and the Devices page, `ranz get devices` (`presharedKeyDoesNotOpen`) and `ranz get device-config` say that the PresharedKey does not open. Make each of those Devices again.
+- A PresharedKey that the Controller could not open for a while, because its key storage provider did not answer, or because a member of a cluster did not hold the Cluster key yet, reaches the gateway by itself once it opens: the gateway does not have to start again, and the Device does not change.
 - When a PresharedKey may have leaked, make a new Device, with new keys, and delete the old one.
 - `-no-preshared-key`, or the box No PresharedKey in the form, leaves it out. Use it only for a client that cannot take one (every client in this guide can).
 - A PresharedKey does not rotate by itself. Automatic rotation, with Rosenpass, is not part of this version.
