@@ -44,5 +44,5 @@ func (w *walk) frontDoor(n *node, l *Link) {
 		w.step(n, StepDecoy, 0, Step{Decoy: d}, "%s has no decoy: a prober of the TLS of the new protocol meets the certificate of %s and then a closed connection", door, n.name)
 		return
 	}
-	w.step(n, StepDecoy, 0, Step{Decoy: d}, "%s has the decoy %s: a prober of the TLS of the new protocol whose first frame does not open under the static key of %s gets the answer of that site on %s", door, d.Target, n.name, n.name)
+	w.step(n, StepDecoy, 0, Step{Decoy: d}, "%s has the decoy %s: a prober of the TLS of the new protocol, one whose first frame does not open under the static key of %s, gets the answer of that site on %s", door, d.Target, n.name, n.name)
 }

@@ -48,13 +48,13 @@ func TestDecoyStep(t *testing.T) {
 		text     string
 	}{
 		{"gw", "hub", Decoy{Listener: "edge-hub", Port: 443, Target: "127.0.0.1:8080"},
-			"the front door of hub (Listener edge-hub, TCP port 443) has the decoy 127.0.0.1:8080: a prober of the TLS of the new protocol whose first frame does not open under the static key of hub gets the answer of that site on hub"},
+			"the front door of hub (Listener edge-hub, TCP port 443) has the decoy 127.0.0.1:8080: a prober of the TLS of the new protocol, one whose first frame does not open under the static key of hub, gets the answer of that site on hub"},
 		{"hub", "gw", Decoy{Listener: "edge-gw", Port: 8443},
 			"the front door of gw (Listener edge-gw, TCP port 8443) has no decoy: a prober of the TLS of the new protocol meets the certificate of gw and then a closed connection"},
 		{"hub", "lab", Decoy{},
 			"lab has no Listener, so it listens on no port of its own: it has no front door and no decoy"},
 		{"hub", "v6", Decoy{Listener: "edge-v6", Port: 443, Target: "[::1]:9090"},
-			"the front door of v6 (Listener edge-v6, TCP port 443) has the decoy [::1]:9090: a prober of the TLS of the new protocol whose first frame does not open under the static key of v6 gets the answer of that site on v6"},
+			"the front door of v6 (Listener edge-v6, TCP port 443) has the decoy [::1]:9090: a prober of the TLS of the new protocol, one whose first frame does not open under the static key of v6, gets the answer of that site on v6"},
 	} {
 		t.Run(c.from+" to "+c.to, func(t *testing.T) {
 			r, err := m.Explain(Query{From: c.from, To: c.to})
