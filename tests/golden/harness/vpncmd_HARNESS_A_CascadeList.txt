@@ -1,2 +1,0 @@
-Setting Name,Status,Established at,Destination VPN Server,Virtual Hub
-HARNESS_CASCADE,Online (Established),<VOLATILE>,127.0.0.1,HARNESS_B

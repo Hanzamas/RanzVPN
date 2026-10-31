@@ -1,3 +1,0 @@
-Session Name,VLAN ID,Location,User Name,Source Host Name,TCP Connections,Transfer Bytes,Transfer Packets
-SID-LINK-#,-,Cascade Connection,Cascade,<VOLATILE>,None,<VOLATILE>,<VOLATILE>
-SID-TESTER_A-#,-,Local Session,tester_a,<VOLATILE>,1 / 1,<VOLATILE>,<VOLATILE>

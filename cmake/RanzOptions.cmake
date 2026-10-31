@@ -3,7 +3,7 @@
 # and ranz_core_options for the new core (at the end of this file).
 #
 # mayaqua links ranz_options PUBLIC (src/Mayaqua/CMakeLists.txt), so every target that builds on
-# Mayaqua (cedar, vpnserver, vpncmd, vpntest and the fuzz targets) compiles with these options.
+# Mayaqua (cedar, ranz-node, vpntest and the fuzz targets) compiles with these options.
 # The vendored targets (liboqs, oqs-provider) do not link Mayaqua and get none of them; they also
 # set their own C standard.
 #
