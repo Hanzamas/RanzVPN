@@ -23,9 +23,12 @@
 #   corpus; and a src/fuzz/CMakeLists.txt or run_fuzzers.ps1 that does not find the targets by their
 #   file names (fuzz_*.c), so that CI would not build or run a new one: a target is a new file and
 #   is in no list;
-# - a line "// fuzz-reach:" of a C target that names no function, which run_fuzzers.ps1 refuses, and a
-#   target of REACH without its lines "// fuzz-reach: <function>": without them run_fuzzers.ps1 would no
-#   longer check that the seeds reach those functions, and say nothing (CORE-S5-6-R2, #557);
+# - a line of a C target that names fuzz-reach and is not a line "// fuzz-reach: <function>", which
+#   run_fuzzers.ps1 refuses: one that names no function or two, and one spelled a little otherwise
+#   (indented, with a space before the colon, in a /* */ comment), which would turn its check off without a
+#   word; and a target of REACH without its lines "// fuzz-reach: <function>": without them run_fuzzers.ps1
+#   would no longer check that the seeds reach those functions, and say nothing (CORE-S5-6-R2, #557;
+#   CORE-S5-6-R3, #574);
 # - a Go fuzz test of GO_SCOPE that no line names, which CI would never run (CI runs the targets of
 #   this file: the go-targets mode).
 #
@@ -55,6 +58,10 @@ FUZZ_DIR = 'src/fuzz'
 # which run_fuzzers.ps1 checks in the coverage of the replay of the seeds. fuzz_peer reaches the dispatch of a STUN
 # message by libjuice and the processing of a check whose MESSAGE-INTEGRITY holds (CORE-S5-6-R1 #537, CORE-S5-6-R2 #557).
 REACH = {'fuzz_peer': ('agent_dispatch_stun', 'agent_process_stun_binding')}
+# A line that names fuzz-reach, in any case and with a hyphen, an underscore or nothing between the two words, and the
+# one form of such a line that run_fuzzers.ps1 takes (Get-Reach)
+_REACH_NAMED_RE = re.compile(r'fuzz[-_]?reach', re.I)
+_REACH_LINE_RE = re.compile(r'//\s*fuzz-reach:\s*(\w+)\s*$')
 
 _WORD_RE = re.compile(r'[A-Z]+(?=[A-Z][a-z])|[A-Z]?[a-z]+|[A-Z]+|\d+')
 # A C function head at the start of a line: return type, name and '('; the definition is the head
@@ -180,16 +187,18 @@ def max_len_of(path):
 
 
 def reach_of(path):
-    # The functions of the lines "// fuzz-reach: <function>" of a target, and the numbers of its lines that start with
-    # "// fuzz-reach:" and name no function, as run_fuzzers.ps1 reads them
+    # The functions of the lines "// fuzz-reach: <function>" of a target, and the numbers and texts of its other lines
+    # that name fuzz-reach, as run_fuzzers.ps1 reads them: one that names no function or two, and one spelled a little
+    # otherwise (indented, with a space before the colon, in a /* */ comment), which would turn its check off without a
+    # word (CORE-S5-6-R3, #574)
     functions, malformed = [], []
     for number, line in enumerate(read(path).splitlines(), 1):
-        if re.match(r'//\s*fuzz-reach:', line):
-            m = re.match(r'//\s*fuzz-reach:\s*(\w+)\s*$', line)
+        if _REACH_NAMED_RE.search(line):
+            m = _REACH_LINE_RE.match(line)
             if m:
                 functions.append(m.group(1))
             else:
-                malformed.append(number)
+                malformed.append((number, line))
     return functions, malformed
 
 
@@ -283,9 +292,10 @@ def check(root):
         if not os.path.isdir(os.path.join(root, FUZZ_DIR, 'corpus', name)):
             problems.append('%s/%s.c: no seed corpus %s/corpus/%s' % (FUZZ_DIR, name, FUZZ_DIR, name))
         functions, malformed = reach_of(os.path.join(root, FUZZ_DIR, name + '.c'))
-        for number in malformed:
-            problems.append('%s/%s.c:%d: a line "// fuzz-reach:" that names no function, which run_fuzzers.ps1 refuses: '
-                            'it is "// fuzz-reach: <function>"' % (FUZZ_DIR, name, number))
+        for number, line in malformed:
+            problems.append("%s/%s.c:%d: '%s' is not a line '// fuzz-reach: <function>', which run_fuzzers.ps1 refuses: a "
+                            'line that names fuzz-reach in another form would turn its check off without a word'
+                            % (FUZZ_DIR, name, number, line))
         for function in REACH.get(name, ()):
             if function not in functions:
                 problems.append('%s/%s.c: no line "// fuzz-reach: %s", without which %s/run_fuzzers.ps1 no longer checks '
