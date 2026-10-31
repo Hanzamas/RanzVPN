@@ -523,6 +523,9 @@ An Exit whose NAT of Windows cannot serve its VRFs uses the proxy, tier 3, for t
 A fact that a Node reports about its host (SKU, architecture, Hyper-V, LBFO, SeLow, XDP, Egress tier, the fallback to 5555), against which the Controller checks the Intent before an apply. Only a gateway or edge feature, or one a platform cannot carry (an L2 Network on arm64), needs one.
 _Avoid_: `CAPS` (the slim fork's server capability list), feature flag
 
+**bgpPeering (a Capability)**:
+`Capabilities.bgp_peering`, reported in the Hello by a Node whose release has the BGP peering of the standard mode and whose `ranz.exe`, which holds the **BGP sidecar** that it starts, is next to it. The Controller refuses a Node that does not report it as a member of a VRF whose **Peering** is `bgp` (ADR-0033 amendment of 2026-10-30, SDN-77-R2).
+
 **Relay**:
 A Node with the relay Role (ADR-0015). It binds the nodes of its VRFs and forwards a datagram from one of them to another only when the two share a VRF, through `PeerInput`, the same ingress where a node takes its own datagrams. It holds no state beyond the Bindings that its nodes renew, so a restart loses nothing for good. The Relay objects of a node's desired state are the relays it may use; the first one is its home relay. The `relay` item of a Node resource is the address its relay role listens on.
 _Avoid_: TURN server, DERP (the systems it is modelled on), hub
