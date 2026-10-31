@@ -154,6 +154,8 @@ type Step struct {
 	Link  *Link  `json:"link,omitempty"`
 	// Profile is the session profile of a StepProfile (profile.go; SDN-40).
 	Profile *Profile `json:"profile,omitempty"`
+	// Decoy is the decoy of the front door of a StepDecoy (decoy.go; AUD1-DT-4, #452).
+	Decoy *Decoy `json:"decoy,omitempty"`
 	// Text says the step in a sentence.
 	Text string `json:"text"`
 }
@@ -326,6 +328,8 @@ func (w *walk) send(s *node, vrf uint32, p packet) {
 		w.res.Verdict = Verdict{Node: peer.GetName(), Reason: DropRoute, Text: fmt.Sprintf("%s has no desired state: it does not run the VRF", peer.GetName())}
 		return
 	}
+	// The session arrives at the front door of the next Node, where a prober arrives too (decoy.go)
+	w.frontDoor(next, link)
 	w.receive(s, next, into, out)
 }
 

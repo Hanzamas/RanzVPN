@@ -14,6 +14,8 @@
 // and a NAT network of WinNAT of another program, as the last look of the node at them saw it (NodeEgressNat.c).
 // The BGP peering is a fact of the install of the node more than of its host: NodeCapsPeering reports it when the sidecar
 // is where the node looks for it (SDN-77-R2, #532).
+// Whether the node can be the gateway of a Stretch of an L2 Network, the Capability evpn (SDN-63, #290), follows from the edition: a
+// Windows Server whose VXLAN module runs, which every node does.
 
 #include "Node.h"
 
@@ -172,6 +174,11 @@ void NodeCapsDecide(const NODE_CAPS_HOST *host, CONTROL_CAPS *caps) {
 	else if (host->ProductType == VER_NT_WORKSTATION)
 		caps->Sku = NodeCapsEdition(host->Product);
 	caps->HyperV = host->HyperV;
+
+	// The gateway of a Stretch of an L2 Network (SDN-63, #290; ADR-0032 amendment of 2026-10-22): a Windows Server, whose
+	// VXLAN module runs on every host that the node runs on (NodeCapsProc tells it as the Capability plainLinks), so the
+	// edition alone decides it. The licence that has EVPN and BGP is the controller's to check, since only it holds the key
+	caps->Evpn = (caps->Sku == CONTROL_SKU_SERVER);
 
 	// The Egress tier, the first that the host supports (ADR-0025 decision 13): RRAS NAT on a Windows Server whose RRAS runs as
 	// a LAN router, WinNAT where Hyper-V and WinNAT are present and no NAT network of WinNAT exists, which the node then

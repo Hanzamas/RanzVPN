@@ -609,6 +609,9 @@ typedef struct CONTROL_CAPS {
 	UINT Sku;
 	bool HyperV;
 	UINT EgressTier;
+	// The node can be the gateway of a Stretch of an L2 Network (SDN-63, #290): its host is a Windows Server, and its VXLAN
+	// module runs
+	bool Evpn;
 } CONTROL_CAPS;
 
 // Fills caps, which is zeroed, with the Capabilities of the node. The client calls it for each Hello, so a node
@@ -827,10 +830,13 @@ bool ControlWritePeeringReport(CONTROL_PEERING_REPORT *r, TRANSPORT_STREAM *s);
 // Paths of the node since it started in place of the ones before: the client sends them in one Telemetry message after
 // each Hello once they were set, whenever they changed, at most every CONTROL_PATH_REPORT ms, and again every
 // CONTROL_PATH_REFRESH ms while they stay the same, as the controller drops a counter that its node did not report for a
-// while (5 minutes). WritePaths writes that message when it is due, as the client does on its stream.
+// while (5 minutes). WritePaths writes that message when it is due, as the client does on its stream. SetPunches puts the
+// punches of the node since it started in the same message (CORE-S5-7, #413): its attempts at a direct path to a peer
+// behind a symmetric NAT, the ones that met, and the ones whose prediction failed.
 CONTROL_PATHS *ControlNewPaths();
 void ControlFreePaths(CONTROL_PATHS *p);
 void ControlSetPaths(CONTROL_PATHS *p, UINT64 upgrades, UINT64 fallbacks);
+void ControlSetPunches(CONTROL_PATHS *p, UINT64 attempts, UINT64 successes, UINT64 failures);
 bool ControlWritePaths(CONTROL_PATHS *p, TRANSPORT_STREAM *s);
 
 #endif // CORE_CONTROL_H

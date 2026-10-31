@@ -104,9 +104,25 @@ static void NodeStateSessions(NODE *n, UINT64 now, cJSON *o, char *listener, UIN
 	Free(list);
 }
 
+// The name of a NAT of PEER_NAT_*, as the state of the node says it
+static const char *NodeStateNatName(UINT nat) {
+	switch (nat) {
+	case PEER_NAT_CONE:
+		return "cone";
+	case PEER_NAT_SEQUENTIAL:
+		return "sequential";
+	case PEER_NAT_RANDOM:
+		return "random";
+	default:
+		return "unknown";
+	}
+}
+
 // The peer agent of the overlay (NodeAgent.c; CORE-S5-5 #411, CORE-S5-6 #412): whether its peer layer runs, with ICE or
 // without, and on which UDP port; the Relays of the state; the Upgrades of its Paths to a direct path and their Fallbacks to
-// the Relay since the node started; and the port mapping of the home gateway, with the public address that it granted
+// the Relay since the node started; the port mapping of the home gateway, with the public address that it granted; and the
+// punches of the node (CORE-S5-7, #413): its NAT as the answers of its binds show it, and its attempts, the ones that met
+// and the ones whose prediction failed
 static void NodeStateAgent(NODE *n, cJSON *o) {
 	NODE_AGENT_STATUS *st = ZeroMalloc(sizeof(NODE_AGENT_STATUS));
 	cJSON *a = cJSON_AddObjectToObject(o, "datagramPath");
@@ -125,6 +141,10 @@ static void NodeStateAgent(NODE *n, cJSON *o) {
 	cJSON_AddNumberToObject(a, "fallbacks", (double)st->Peer.Fallbacks);
 	cJSON_AddStringToObject(a, "portMapping", NodeAgentPortMapName(st->Peer.PortMap));
 	cJSON_AddStringToObject(a, "mappedAddress", mapped);
+	cJSON_AddStringToObject(a, "nat", NodeStateNatName(st->Peer.Nat));
+	cJSON_AddNumberToObject(a, "punchAttempts", (double)st->Peer.PunchAttempts);
+	cJSON_AddNumberToObject(a, "punchSuccesses", (double)st->Peer.PunchSuccesses);
+	cJSON_AddNumberToObject(a, "punchFailures", (double)st->Peer.PunchFailures);
 
 	Free(st);
 }
