@@ -134,6 +134,7 @@ func TestSecondApplySendsDelta(t *testing.T) {
 // TestIntentSurvivesRestart is the third criterion of #178: the controller keeps its intent, the
 // generations and the acknowledgements across a restart of the controller and of rqlite.
 func TestIntentSurvivesRestart(t *testing.T) {
+	rqlitetest.Own(t) // it restarts rqlited
 	h := newHarness(t)
 	h.apply("apply1.json")
 	b1 := h.sim("branch-1", keyBranch1)
@@ -358,9 +359,14 @@ func TestApplyRejectsInvalidIntent(t *testing.T) {
 	}
 }
 
-// harness is one controller on its own rqlite, with the control stream and the HTTP API on one
+// harness is one controller on a database of its own, with the control stream and the HTTP API on one
 // TLS port, as ranz-controller runs them. Its controller verifies licence keys that testVendor
-// signed (licence_test.go).
+// signed (licence_test.go). The database is an empty one of an rqlited that the tests share
+// (rqlitetest.Fresh), or of an rqlited of the test's own for a test that called rqlitetest.Own first:
+// one that stops, restarts or joins h.rq, reads its data directory, restores a backup into it or runs
+// the members of a cluster on it. A test that has a harness runs in parallel with the others that do
+// (rqlitetest.Fresh makes it), so it keeps no state outside its harness, never calls t.Parallel itself and
+// does not use t.Setenv or t.Chdir; a test that cannot run beside another calls rqlitetest.Alone first.
 type harness struct {
 	t       *testing.T
 	rq      *sidecar.Rqlited
@@ -401,7 +407,7 @@ func newHarness(t *testing.T) *harness {
 // newHarnessAt returns a harness whose controller is of version v, which the fallback licence
 // of an expired subscription must cover.
 func newHarnessAt(t *testing.T, v string) *harness {
-	h := &harness{t: t, rq: rqlitetest.Start(t), version: v}
+	h := &harness{t: t, rq: rqlitetest.Fresh(t), version: v}
 	var err error
 	if h.key, err = keys.GenerateSoft(); err != nil {
 		t.Fatal(err)
@@ -417,7 +423,7 @@ func newHarnessAt(t *testing.T, v string) *harness {
 // newHarnessRevocations returns a harness whose controller reads the signed revocation list the
 // update channel delivers to h.revPath (ADR-0036, SEC-5 #283); the file need not exist yet.
 func newHarnessRevocations(t *testing.T) *harness {
-	h := &harness{t: t, rq: rqlitetest.Start(t), revPath: filepath.Join(t.TempDir(), "revocations.sig")}
+	h := &harness{t: t, rq: rqlitetest.Fresh(t), revPath: filepath.Join(t.TempDir(), "revocations.sig")}
 	var err error
 	if h.key, err = keys.GenerateSoft(); err != nil {
 		t.Fatal(err)
