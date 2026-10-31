@@ -2,10 +2,13 @@ package certgen
 
 import (
 	"crypto"
+	"crypto/ecdh"
 	"crypto/ecdsa"
+	"crypto/rand"
 	"crypto/rsa"
 	"crypto/tls"
 	"crypto/x509"
+	"crypto/x509/pkix"
 	"encoding/pem"
 	"errors"
 	"io"
@@ -358,6 +361,22 @@ func TestNewAuthority(t *testing.T) {
 	if _, err := NewAuthority(leaf, key); err == nil || !strings.Contains(err.Error(), "no CA") {
 		t.Errorf("an authority of a certificate that is no CA: %v", err)
 	}
+
+	// A CA certificate whose key usage leaves out the signing of certificates is no authority either
+	tmpl := &x509.Certificate{SerialNumber: big.NewInt(1), Subject: pkix.Name{CommonName: "A CA that does not sign"},
+		NotBefore: time.Now().Add(-time.Hour), NotAfter: time.Now().Add(time.Hour),
+		IsCA: true, BasicConstraintsValid: true, KeyUsage: x509.KeyUsageDigitalSignature}
+	der, err := x509.CreateCertificate(rand.Reader, tmpl, tmpl, key.Public(), key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	noSigning, err := x509.ParseCertificate(der)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := NewAuthority(noSigning, key); err == nil || !strings.Contains(err.Error(), "key usage") {
+		t.Errorf("an authority of a CA certificate that may not sign certificates: %v", err)
+	}
 }
 
 // The CA certificate and its key come back from the PEM files that ranz cert writes, from the
@@ -391,8 +410,11 @@ func TestLoadAuthority(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			// A text in front of the blocks, as OpenSSL writes it, and a block of another kind first
-			keyPEM := append([]byte("Bag Attributes\n"), pem.EncodeToMemory(&pem.Block{Type: typ, Bytes: b})...)
+			// A text in front of the blocks, as OpenSSL writes it, and a block of another kind first: the curve that
+			// openssl ecparam writes before an EC key, and a public key before the certificate
+			prime256v1 := []byte{0x06, 0x08, 0x2a, 0x86, 0x48, 0xce, 0x3d, 0x03, 0x01, 0x07}
+			keyPEM := append([]byte("Bag Attributes\n"), pem.EncodeToMemory(&pem.Block{Type: "EC PARAMETERS", Bytes: prime256v1})...)
+			keyPEM = append(keyPEM, pem.EncodeToMemory(&pem.Block{Type: typ, Bytes: b})...)
 			certPEM := append(pem.EncodeToMemory(&pem.Block{Type: "PUBLIC KEY", Bytes: []byte{1}}), EncodeCertificate(der)...)
 			ca, err := LoadAuthority(certPEM, keyPEM)
 			if err != nil {
@@ -421,6 +443,15 @@ func TestLoadAuthority(t *testing.T) {
 		t.Fatal(err)
 	}
 	encrypted := pem.EncodeToMemory(&pem.Block{Type: "RSA PRIVATE KEY", Headers: map[string]string{"Proc-Type": "4,ENCRYPTED", "DEK-Info": "AES-128-CBC,00"}, Bytes: []byte{1}})
+	// An X25519 key has a PKCS #8 form that parses, and cannot sign: it is no key of a CA
+	x25519, err := ecdh.X25519().GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	x25519DER, err := x509.MarshalPKCS8PrivateKey(x25519)
+	if err != nil {
+		t.Fatal(err)
+	}
 	for _, c := range []struct {
 		what         string
 		cert, key    []byte
@@ -433,6 +464,7 @@ func TestLoadAuthority(t *testing.T) {
 		{"an encrypted PKCS #8 key", certPEM, pem.EncodeToMemory(&pem.Block{Type: "ENCRYPTED PRIVATE KEY", Bytes: []byte{1}}), "encrypted"},
 		{"a certificate that does not parse", pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: []byte{1, 2, 3}}), keyPEM, "the certificate"},
 		{"a key that does not parse", certPEM, pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: []byte{1, 2, 3}}), "the private key"},
+		{"a key that cannot sign", certPEM, pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: x25519DER}), "cannot sign"},
 	} {
 		if _, err := LoadAuthority(c.cert, c.key); err == nil || !strings.Contains(err.Error(), c.wantContains) {
 			t.Errorf("%s: %v, want an error with %q", c.what, err, c.wantContains)

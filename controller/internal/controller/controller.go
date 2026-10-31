@@ -146,6 +146,9 @@ type Config struct {
 	// Pins that wait for their interval; DefaultKeyCheck when zero.
 	Now      func() time.Time
 	KeyCheck time.Duration
+	// DeviceKeyRetry is how often the controller tries again the PresharedKeys of the Devices that did not
+	// open but may open later (devicekeys.go; SDN-82-R1); DefaultDeviceKeyRetry when zero.
+	DeviceKeyRetry time.Duration
 }
 
 // NodeGeneration is the generation of a node's desired state.
@@ -292,6 +295,7 @@ type stream struct {
 	refusal  *controlpb.Refuse
 	signals  []*controlpb.Signal // Signals of other nodes for this one, waiting for the writer
 	live     liveStream          // the session of the node and its live operations (operations.go; SDN-50)
+	dkeys    deviceKeyStream     // the Devices that the node holds without their PresharedKeys (devicekeys.go; SDN-82-R1)
 }
 
 // New loads the intent, the node states and the licence key from the store and reconciles them:
@@ -432,6 +436,8 @@ func New(ctx context.Context, cfg Config) (*Controller, error) {
 	c.startAudit()
 	// The look at the lives of the node keys (nodekeys.go; SDN-56)
 	c.startKeySweep()
+	// The PresharedKeys of the Devices that did not open, tried again (devicekeys.go; SDN-82-R1)
+	c.startDeviceKeyRetry(cfg.DeviceKeyRetry)
 	c.log.Info("intent loaded", "resources", len(rs), "nodes", len(c.nodes), "revision", c.revision, "schema", int32(c.schema))
 	c.log.Info("licence", "tier", c.force.Tier, "nodes", c.force.Nodes, "state", c.force.State, "message", c.force.Message)
 	return c, nil
@@ -703,6 +709,7 @@ func (c *Controller) Close() {
 	c.stopTelemetry()
 	c.stopAudit()
 	c.stopKeys()
+	c.stopDeviceKeyRetry()
 }
 
 // compiled is an intent compiled under a licence: the licence key installed (nil for none), the
@@ -784,6 +791,10 @@ func (c *Controller) commit(ctx context.Context, next intent.Intent, cp compiled
 	}
 	sctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), storeTimeout)
 	defer cancel()
+	// No Device that the change adds takes the PresharedKey of an earlier one of its name (devicekeys.go; SDN-82-R1)
+	if err := c.clearDeviceKeys(sctx, next); err != nil {
+		return nil, err
+	}
 	if err := c.store.Commit(sctx, ch); err != nil {
 		return nil, err
 	}
@@ -1155,10 +1166,12 @@ func (c *Controller) hello(n *node, s *stream, applied uint64) {
 		s.known, s.base, s.baseGen = true, nil, 0
 	case applied == n.gen:
 		// The node runs the current generation. Its Ack may have been lost when the controller
-		// stopped, so it counts as acknowledged now.
-		s.known, s.base, s.baseGen = true, n.state, n.gen
+		// stopped, so it counts as acknowledged now. It holds the Devices whose PresharedKeys did
+		// not open when they were sent without them, and gets them once they open (devicekeys.go)
+		held := c.heldDeviceKeys(n, s)
+		s.known, s.base, s.baseGen = true, held, n.gen
 		if n.ackedGen != n.gen {
-			c.saveAck(s.name, n, n.gen, n.state)
+			c.saveAck(s.name, n, n.gen, held)
 		}
 	case applied == n.ackedGen:
 		s.known, s.base, s.baseGen = true, n.acked, n.ackedGen
@@ -1271,6 +1284,8 @@ func (c *Controller) ack(s *stream, gen uint64) error {
 		return fmt.Errorf("an Ack of generation %d, but the generation in flight is %d", gen, s.inflight)
 	}
 	s.known, s.base, s.baseGen = true, s.sent, s.inflight
+	// The Devices that the node holds without their PresharedKeys (devicekeys.go)
+	s.dkeys.missing, s.dkeys.sent = s.dkeys.sent, nil
 	s.inflight, s.sent = 0, nil
 	if n := c.nodes[s.name]; n != nil && n.stream == s {
 		c.saveAck(s.name, n, gen, s.base)
@@ -1355,18 +1370,27 @@ func (c *Controller) writeLoop(s *stream) {
 // an update is in flight. c.mu is held.
 func (c *Controller) nextUpdate(s *stream) *controlpb.Update {
 	n := c.nodes[s.name]
-	if n == nil || n.stream != s || s.inflight != 0 || (s.known && s.baseGen == n.gen) {
+	if n == nil || n.stream != s || s.inflight != 0 {
 		return nil
 	}
 	var u *controlpb.Update
-	if s.known {
-		u = desired.Delta(s.base, s.baseGen, n.state, n.gen)
-	} else {
+	switch {
+	case !s.known:
 		u = desired.Full(n.state, n.gen)
+	case s.baseGen != n.gen:
+		u = desired.Delta(s.base, s.baseGen, n.state, n.gen)
+	default:
+		// The node has the current generation, but not the PresharedKeys that did not open when its
+		// Devices were sent: it gets the ones that open now (devicekeys.go; SDN-82-R1)
+		if u = c.lateDeviceKeys(s.dkeys.missing, n.state, n.gen); u == nil {
+			return nil
+		}
 	}
-	s.inflight, s.sent = n.gen, n.state
-	// The states hold the PresharedKeys of the Devices sealed: the gateway gets them opened (devicekeys.go)
-	return c.openDeviceKeys(u)
+	s.inflight = n.gen
+	// The states hold the PresharedKeys of the Devices sealed: the gateway gets them opened, and holds the
+	// Devices whose keys do not open without them (devicekeys.go)
+	u, s.sent, s.dkeys.sent = c.openDeviceKeys(u, n.state)
+	return u
 }
 
 // nextMembers returns the Controllers message the node of s lacks: none for a node of schema
