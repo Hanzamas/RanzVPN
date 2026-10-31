@@ -153,14 +153,6 @@ void SiSetSysLogSetting(SERVER *s, SYSLOG_SETTING *setting) {
 	Unlock(s->SyslogLock);
 }
 
-
-void GetServerProductName(SERVER *s, char *name, UINT size) {
-	if (s == NULL || name == NULL)
-		return;
-
-	StrCpy(name, size, CEDAR_SERVER_STR " (64 bit)");
-}
-
 static const RPC_FIELD rpc_syslog_setting_fields[] =
     {
         RPC_ROW_INT(SYSLOG_SETTING, SaveType, "SaveType"),

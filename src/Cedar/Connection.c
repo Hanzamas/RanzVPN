@@ -1213,3 +1213,10 @@ void ConnectionGetInfo(CONNECTION *c, CONNECTION_INFO *info) {
 	}
 	Unlock(c->lock);
 }
+
+void GetServerProductName(SERVER *s, char *name, UINT size) {
+	if (s == NULL || name == NULL)
+		return;
+
+	StrCpy(name, size, CEDAR_SERVER_STR " (64 bit)");
+}
