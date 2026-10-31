@@ -311,7 +311,11 @@ func keptDataDir(t *testing.T) string {
 // is owned by an account that is not trusted: a user made it in the folder before the install, and the owner of an
 // object has full control of it through the entry for OWNER RIGHTS that the install passes down, so the user could swap
 // the payload\rqlited.exe that the service starts. The install refuses it, with the file or the folder, its owner and
-// what to do named, and changes nothing: not the folder, not what it holds.
+// what to do named, and changes nothing: not the folder, not what it holds. What to do is to remove it. The message
+// offers takeown only for what an administrator made, for the one that it names and together with a reset of its access
+// list, never for the whole data directory: takeown changes only the owner, so an entry that the user put on the list of
+// what it made would stay, and the install, which looks only at owners, would then take it (finding B2 of the second
+// read-only review of PR 541).
 func TestInstallRefusesAKeptDataDirThatHoldsAChildOfAStandardUser(t *testing.T) {
 	requireAdministrator(t)
 	for _, c := range []struct {
@@ -336,9 +340,24 @@ func TestInstallRefusesAKeptDataDirThatHoldsAChildOfAStandardUser(t *testing.T) 
 
 			err := takeOverDataDir(dir)
 			wantDataDirRefused(t, "the install", dir, err)
-			for _, want := range []string{offender, "did not take", "takeown"} {
-				if err != nil && !strings.Contains(err.Error(), want) {
-					t.Errorf("the message %q does not say %q", err, want)
+			if err != nil {
+				said := err.Error()
+				for _, want := range []string{
+					offender,
+					"did not take",
+					"remove it, and run the install again",
+					"Only when an administrator made it",
+					`takeown /F "` + offender + `" /A /R /D Y, then icacls "` + offender + `" /reset /T`,
+				} {
+					if !strings.Contains(said, want) {
+						t.Errorf("the message %q does not say %q", said, want)
+					}
+				}
+				if n := strings.Count(said, "takeown /F"); n != 1 {
+					t.Errorf("the message %q offers takeown %d times, want once, together with the reset of the access list", said, n)
+				}
+				if strings.Contains(said, `takeown /F "`+dir+`"`) {
+					t.Errorf("the message %q offers to give the whole data directory to the Administrators, which would take what the user made with it", said)
 				}
 			}
 			if after := securityOf(t, dir); after != before {
@@ -355,8 +374,10 @@ func TestInstallRefusesAKeptDataDirThatHoldsAChildOfAStandardUser(t *testing.T) 
 }
 
 // What the service and the Administrators make in the data directory is theirs, and a kept folder that holds only that
-// is taken over as before: its owner and its access list are set, and pass down to it. The owners of what it holds are
-// SYSTEM, the Administrators, the account of the service and the account that runs the install.
+// is taken over as before: its owner and its access list are set, and pass down to what it holds. The owners of what it
+// holds are SYSTEM, the Administrators, the account of the service and the account that runs the install. The folder
+// has a list first that lets the Users group read, which what is made in it takes, so that a file or a folder that did
+// not get the list of the install would show it (finding M2 of the second read-only review of PR 541).
 func TestInstallKeepsWhatTheAdministratorsAndTheServiceMade(t *testing.T) {
 	requireAdministrator(t)
 	user, err := windows.GetCurrentProcessToken().GetTokenUser()
@@ -364,21 +385,44 @@ func TestInstallKeepsWhatTheAdministratorsAndTheServiceMade(t *testing.T) {
 		t.Fatal(err)
 	}
 	dir := keptDataDir(t)
+	setDACL(t, dir, "D:P(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)(A;OICI;FRFX;;;BU)")
+	var held []string
 	for i, owner := range []string{systemSID, adminsSID, serviceSID, user.User.Sid.String()} {
 		folder := filepath.Join(dir, fmt.Sprintf("folder%d", i))
 		file := filepath.Join(folder, "file")
 		plantFile(t, file)
 		giveTo(t, file, owner)
 		giveTo(t, folder, owner)
+		held = append(held, folder, file)
+	}
+	for _, path := range held {
+		if got := securityOf(t, path); !hasTrustee(got, "BU") {
+			t.Fatalf("%s has the security %s: it does not take the Users group from the folder, so this test shows nothing", path, got)
+		}
 	}
 	if err := takeOverDataDir(dir); err != nil {
 		t.Fatalf("a kept data directory that holds what SYSTEM, the Administrators, the service and this account made is refused: %v", err)
 	}
 	wantDataDirOfTheAdministrators(t, dir)
+	// What it holds got the list of the data directory, as entries that came from the folder, and kept nothing of the list before
+	for _, path := range held {
+		got := securityOf(t, path)
+		if hasTrustee(got, "BU") || strings.Contains(got, "D:P") {
+			t.Errorf("%s has the security %s after the install: it kept the list that it had, or a protected one, and did not get the list of the data directory", path, got)
+		}
+		for _, trustee := range []string{"SY", "BA", serviceSID} {
+			if !strings.Contains(got, "ID;FA;;;"+trustee+")") {
+				t.Errorf("%s has the security %s after the install, which does not give %s full control by an entry that came from the data directory", path, got, trustee)
+			}
+		}
+	}
 }
 
-// A link in a kept folder is not followed, and so is refused: whoever made it, a junction or a symbolic link points
-// anywhere, and the access list that the install passes down must stay in the data directory. What it points at is as it was.
+// A reparse point in a kept folder, here a junction, is refused, and the install does not look into it: whoever made it, a
+// junction or a symbolic link points anywhere, and the access list that the install passes down must stay in the data
+// directory. What it points at is as it was. The message names it a reparse point, since the look refuses every kind, and
+// says to remove the link itself, with no takeown: a link that the Administrators own is a link still (findings B2 and M3
+// of the second read-only review of PR 541).
 func TestInstallRefusesALinkInAKeptDataDir(t *testing.T) {
 	requireAdministrator(t)
 	base := t.TempDir()
@@ -397,10 +441,13 @@ func TestInstallRefusesALinkInAKeptDataDir(t *testing.T) {
 	beforeTarget, beforeFile := securityOf(t, target), securityOf(t, file)
 
 	err := takeOverDataDir(dir)
-	for _, want := range []string{link, "is a link", "did not take"} {
+	for _, want := range []string{link, "is a reparse point", "did not take", `rmdir "` + link + `"`} {
 		if err == nil || !strings.Contains(err.Error(), want) {
 			t.Errorf("the install of a kept data directory that holds a junction answered %v, want a refusal that says %q", err, want)
 		}
+	}
+	if err != nil && strings.Contains(err.Error(), "takeown") {
+		t.Errorf("the refusal of a junction, %q, offers takeown, which would leave it a junction", err)
 	}
 	if after := securityOf(t, target); after != beforeTarget {
 		t.Errorf("the install changed the security of what the junction points at, from %s to %s", beforeTarget, after)

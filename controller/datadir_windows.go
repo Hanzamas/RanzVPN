@@ -32,10 +32,14 @@ import (
 // down to its last file before the install changes it (checkDataDirChildren), since the same user could have
 // made payload\ in it while it had that list.
 //
-// Two things are not closed, and #554 (AUD1-DT-18-R1) is for both; ST-3 of docs/threat-model.md says so. The new
-// folder is changed by name after the call that makes it, so a user that owns the folder above it can put a folder
-// of its own in its place in that moment (makeProtectedDir). And the look at a kept folder does not see a hard link,
-// which can name a file outside the folder that the list of the install then reaches (checkDataDirChildren).
+// Four things are not closed, and #554 (AUD1-DT-18-R1) is for them; ST-3 of docs/threat-model.md says so, with what
+// else is open (checkDataDirChildren lists what the look does not see). The new folder is changed by name after the
+// call that makes it, so a user that owns the folder above it can put a folder of its own in its place in that moment
+// (makeProtectedDir). A kept folder is changed by name after the look at what it holds, so the same user can put a
+// folder of its own, or a junction, in its place in that moment (takeOverDataDir). The look works by name, one call
+// after the other, so an entry that its owner switches between a folder and a junction while the install looks can
+// pass it. And the look does not see a hard link, which can name a file outside the folder that the list of the
+// install then reaches (checkDataDirChildren).
 
 // installDataDirSDDL is dataDirSDDL with the Administrators as its owner, as NODE_DATA_DIR_SDDL of
 // src/Cedar/Node.c is.
@@ -265,15 +269,21 @@ func createDataDir(dir string) error {
 //   - A directory that SYSTEM, the Administrators, the service's account or the account that runs the
 //     install owns, a directory of an earlier install or one that an administrator made, is kept with what
 //     it holds, and its owner and its access list are set, when what it holds is theirs too. A file or a
-//     folder in it, at any depth, that another account owns, and a junction or a symbolic link, are refused
-//     before anything is changed (checkDataDirChildren): a user made it while the folder had an access list
-//     that let the Users group add to it, its owner has full control of it through the entry for OWNER RIGHTS
-//     that the install passes down, and what it holds would run as the controller. It is not given to the
-//     Administrators either, since a handle that its owner opened before the list changed still writes
-//     after: the administrator looks at it, and removes it or gives it away. The look has two limits, and
-//     both are open: it does not see a hard link, and it does not see a file that a user adds between the
-//     look and the change of the list, which a folder that an administrator made by hand allows, since it
-//     has the list that it inherits, and on C:\ProgramData that lets the Users group add files and folders.
+//     folder in it, at any depth, that another account owns, and a reparse point such as a junction or a
+//     symbolic link, are refused before anything is changed (checkDataDirChildren): a user made it while the
+//     folder had an access list that let the Users group add to it, its owner has full control of it through
+//     the entry for OWNER RIGHTS that the install passes down, and what it holds would run as the controller.
+//     It is not given to the Administrators either: a handle that its owner opened before the list changed
+//     still writes after, and an entry that its owner put on its list stays, since the list that the install
+//     passes down replaces only the entries that came from the folder. The message says to remove it, and
+//     offers to give it to the Administrators, with a reset of its list, only for what an administrator made
+//     (refuseChild). The look has four limits, and all are open (checkDataDirChildren says more): it does not
+//     see a hard link; it works by name, so an entry that its owner switches between a folder and a junction
+//     while the install looks can pass it; it does not see a file that a user adds between the look and the
+//     change of the list, which a folder that an administrator made by hand allows, since it has the list
+//     that it inherits, and on C:\ProgramData that lets the Users group add files and folders; and the folder
+//     is changed by name after the look, so a user that owns the folder above it can put a folder of its own,
+//     or a junction, in its place in that moment.
 //   - A directory that another account owns is not kept: it may hold anything, a store with a token that
 //     the user knows or an rqlited.exe of its own, and the account that made it may hold it open, and so
 //     keep a way to write into it after the access list changed. It is taken over by making it again:
@@ -328,23 +338,40 @@ func removeForeignDataDir(dir string, owner *windows.SID) error {
 }
 
 // checkDataDirChildren refuses the data directory dir, whose owner is trusted, when a file or a folder in it, at
-// any depth, is owned by an account that is not (dataDirTrustees), is a link (a junction or a symbolic link),
-// or cannot be looked at (AUD1-DT-18, #503). A trusted owner of the folder says nothing of what is in it: a user
-// that made payload\ while the folder had the list of C:\ProgramData owns it still, and the entry for OWNER RIGHTS
-// that the install passes down gives that owner full control of it, so the user could swap the rqlited.exe that
-// the service starts. A junction and a symbolic link are not followed, and the install does not pass its list
-// down through one: the Controller makes none, and what a link points at is not the data directory. Nothing is
-// changed: the check reads the owners and the attributes only, and runs before the owner and the list are set.
+// any depth, is owned by an account that is not (dataDirTrustees), is a reparse point (a junction or a symbolic
+// link, for example), or cannot be looked at (AUD1-DT-18, #503). A trusted owner of the folder says nothing of what
+// is in it: a user that made payload\ while the folder had the list of C:\ProgramData owns it still, and the entry
+// for OWNER RIGHTS that the install passes down gives that owner full control of it, so the user could swap the
+// rqlited.exe that the service starts. A reparse point that the look sees is refused, and the look does not go into
+// it: the Controller makes none, and what a link points at is not the data directory. Nothing is changed: the check
+// reads the owners and the attributes only, and runs before the owner and the list are set.
 //
-// What the look does not see is open, and #554 (AUD1-DT-18-R1) is for the first of the two; ST-3 of
-// docs/threat-model.md says so:
+// What the look does not see is open, and #554 (AUD1-DT-18-R1) is for all of it but the third; ST-3 of
+// docs/threat-model.md says so. All of it is reasoned, not tested:
 //
+//   - An entry that changes while the install looks. The look works by name, one call after the other: it reads the
+//     attributes of an entry without following a link, and then its owner (ownerOf) and what a folder holds
+//     (os.ReadDir) by the name again, and both of those follow a junction. A user that owns an entry, a folder that it
+//     emptied such as payload\, can switch it between a folder and a junction to an empty folder of SYSTEM in a loop.
+//     When it is a folder for the first call and a junction for the other two, the look passes it, and the user then
+//     leaves it a folder of its own, into which the service writes rqlited.exe (payload.Ensure does not look at the
+//     owner of the folder). A lost race is a refusal that names the user. Whether the list that ownDataDir passes down
+//     follows a junction that is left in place is not known. #554 opens each entry once, without following a link,
+//     and reads all three through that handle.
 //   - A hard link. It is one more name of a file, and the file has an owner, so a hard link to a file elsewhere on
 //     the volume that SYSTEM or the Administrators own, which a user that may add files here could plant when it may
-//     write that file, passes the look, and the list that ownDataDir passes down is then written to that file.
+//     write that file, passes the look. The list that ownDataDir passes down is then written to that file, and the
+//     planted name is a file of the data directory that the user can still write: through an entry of its own or a
+//     protected list on that file, which the list that is passed down does not replace, or through a handle that it
+//     holds.
 //   - A file that a user adds after the look and before the list is set. A folder that ranz made has a protected
 //     list, which gives the Users group nothing, but a folder that an administrator made by hand in
 //     C:\ProgramData\Ranz has the list that it inherits there, which lets the Users group add files and folders.
+//   - The kept folder itself, which takeOverDataDir changes by name after the look. A user that owns the folder above
+//     it (a C:\ProgramData\Ranz that it made first) can put a folder of its own in its place in that moment, as it can
+//     with a new folder (makeProtectedDir), or a junction: the install then gives the folder that the junction names
+//     the Administrators as its owner and the protected list, passed down to what it holds. The look widens that
+//     moment from microseconds to the length of the walk.
 func checkDataDirChildren(dir string) error {
 	trusted, err := dataDirTrustees()
 	if err != nil {
@@ -371,7 +398,7 @@ func checkChildren(dir, folder string, trusted []*windows.SID) error {
 			return refuseChild(dir, path, "could not be looked at ("+err.Error()+")")
 		}
 		if attrs&windows.FILE_ATTRIBUTE_REPARSE_POINT != 0 {
-			return refuseChild(dir, path, "is a link (a junction or a symbolic link), which the install does not follow")
+			return refuseReparsePoint(dir, path)
 		}
 		owner, err := ownerOf(path)
 		if err != nil {
@@ -389,7 +416,8 @@ func checkChildren(dir, folder string, trusted []*windows.SID) error {
 	return nil
 }
 
-// ownerOf returns the owner of the file or folder path, which is not a link.
+// ownerOf returns the owner of the file or folder path, read by its name: when path is a junction or a symbolic link
+// in that moment, it is the owner of what the link points at (checkDataDirChildren says what that leaves open).
 func ownerOf(path string) (*windows.SID, error) {
 	sd, err := windows.GetNamedSecurityInfo(path, windows.SE_FILE_OBJECT, windows.OWNER_SECURITY_INFORMATION)
 	if err != nil {
@@ -409,8 +437,22 @@ func ownerOf(path string) (*windows.SID, error) {
 }
 
 // refuseChild is the refusal of the kept data directory dir, because of the file or folder path in it, which why
-// says what is wrong with.
+// says what is wrong with. The message says to remove it. It offers to give it to the Administrators only for what an
+// administrator made, and then with a reset of its access list: takeown changes only the owner, and the list that the
+// install passes down replaces only the entries that came from the folder, so an entry that a user put on the list of
+// what it made, or a protected list, would stay, and so would a handle that the user holds (finding B2 of the second
+// read-only review of PR 541).
 func refuseChild(dir, path, why string) error {
 	return fmt.Errorf("the data directory %s is kept with what it holds, so the install did not take it over: %s %s. A user may have put it there before the install, and it would run as the controller. "+
-		`Look at it, then remove it, or give the data directory and what it holds to the Administrators (takeown /F "%s" /A /R /D Y), and run the install again`, dir, path, why, dir)
+		`Look at it, remove it, and run the install again. Only when an administrator made it and all that it holds, give it to the Administrators and reset its access list instead (takeown /F "%s" /A /R /D Y, then icacls "%s" /reset /T), and run the install again: takeown alone changes only the owner, and keeps an entry that a user put on the list`, dir, path, why, path, path)
+}
+
+// refuseReparsePoint is the refusal of the kept data directory dir, because the file or folder path in it is a
+// reparse point. Most are links, a junction or a symbolic link, which point anywhere, so the message says to remove
+// the link itself, and never to give it to the Administrators, which would leave it a link. A reparse point of
+// another kind, a file that Data Deduplication or a cloud sync made one, is refused the same way, and the advice is
+// then for a link: the message names it a reparse point and says to look at it first.
+func refuseReparsePoint(dir, path string) error {
+	return fmt.Errorf("the data directory %s is kept with what it holds, so the install did not take it over: %s is a reparse point, such as a junction or a symbolic link. A link points anywhere, so the install does not look into one and does not keep one. "+
+		`Look at it, remove the link itself, and run the install again: rmdir "%s" removes a junction or a link to a folder, del "%s" removes a link to a file, and neither touches what it points at. Do not give it to the Administrators: it would stay a link`, dir, path, path, path)
 }
