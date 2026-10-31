@@ -28,7 +28,10 @@ UINT64 PeerWallClock() {
 
 // The lowest sequence that the peer p must exceed, given last, the last one taken of a kind: the clock when the entry
 // of p was made, at least. A receiver that lost its memory of the peer, by a restart or a new entry, so takes no
-// sequence of before that, and the sequences of binds, signals and punches survive the loss (finding F3 of AUD-5).
+// sequence of before that, and the sequences of binds, signals and punches survive the loss (finding F3 of AUD-5). A
+// peer whose clock is behind the receiver's by d is so refused for d after the entry, until its clock passes the
+// floor, and no longer. The floor tolerates no skew: a sequence that a slow clock sealed just now and one that a right
+// clock sealed before the loss look the same, and taking the one takes the other again (CORE-H2-R1 #436).
 UINT64 PeerFloorOf(const PEER *p, UINT64 last) {
 	return (last > p->Floor ? last : p->Floor);
 }
