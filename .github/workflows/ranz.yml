@@ -59,7 +59,9 @@
 # evpn-frr: the EVPN of a gateway (SDN-25 #201) against FRR, the reference BGP speaker of a
 # data-centre fabric, in a container of its own on this runner: EVPN type-5 both ways between the
 # sidecar and FRR, and VXLAN both ways between the gateway and the VRFs of the kernel of FRR
-# (TestFRREVPN of ranz-bgp/internal/sidecar).
+# (TestFRREVPN of ranz-bgp/internal/sidecar); then the stretch of a gateway (SDN-64 #291) against two
+# leaves of FRR on one L2 VNI: EVPN type-2 and type-3 both ways, L2 between a host of the fabric and
+# the host of the overlay, ARP suppression and ingress replication (TestFRRStretch).
 #
 # No job here touches the C build, so they run beside windows.yml and add nothing to its time.
 #
@@ -769,6 +771,21 @@ jobs:
       run: |
         go test -count=1 -v -run '^TestFRREVPN$' ./ranz-bgp/internal/sidecar 2>&1 | tee "$RUNNER_TEMP/frr-test.out"
         grep -q -- '--- PASS: TestFRREVPN' "$RUNNER_TEMP/frr-test.out"
+    # The stretch of a gateway (SDN-64 #291): two leaves of FRR with the L2 VNI 5010 and ARP suppression, and a host of the
+    # fabric behind each (ranz-bgp/internal/sidecar/testdata/frr-stretch/stretch.sh). TestFRRStretch is the gateway: EVPN
+    # type-2 and type-3 both ways, a host of the fabric and the host of the overlay ping each other at L2, the MAC plus IP
+    # form lets the leaves answer ARP for the host of the overlay, and a broadcast of the overlay reaches each leaf once
+    - name: The stretched fabric, two leaves of FRR
+      run: bash ranz-bgp/internal/sidecar/testdata/frr-stretch/stretch.sh "$FRR_IMAGE"
+    - name: The stretch of the gateway against FRR
+      shell: bash
+      env:
+        RANZ_FRR_STRETCH: '1'
+      run: |
+        go test -count=1 -v -run '^TestFRRStretch$' ./ranz-bgp/internal/sidecar 2>&1 | tee "$RUNNER_TEMP/frr-stretch.out"
+        grep -q -- '--- PASS: TestFRRStretch' "$RUNNER_TEMP/frr-stretch.out"
     - name: The log of FRR
       if: ${{ !cancelled() }}
-      run: docker exec ranz-frr cat /tmp/frr.log
+      run: |
+        docker exec ranz-frr cat /tmp/frr.log
+        for leaf in ranz-leaf-a ranz-leaf-b; do docker exec "$leaf" cat /tmp/frr.log || true; done

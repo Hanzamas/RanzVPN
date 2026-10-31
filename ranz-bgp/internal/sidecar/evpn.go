@@ -63,6 +63,8 @@ type EVPN struct {
 	VTEP      string    `json:"vtep"`
 	RouterMAC string    `json:"router_mac,omitempty"`
 	VRFs      []EVPNVRF `json:"vrfs"`
+	// The L2 Networks that the gateway stretches into the fabric (stretch.go; SDN-64 #291)
+	Stretches []EVPNStretch `json:"stretches,omitempty"`
 }
 
 // EVPNVRF is one VRF of the overlay that a gateway hands to the fabric: its id, its L3 VNI, the route distinguisher of
@@ -116,6 +118,9 @@ type evpnState struct {
 	// that the node was told about
 	offers   map[evpnKey]map[string]evpnRoute
 	reported map[evpnKey]evpnRoute
+
+	// The L2 Networks that the gateway stretches (stretch.go; SDN-64 #291), nil for none
+	stretch *stretchState
 }
 
 // parseEVPN checks the evpn object of a start message whose router id is routerID; nil for a start without one.
@@ -135,8 +140,8 @@ func parseEVPN(e *EVPN, routerID netip.Addr) (*evpnState, error) {
 	if err != nil || len(hw) != 6 || hw[0]&1 != 0 {
 		return nil, fmt.Errorf("start: evpn: router_mac %q is not the MAC address of one host", e.RouterMAC)
 	}
-	if len(e.VRFs) == 0 {
-		return nil, errors.New("start: evpn: no vrfs")
+	if len(e.VRFs) == 0 && len(e.Stretches) == 0 {
+		return nil, errors.New("start: evpn: no vrfs and no stretches")
 	}
 	st := &evpnState{
 		vtep:      vtep.Unmap(),
@@ -162,6 +167,12 @@ func parseEVPN(e *EVPN, routerID netip.Addr) (*evpnState, error) {
 		st.byID[pv.id] = pv
 		st.vrfs = append(st.vrfs, pv)
 	}
+	// ... and its stretches (stretch.go; SDN-64 #291), whose L2 VNIs are no L3 VNIs of its VRFs
+	stretch, err := parseStretches(e.Stretches, routerID, vnis)
+	if err != nil {
+		return nil, err
+	}
+	st.stretch = stretch
 	return st, nil
 }
 
@@ -291,6 +302,10 @@ func (s *session) startEVPN(ctx context.Context, e *evpnState) error {
 			stop()
 		}
 		err = s.bgp.WatchEvent(wctx, server.WatchEventMessageCallbacks{OnBestPath: s.onEVPNPaths}, server.WatchBestPath(true))
+	}
+	// The stretches of the gateway, with the type-3 route of its VTEP on each (stretch.go; SDN-64 #291)
+	if err == nil {
+		err = s.startStretch()
 	}
 	if err != nil {
 		return fmt.Errorf("EVPN did not start: %w", err)
