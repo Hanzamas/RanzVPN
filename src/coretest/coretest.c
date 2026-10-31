@@ -170,6 +170,8 @@ static TEST_LIST test_list[] = {
     {"frontdoor", frontdoor_test, "Front door, the node and its owners as processes: TLS of the new protocol stays in the node, other ALPN or SNI and a signature reach their owner processes through WSADuplicateSocketW; a handed connection outlives the node."},
     {"quicexporter", quicexporter_test, "QUIC exporter: only the pinned msquic minor is read; another minor, a table without the entry and a connection without an exporter are refused, each side logged once."},
     {"fallback", fallback_test, "Fallback after a handshake: a server that refuses the handshake over QUIC is reached over TLS-443 at the next dial; QUIC comes back after its hold."},
+    {"iceanswer", iceanswer_test, "An ICE session of an offer whose answer is lost fails after about 40 s while the pair stays on the relay; ICE runs again for the pair and moves it to the direct path."},
+    {"iceinput", iceinput_test, "A STUN message to the ICE socket is read once, whatever the number of ICE sessions, and goes to the session that its username fragment or its transaction names; the others are dropped."},
 };
 
 #define NUM_TESTS (sizeof(test_list) / sizeof(test_list[0]))

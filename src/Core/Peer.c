@@ -1209,7 +1209,8 @@ static void PeerSessionTimers(PEER_AGENT *a) {
 }
 
 // The timer of the peer layer, at least once a second: the relay role drops the bindings that were not renewed in
-// BindExpiry, and the node renews or retries its own binds
+// BindExpiry, the node renews or retries its own binds, and with ICE a session of its offer that had no answer in time
+// fails (PeerIceTick)
 void PeerTick(PEER_AGENT *a) {
 	if (a == NULL)
 		return;
@@ -1237,6 +1238,8 @@ void PeerTick(PEER_AGENT *a) {
 	PeerBindWanted(a);
 	PeerPunchTick(a);
 	PeerSessionTimers(a);
+	if (a->Config.Ice)
+		PeerIceTick(a);
 }
 
 // How the node reaches the peer of key; false when key is no peer
@@ -1321,6 +1324,8 @@ void PeerGetStats(PEER_AGENT *a, PEER_STATS *st) {
 				st->NumIce++;
 	}
 	ReleaseSRWLockShared(&a->Lock);
+
+	st->StunMessages = (UINT64)ReadAcquire64(&a->StunMessages);
 }
 
 // Whether the node is bound to its home relay: its signals then name the address that the relay saw it at, its server

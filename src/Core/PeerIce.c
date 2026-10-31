@@ -14,12 +14,15 @@
 //
 // An offer of the node starts its session with the peer as the controlling end; an offer of the peer starts it as the
 // controlled end, and the answer gives the offering end the peer's credentials and candidates. A check of the peer
-// that comes before that answer is not taken, and the peer sends it again (juice-peer.c says why). The checks run on
+// that comes before that answer is not taken, and the peer sends it again (juice-peer.c says why). libjuice starts no
+// timer of a session before it has the peer's credentials, so a session of the node's offer whose answer does not
+// come in PEER_ICE_ANSWER_TIMEOUT, as when the answer was lost on the way or the peer had no session to answer with,
+// fails (PeerIceTick; CORE-S5-6-R1, #537), and the node offers again, as after any failure. The checks run on
 // the thread of each session while the pair stays on the relay. Once a candidate pair validates, PeerSend sends the records
 // of the peer session to the peer's address on that pair, on the socket of the layer, and PeerInput takes the records
 // from there as the direct path (PeerSourcePath), so the move holds back no datagram. Consent freshness (RFC 7675)
 // keeps the direct path alive and checks it: when the peer stops answering for 30 s, libjuice fails the session and the
-// pair is on the relay again. A session that failed answers no check (juice_peer_input), so the consent of the peer
+// pair is on the relay again. A session that failed answers no check (juice_peer_take), so the consent of the peer
 // fails too and both ends fall back. A new offer starts a new session, as libjuice has no ICE restart: after one that
 // failed, and in place of one that is still checking when the home gateway granted its public port since it started,
 // so the checks go to that port. A pair whose NATs let no check through, as two symmetric NATs do, stays on the relay
@@ -29,7 +32,7 @@
 // Locks: libjuice calls back under the mutex of the agent, on the thread of the session or on the thread of PeerInput,
 // and the callbacks take the lock of the layer, so nothing here calls libjuice under that lock. IceLock serialises the
 // start, the remote side and the end of the sessions; PeerIceInput holds it shared, so no session ends while it hands
-// one a message.
+// one a message, and so does PeerIceTick, so no answer comes while it fails a session that waits for one.
 
 #include <winsock2.h>
 #include <ws2tcpip.h>
@@ -274,6 +277,7 @@ static PEER_ICE *PeerIceNew(PEER_AGENT *a, const UCHAR *key, bool controlling) {
 	CopyMemory(ice->Key, key, PEER_KEY_SIZE);
 	ice->Controlling = controlling;
 	ice->Mapped = PeerPortMapGet(a, &mapped);
+	ice->Started = PeerNow();
 	ice->State = PEER_ICE_CHECKING;
 
 	// No STUN or TURN server: the server reflexive candidate is the address that the home relay saw
@@ -374,6 +378,34 @@ void PeerIceRetire(PEER *peers, UINT num) {
 	}
 }
 
+// Whether the session is an offer of the node that waits for the answer of the peer: controlling, without the peer's
+// credentials, and not failed. Under IceLock.
+static bool PeerIceWaiting(PEER_ICE *ice) {
+	return ice->Controlling && ice->RemoteUfrag[0] == 0 && InterlockedCompareExchange(&ice->State, 0, 0) != PEER_ICE_FAILED;
+}
+
+// The timer of the sessions, from PeerTick: a session of the node's offer that has waited PEER_ICE_ANSWER_TIMEOUT for the
+// answer of the peer fails, as when the answer was lost on the way or the peer had no session to answer with. libjuice
+// runs no timer of a session before it has the peer's credentials, so without this the session would wait for good, and
+// the pair with it on the relay: the node offers again only after a failure (NodeAgent.c), and a waiting session keeps
+// out the offers of a peer of a lower key (PeerIceRemote). Without the lock of the layer.
+void PeerIceTick(PEER_AGENT *a) {
+	UINT64 now = PeerNow();
+
+	AcquireSRWLockShared(&a->IceLock);
+	AcquireSRWLockShared(&a->Lock);
+	{
+		for (UINT i = 0; i < a->NumPeers; i++) {
+			PEER_ICE *ice = a->Peers[i].Ice;
+
+			if (ice != NULL && PeerIceWaiting(ice) && now - ice->Started >= PEER_ICE_ANSWER_TIMEOUT)
+				InterlockedCompareExchange(&ice->State, PEER_ICE_FAILED, PEER_ICE_CHECKING);
+		}
+	}
+	ReleaseSRWLockShared(&a->Lock);
+	ReleaseSRWLockShared(&a->IceLock);
+}
+
 // Before the node seals an offer for the peer of key: a new session as the controlling end, unless one runs that has
 // not failed and is up or knows the public port of the home gateway. Without the lock of the layer.
 void PeerIceOffer(PEER_AGENT *a, const UCHAR *key) {
@@ -408,7 +440,9 @@ void PeerIceOffer(PEER_AGENT *a, const UCHAR *key) {
 // as the controlled end, unless it repeats the session there is, or it meets an offer of the node that waits for
 // its answer and the node has the higher key: both ends decide alike, so the other one takes the node's offer. An
 // answer gives the node's waiting offer the peer's side; to a session that has it already, an answer is a repeat,
-// or a restart that libjuice cannot take, and changes nothing. Without the lock of the layer.
+// or a restart that libjuice cannot take, and changes nothing. An offer of the node that failed waits for nothing
+// (PeerIceTick): a late answer does not bring it back, and the peer's next offer takes its place. Without the lock of
+// the layer.
 void PeerIceRemote(PEER_AGENT *a, const UCHAR *key, const PEER_SIGNAL *s) {
 	PEER_ICE *cur = NULL;
 	bool known = false;
@@ -425,7 +459,7 @@ void PeerIceRemote(PEER_AGENT *a, const UCHAR *key, const PEER_SIGNAL *s) {
 		ReleaseSRWLockShared(&a->Lock);
 
 		bool repeat = (cur != NULL && strcmp(cur->RemoteUfrag, s->IceUfrag) == 0);
-		bool waiting = (cur != NULL && cur->Controlling && cur->RemoteUfrag[0] == 0);
+		bool waiting = (cur != NULL && PeerIceWaiting(cur));
 
 		if (known && repeat == false && s->Type == PEER_SIGNAL_OFFER && (waiting == false || memcmp(a->Key.Public, key, PEER_KEY_SIZE) < 0)) {
 			PEER_ICE *ice = PeerIceNew(a, key, false);
@@ -448,19 +482,54 @@ bool PeerIceIsStun(const UCHAR *data, UINT size) {
 	return juice_peer_is_stun((const char *)data, size);
 }
 
-// A STUN message that came to the socket from the address from: the ICE session that it is for takes it, a check that
-// names the username fragment of the session or the answer to one of its checks. One that no session takes is dropped
-// and counted. Called from PeerInput, without the lock of the layer.
+// The agent of the session whose username fragment is ufrag, NULL for none. Under IceLock, without the lock of the layer.
+static juice_agent_t *PeerIceNamed(PEER_AGENT *a, const char *ufrag) {
+	juice_agent_t *juice = NULL;
+
+	AcquireSRWLockShared(&a->Lock);
+	{
+		for (UINT i = 0; i < a->NumPeers && juice == NULL; i++) {
+			PEER_ICE *ice = a->Peers[i].Ice;
+
+			if (ice != NULL && strcmp(ice->Ufrag, ufrag) == 0)
+				juice = ice->Juice;
+		}
+	}
+	ReleaseSRWLockShared(&a->Lock);
+
+	return juice;
+}
+
+// A STUN message that came to the socket from the address from, which any sender can send: it is read once, whatever the
+// number of the ICE sessions of the node (CORE-S5-6-R1, #537), and goes to the session that it names. A check goes to the
+// session whose username fragment it names, which takes it once it has the peer's credentials; an answer goes to the
+// session that sent the request of its transaction: each session looks the transaction up among its own requests, and
+// none reads the message again. One that no session takes is dropped and counted. Called from PeerInput, without the
+// lock of the layer.
 void PeerIceInput(PEER_AGENT *a, const PEER_ADDR *from, const UCHAR *data, UINT size) {
+	juice_peer_message_t m;
 	SOCKADDR_STORAGE src;
 	bool taken = false;
 
+	InterlockedIncrement64(&a->StunMessages);
+	if (juice_peer_read(&m, (const char *)data, size) == false) {
+		PeerDrop(a, PEER_DROP_ICE);
+		return;
+	}
+
 	int len = PeerIceToSockaddr(&src, from);
 
-	// The sessions cannot end meanwhile: that takes IceLock exclusively, and so does a change of the peer table
+	// The sessions cannot end meanwhile: that takes IceLock exclusively, and so does a change of the peer table. libjuice
+	// takes the message under the mutex of the agent, whose callbacks take the lock of the layer.
 	AcquireSRWLockShared(&a->IceLock);
 	{
-		for (UINT i = 0; taken == false; i++) {
+		if (m.check) {
+			juice_agent_t *juice = PeerIceNamed(a, m.ufrag);
+
+			taken = (juice != NULL && juice_peer_take(juice, &m, (const struct sockaddr *)&src, len));
+		}
+
+		for (UINT i = 0; m.answer && taken == false; i++) {
 			juice_agent_t *juice = NULL;
 			bool more = false;
 
@@ -475,9 +544,7 @@ void PeerIceInput(PEER_AGENT *a, const PEER_ADDR *from, const UCHAR *data, UINT 
 			if (more == false)
 				break;
 
-			// libjuice takes the message under the mutex of the agent, whose callbacks take the lock of the layer
-			if (juice != NULL && juice_peer_input(juice, (const char *)data, size, (const struct sockaddr *)&src, len))
-				taken = true;
+			taken = (juice != NULL && juice_peer_take(juice, &m, (const struct sockaddr *)&src, len));
 		}
 	}
 	ReleaseSRWLockShared(&a->IceLock);
