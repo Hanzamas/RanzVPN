@@ -400,15 +400,15 @@ struct CEDAR {
 // (Link.c), the additional connections of a client Session (ProtocolClient.c) and the UDP Acceleration of a Session
 // (UdpAccel.c). A program that runs that code fills these hooks with InitSeVpn (Server.c) before it starts any of it:
 // vpntest, whose in-process oracle is that code. ranz-node never does, so it links none of that code (CORE-S8-2,
-// #576): its Hubs have no cascade and its Sessions are server Sessions without a UDP_ACCEL, so the Hub and Session
-// code skips the hooks of the cascades and of the client Sessions while they are NULL, and reaches the UDP
-// Acceleration hooks only for a Session that has a UDP_ACCEL, which only that code creates. CORE-S8-3 (#577) deletes
-// them with that code.
+// #576): its Hubs have no cascade and its Sessions are server Sessions without a UDP_ACCEL. SetHubOnline,
+// SetHubOffline and CleanupHub skip the hooks of the cascades, and SessionMain the one of the client Sessions, while
+// they are NULL; SessionMain, ConnectionSend and ConnectionReceive reach the UDP Acceleration hooks only for a Session
+// that has a UDP_ACCEL, which only that code creates. CORE-S8-3 (#577) deletes them with that code.
 typedef struct SEVPN_HOOKS {
-	void (*StartAllLink)(HUB *h);                       // SetHubOnline
-	void (*StopAllLink)(HUB *h);                        // SetHubOffline
-	void (*ReleaseAllLink)(HUB *h);                     // CleanupHub
-	void (*ClientAdditionalConnectChance)(SESSION *s); // SessionMain of a client Session
+	void (*StartAllLink)(HUB *h);
+	void (*StopAllLink)(HUB *h);
+	void (*ReleaseAllLink)(HUB *h);
+	void (*ClientAdditionalConnectChance)(SESSION *s);
 	void (*UdpAccelSetTick)(UDP_ACCEL *a, UINT64 tick64);
 	void (*UdpAccelPoll)(UDP_ACCEL *a);
 	UINT (*UdpAccelCalcMss)(UDP_ACCEL *a);
