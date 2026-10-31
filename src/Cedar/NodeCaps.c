@@ -12,9 +12,12 @@
 // the traffic of a VRF whose internet exit it is to the outside (SDN-12, #188; ADR-0025 decisions 13 to 15), from them and
 // from what the NAT of Windows has on the host: Routing and Remote Access running as a LAN router, the service of WinNAT
 // and a NAT network of WinNAT of another program, as the last look of the node at them saw it (NodeEgressNat.c).
+// The BGP peering is a fact of the install of the node more than of its host: NodeCapsPeering reports it when the sidecar
+// is where the node looks for it (SDN-77-R2, #532).
 
 #include "Node.h"
 
+#include "Mayaqua/FileIO.h"
 #include "Mayaqua/Internat.h"
 #include "Mayaqua/Memory.h"
 
@@ -201,6 +204,15 @@ void NodeCapsProc(void *param, CONTROL_CAPS *caps) {
 	// The source groups travel with the packets of every node (NodeSourceGroup.c; SDN-87, #386)
 	if (caps != NULL)
 		caps->Tags = true;
+}
+
+void NodeCapsPeering(NODE *n, CONTROL_CAPS *caps) {
+	if (caps == NULL)
+		return;
+
+	// The peering is in this release (NodePeering.c); what it needs besides is the sidecar, which NodePeeringStartSidecar looks for
+	// in the same place and with the same check, so a node that reports it can start one
+	caps->BgpPeering = (n != NULL && IsFileExistsW(n->BgpSidecar));
 }
 
 // The architecture of the Capabilities as the node log names it

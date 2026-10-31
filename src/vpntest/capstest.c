@@ -12,6 +12,8 @@
 // calls for each Hello, gives what NodeCapsDecide decides on what NodeCapsReadHost found. The install job and the
 // default VRF tracer of windows.yml read the same Capabilities from a node on a machine that ranz install changed (the
 // node log) and from the controller that its Hello reached (the API).
+// The BGP peering is a Capability of the install of the node (SDN-77-R2, #532): NodeCapsPeering reports it for a node
+// whose sidecar, ranz.exe, is where the node looks for it, and for no other.
 // The Windows edition, Hyper-V and the Egress tier (SDN-12, #188): the editions of Windows 11 and Windows Server that a
 // node runs on, each as the product type of its version and the product of GetProductInfo, give the SKU of the control
 // protocol, a product that it does not count gives none, and a version that cannot be read gives none either. Hyper-V is
@@ -23,8 +25,11 @@
 
 #include "testlist.h"
 
+#include "Cedar/Node.h"
 #include "Cedar/NodeCaps.h"
 
+#include "Mayaqua/FileIO.h"
+#include "Mayaqua/Internat.h"
 #include "Mayaqua/Mayaqua.h"
 #include "Mayaqua/Memory.h"
 #include "Mayaqua/Str.h"
@@ -123,7 +128,7 @@ static const CAPS_TIER_CASE caps_tier_cases[] =
 };
 
 // caps: the Capabilities of a node for the hosts that ranz install leaves, and for this host
-RANZ_TEST("caps", caps_test, "Node Capabilities: the architecture, SeLow and the XDP runtime that a node reports in its Hello, for each host that ranz install leaves and for this host.");
+RANZ_TEST("caps", caps_test, "Node Capabilities: the architecture, SeLow and the XDP runtime that a node reports in its Hello, for each host that ranz install leaves and for this host, and the BGP peering when its sidecar is there.");
 void caps_test(UINT num, char **arg)
 {
 	NODE_CAPS_HOST host;
@@ -279,6 +284,58 @@ void caps_test(UINT num, char **arg)
 			reported.EgressTier, caps.Sku, (UINT)caps.HyperV, caps.EgressTier);
 		failed++;
 	}
+
+	// The BGP peering (SDN-77-R2, #532): a node reports it when its sidecar is where it looks for it, NODE.BgpSidecar. This
+	// executable stands for that file, and the same name with a suffix for a file that is not there
+	NODE *node = ZeroMalloc(sizeof(NODE));
+
+	GetExeNameW(node->BgpSidecar, sizeof(node->BgpSidecar));
+	caps.BgpPeering = false;
+	NodeCapsPeering(node, &caps);
+	if (caps.BgpPeering == false)
+	{
+		Print("  [FAIL] A node whose sidecar is there does not report the BGP peering\n");
+		failed++;
+	}
+	else
+	{
+		Print("  [OK] A node whose sidecar is there reports the BGP peering\n");
+	}
+
+	UniStrCat(node->BgpSidecar, sizeof(node->BgpSidecar), L".missing");
+	caps.BgpPeering = true;
+	NodeCapsPeering(node, &caps);
+	if (caps.BgpPeering)
+	{
+		Print("  [FAIL] A node whose sidecar is not there reports the BGP peering\n");
+		failed++;
+	}
+	else
+	{
+		Print("  [OK] A node whose sidecar is not there reports no BGP peering\n");
+	}
+
+	// A node that names no sidecar at all, and no node
+	Zero(node->BgpSidecar, sizeof(node->BgpSidecar));
+	caps.BgpPeering = true;
+	NodeCapsPeering(node, &caps);
+	if (caps.BgpPeering)
+	{
+		Print("  [FAIL] A node that names no sidecar reports the BGP peering\n");
+		failed++;
+	}
+
+	caps.BgpPeering = true;
+	NodeCapsPeering(NULL, &caps);
+	if (caps.BgpPeering)
+	{
+		Print("  [FAIL] No node reports the BGP peering\n");
+		failed++;
+	}
+
+	// No Capabilities to fill does nothing but return
+	NodeCapsPeering(node, NULL);
+	Free(node);
 
 	if (failed == 0)
 	{

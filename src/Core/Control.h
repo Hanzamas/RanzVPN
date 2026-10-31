@@ -659,6 +659,8 @@ typedef struct CONTROL_CAPS {
 	bool PlainLinks;
 	// The node carries the source group of its packets to its peers and judges theirs by the one they carry (SDN-87, #386)
 	bool Tags;
+	// The node runs the BGP peering of the standard mode: ranz.exe, which holds its sidecar, is next to it (SDN-77-R2, #532)
+	bool BgpPeering;
 	// The Windows edition of the host (CONTROL_SKU_*), whether Hyper-V is present on it, and the Egress tier that the host
 	// gives the node as the internet exit of a VRF (CONTROL_EGRESS_*; SDN-12, #188)
 	UINT Sku;

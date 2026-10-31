@@ -201,21 +201,27 @@ type Auditor interface {
 // AuditRefusals returns h, the API behind its Guard, with the audit log of l on it: each call that
 // the Guard refuses with 401 Unauthorized, because its bearer token is missing or is not one of the
 // controller's, is recorded as a failed authentication (audit.AuthFailed) from the address of the
-// caller, with the actor unknown. A source that fails again within a few seconds is not recorded
+// caller, with the actor unknown. A call whose token has expired is recorded under that token, with
+// the word expired (auditexpired.go). A source that fails again within a few seconds is not recorded
 // again (audit.Log). Every member of a controller cluster has it on its own Guard, since it is the
 // member that refuses the call that records it.
 func AuditRefusals(l *audit.Log, h http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		sw := &statusWriter{ResponseWriter: w}
-		h.ServeHTTP(sw, r)
+		ctx, note := withRefusalNote(r.Context())
+		h.ServeHTTP(sw, r.WithContext(ctx))
 		if sw.code() != http.StatusUnauthorized {
 			return
 		}
+		actor := audit.ActorUnknown
 		message := "the request has no bearer token"
 		if strings.Contains(sw.Header().Get("WWW-Authenticate"), "invalid_token") {
 			message = "the bearer token is not a token of this controller, or it was deleted"
 		}
-		_ = l.Record(r.Context(), audit.Record{Kind: audit.AuthFailed, Actor: audit.ActorUnknown, Source: audit.Host(r.RemoteAddr),
+		if note.expired.Name != "" {
+			actor, message = audit.ActorToken(note.expired.Name), expiredMessage(note.expired)
+		}
+		_ = l.Record(r.Context(), audit.Record{Kind: audit.AuthFailed, Actor: actor, Source: audit.Host(r.RemoteAddr),
 			Outcome: audit.Failure, Message: message})
 	})
 }

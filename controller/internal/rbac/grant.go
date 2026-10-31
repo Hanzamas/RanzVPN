@@ -107,7 +107,8 @@ func (t *Tokens) CreateGrant(ctx context.Context, name string, g Grant, expires 
 
 // SetGrant gives the API token name the grant g in place, its secret unchanged, as SetRole gives it a role: its
 // next call has the new role and the new scope. It refuses to take the role admin of the whole API from the
-// last token that holds it (ErrLastAdmin), which includes scoping it, and returns the token as it is now.
+// last token that holds it and has not expired (ErrLastAdmin), which includes scoping it, and returns the token
+// as it is now.
 func (t *Tokens) SetGrant(ctx context.Context, name string, g Grant) (Token, error) {
 	g, err := NewGrant(g.Role, g.Network)
 	if err != nil {

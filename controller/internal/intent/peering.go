@@ -46,8 +46,15 @@ type Peering struct {
 	Protocol string `json:"protocol,omitempty"`
 	// HoldTime is the BGP hold time of the sessions in seconds, from MinHoldTime to MaxHoldTime: a Node
 	// that stops answering loses its routes at its peers after it. Left out, it is DefaultHoldTime.
-	// Two Nodes that share several VRFs that peer by BGP take the shortest of them.
+	// Two Nodes that share several VRFs that peer by BGP take the shortest of them, and a VRF that
+	// leaves it out counts as DefaultHoldTime there (Hold).
 	HoldTime uint32 `json:"holdTime,omitempty"`
+}
+
+// Hold returns the hold time of the sessions of a VRF with the peering p in seconds: its HoldTime, or
+// DefaultHoldTime when it leaves it out.
+func (p Peering) Hold() uint32 {
+	return cmp.Or(p.HoldTime, DefaultHoldTime)
 }
 
 // PeeringVRFs returns the VRFs of the Node n whose Nodes peer by BGP.
@@ -59,6 +66,35 @@ func (in Intent) PeeringVRFs(n Node) []string {
 		}
 	}
 	return out
+}
+
+// peeringRoutes returns the routes that the Node node learns from its peer peer by BGP besides their
+// addresses: in each VRF that both are members of and that peers by BGP, the LAN subnets that peer
+// advertises there, ordered by VRF, then prefix, each once. A prefix that node advertises in the VRF
+// itself is none of them: its own path is the best one, so its sidecar never reports it as learned. The
+// Controller gives none of these routes (GatewayRoutes), but the Node puts each one that it learns among
+// the routes of the peer of its best path, where it takes one of the MaxPeerRoutes slots, as a route
+// of the Controller does (validatePeerRoutes; SDN-77-R2).
+func (in Intent) peeringRoutes(node, peer string) []Route {
+	var out []Route
+	if node == peer {
+		return out
+	}
+	other := in.Nodes[peer]
+	for _, vrf := range in.PeeringVRFs(in.Nodes[node]) {
+		if !slices.Contains(other.VRFs, vrf) {
+			continue
+		}
+		for _, s := range other.LANSubnets[vrf] {
+			if p, err := parseLAN(s); err == nil && !in.advertises(node, vrf, p) {
+				out = append(out, Route{VRF: vrf, Prefix: p, Via: peer})
+			}
+		}
+	}
+	slices.SortFunc(out, func(a, b Route) int {
+		return cmp.Or(cmp.Compare(a.VRF, b.VRF), a.Prefix.Addr().Compare(b.Prefix.Addr()), cmp.Compare(a.Prefix.Bits(), b.Prefix.Bits()))
+	})
+	return slices.Compact(out)
 }
 
 // RouterID returns the BGP router id of a Node whose tunnel endpoint has the address vtep: that
@@ -83,7 +119,9 @@ func (in Intent) completePeering() {
 // validatePeering checks the peering of a completed intent: the protocol of each VRF is bgp or none,
 // a VRF that peers by BGP has a link of kind vxlan or geneve, is a full mesh, since its Nodes pass on
 // nothing that they learned (topology.go), and has a hold time from MinHoldTime to MaxHoldTime or
-// none, and a VRF that does not names no hold time. The Nodes of a VRF that peers by BGP have tunnel
+// none, and a VRF that does not names no hold time. A VRF that peers by BGP does not set ecmp: a Node
+// takes one best path for each prefix there, so the flows to a LAN subnet of several gateways would
+// never spread over them (SDN-77-R2). The Nodes of a VRF that peers by BGP have tunnel
 // endpoints of one family (link.go checks that they have them), and each Node that peers has a router
 // id of its own. A problem names the VRF or the Node and what is wrong.
 func (in Intent) validatePeering() []error {
@@ -104,6 +142,11 @@ func (in Intent) validatePeering() []error {
 			problems = append(problems, fmt.Errorf("VRF %q: BGP peering is a full mesh, and the topology is %s: a spoke would learn no route of another, since the hub passes on nothing that it learned", name, TopologyHubAndSpoke))
 		case p.HoldTime != 0 && (p.HoldTime < MinHoldTime || p.HoldTime > MaxHoldTime):
 			problems = append(problems, fmt.Errorf("VRF %q: the peering holdTime %d is not from %d to %d", name, p.HoldTime, MinHoldTime, MaxHoldTime))
+		}
+		// ecmp is the Controller's: it gives each Node the routes of all the gateways of a LAN subnet and the Node
+		// spreads its flows over them, and with the peering the Nodes learn one best path for each prefix
+		if p.Protocol == PeeringBGP && v.ECMP {
+			problems = append(problems, fmt.Errorf("VRF %q: ecmp spreads the flows to a LAN subnet over the gateways that advertise it, and with the peering %s each Node learns one best path for each prefix, so the flows would never spread: leave out ecmp or the peering", name, PeeringBGP))
 		}
 	}
 
