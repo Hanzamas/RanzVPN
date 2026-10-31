@@ -1022,11 +1022,17 @@ The flag of a Device that turns the keepalive of its configuration off.
 **PresharedKey (of a Device)**:
 The 32-byte secret that a Device and its gateway both mix into the WireGuard handshake, the only protection of a recorded session against a future quantum computer. The Controller makes one for every Device unless `noPresharedKey`, keeps it as a **Sealed secret** in the table `device_keys` (never in the Intent), gives it in clear inside the control stream to the gateway alone, and shows it once (ADR-0026 amendment of 2026-10-29, SDN-82).
 
+**PresharedKey that does not open**:
+The sealed **PresharedKey (of a Device)** that the Controller could not open at its last try, neither with the **Sealing key** of its host nor with the **Cluster key** (`DeviceStatus.presharedKeyDoesNotOpen`, SDN-82-R1). Its gateway terminates the Device without it. One that another key sealed (a restore on another host) never opens again; one that failed for another reason, a provider that did not answer or a member that does not hold the Cluster key yet, is tried again and reaches the gateway once it opens.
+
 **Finished configuration (of a Device)**:
 The `.conf` text that a stock client imports, with the `PrivateKey` and the `PresharedKey` in it, which only the answer to the making of a Device holds (`DeviceCreated.Config`). The configuration that `GET /api/v1/devices/NAME/config` renders later has a comment in place of each key.
 
 **QR code (of a Device)**:
 The QR code of the finished configuration, carried as its modules (`DeviceCreated.QR`: a string of 1 and 0 for each row, without the quiet zone), drawn by the web UI on a canvas, by `ranz device create -qr` on a terminal and by `-qr-file` into a PNG. Shown once.
+
+**Key file (of a Device)**:
+A file that `ranz device create` makes for `-o` or `-qr-file`: a new file that only its owner reads, and on Windows SYSTEM and the Administrators too, from the moment it exists (`certgen.CreateKeyFile`, SDN-82-R1).
 
 **Standalone Device**:
 A Device with no owner, a router for one. It takes the tags set on it and no others.
