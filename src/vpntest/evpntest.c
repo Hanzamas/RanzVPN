@@ -1429,7 +1429,7 @@ static void EvpnTestExit(EVPNTEST_CTX *ctx)
 }
 
 // evpn: the EVPN of a gateway against a fabric
-RANZ_TEST("evpn", evpn_test, "EVPN gateway: a node hands two VRFs of the overlay with the same prefixes to a fabric as EVPN type-5 routes through ranz bgp (ranz.exe next to vpntest), and both ways of VXLAN reach the hosts of the overlay and the VTEP of the fabric in the VRF of their VNI.");
+RANZ_TEST("evpn", evpn_test, "EVPN gateway: a node hands two VRFs of the overlay with the same prefixes to a fabric as EVPN type-5 routes through ranz bgp (ranz.exe next to vpntest), and both ways of VXLAN reach the hosts of the overlay and the VTEP of the fabric in the VRF of their VNI; in a VRF with an internet exit a route of the fabric wins over its default route, and of two default routes the one of the VRF wins.");
 void evpn_test(UINT num, char **arg)
 {
 	EVPNTEST_CTX *ctx = ZeroMalloc(sizeof(EVPNTEST_CTX));
