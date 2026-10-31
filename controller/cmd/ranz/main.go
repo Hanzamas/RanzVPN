@@ -62,6 +62,8 @@
 //	                                           print the records of the audit log, oldest first, with the filters of the API:
 //	                                           -kind, -actor, -since, -until, -after and -limit (audit.go)
 //	ranz [flags] get devices                   print the WireGuard Devices with the last handshake and the traffic of each
+//	ranz [flags] get stretches                 print the Stretches of the L2 Networks, with their values and whether the controller
+//	                                           gives each to its gateway (SDN-63)
 //	ranz [flags] get device-config NAME        print the WireGuard configuration of the Device NAME, for a stock client
 //	ranz [flags] device create -network N -gateway NODE [flags] NAME
 //	                                           make the WireGuard Device NAME with its keys and print its finished configuration,
@@ -205,7 +207,7 @@ const usage = `usage:
   ranz [flags] confirm REVISION
   ranz [flags] diff [FROM [TO]]
   ranz [flags] rollback REVISION
-  ranz [flags] get resources|nodes|revisions|events|ipam|leases|licence|devices
+  ranz [flags] get resources|nodes|revisions|events|ipam|leases|licence|devices|stretches
   ranz [flags] get revision ID
   ranz [flags] get audit [-kind KIND] [-actor ACTOR] [-since TIME] [-until TIME] [-after ID] [-limit N] [-o json|table]
   ranz [flags] get device-config NAME
@@ -426,6 +428,9 @@ func do(ctx context.Context, c *api.Client, args []string, out io.Writer) error 
 	case len(args) >= 2 && args[0] == "get" && (args[1] == "devices" || args[1] == "device-config"):
 		// The WireGuard Devices (devices.go; SDN-80)
 		return getDevices(ctx, c, args[1:], out)
+	case len(args) == 2 && args[0] == "get" && args[1] == "stretches":
+		// The Stretches of the L2 Networks (stretches.go; SDN-63)
+		return getStretches(ctx, c, out)
 	case len(args) == 2 && args[0] == "get" && args[1] == "resources":
 		rs, err := c.Resources(ctx)
 		if err != nil {
