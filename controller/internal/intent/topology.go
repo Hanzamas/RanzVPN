@@ -38,6 +38,14 @@ import (
 // and no 1:1 NAT rule, 14 routes are left for the LAN subnets that a spoke reaches through the hub: the
 // VRF holds 15 spokes of one LAN subnet each, or 14 when the hub has a LAN subnet too, and an Intent
 // with one more is refused (SDN-19-R1 #507, TestHubAndSpokeBranchLANs).
+//
+// A VRF that peers by BGP (peering.go) has none of these groups. The Controller gives no route of a LAN
+// subnet there, and the Nodes learn them from each other by BGP, where a Node takes one best path for
+// each prefix: it never spreads flows over several gateways, so an Intent that sets ecmp on such a VRF
+// is refused (validatePeering, SDN-77-R2), and two gateways that advertise one LAN subnet there are a
+// group for BGP alone: a Node uses the gateway of its best path, and the other one when that session
+// ends. The LAN subnets that a Node learns from a peer still take its slots of the Peer message, so
+// they count among the routes that lead to that peer, like the others (gatewayRouteCounts).
 
 // The topologies of a VRF.
 const (
@@ -204,11 +212,13 @@ func (in Intent) validateTopologies() []error {
 }
 
 // gatewayRouteCounts adds to count, by Node and peer, the routes that lead each Node to each of its
-// peers as a gateway or a hub (GatewayRoutes).
+// peers as a gateway or a hub (GatewayRoutes), and the LAN subnets that the Node learns from each peer
+// by BGP (peeringRoutes): those are no routes of the Controller, but the tables hold them among the
+// routes of the peer, in the same slots (SDN-77-R2).
 func (in Intent) gatewayRouteCounts(count map[[2]string]int) {
 	for _, name := range sortedNames(in.Nodes) {
 		for _, peer := range sortedNames(in.Nodes) {
-			if n := len(in.GatewayRoutes(name, peer)); n > 0 {
+			if n := len(in.GatewayRoutes(name, peer)) + len(in.peeringRoutes(name, peer)); n > 0 {
 				count[[2]string{name, peer}] += n
 			}
 		}

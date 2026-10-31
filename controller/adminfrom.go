@@ -27,7 +27,9 @@ import (
 // list: a later start, a restart of a cluster member and a reinstall over a data directory that holds
 // a store keep the list that an admin set with `ranz admin-sources`, and say in the log which list
 // it is, with a warning when it is empty. Without -admin-from the first start leaves the list empty,
-// as it always did, and says so.
+// as it always did, and says so. Members of a cluster that start fresh at the same time each make
+// that first start, and the first write of the list wins (AUD1-DT-15, #497): the others write
+// nothing, and log the list that won, not their own.
 
 // adminFromAny is the value of -admin-from that has the first start leave the list empty.
 const adminFromAny = "any"
@@ -89,10 +91,10 @@ func splitList(s string) []string {
 }
 
 // adminSourceStore is what the start needs of the store for the allowlist: to read it, and to set it
-// with its event.
+// with its event when no start has set it before (store.SetFirstAdminSources).
 type adminSourceStore interface {
 	AdminSources(ctx context.Context) ([]string, error)
-	SetAdminSources(ctx context.Context, prefixes []string, ev ...event.Event) error
+	SetFirstAdminSources(ctx context.Context, prefixes []string, ev ...event.Event) (bool, error)
 }
 
 // adminTokens is what the start needs of the API tokens: whether the store holds any, and the
@@ -157,20 +159,34 @@ func afterFirstStart(ctx context.Context, tokens adminTokens) error {
 // allowlist: it sets the list that -admin-from names, with an event, and tells in the log which
 // sources may reach the API and the web UI and how to change that. A start with no list to set, for
 // "any" or no flag, leaves what the store holds, which is nothing unless an earlier first start that
-// failed set a list. It returns the list now in force, empty when any address may reach them.
+// failed set a list. So does a start whose list was not the first write: members of a cluster that
+// start fresh at the same time each have a list to set, the first write wins, and a member that was
+// not first writes nothing, says that its -admin-from is not used, and logs the list that won
+// (AUD1-DT-15, #497). It returns the list now in force, empty when any address may reach them.
 func firstAdminSources(ctx context.Context, st adminSourceStore, adminFrom string, log *slog.Logger) ([]string, error) {
-	list, set, err := parseAdminFrom(adminFrom)
+	want, set, err := parseAdminFrom(adminFrom)
 	if err != nil {
 		return nil, err
 	}
-	if set && len(list) > 0 {
+	if set && len(want) > 0 {
 		ev := event.Event{Time: time.Now().UTC().Truncate(time.Millisecond), Type: event.AdminSourcesChanged,
-			Message: fmt.Sprintf("the admin source allowlist was set to %s at the first start (-admin-from, ranz install --controller)", strings.Join(list, ", "))}
-		if err := st.SetAdminSources(ctx, list, ev); err != nil {
+			Message: fmt.Sprintf("the admin source allowlist was set to %s at the first start (-admin-from, ranz install --controller)", strings.Join(want, ", "))}
+		first, err := st.SetFirstAdminSources(ctx, want, ev)
+		if err != nil {
 			return nil, fmt.Errorf("the admin source allowlist of the first start: %w", err)
 		}
-	} else if list, err = st.AdminSources(ctx); err != nil {
+		if first {
+			sayAdminSources(log, "first start: ", want)
+			return want, nil
+		}
+	}
+	list, err := st.AdminSources(ctx)
+	if err != nil {
 		return nil, fmt.Errorf("the admin source allowlist of the first start: %w", err)
+	}
+	if set && len(want) > 0 && !slices.Equal(list, want) {
+		log.Warn("first start: another start set the admin source allowlist first, so its list stays and -admin-from of this start is not used",
+			"admin-from", strings.Join(want, ","), "sources", strings.Join(list, ","))
 	}
 	sayAdminSources(log, "first start: ", list)
 	return list, nil

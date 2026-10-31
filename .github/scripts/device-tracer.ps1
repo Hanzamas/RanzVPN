@@ -351,6 +351,9 @@ try {
 	$wireguardKey = $gw.capabilities.wireguardKey
 	Write-Host "API: node host at generation $($overlay.generation), capabilities $($overlay.capabilities | ConvertTo-Json -Compress)"
 	if (-not $overlay.capabilities.wireguard) { throw 'host does not report the Capability wireguard, and it is the gateway of tablet' }
+	# The Hello of a node reports the Capability bgpPeering when ranz.exe, which holds its sidecar, is next to it (SDN-77-R2, #532),
+	# as it is next to vpntest.exe here: the controller refuses a node without it as a member of a VRF that peers by BGP
+	if (-not $gw.capabilities.bgpPeering -or -not $overlay.capabilities.bgpPeering) { throw 'gw and host do not report the Capability bgpPeering, and ranz.exe is next to vpntest.exe' }
 
 	# The gateway listens on the default port, and the client reaches host through it
 	Wait-Listening $defaultPort $true
