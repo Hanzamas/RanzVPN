@@ -80,7 +80,10 @@ const (
 // nothing in the output of rqlited. The controller reads /status before it changes the intent, to count the
 // voters (store.Members), so the test whose change met the 500 failed. The answer of the last try is the one
 // that the caller gets, so a /status that stays broken still fails the test.
-type steadyStatus struct{ http.RoundTripper }
+type steadyStatus struct {
+	http.RoundTripper
+	pause time.Duration // before each new try
+}
 
 func (s steadyStatus) RoundTrip(r *http.Request) (*http.Response, error) {
 	resp, err := s.RoundTripper.RoundTrip(r)
@@ -90,7 +93,7 @@ func (s steadyStatus) RoundTrip(r *http.Request) (*http.Response, error) {
 	for try := 1; try < statusTries && err == nil && resp.StatusCode >= http.StatusInternalServerError; try++ {
 		resp.Body.Close()
 		select {
-		case <-time.After(statusPause):
+		case <-time.After(s.pause):
 		case <-r.Context().Done():
 			return nil, r.Context().Err()
 		}
@@ -105,9 +108,10 @@ func (s steadyStatus) RoundTrip(r *http.Request) (*http.Response, error) {
 // that stops, restarts or joins its rqlited, reads its data directory, restores a backup into it or runs
 // the members of a cluster on it calls Own first, and Fresh then starts an rqlited of its own, as Start
 // does. The first Fresh of a test makes it a parallel test (t.Parallel), which waits until the tests that
-// run alone ended, so a test that calls Fresh does not call t.Parallel itself; a test that calls Alone
-// first runs alone instead. On a failure the test log shows the output of the rqlited while t had it. The
-// TestMain of a package that calls Fresh calls StopShared once its tests ran.
+// run alone ended, so a test that calls Fresh does not call t.Parallel itself, and does not use t.Setenv or
+// t.Chdir, which a parallel test cannot; a test that calls Alone first runs alone instead. On a failure the
+// test log shows the output of the rqlited while t had it. The TestMain of a package that calls Fresh
+// calls StopShared once its tests ran.
 func Fresh(t testing.TB) *sidecar.Rqlited {
 	t.Helper()
 	runInParallel(t)
@@ -315,7 +319,7 @@ func proxy(addr string) (string, func()) {
 	target := &url.URL{Scheme: "http", Host: addr}
 	s := httptest.NewServer(&httputil.ReverseProxy{
 		Rewrite:   func(r *httputil.ProxyRequest) { r.SetURL(target) },
-		Transport: steadyStatus{transport},
+		Transport: steadyStatus{transport, statusPause},
 		ErrorHandler: func(w http.ResponseWriter, _ *http.Request, err error) {
 			http.Error(w, err.Error(), http.StatusBadGateway)
 		},

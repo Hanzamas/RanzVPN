@@ -414,29 +414,12 @@ jobs:
         kill -TERM "$server"
         wait "$server"
         cat "$tools/throughput-server.out"
-    # TEMPORARY for CI-SPEED-1 (#547), removed before the merge: the names that go test -list prints for
-    # controller/internal/controller at the base of the pull request and at its merge commit, which must
-    # be the same names
-    - name: Test names of controller/internal/controller before and after (temporary)
-      if: github.event_name == 'pull_request'
-      run: |
-        base="${{ github.event.pull_request.base.sha }}"
-        git fetch --no-tags --depth=1 origin "$base"
-        git worktree add --detach "$RUNNER_TEMP/before" "$base"
-        (cd "$RUNNER_TEMP/before" && go test -list '.*' ./controller/internal/controller) > "$RUNNER_TEMP/tests-before.out"
-        go test -list '.*' ./controller/internal/controller > "$RUNNER_TEMP/tests-after.out"
-        grep -v '^ok ' "$RUNNER_TEMP/tests-before.out" > "$RUNNER_TEMP/tests-before.txt"
-        grep -v '^ok ' "$RUNNER_TEMP/tests-after.out" > "$RUNNER_TEMP/tests-after.txt"
-        echo "before: $(wc -l < "$RUNNER_TEMP/tests-before.txt") names at the base $base"
-        echo "after: $(wc -l < "$RUNNER_TEMP/tests-after.txt") names at the merge commit $(git rev-parse HEAD) of the head ${{ github.event.pull_request.head.sha }}"
-        cat "$RUNNER_TEMP/tests-after.txt"
-        diff "$RUNNER_TEMP/tests-before.txt" "$RUNNER_TEMP/tests-after.txt"
-        echo "the two lists are equal"
     # -race is the race detection of ADR-0040 item 4 for the Go code; the profile is read by the
     # coverage floor step. -timeout 20m (CI-SLOW-1, #552): go test stops a package after 10 minutes
-    # unless told otherwise. Most tests of controller/internal/controller start an rqlited, and the
-    # package took about 500 s to 540 s here under -race and about 500 s to 600 s on Windows x64,
-    # where a slow runner ran out of the 10 minutes. A hang still ends the job, only later.
+    # unless told otherwise. The tests of controller/internal/controller take an empty database of an
+    # rqlited that they share, and run in parallel (rqlitetest.Fresh, CI-SPEED-1 #547): the package
+    # takes about 150 s here under -race, where it took about 500 s to 540 s with an rqlited for each
+    # test, so the limit is far above twice its time. A hang still ends the job, only later.
     - name: Test
       env:
         RANZ_CONTROL_WIRE: ${{ runner.temp }}/wire
@@ -636,9 +619,10 @@ jobs:
         go test -count=1 -v -run 'TestPipe|TestNoPipe|TestMitigations' ./ranz-bgp
         if ($LASTEXITCODE -ne 0) { throw "go test exited with code $LASTEXITCODE" }
     # -timeout 20m (CI-SLOW-1, #552): go test stops a package after 10 minutes unless told otherwise.
-    # Most tests of controller/internal/controller start an rqlited, and the package took about 500 s
-    # to 600 s on Windows x64, where a slow runner ran out of the 10 minutes. A hang still ends the
-    # job, only later.
+    # The tests of controller/internal/controller take an empty database of an rqlited that they share,
+    # and run in parallel (rqlitetest.Fresh, CI-SPEED-1 #547): the package takes about 170 s on
+    # Windows x64, where it took about 500 s to 600 s with an rqlited for each test and a slow runner ran
+    # out of the 10 minutes. A hang still ends the job, only later.
     - name: Test
       if: matrix.platform.ARCHITECTURE == 'x64'
       shell: pwsh

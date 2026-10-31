@@ -365,8 +365,8 @@ func TestApplyRejectsInvalidIntent(t *testing.T) {
 // (rqlitetest.Fresh), or of an rqlited of the test's own for a test that called rqlitetest.Own first:
 // one that stops, restarts or joins h.rq, reads its data directory, restores a backup into it or runs
 // the members of a cluster on it. A test that has a harness runs in parallel with the others that do
-// (rqlitetest.Fresh makes it), so it keeps no state outside its harness, and it never calls t.Parallel
-// itself; a test that cannot run beside another calls rqlitetest.Alone first.
+// (rqlitetest.Fresh makes it), so it keeps no state outside its harness, never calls t.Parallel itself and
+// does not use t.Setenv or t.Chdir; a test that cannot run beside another calls rqlitetest.Alone first.
 type harness struct {
 	t       *testing.T
 	rq      *sidecar.Rqlited
