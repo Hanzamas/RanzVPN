@@ -209,6 +209,11 @@ try { Write-Host "Secure Boot: $(Confirm-SecureBootUEFI)" } catch { Write-Host "
 # that listens has its own
 New-NetFirewallRule -DisplayName $firewallRule -Direction Inbound -Program $vpntestExe -Action Allow -Profile Any | Out-Null
 
+# TEMPORARY (CI-FLAKE-3, #569), with the step of the 20 runs below: the filter engine records the packets that it drops,
+# which vpntest nicbridge reads for the record of a datagram that did not reach its socket
+& netsh wfp set options netevents=on | Out-Host
+& netsh wfp show options optionsfor=netevents | Out-Host
+
 # The Hyper-V lab of the bridge, before the drivers, which bind to its vNICs as to any adapter
 $lab = @()
 if (New-BridgeLab) { $lab = @($labSwitch, $labDevice, $labExternal) }
@@ -287,6 +292,14 @@ if (-not (Invoke-KmTest (@('xdp') + $lab) $nicbridgeMinutes 'nicbridge')) { Add-
 # The bridge on SeLow, then on Npcap, through the stand-in of its pcap API over the SeLow device, and on XDP with Npcap's
 # hold of promiscuous mode through it, each against SeLow on the same attachments: no runner may carry Npcap itself
 if (-not (Invoke-KmTest (@('npcap') + $lab) $nicbridgeMinutes 'nicbridge')) { Add-Failure 'vpntest nicbridge npcap: the bridge on Npcap and on XDP with its hold' }
+# TEMPORARY, the proof of CI-FLAKE-3 (#569), which the last commit of its pull request takes out: vpntest nicbridge npcap
+# 20 times in a row, each run with its stand-in made again
+$flakeRuns = 20
+$flakePassed = 0
+for ($i = 1; $i -le $flakeRuns; $i++) {
+	if (Invoke-KmTest (@('npcap') + $lab) $nicbridgeMinutes 'nicbridge') { $flakePassed++ } else { Add-Failure "vpntest nicbridge npcap: run $i of the $flakeRuns runs of #569" }
+}
+Write-Host "vpntest nicbridge npcap: $flakePassed of $flakeRuns runs passed (#569)"
 if ($lab.Count -gt 0) { Remove-BridgeLab }
 
 # 3. The soak: an hour on the nightly run of a Sunday, two minutes otherwise
