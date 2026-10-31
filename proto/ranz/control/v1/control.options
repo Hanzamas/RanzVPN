@@ -90,6 +90,11 @@ ranz.control.v1.Lease.host_name max_size:64
 # MaxSecurityGateways). It makes a Network about 520 bytes larger, which leaves it smaller than the
 # NodeConfig, so an Object is not larger with it.
 ranz.control.v1.L2Security.gateways max_count:8 max_size:64
+# The Stretch of an L2 Network (SDN-63): at most 8 route targets, each of 21 characters at most (an IPv4 address and a number
+# after it, 255.255.255.255:65535), and an ESI of 10 bytes (controller/internal/intent MaxStretchRouteTargets, ESISize). It
+# makes a Network about 220 bytes larger, which leaves it smaller than the NodeConfig, so an Object is not larger with it.
+ranz.control.v1.Stretch.route_targets max_count:8 max_size:22
+ranz.control.v1.Stretch.esi max_size:10
 # The zone of overlay DNS in a VRF (SDN-11): a suffix or a name of at most 127 characters, 16
 # DnsRecord resources of the VRF and 8 addresses for each (controller/internal/intent MaxDNSName,
 # MaxDNSRecords, MaxDNSAddresses). The Vrf object stays smaller than the NodeConfig, so an Object is

@@ -76,7 +76,7 @@ type Document struct {
 
 // Resource is one declared object. Spec holds the fields of its kind: VRF, Network, Node, Policy,
 // Mirror (mirror.go), Controller, NAT, DnsRecord (dns.go), Group or User (user.go), Listener
-// (listener.go), Device (device.go) or SessionProfile (profile.go).
+// (listener.go), Device (device.go), SessionProfile (profile.go) or Stretch (stretch.go).
 type Resource struct {
 	Kind string          `json:"kind"`
 	Name string          `json:"name"`
@@ -213,6 +213,10 @@ type Node struct {
 	// user logs in for again. A Node that has an owner is refused the mark: the key of a device of a User lives by the
 	// login of its User (SDN-56-R1). Left out, the key of the Node lives for the key lifetime of its Networks.
 	NonExpiring bool `json:"nonExpiring,omitempty"`
+	// Roles are the Roles of the Node that the administrator declares: server, client, bridge or relay (ADR-0011, stretch.go).
+	// The Controller checks the Intent by the Roles where one matters: a Network with a Stretch has no Node with the Role bridge
+	// but its Stretch gateways. Left out, the Node declares none.
+	Roles []string `json:"roles,omitempty"`
 }
 
 // Controller is one member of the controller cluster as nodes reach it (SDN-17, ADR-0026). The
@@ -265,6 +269,8 @@ type Intent struct {
 	Devices     map[string]Device
 	// The session profiles of the Users and the Groups (profile.go; SDN-40)
 	SessionProfiles map[string]SessionProfile
+	// The Stretches of the L2 Networks (stretch.go; SDN-63)
+	Stretches map[string]Stretch
 }
 
 // New returns an empty intent.
@@ -272,7 +278,7 @@ func New() Intent {
 	return Intent{VRFs: map[string]VRF{}, Networks: map[string]Network{}, Nodes: map[string]Node{}, Policies: map[string]Policy{},
 		Mirrors: map[string]Mirror{}, Controllers: map[string]Controller{}, NATs: map[string]NAT{}, DNSRecords: map[string]DNSRecord{},
 		Groups: map[string]Group{}, Users: map[string]User{}, Listeners: map[string]Listener{}, Devices: map[string]Device{},
-		SessionProfiles: map[string]SessionProfile{}}
+		SessionProfiles: map[string]SessionProfile{}, Stretches: map[string]Stretch{}}
 }
 
 // Clone returns a copy of in that shares nothing with it.
@@ -310,6 +316,8 @@ func (in Intent) Clone() Intent {
 		out.Devices = map[string]Device{}
 	}
 	cloneDevices(out.Devices)
+	// The Stretches of the L2 Networks (stretch.go)
+	out.Stretches = in.cloneStretches()
 	for name, n := range in.Networks {
 		n.EnrolSources = slices.Clone(n.EnrolSources)
 		n.Reserved = slices.Clone(n.Reserved)
@@ -324,6 +332,7 @@ func (in Intent) Clone() Intent {
 		n.Addresses = maps.Clone(n.Addresses)
 		n.IPv6Addresses = maps.Clone(n.IPv6Addresses)
 		n.LANSubnets = cloneLANs(n.LANSubnets)
+		n.Roles = slices.Clone(n.Roles)
 		out.Nodes[name] = n
 	}
 	return out
@@ -431,9 +440,14 @@ func Apply(in Intent, doc Document, random io.Reader) (Intent, error) {
 			if err = decodeSpec(r.Spec, &p); err == nil {
 				next.SessionProfiles[r.Name] = p
 			}
+		case KindStretch:
+			var s Stretch
+			if err = decodeSpec(r.Spec, &s); err == nil {
+				next.Stretches[r.Name] = s
+			}
 		default:
-			err = fmt.Errorf("the kind must be %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s or %s", KindVRF, KindNetwork, KindNode, KindPolicy, KindMirror, KindController, KindNAT,
-				KindDNSRecord, KindGroup, KindUser, KindListener, KindDevice, KindSessionProfile)
+			err = fmt.Errorf("the kind must be %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s or %s", KindVRF, KindNetwork, KindNode, KindPolicy, KindMirror, KindController, KindNAT,
+				KindDNSRecord, KindGroup, KindUser, KindListener, KindDevice, KindSessionProfile, KindStretch)
 		}
 		if err != nil {
 			problems = append(problems, fmt.Errorf("%s %q: %w", r.Kind, r.Name, err))
@@ -460,7 +474,8 @@ func Apply(in Intent, doc Document, random io.Reader) (Intent, error) {
 // that a NAT, a DnsRecord or a Listener uses, that is the
 // gateway of a Device or of the security of a Network, that answers DHCP for a Network or that is
 // the hub or the internet exit of a VRF, a Group that a User belongs to, and a User that owns a
-// Node. The Nodes lose their addresses in a deleted Network.
+// Node. A Network that a Stretch binds and a Node that is the gateway of one cannot be deleted
+// either. The Nodes lose their addresses in a deleted Network.
 func Delete(in Intent, kind, name string) (Intent, error) {
 	next := in.Clone()
 	switch kind {
@@ -503,6 +518,10 @@ func Delete(in Intent, kind, name string) (Intent, error) {
 		if users := next.scopeUsers(name); len(users) > 0 {
 			return in, fmt.Errorf("%w: Network %q is the scope of %s", ErrInvalid, name, strings.Join(users, ", "))
 		}
+		// The Stretches that bind the Network to a gateway (SDN-63, stretch.go)
+		if users := next.stretchUsers(name, ""); len(users) > 0 {
+			return in, fmt.Errorf("%w: Network %q is used by %s", ErrInvalid, name, strings.Join(users, ", "))
+		}
 		delete(next.Networks, name)
 		next.release(name)
 	case KindNode:
@@ -539,6 +558,10 @@ func Delete(in Intent, kind, name string) (Intent, error) {
 		// The VRFs whose internet exit the Node is (SDN-12, egress.go)
 		if users := next.egressUsers(name); len(users) > 0 {
 			return in, fmt.Errorf("%w: Node %q is the internet exit of %s", ErrInvalid, name, strings.Join(users, ", "))
+		}
+		// The Stretches whose gateway the Node is (SDN-63, stretch.go)
+		if users := next.stretchUsers("", name); len(users) > 0 {
+			return in, fmt.Errorf("%w: Node %q is the gateway of %s", ErrInvalid, name, strings.Join(users, ", "))
 		}
 		delete(next.Nodes, name)
 	case KindPolicy:
@@ -589,17 +612,22 @@ func Delete(in Intent, kind, name string) (Intent, error) {
 		if err := next.deleteProfile(name); err != nil {
 			return in, err
 		}
+	case KindStretch:
+		if _, ok := next.Stretches[name]; !ok {
+			return in, fmt.Errorf("%w: %s %q", ErrNotFound, kind, name)
+		}
+		delete(next.Stretches, name)
 	default:
-		return in, fmt.Errorf("%w: the kind must be %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s or %s, not %q", ErrInvalid, KindVRF, KindNetwork, KindNode, KindPolicy, KindMirror,
-			KindController, KindNAT, KindDNSRecord, KindGroup, KindUser, KindListener, KindDevice, KindSessionProfile, kind)
+		return in, fmt.Errorf("%w: the kind must be %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s or %s, not %q", ErrInvalid, KindVRF, KindNetwork, KindNode, KindPolicy, KindMirror,
+			KindController, KindNAT, KindDNSRecord, KindGroup, KindUser, KindListener, KindDevice, KindSessionProfile, KindStretch, kind)
 	}
 	return next, nil
 }
 
 // Resources returns every resource of in: the VRFs, then the Networks, then the Nodes, then the
 // Policies, then the Mirrors, then the Controllers, then the NATs, then the DnsRecords, then the
-// SessionProfiles, then the Groups, then the Users, then the Listeners, then the Devices, each
-// ordered by name.
+// SessionProfiles, then the Groups, then the Users, then the Listeners, then the Devices, then the
+// Stretches, each ordered by name.
 func (in Intent) Resources() []Resource {
 	var out []Resource
 	for _, name := range sortedNames(in.VRFs) {
@@ -632,6 +660,9 @@ func (in Intent) Resources() []Resource {
 	}
 	for _, name := range sortedNames(in.Devices) {
 		out = append(out, resource(KindDevice, name, in.Devices[name]))
+	}
+	for _, name := range sortedNames(in.Stretches) {
+		out = append(out, resource(KindStretch, name, in.Stretches[name]))
 	}
 	return out
 }
@@ -695,6 +726,10 @@ func FromResources(rs []Resource) (Intent, error) {
 			var p SessionProfile
 			err = decodeSpec(r.Spec, &p)
 			in.SessionProfiles[r.Name] = p
+		case KindStretch:
+			var s Stretch
+			err = decodeSpec(r.Spec, &s)
+			in.Stretches[r.Name] = s
 		default:
 			err = errors.New("unknown kind")
 		}
@@ -857,6 +892,8 @@ func (in Intent) complete(prev Intent, random io.Reader) []error {
 	in.completeTopologies()
 	// The BGP peering of the VRFs (peering.go)
 	in.completePeering()
+	// The Stretches of the L2 Networks and the Roles of the Nodes (stretch.go; SDN-63)
+	in.completeStretches()
 	return problems
 }
 
@@ -992,6 +1029,8 @@ func (in Intent) validate() []error {
 	problems = append(problems, in.validateEgress()...)
 	// The BGP peering of the VRFs (peering.go)
 	problems = append(problems, in.validatePeering()...)
+	// The Stretches of the L2 Networks and the Roles of the Nodes (stretch.go; SDN-63)
+	problems = append(problems, in.validateStretches()...)
 	return append(problems, in.validateIPAM()...)
 }
 

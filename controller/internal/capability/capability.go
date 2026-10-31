@@ -43,6 +43,9 @@ type Capabilities struct {
 	// Operations: the node answers the live operations of an operator (SDN-50), which read and clear the
 	// MAC table and the IP table of its L2 Networks.
 	Operations bool `json:"operations,omitempty"`
+	// EVPN: the node can be the gateway of a Stretch (SDN-63): its host is a Windows Server and the VXLAN module of the node
+	// runs. The Controller refuses a Stretch whose gateway does not report it (stretch.go).
+	EVPN bool `json:"evpn,omitempty"`
 }
 
 var skuNames = map[controlpb.Sku]string{
@@ -75,6 +78,7 @@ func FromProto(p *controlpb.Capabilities) *Capabilities {
 		WireGuard:       p.GetWireguard(),
 		PlainLinks:      p.GetPlainLinks(),
 		Operations:      p.GetOperations(),
+		EVPN:            p.GetEvpn(),
 	}
 	if len(p.GetWireguardKey()) > 0 {
 		c.WireGuardKey = base64.StdEncoding.EncodeToString(p.GetWireguardKey())
@@ -94,6 +98,7 @@ func (c Capabilities) Proto() (*controlpb.Capabilities, error) {
 		Wireguard:       c.WireGuard,
 		PlainLinks:      c.PlainLinks,
 		Operations:      c.Operations,
+		Evpn:            c.EVPN,
 	}
 	if c.WireGuardKey != "" {
 		k, err := base64.StdEncoding.DecodeString(c.WireGuardKey)
