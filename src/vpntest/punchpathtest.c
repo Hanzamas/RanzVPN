@@ -33,7 +33,8 @@
 //    path, in the same peer session, at the mapping of the peer that proved itself; relay-1 carries no data of the pair
 //    after the move.
 // e. Fallback: the path between the NATs is cut again, the keepalives of the punched path go unanswered, and both ends
-//    fall back to relay-1 with their peer session.
+//    fall back to relay-1 with their peer session. Records that name node-b as their source and open in no session, which
+//    an attacker sends node-a from the address of node-b on the punched path, do not hold node-a there.
 // f. Export: the state of each Node, as its admin pipe answers it and ranz node state prints it, and the Telemetry that it
 //    reports to the stand-in of the Controller, which the Controller exports, hold its NAT and its punches.
 // g. Seeds: the same punch, at the peer layers of two Nodes on the network of the simulator, over many seeds of the
@@ -85,7 +86,9 @@
 #define	PUNCHPATH_CONSENT		6000		// The PunchConsent of the Nodes: ms of silence that end a punched path
 #define	PUNCHPATH_FAIL_WAIT		60000		// ms for the attempts before the backoff to begin and fail
 #define	PUNCHPATH_MEET_WAIT		30000		// ms for the attempt after the backoff to begin and meet
-#define	PUNCHPATH_FALL_WAIT		30000		// ms for a punched path whose peer went silent to fall back
+#define	PUNCHPATH_FALL_WAIT		30000		// ms for a punched path whose peer went silent to fall back ...
+#define	PUNCHPATH_FALL_SLACK	3000		// ... which it does within this time after its PunchConsent
+#define	PUNCHPATH_FORGE_EVERY	500			// ms between two datagrams of the attacker on the punched path, well under the PunchConsent
 #define	PUNCHPATH_TAKE			8			// The most ports that the other subscribers of a NAT take while ICE runs ...
 #define	PUNCHPATH_HEAVY_TAKE	24			// ... and in the heavy load of the seeds, more than the range of the punch covers
 #define	PUNCHPATH_SEEDS			24			// The seeds of each load of step g
@@ -1617,21 +1620,75 @@ static bool PunchPathMeet(PUNCHPATH_CTX *ctx, UINT64 third)
 }
 
 // e. Fallback: the path between the NATs is cut again; the keepalives of the punched path go unanswered, and both ends fall
-// back to relay-1 with their peer session
+// back to relay-1 with their peer session. Meanwhile an attacker that sends from the address of node-b on the punched path
+// sends node-a records that name node-b as their source and open in no session: anyone can send such a datagram, so it is
+// no word of node-b there, and node-a falls back as it would without them.
 static void PunchPathFallback(PUNCHPATH_CTX *ctx)
 {
 	PEER_STATUS ab, ba;
-	PEER_STATS st_a, st_b;
+	PEER_STATS st_a, st_b, before, after;
+	PEER_ADDR at_b;
+	UCHAR forged[PEER_RECORD_HEADER + PEER_RECORD_TAG];
 	char detail[MAX_SIZE * 2];
 	char what[MAX_SIZE];
+	char addr[64];
+	UINT forgeries = 0;
 
 	Print("[e. fallback: the path between the NATs is cut again, and the punched path falls back to relay-1]\n");
 
+	// The address of node-b on the punched path, as node-a has it, and a record from node-b to node-a, as its clear header
+	// names them, under the session index 0, which no keys of node-a have: it opens in no session
+	Zero(&at_b, sizeof(at_b));
+	if (PunchPathStatus(ctx, PUNCHPATH_A, PUNCHPATH_B, &ab))
+	{
+		at_b = ab.Direct;
+	}
+	Zero(forged, sizeof(forged));
+	forged[0] = PEER_MSG_RECORD;
+	Copy(forged + 1, ctx->Nodes[PUNCHPATH_B].Key.Public, PEER_KEY_SIZE);
+	Copy(forged + 1 + PEER_KEY_SIZE, ctx->Nodes[PUNCHPATH_A].Key.Public, PEER_KEY_SIZE);
+	PunchPathStats(ctx, PUNCHPATH_A, &before);
+
 	NatSimCut(ctx->Sim, ctx->Nodes[PUNCHPATH_A].Nat, true);
 
+	// Until both ends are back on relay-1, while the forged records of the attacker go to node-a as long as it is on the
+	// punched path
 	UINT64 t0 = Tick64();
-	bool fell = PunchPathWaitPath(ctx, PEER_PATH_RELAY, PUNCHPATH_FALL_WAIT, &ab, &ba);
-	Print("  [INFO] both ends were back on relay-1 %I64u ms after the cut\n", Tick64() - t0);
+	UINT64 fell_a = 0;
+	UINT64 next = t0;
+	bool fell = false;
+	for (UINT64 end = t0 + PUNCHPATH_FALL_WAIT;Tick64() < end && fell == false;SleepThread(PUNCHPATH_POLL))
+	{
+		bool known = PunchPathStatus(ctx, PUNCHPATH_A, PUNCHPATH_B, &ab) && PunchPathStatus(ctx, PUNCHPATH_B, PUNCHPATH_A, &ba);
+
+		if (known && ab.Path == PEER_PATH_RELAY && fell_a == 0)
+		{
+			fell_a = Tick64();
+		}
+		if (fell_a == 0 && Tick64() >= next)
+		{
+			if (NatSimInject(ctx->Nodes[PUNCHPATH_A].Host, &at_b, forged, sizeof(forged)))
+			{
+				forgeries++;
+			}
+			next = Tick64() + PUNCHPATH_FORGE_EVERY;
+		}
+		fell = (known && ab.Path == PEER_PATH_RELAY && ba.Path == PEER_PATH_RELAY);
+	}
+	Print("  [INFO] node-a was back on relay-1 %I64u ms after the cut, and both ends %I64u ms after it\n", fell_a != 0 ? fell_a - t0 : 0, Tick64() - t0);
+
+	// A forged record reaches node-a on the punched path and finds no keys there, or once node-a fell back finds no path of
+	// node-b at that address: either way node-a drops and counts it
+	NatSimWaitIdle(ctx->Sim, PUNCHPATH_BOUND);
+	PunchPathStats(ctx, PUNCHPATH_A, &after);
+	UINT64 dropped = (after.Drops[PEER_DROP_SESSION] - before.Drops[PEER_DROP_SESSION]) + (after.Drops[PEER_DROP_SOURCE] - before.Drops[PEER_DROP_SOURCE]);
+	PeerAddrToStr(addr, sizeof(addr), &at_b);
+	Print("  [INFO] the attacker sent node-a %u records of node-b from %s, one every %u ms, and node-a dropped %I64u datagrams of no session or no path\n", forgeries, addr,
+		(UINT)PUNCHPATH_FORGE_EVERY, dropped);
+	Format(what, sizeof(what), "A datagram that names node-b as its source, from its address on the punched path, is no word of node-b there unless it opens: node-a drops the forged records and falls back within %u ms of the cut all the same",
+		(UINT)(PUNCHPATH_CONSENT + PUNCHPATH_FALL_SLACK));
+	PunchPathCheck(ctx, forgeries != 0 && dropped >= forgeries && fell_a != 0 && fell_a - t0 <= PUNCHPATH_CONSENT + PUNCHPATH_FALL_SLACK, what,
+		"%u forged records, %I64u dropped; node-a back on relay-1: %s, after %I64u ms", forgeries, dropped, fell_a != 0 ? "yes" : "no", fell_a != 0 ? fell_a - t0 : Tick64() - t0);
 
 	PunchPathStats(ctx, PUNCHPATH_A, &st_a);
 	PunchPathStats(ctx, PUNCHPATH_B, &st_b);

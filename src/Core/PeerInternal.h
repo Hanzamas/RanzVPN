@@ -154,7 +154,7 @@ typedef struct PEER_PUNCH {
 	bool Answer;                                            // The last punch offer of the peer began an attempt: its punch answer is due
 	UINT64 LastProbe;                                       // When the last probe of the attempt went: it fails PEER_PUNCH_LINGER after, once its budget is spent
 	UINT64 LastSent;                                        // When the node last sent a keepalive on the punched path
-	volatile LONG64 LastHeard;                              // When the peer was last heard on the punched path (PeerNow)
+	volatile LONG64 LastHeard;                              // When the peer was last heard on the punched path (PeerNow): a punch message or a record that opened
 	UINT64 LastSeq;                                         // The last punch sequence taken from the peer, for anti-replay
 	UINT NumTargets;                                        // The addresses the probes go to, in the order of the sweep
 	UINT Next;                                              // The next target of the round over them, so one tick sends a bounded burst
@@ -333,6 +333,7 @@ void PeerPunchRemap(PEER_AGENT *a, PEER_RELAY *r);
 UINT PeerPunchSealSignal(PEER_AGENT *a, const UCHAR *key, UINT type, UCHAR *buf, UINT size);
 void PeerPunchStart(PEER_AGENT *a, const UCHAR *key, const PEER_SIGNAL *s);
 void PeerPunchInput(PEER_AGENT *a, const PEER_ADDR *from, const UCHAR *data, UINT size);
+void PeerPunchHeard(PEER *p, const PEER_ADDR *from);
 void PeerPunchTick(PEER_AGENT *a);
 void PeerPunchStats(PEER_AGENT *a, PEER_STATS *st);
 

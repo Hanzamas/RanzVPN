@@ -776,11 +776,8 @@ static UINT PeerSourcePath(PEER_AGENT *a, const PEER_ADDR *from, const UCHAR *sr
 	}
 
 	PEER *p = PeerFind(a, src);
-	if (p != NULL && p->HasDirect && PeerAddrEqual(&p->Direct, from)) {
-		// A word of the peer on a punched path is its consent (PeerPunch.c)
-		InterlockedExchange64(&p->Punch.LastHeard, (LONG64)PeerNow());
+	if (p != NULL && p->HasDirect && PeerAddrEqual(&p->Direct, from))
 		return PEER_PATH_DIRECT;
-	}
 
 	if (p != NULL && p->Ice != NULL && PeerIceValid(p->Ice) && PeerAddrEqual(&p->Ice->Selected, from))
 		return PEER_PATH_DIRECT;
@@ -875,6 +872,10 @@ static void PeerInputData(PEER_AGENT *a, const PEER_ADDR *from, const UCHAR *dat
 			PEER *p = PeerFind(a, src);
 
 			reason = (p != NULL ? PeerSessionInput(a, p, &r, data, size, &out) : PEER_DROP_POLICY);
+
+			// A record that opened is a word of the peer: on its punched path, its consent there (PeerPunch.c)
+			if (reason == PEER_OK && r.Kind == PEER_MSG_RECORD)
+				PeerPunchHeard(p, from);
 		} else if (reason == PEER_OK) {
 			// For another node: only the relay role forwards, and only from a node bound to it to another one
 			PEER_BINDING *s = (path == PEER_PATH_BOUND ? PeerFindBinding(a, src) : NULL);

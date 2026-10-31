@@ -57,8 +57,10 @@
 // of a peer with no punch open, is dropped and counted.
 //
 // The punched path. Each end sends a keepalive there every quarter of PunchConsent, which keeps the mappings of the two
-// NATs open, and takes any word of the peer from there as its consent. When the peer said nothing there for PunchConsent,
-// the pair falls back to the relay with its peer session, a Fallback, as when consent freshness fails a path of ICE.
+// NATs open, and takes a word of the peer from there as its consent: a punch message, which the peer sealed, or a record
+// of the peer session that opened (PeerPunchHeard). A datagram that only names the peer as its source is no word of it,
+// as anyone can send one from that address. When the peer said nothing there for PunchConsent, the pair falls back to the
+// relay with its peer session, a Fallback, as when consent freshness fails a path of ICE.
 //
 // Locks: PeerPunchStart, PeerPunchInput and PeerPunchTick take the lock of the layer to read and change the punch of
 // a peer; they seal and send the punch messages without it, as the rest of the layer does. PunchLock, which comes after
@@ -946,6 +948,16 @@ void PeerPunchInput(PEER_AGENT *a, const PEER_ADDR *from, const UCHAR *data, UIN
 
 	SecureZeroMemory(nonce, sizeof(nonce));
 	SecureZeroMemory(payload, sizeof(payload));
+}
+
+// A record of the peer session with the peer p, which opened, came from the address from (PeerInputData): on the punched
+// path of p it is a word of the peer there, its consent. Only a record that opened counts, as any datagram can name the
+// peer as its source. The caller holds the lock of the layer, shared.
+void PeerPunchHeard(PEER *p, const PEER_ADDR *from) {
+	PEER_PUNCH *punch = &p->Punch;
+
+	if (punch->State == PEER_PUNCH_CONNECTED && p->HasDirect && PeerAddrEqual(&p->Direct, from))
+		InterlockedExchange64(&punch->LastHeard, (LONG64)PeerNow());
 }
 
 // The NAT of the node and the address of its next mapping, into st
