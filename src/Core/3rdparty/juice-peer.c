@@ -16,8 +16,9 @@
 // As in the thread mode, each agent has a thread of its own, which runs the timers of the agent (its checks, their
 // retransmissions, consent freshness) under the mutex of the agent and sleeps until the next one is due or the agent
 // is interrupted. It owns no socket: the agent sends through the send procedure of its I/O (juice_peer_io_t), and the
-// peer layer hands it the STUN messages that come to its socket (juice_peer_input), which the agent takes under the
-// same mutex, as the thread mode takes what its socket receives, but no check of the peer before it has the remote
+// peer layer reads each STUN message that comes to its socket once (juice_peer_read), whatever the number of its
+// agents, and hands it to the agent that the message names (juice_peer_take), which takes it under the same mutex as
+// it was read, as the thread mode takes what its socket receives, but no check of the peer before it has the remote
 // description (conn_peer_takes). The host candidates of the agent are the host addresses of the I/O. Data never goes
 // through the agent: the peer layer sends its records on the pair that the agent selected (juice_peer_selected) and
 // takes them itself.
@@ -34,7 +35,10 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define BUFFER_SIZE 4096
+// What libjuice reads of a STUN message fits the room of a juice_peer_message_t, whose union holds an unsigned long long
+// and so has at least its alignment
+_Static_assert(sizeof(stun_message_t) <= JUICE_PEER_READ_SIZE, "a juice_peer_message_t holds what libjuice reads of a message");
+_Static_assert(_Alignof(stun_message_t) <= _Alignof(unsigned long long), "a juice_peer_message_t is aligned for what libjuice reads");
 
 typedef struct conn_impl {
 	const juice_peer_io_t *io;  // The I/O of the agent: the start of the struct at its user_ptr
@@ -224,22 +228,58 @@ static bool conn_peer_takes(juice_agent_t *agent, const stun_message_t *msg) {
 	return STUN_IS_RESPONSE(msg->msg_class) && agent_find_entry_from_transaction_id(agent, msg->transaction_id) != NULL;
 }
 
-bool juice_peer_input(juice_agent_t *agent, const char *data, size_t size, const struct sockaddr *src, int src_len) {
-	char buffer[BUFFER_SIZE];
-	stun_message_t msg;
+// What libjuice read of the message m
+static stun_message_t *conn_peer_read(juice_peer_message_t *m) {
+	return (stun_message_t *)m->read.bytes;
+}
+
+// Read once for every agent: the agent that takes the message dispatches what was read here, as agent_input dispatches
+// what its own stun_read read, so the work of a message that no agent takes does not grow with the number of agents
+bool juice_peer_read(juice_peer_message_t *m, const char *data, size_t size) {
+	if (m == NULL)
+		return false;
+
+	stun_message_t *msg = conn_peer_read(m);
+
+	m->check = false;
+	m->answer = false;
+	m->ufrag[0] = '\0';
+	m->size = 0;
+
+	if (data == NULL || size > sizeof(m->data) || is_stun_datagram(data, size) == false)
+		return false;
+
+	// stun_read writes to the message while it checks its fingerprint, so it reads a copy, which the agent reads too
+	memcpy(m->data, data, size);
+	if (stun_read(m->data, size, msg) < 0)
+		return false;
+
+	m->size = size;
+
+	// A check names its receiver in its USERNAME, "<the receiver's username fragment>:<the sender's>"
+	if (msg->msg_class == STUN_CLASS_REQUEST && msg->msg_method == STUN_METHOD_BINDING && msg->has_integrity) {
+		const char *separator = strchr(msg->credentials.username, ':');
+		size_t len = (separator != NULL ? (size_t)(separator - msg->credentials.username) : 0);
+
+		if (len != 0 && len < sizeof(m->ufrag)) {
+			memcpy(m->ufrag, msg->credentials.username, len);
+			m->ufrag[len] = '\0';
+			m->check = true;
+		}
+	}
+
+	m->answer = (STUN_IS_RESPONSE(msg->msg_class) != 0);
+	return true;
+}
+
+bool juice_peer_take(juice_agent_t *agent, juice_peer_message_t *m, const struct sockaddr *src, int src_len) {
 	addr_record_t record;
 
-	if (agent == NULL || data == NULL || src == NULL || size > sizeof(buffer) || src_len <= 0 || (size_t)src_len > sizeof(record.addr) ||
-	    is_stun_datagram(data, size) == false)
+	if (agent == NULL || m == NULL || m->size == 0 || src == NULL || src_len <= 0 || (size_t)src_len > sizeof(record.addr))
 		return false;
 
 	conn_impl_t *conn_impl = agent->conn_impl;
 	if (conn_impl == NULL)
-		return false;
-
-	// stun_read reads a copy: the agent reads the message again from a copy of its own
-	memcpy(buffer, data, size);
-	if (stun_read(buffer, size, &msg) < 0)
 		return false;
 
 	memset(&record, 0, sizeof(record));
@@ -248,13 +288,16 @@ bool juice_peer_input(juice_agent_t *agent, const char *data, size_t size, const
 	record.socktype = SOCK_DGRAM;
 	addr_unmap_inet6_v4mapped((struct sockaddr *)&record.addr, &record.len);
 
+	stun_message_t *msg = conn_peer_read(m);
+
 	mutex_lock(&conn_impl->mutex);
 
 	// An agent that failed answers nothing, so that the consent of its peer fails too and both ends leave the pair
-	bool taken = (conn_impl->stopped == false && agent->state != JUICE_STATE_FAILED && conn_peer_takes(agent, &msg));
+	bool taken = (conn_impl->stopped == false && agent->state != JUICE_STATE_FAILED && conn_peer_takes(agent, msg));
 	if (taken) {
-		memcpy(buffer, data, size);
-		agent_conn_recv(agent, buffer, size, &record);
+		// As agent_input does with a STUN message, but without reading it again
+		if (agent->state != JUICE_STATE_DISCONNECTED && agent->state != JUICE_STATE_GATHERING)
+			agent_dispatch_stun(agent, m->data, m->size, msg, &record, NULL);
 		if (agent_conn_update(agent, &conn_impl->next_timestamp) != 0)
 			JLOG_WARN("Agent update failed");
 	}

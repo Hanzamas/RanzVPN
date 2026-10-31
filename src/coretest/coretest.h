@@ -55,6 +55,8 @@ void relay_test();
 void relaypolicy_test();
 void iceupgrade_test();
 void icesymmetric_test();
+void iceanswer_test();
+void iceinput_test();
 void punch_test();
 void peersession_test();
 void frontdoor_test();
