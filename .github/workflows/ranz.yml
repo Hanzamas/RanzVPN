@@ -167,7 +167,8 @@ jobs:
   linux:
     name: ranz (Linux)
     runs-on: ubuntu-24.04
-    # The tests with the race detector take about 8 minutes, and the fuzz step runs each target of fuzz-targets.txt for 20 s,
+    # The tests with the race detector take about 4 minutes (the tests of controller/internal/controller share an rqlited,
+    # CI-SPEED-1 #547; about 10 minutes before), and the fuzz step runs each target of fuzz-targets.txt for 20 s,
     # one after the other, about 14 minutes now: a job of 25 minutes was cancelled in its static analysis, the last step,
     # with every step before it done
     timeout-minutes: 40
@@ -415,10 +416,13 @@ jobs:
         wait "$server"
         cat "$tools/throughput-server.out"
     # -race is the race detection of ADR-0040 item 4 for the Go code; the profile is read by the
-    # coverage floor step. -timeout 20m (CI-SLOW-1, #552): go test stops a package after 10 minutes
-    # unless told otherwise. Most tests of controller/internal/controller start an rqlited, and the
-    # package took about 500 s to 540 s here under -race and about 500 s to 600 s on Windows x64,
-    # where a slow runner ran out of the 10 minutes. A hang still ends the job, only later.
+    # coverage floor step. -timeout 20m (CI-SLOW-1 #552, CI-SPEED-1 #547): go test applies the limit to
+    # each package alone, and stops a package after 10 minutes unless told otherwise. The tests of
+    # controller/internal/controller take an empty database of an rqlited that they share, and run in
+    # parallel (rqlitetest.Fresh): the package takes about 140 s here under -race, where it took about
+    # 550 s with an rqlited for each test. The slowest package is controller, with its cluster tests,
+    # about 135 s to 150 s. The limit stays 20 minutes, more than four times the time of any package: it
+    # costs nothing, and a runner can be slow. A hang still ends the package, only later.
     - name: Test
       env:
         RANZ_CONTROL_WIRE: ${{ runner.temp }}/wire
@@ -617,10 +621,13 @@ jobs:
       run: |
         go test -count=1 -v -run 'TestPipe|TestNoPipe|TestMitigations' ./ranz-bgp
         if ($LASTEXITCODE -ne 0) { throw "go test exited with code $LASTEXITCODE" }
-    # -timeout 20m (CI-SLOW-1, #552): go test stops a package after 10 minutes unless told otherwise.
-    # Most tests of controller/internal/controller start an rqlited, and the package took about 500 s
-    # to 600 s on Windows x64, where a slow runner ran out of the 10 minutes. A hang still ends the
-    # job, only later.
+    # -timeout 20m (CI-SLOW-1 #552, CI-SPEED-1 #547): go test applies the limit to each package alone, and
+    # stops a package after 10 minutes unless told otherwise. The tests of controller/internal/controller
+    # take an empty database of an rqlited that they share, and run in parallel (rqlitetest.Fresh): the
+    # package takes about 160 s on Windows x64, where it took about 520 s to 560 s with an rqlited for
+    # each test and a slow runner ran out of the 10 minutes. The slowest package is controller, with its
+    # cluster tests, about 220 s to 280 s. The limit stays 20 minutes, more than four times the time of
+    # any package: it costs nothing, and a runner can be slow. A hang still ends the package, only later.
     - name: Test
       if: matrix.platform.ARCHITECTURE == 'x64'
       shell: pwsh

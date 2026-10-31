@@ -41,7 +41,7 @@ import (
 // newAuditHarness returns a harness whose controller looks for audit records to send, and for old
 // ones to remove, every 50 ms.
 func newAuditHarness(t *testing.T) *harness {
-	h := &harness{t: t, rq: rqlitetest.Start(t), tune: func(c *controller.Config) {
+	h := &harness{t: t, rq: rqlitetest.Fresh(t), tune: func(c *controller.Config) {
 		c.Audit = audit.Config{Poll: 50 * time.Millisecond, Prune: 50 * time.Millisecond}
 	}}
 	var err error

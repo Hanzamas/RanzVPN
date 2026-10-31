@@ -57,7 +57,7 @@ var (
 // interval first. The controller looks at the reports that wait every 10 ms.
 func newMimicHarness(t *testing.T) (*harness, *keyClock) {
 	clk := &keyClock{now: time.Now().UTC().Truncate(time.Millisecond)}
-	h := &harness{t: t, rq: rqlitetest.Start(t), random: new(counting), tune: func(c *controller.Config) {
+	h := &harness{t: t, rq: rqlitetest.Fresh(t), random: new(counting), tune: func(c *controller.Config) {
 		c.Now = clk.Now
 		c.KeyCheck = 10 * time.Millisecond
 	}}
@@ -583,6 +583,7 @@ func TestMimicKeyOfANodeThatIsNoServer(t *testing.T) {
 // Generation for the restart or for the key that hub reports again after its Hello, and the next change of the section gives hub
 // the short id that it had, and its clients the key.
 func TestMimicShortIDAndKeySurviveARestart(t *testing.T) {
+	rqlitetest.Own(t) // it restarts rqlited
 	n := startMimicNet(t)
 	h := n.h
 	all := []*sim{n.gw1, n.gw2, n.hub, n.lab}
