@@ -40,6 +40,9 @@ type ServerSettings struct {
 	Decoy Decoy `json:"decoy"`
 	// Padding shapes what the server sends to its clients.
 	Padding Padding `json:"padding"`
+	// Hysteria is the Hysteria mode of the server, a QUIC listener beside the REALITY listener
+	// (hysteria.go): off without it.
+	Hysteria *HysteriaServer `json:"hysteria,omitempty"`
 }
 
 // The decoy modes (ADR-0023): the sidecar serves its own landing page, with a certificate of its
@@ -117,6 +120,8 @@ type Link struct {
 	Fingerprint string `json:"fingerprint,omitempty"`
 	// Padding shapes what the client sends on this link.
 	Padding Padding `json:"padding"`
+	// Hysteria makes the link one of the Hysteria mode (hysteria.go): REALITY without it.
+	Hysteria *HysteriaLink `json:"hysteria,omitempty"`
 }
 
 // The defaults and the limits of the settings.
@@ -144,6 +149,7 @@ type serverConfig struct {
 	maxTimeDiff time.Duration
 	decoy       decoyConfig
 	shape       shape
+	hysteria    *hysteriaServerConfig // nil without the mode
 }
 
 // decoyConfig is the decoy of the settings, checked.
@@ -173,6 +179,7 @@ type linkConfig struct {
 	shortID    [shortIDSize]byte
 	fp         fingerprint
 	shape      shape
+	hysteria   *hysteriaLinkConfig // nil for a link of REALITY
 }
 
 // parseKey reads a key of 32 bytes from 64 hex digits.
@@ -304,6 +311,9 @@ func parseServer(s *ServerSettings) (*serverConfig, error) {
 	}
 	if cfg.shape, err = s.Padding.resolve(); err != nil {
 		return nil, fmt.Errorf("start: padding: %w", err)
+	}
+	if cfg.hysteria, err = parseHysteriaServer(s.Hysteria, cfg.decoy.mode); err != nil {
+		return nil, err
 	}
 	return cfg, nil
 }
@@ -465,6 +475,12 @@ func parseLink(l *Link) (*linkConfig, error) {
 	}
 	if cfg.serverName, err = cleanName("server_name", name); err != nil {
 		return nil, err
+	}
+	if l.Hysteria != nil {
+		if cfg.hysteria, err = parseHysteriaLink(l); err != nil {
+			return nil, err
+		}
+		return cfg, nil
 	}
 
 	raw, err := parseKey("public_key", l.PublicKey)
