@@ -1,7 +1,6 @@
 # Layout of the Ranz VPN sources (spec #24, pass 11). Pinned formatter: clang-format 22.1.8
-# (.github/workflows/format.yml). Scope: src/Cedar, src/Mayaqua (not 3rdparty), src/vpnserver,
-# src/vpncmd, src/Core, src/coretest; .github/scripts/format_check.py lists the files and the
-# exclusions.
+# (.github/workflows/format.yml). Scope: src/Cedar, src/Mayaqua (not 3rdparty), src/ranz-node,
+# src/Core, src/coretest; .github/scripts/format_check.py lists the files and the exclusions.
 #
 # The aim is attached braces and nothing else: no rewrapping, no include sorting, blank lines and
 # one-line statements left as they are, comments moved only to follow the indentation of their

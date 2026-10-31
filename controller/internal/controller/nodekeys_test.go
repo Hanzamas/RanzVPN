@@ -75,7 +75,7 @@ func (c *keyClock) Advance(d time.Duration) {
 func newKeysHarness(t *testing.T) (*harness, *keyClock) {
 	t.Helper()
 	clk := &keyClock{now: time.Now().UTC().Truncate(time.Millisecond)}
-	h := &harness{t: t, rq: rqlitetest.Start(t), tune: func(c *controller.Config) {
+	h := &harness{t: t, rq: rqlitetest.Fresh(t), tune: func(c *controller.Config) {
 		c.Now = clk.Now
 		c.KeyCheck = 10 * time.Millisecond
 	}}
@@ -602,6 +602,7 @@ func TestKeyLifetimeFollowsTheNetwork(t *testing.T) {
 // key again all leave the key ended, and a Network that holds new nodes for approval holds the node again. Only the login
 // of its user gives the key another life.
 func TestTheLivesOfTheKeysSurviveARestartAndAreNotPartOfTheIntent(t *testing.T) {
+	rqlitetest.Own(t) // it restarts rqlited
 	h, clk := newKeysHarness(t)
 	ctx := context.Background()
 	start := clk.Now()

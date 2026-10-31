@@ -1,2 +1,0 @@
-Port Number,Status
-TCP 39555,Listening

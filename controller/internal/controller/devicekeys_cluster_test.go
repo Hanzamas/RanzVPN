@@ -21,6 +21,7 @@ import (
 	"github.com/Hanzamas/RanzVPN/controller/internal/controller"
 	"github.com/Hanzamas/RanzVPN/controller/internal/intent"
 	"github.com/Hanzamas/RanzVPN/controller/internal/keys"
+	"github.com/Hanzamas/RanzVPN/controller/internal/rqlitetest"
 	"github.com/Hanzamas/RanzVPN/controller/internal/store"
 )
 
@@ -71,6 +72,7 @@ func newClusterMember(t *testing.T, h *harness, name string, key *keys.Soft, wai
 // its gateway without its PresharedKey, and says so in its log; once a member that holds the key gives it
 // a copy, it makes Device laptop with a PresharedKey, which the gateway gets.
 func TestClusterSealsThePresharedKeysOfTheDevices(t *testing.T) {
+	rqlitetest.Own(t) // it runs the members of a cluster, with their Keepers, on rqlited
 	logs := &logBuffer{}
 	h := newDeviceKeysHarness(t, logs)
 	ctx := context.Background()

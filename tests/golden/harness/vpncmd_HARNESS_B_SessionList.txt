@@ -1,3 +1,0 @@
-Session Name,VLAN ID,Location,User Name,Source Host Name,TCP Connections,Transfer Bytes,Transfer Packets
-SID-HARNESS_CASCADE-#,-,Local Session,harness_cascade,<VOLATILE>,1 / 1,<VOLATILE>,<VOLATILE>
-SID-TESTER_B-#,-,Local Session,tester_b,<VOLATILE>,1 / 1,<VOLATILE>,<VOLATILE>
