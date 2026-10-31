@@ -88,3 +88,20 @@ func TestDeviceConfigWithKeys(t *testing.T) {
 		t.Errorf("a key of %d bytes was written into the configuration:\n%s", KeySize-1, got)
 	}
 }
+
+// The configuration that is shown later of a Device whose PresharedKey does not open with the key of the
+// controller says so in the place of the key (SDN-82-R1), so that nobody takes the gateway for one that holds it.
+func TestDeviceConfigOfAPresharedKeyThatDoesNotOpen(t *testing.T) {
+	in := deviceLab(t)
+	got, err := in.DeviceConfigWith("phone", bytes.Repeat([]byte{0x11}, KeySize), DeviceKeys{HasPreshared: true, PresharedDoesNotOpen: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "\n# PresharedKey = the PresharedKey of this Device does not open with the key of the controller, so the gateway terminates the Device without it until it opens, or until the Device is made again\n"
+	if !strings.Contains(got, want) {
+		t.Errorf("the configuration of a Device whose PresharedKey does not open has no %q:\n%s", strings.TrimSpace(want), got)
+	}
+	if strings.Contains(got, "\nPresharedKey = ") || strings.Contains(got, "showed once") {
+		t.Errorf("the configuration of a Device whose PresharedKey does not open holds a key, or says that the key is in place:\n%s", got)
+	}
+}

@@ -153,8 +153,9 @@ func TestClusterSealsThePresharedKeysOfTheDevices(t *testing.T) {
 	h.start()
 	before := h.resources()
 	_, err = h.api.CreateDevice(ctx, controller.DeviceRequest{Name: "laptop", Network: "lab-net", Gateway: "gw"})
-	if httpStatus(err) != http.StatusInternalServerError || !strings.Contains(err.Error(), "does not hold the Cluster key yet") {
-		t.Errorf("a Device with a PresharedKey through a member without the Cluster key gave %v, want an error that says that it does not hold the key", err)
+	if httpStatus(err) != http.StatusConflict || err == nil || !strings.Contains(err.Error(), "does not hold the Cluster key yet") ||
+		!strings.Contains(err.Error(), "make the Device without a PresharedKey or try again") {
+		t.Errorf("a Device with a PresharedKey through a member without the Cluster key gave %v, want 409 that says that it does not hold the key", err)
 	}
 	if after := h.resources(); after != before {
 		t.Errorf("the refusal changed the intent:\n--- after\n%s\n--- before\n%s", after, before)
@@ -179,6 +180,12 @@ func TestClusterSealsThePresharedKeysOfTheDevices(t *testing.T) {
 		if time.Now().After(deadline) {
 			t.Fatalf("c3 holds no Cluster key within %v of the start of c1; its log:\n%s", waitTimeout, c3.log)
 		}
+	}
+	// The gateway, which holds phone without its PresharedKey, gets the key once it opens, at the next wake: the gateway
+	// does not start again and phone does not change (SDN-82-R1)
+	waitPresharedKey(t, gw3, "phone", psk)
+	if d := h.device("phone"); !d.PresharedKey || d.PresharedKeyDoesNotOpen {
+		t.Errorf("once its member holds the Cluster key the controller lists phone as %+v, want one whose PresharedKey opens", d)
 	}
 	made, err := h.api.CreateDevice(ctx, controller.DeviceRequest{Name: "laptop", Network: "lab-net", Gateway: "gw"})
 	if err != nil || !made.PresharedKey {

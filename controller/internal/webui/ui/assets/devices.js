@@ -43,6 +43,16 @@ function reported(d, v) {
 }
 
 /**
+ * presharedKey returns the cell of the PresharedKey of d: yes or no, or that the controller cannot open it, so
+ * that the gateway terminates the Device without it until it opens, or until the Device is made again (SDN-82-R1).
+ * @param {DeviceStatus} d
+ * @returns {HTMLSpanElement}
+ */
+function presharedKey(d) {
+  return d.presharedKeyDoesNotOpen ? el('span', { class: 'no' }, 'does not open') : yesNo(d.presharedKey);
+}
+
+/**
  * drawQR paints the QR code that rows hold on canvas: black modules on white, with the quiet zone that a
  * scanner needs, whatever the theme of the page.
  * @param {HTMLCanvasElement} canvas
@@ -168,7 +178,7 @@ async function render() {
     { label: 'Gateway', cell: (d) => d.unlicensed ? el('span', { class: 'no' }, `${d.gateway}, beyond the licence`) : d.gateway },
     { label: 'Owner', cell: (d) => d.owner ?? '' },
     { label: 'Addresses', cell: (d) => [d.address, d.ipv6Address].filter(Boolean).join(', ') },
-    { label: 'PresharedKey', cell: (d) => yesNo(d.presharedKey) },
+    { label: 'PresharedKey', cell: (d) => presharedKey(d) },
     { label: 'Last handshake', cell: (d) => reported(d, d.lastHandshake ? when(d.lastHandshake) : 'none yet') },
     { label: 'Sent (bytes)', cell: (d) => reported(d, String(d.txBytes)) },
     { label: 'Received (bytes)', cell: (d) => reported(d, String(d.rxBytes)) },

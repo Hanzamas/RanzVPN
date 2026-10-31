@@ -66,13 +66,18 @@ func (l *logBuffer) String() string {
 
 // newDeviceKeysHarness returns a harness whose controller says everything that it says, at the debug level, to
 // logs as well as to the test log, so that a test can look for a secret in it, and whose store seals with
-// a sealing key of its own, as the one of the host does (store.SetSealer). A test that needs another
-// sealing key, or none, sets h.sealer before h.start, and one that needs a setting of another kind sets
-// h.tune again.
+// a sealing key of its own, as the one of the host does (store.SetSealer). Its controller tries again every
+// 50 ms a PresharedKey that did not open, so that a key that opens late reaches its gateway soon (SDN-82-R1).
+// A test that needs another sealing key, or none, sets h.sealer before h.start, and one that needs a setting
+// of another kind sets h.tune again.
 func newDeviceKeysHarness(t *testing.T, logs io.Writer) *harness {
 	t.Helper()
 	h := &harness{t: t, rq: rqlitetest.Start(t)}
-	h.tune = loggingTo(t, logs)
+	logging := loggingTo(t, logs)
+	h.tune = func(c *controller.Config) {
+		logging(c)
+		c.DeviceKeyRetry = 50 * time.Millisecond
+	}
 	sealing, err := keys.GenerateSoft()
 	if err != nil {
 		t.Fatal(err)
@@ -502,7 +507,8 @@ func (lockedSealer) Open(string, []byte) ([]byte, error) { return nil, errLocked
 // host nor the Cluster key of a cluster (ADR-0026), says so in its log, makes no Device that has a
 // PresharedKey, and makes one that has none when the administrator asks for that; the sealed keys of a store that it cannot open it sends its
 // Devices without. A controller whose key storage provider is locked seals what it cannot open, and does not
-// make a Device with a key that no gateway could be given.
+// make a Device with a key that no gateway could be given. Each refusal is a 409 that says what to do, since
+// the controller refuses, and fails at nothing (SDN-82-R1).
 func TestDeviceWithoutASealingKey(t *testing.T) {
 	logs := &logBuffer{}
 	h := newDeviceKeysHarness(t, logs)
@@ -524,8 +530,8 @@ func TestDeviceWithoutASealingKey(t *testing.T) {
 		t.Errorf("the log of a controller without a sealing key does not say so:\n%s", log)
 	}
 	_, err := h.api.CreateDevice(ctx, controller.DeviceRequest{Name: "laptop", Network: "lab-net", Gateway: "gw"})
-	if httpStatus(err) != http.StatusInternalServerError || err == nil || !strings.Contains(err.Error(), "cannot seal the PresharedKey of a Device") || !strings.Contains(err.Error(), "cluster") {
-		t.Errorf("a Device with a PresharedKey, made by a controller that cannot seal one, gave %v, want an error that says so", err)
+	if httpStatus(err) != http.StatusConflict || err == nil || !strings.Contains(err.Error(), "cannot seal the PresharedKey of a Device") || !strings.Contains(err.Error(), "cluster") {
+		t.Errorf("a Device with a PresharedKey, made by a controller that cannot seal one, gave %v, want 409 that says so", err)
 	}
 	if rows, err := h.st.DeviceKeys(ctx); err != nil || len(rows) != 1 {
 		t.Errorf("the PresharedKeys in the store after the refusal are %v, %v, want the one of phone and none of laptop", rows, err)
@@ -555,9 +561,9 @@ func TestDeviceWithoutASealingKey(t *testing.T) {
 	h.start()
 	before := h.resources()
 	_, err = h.api.CreateDevice(ctx, controller.DeviceRequest{Name: "tablet", Network: "lab-net", Gateway: "gw"})
-	if httpStatus(err) != http.StatusInternalServerError || err == nil || !strings.Contains(err.Error(), `cannot open the PresharedKey of Device "tablet" that it sealed`) ||
+	if httpStatus(err) != http.StatusConflict || err == nil || !strings.Contains(err.Error(), `cannot open the PresharedKey of Device "tablet" that it sealed`) ||
 		!strings.Contains(err.Error(), "the provider is locked") {
-		t.Errorf("a Device made by a controller whose provider is locked gave %v, want an error that says that its sealing key does not answer", err)
+		t.Errorf("a Device made by a controller whose provider is locked gave %v, want 409 that says that its sealing key does not answer", err)
 	}
 	if after := h.resources(); after != before {
 		t.Errorf("the refusal changed the intent:\n--- after\n%s\n--- before\n%s", after, before)

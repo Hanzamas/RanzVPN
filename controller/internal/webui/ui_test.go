@@ -417,6 +417,8 @@ type harness struct {
 	secret string      // of the admin token
 	// logPath is the log of the controller that the diagnostics bundle holds, with the secret in it.
 	logPath string
+	// sealer is the sealing key of the host, which a test makes stop opening what it sealed (devicekeysr1_test.go).
+	sealer *shutSealer
 }
 
 func newHarness(t *testing.T) *harness {
@@ -437,7 +439,8 @@ func newHarness(t *testing.T) *harness {
 	if err != nil {
 		t.Fatal(err)
 	}
-	st.SetSealer(keys.NewSealer(sealing), nil)
+	h.sealer = &shutSealer{Sealer: keys.NewSealer(sealing)}
+	st.SetSealer(h.sealer, nil)
 	c, err := controller.New(ctx, controller.Config{Store: st, Key: h.key})
 	if err != nil {
 		t.Fatal(err)
