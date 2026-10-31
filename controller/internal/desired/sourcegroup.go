@@ -15,10 +15,10 @@ import (
 
 // The source groups (SDN-87 #386, control.proto). A packet between two Nodes can carry the identity of
 // its source: its group ID of 16 bits and its tag set of 64 bits. The Controller gives the groups of each
-// VRF their numbers from the tags of the endpoints of the VRF, a Node with the Groups of its owner
-// (user.go) or a Device (device.go): a group ID for each set of tags that an endpoint has, so that two
-// endpoints with the same tags are one group and the group of an endpoint tells its tags, and a bit of
-// the tag set for each tag, MaxTagBits at most.
+// VRF their numbers from the tags of the endpoints of the VRF, a Node or a Device, each with the Groups of
+// its owner (intent.NodeTags, intent.DeviceTags), the tags that its object carries: a group ID for each
+// set of tags that an endpoint has, so that two endpoints with the same tags are one group and the group
+// of an endpoint tells its tags, and a bit of the tag set for each tag, MaxTagBits at most.
 //
 // The numbers are stable (NumberGroups). The Node that takes a claim reads it in the numbering of the
 // state that it applied last, and the Generations of two Nodes go in at different times: a Node that the
@@ -30,19 +30,21 @@ import (
 // the Controller compiled one after the other and from nothing else. The Controller keeps them in its
 // store (internal/controller, sourcegroup.go). A VRF that gave all of its group IDs, or all of its bits,
 // gives no more: an endpoint whose set of tags has no group ID carries no source group, and a tag without
-// a bit is in no tag set.
+// a bit is in no tag set. A Device without a group is in the states with the group 0: its gateway stamps
+// no group on its packets, and a Node judges them by the map of address to group, the Device as an end of
+// its own and never as its gateway (Cedar/NodeSourceGroup.c, NodePolicy.c).
 //
-// What a Node may assert changes with the Generations, though: a claim names the group generation of its
-// sender in the VRF of the claim (SourceGroup.generation), the Generation of the sender's state from
-// which on it may assert the groups that it asserts there, its own and those of the Devices whose gateway
-// it is (GroupGenerations). The Controller gives it to the sender in its NodeConfig and to every other
-// Node in the sender's Peer object (WithGroupGenerations), so two Nodes whose states agree on what the
-// sender may assert in a VRF hold the same group generation for it. A Node takes the claim of a group that
-// its state lets the peer assert whatever group generation the claim names, as the numbers mean the same
-// in every Generation. It takes the claim of another group for an unknown group only when the claim names
-// the group generation that its state gives the peer; a claim of another group generation was made on
-// another state, the one before or the one after the Node's own, and the Node judges its packet by the
-// map of address to group, as it judges a packet without a claim.
+// What a Node may assert changes with the Generations: a claim names the group generation of its sender in
+// the VRF of the claim (SourceGroup.generation), the Generation of the sender's state from which on it may
+// assert the groups that it asserts there, its own and those of the Devices whose gateway it is
+// (GroupGenerations). The Controller gives it to the sender in its NodeConfig and to every other Node in
+// the sender's Peer object (WithGroupGenerations), so two Nodes whose states agree on what the sender may
+// assert in a VRF hold the same group generation for it. A Node takes the claim of a group that its state
+// lets the peer assert, whatever group generation the claim names, as the numbers mean the same in every
+// Generation, and refuses any other claim as an unknown group, whatever group generation it names: the
+// sender chooses that number, so it exempts nothing. The Node logs the group generation of a refused claim
+// beside the one that its state gives the peer, which tells a claim made on another state of the peer,
+// while two Generations roll out, from a forged one.
 //
 // A Node that reports the Capability tags gets its own group in each of its VRFs (NodeConfig.groups)
 // and the group of each Device of its state (Device.group, Device.tag_set), and of each peer that
@@ -145,9 +147,9 @@ func NumberGroups(in intent.Intent, before GroupNumbers) GroupNumbers {
 		}
 	}
 	for _, name := range slices.Sorted(maps.Keys(in.Devices)) {
-		d := in.Devices[name]
-		if nw, ok := in.Networks[d.Network]; ok {
-			add(nw.VRF, d.Tags)
+		// The tags of the Device with the Groups of its owner, as its Device object carries them (device.go)
+		if nw, ok := in.Networks[in.Devices[name].Network]; ok {
+			add(nw.VRF, in.DeviceTags(name))
 		}
 	}
 	out := GroupNumbers{}
