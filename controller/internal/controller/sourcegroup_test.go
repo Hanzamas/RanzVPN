@@ -304,6 +304,7 @@ func TestSourceGroupsReachTheNodes(t *testing.T) {
 // on, whatever goes, so its group generation stays 2.
 func TestSourceGroupNumbersStay(t *testing.T) {
 	const tabletKey = "AwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwM="
+	rqlitetest.Own(t) // it restarts rqlited
 	h := newHarness(t)
 	h.apply("sourcegroups.json")
 	gw := h.newSim("gw-1", keyBranch1)
