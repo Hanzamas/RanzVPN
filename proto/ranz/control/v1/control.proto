@@ -100,6 +100,28 @@
 // schema version changes with it: a controller of an older release skips an event of a type that it
 // does not know.
 //
+// Source groups (SDN-87, #386): a packet between two nodes can carry the identity of its source, its
+// group ID and its tag set. The controller gives each set of tags of an endpoint of a VRF (a node
+// with the Groups of its owner, or a Device) a group ID and each of their tags a bit of the tag set,
+// 64 at most, and keeps them: a number once given in a VRF never goes to another set of tags or
+// tag, as a node may still forward on a Generation that holds it. A node that reports the
+// Capability tags gets its own group in each of its VRFs (NodeConfig.groups) and the group of each
+// Device of them (Device.group), and of each peer that reports it too the peer's own group in each
+// shared VRF (Peer.groups): a peer may assert those and the groups of the Devices whose gateway it
+// is. Such a peer gets records of frame version 1 on the Noise sessions (Peer.frame_version), which
+// carry the source group before the packet; a link of kind vxlan or geneve carries it in the VXLAN
+// group policy extension or in a Geneve option when its VRF is in the tag mode trusted-underlay
+// (Vrf.tag_mode). A node judges the claims of a peer only once its state gives the peer the frame
+// version 1 with its groups: before, as when a peer's Generation went in before the node's own, it
+// ignores them. Each claim names the group generation of its sender in its VRF (SourceGroup.generation),
+// the Generation of the sender's state from which on it may assert what it asserts there: a claim of a
+// group that the peer may not assert is an unknown group only when it names the group generation that
+// the node's state gives the peer; one of another group generation was made on another state, and the
+// node judges its packet by the map of address to group. The node reports the packets that it judged
+// by their source group in its Telemetry (SourceGroupCounters). No schema version changes with them: a
+// node of an older release skips the fields it does not know, reports no Capability tags and gets no
+// record of version 1.
+//
 // Live operations (SDN-50, #243): an operator reads or clears the MAC table or the IP table of an L2
 // Network on a node. The controller sends the node an Operation on its stream, with an id of its own;
 // the node does it at once and answers with an OperationResult of the same id. Only a node that reports
@@ -357,6 +379,9 @@ message NodeConfig {
   repeated Route lan_subnets = 13;
   // The BGP peering of the node (SDN-77 #357), absent while no VRF of the node peers by BGP
   NodePeering peering = 14;
+  // The source group of the node in each of its VRFs (SDN-87 #386), ordered by VRF id; none for a node
+  // that does not report the Capability tags
+  repeated SourceGroup groups = 15;
   // The session profile that the node runs under as a device of a User (SDN-40 #233), absent for a node
   // that has no owner or whose owner runs under none: the node enforces its flags on itself.
   SessionProfile profile = 16;
@@ -544,6 +569,9 @@ message Vrf {
   // vxlan or geneve carries its packets on, 0 for a link of kind noise.
   LinkKind link = 8;
   uint32 vni = 9;
+  // How the nodes of the VRF trust the source group that a link of kind vxlan or geneve carries
+  // (SDN-87 #386): the tag mode of the Networks of the VRF
+  TagMode tag_mode = 10;
   // The hub node of a VRF of topology hub-and-spoke (SDN-19 #195), which sends the traffic of one
   // spoke on to another; empty for a full mesh
   string hub = 11;
@@ -552,6 +580,34 @@ message Vrf {
   bool ecmp = 12;
   // How the nodes of the VRF exchange their routes (SDN-77 #357)
   Peering peering = 13;
+}
+
+// The source group of an endpoint in one VRF (SDN-87 #386): its group ID, from 1 to 65535, and its
+// tag set, the bit of each of its tags that the VRF gave one, 64 tags at most. A group ID and a bit
+// stay with their set of tags and their tag in the VRF for good.
+message SourceGroup {
+  uint32 vrf_id = 1;
+  uint32 group = 2;
+  uint64 tag_set = 3;
+  // The group generation of the node in the VRF, in its NodeConfig and in its Peer object at every
+  // other node: the Generation of the node's state from which on it may assert the groups that it
+  // may assert there, this one and those of the Devices whose gateway it is. It changes only when
+  // those change. The node names it in each claim that it sends, its 32 low bits on the wire.
+  uint64 generation = 4;
+}
+
+// How a node trusts the source group that a link of kind vxlan or geneve carries (SDN-87 #386), the
+// tag mode of the Networks of its VRF. A Noise session authenticates what it carries, so the node
+// takes the source group of its records whatever the mode, once it knows the groups of the peer.
+enum TagMode {
+  TAG_MODE_UNSPECIFIED = 0;  // as TAG_MODE_OFF
+  // The node ignores the source group of such a link and sends none.
+  TAG_MODE_OFF = 1;
+  // The node takes it, as the operator vouches for the underlay, and sends it: whoever can send on
+  // the underlay as a node can claim any group that the node may assert.
+  TAG_MODE_TRUSTED_UNDERLAY = 2;
+  // Only in SourceGroupCounters: the records of the Noise sessions.
+  TAG_MODE_SESSION = 3;
 }
 
 // The zone of a VRF (SDN-11 #187, ADR-0028 decisions 6 and 7). The stub resolver of a node
@@ -653,6 +709,15 @@ message Peer {
   // The tunnel endpoint of the peer (SDN-76 #356), absent while no shared VRF has a link of kind vxlan
   // or geneve: the only address that this node takes the datagrams of those links from.
   Vtep vtep = 8;
+  // The source group of the peer in each shared VRF (SDN-87 #386), ordered by VRF id, when the node and
+  // the peer both report the Capability tags. With the groups of the Devices whose gateway the peer
+  // is, these are the groups that it may assert; a claim of another one that names the group
+  // generation of the peer here is an unknown group.
+  repeated SourceGroup groups = 9;
+  // The frame version of the data records of the Noise sessions that the node sends the peer (SDN-87
+  // #386): 1 when both report the Capability tags, and each record then carries its source group;
+  // 0, the records before SDN-87, otherwise.
+  uint32 frame_version = 10;
   // The controller's health data of a gateway (SDN-19 #195): the peer announces a prefix that
   // another gateway announces too, and it has had no control stream for a while. The node gives the
   // traffic of that prefix to another gateway that answers its probes, and to this one only while
@@ -707,7 +772,10 @@ message Device {
   repeated string tags = 4;        // sorted
   string gateway = 5;              // the node that terminates it
   bytes public_key = 6;            // its WireGuard key, 32 bytes: in the state of its gateway only
-  // 7 and 8 are the group and the tag set of the source group (SDN-87 #386), so the PresharedKey is 9
+  // Its source group in its VRF and the tag set of it (SDN-87 #386), in the state of a node that
+  // reports the Capability tags; 0 otherwise
+  uint32 group = 7;
+  uint64 tag_set = 8;
   bytes preshared_key = 9;         // its PresharedKey, 32 bytes: in the state of its gateway only, and only for a Device that has one
 }
 
@@ -794,6 +862,9 @@ message Capabilities {
   // The node answers the Operation messages of the controller: it reads and clears the MAC table and the
   // IP table of its L2 Networks (SDN-50 #243).
   bool operations = 12;
+  // The node carries the source group of its packets to its peers and judges theirs by the one they
+  // carry (SDN-87 #386).
+  bool tags = 13;
   // The node runs the BGP peering of the standard mode (SDN-77 #357, SDN-77-R2 #532): its release has it,
   // and ranz.exe, which holds the sidecar ranz bgp that the peering starts, is next to it. A node that does
   // not report it is refused as a member of a VRF whose peering is bgp. 13 is the Capability tags of SDN-87
@@ -888,14 +959,31 @@ message Telemetry {
   repeated NodeEvent events = 5;
   // The Devices whose gateway the node is (SDN-80): all of them in each summary that holds any
   repeated DeviceCounters devices = 6;
+  // The packets of the peers of the node by the tag mode of their source group (SDN-87): every mode in
+  // each summary that holds any
+  repeated SourceGroupCounters groups = 7;
   // The BGP peering of the standard mode at the node (SDN-77): in a summary of its own whenever it
-  // changed, and absent from the others. 7 is the groups of SDN-87 (#386), so the peering is 8.
+  // changed, and absent from the others.
   PeeringReport peering = 8;
   // The Upgrades and the Fallbacks of the Paths of the node's peer agent (CORE-S5-6), and its
   // punches (CORE-S5-7), absent while its peer layer does not run. The node lists them in a summary
   // of their own after each Hello, whenever they change and again every 15 s while they stay the
   // same, as the controller drops a counter that its node stopped listing.
   PathCounters paths = 9;
+}
+
+// The packets of the peers that a node judged in one tag mode (SDN-87 #386): the records of its Noise
+// sessions (TAG_MODE_SESSION) or the datagrams of its links of kind vxlan or geneve in the tag mode of
+// their VRF. Cumulative since the node started.
+message SourceGroupCounters {
+  TagMode mode = 1;
+  uint64 carried = 2;  // judged by the source group that they carried
+  uint64 missing = 3;  // carried none, judged by the map of address to group
+  // carried one that the node ignores, judged by that map too: in the mode off, of a peer whose
+  // groups the node does not know yet, or a claim of a group that the peer may not assert which names
+  // another group generation of the peer than the node's state, as it was made on another state
+  uint64 ignored = 4;
+  uint64 refused = 5;  // claimed a group that the sending node may not assert: dropped as an unknown group
 }
 
 // The BGP peering of the standard mode at a node (SDN-77 #357): each peer of its sidecar, in the

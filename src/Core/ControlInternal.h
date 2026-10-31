@@ -41,6 +41,10 @@ void ControlCopyEndpoints(CONTROL_STATE *st, const ranz_control_v1_Object *objec
 // ControlLink.c
 void ControlCopyLinks(CONTROL_STATE *st, const ranz_control_v1_Object *objects, UINT num);
 
+// ControlSourceGroup.c
+void ControlCopySourceGroups(CONTROL_STATE *st, const ranz_control_v1_Object *objects, UINT num);
+void ControlSourceGroupsResend(CONTROL_SOURCE_GROUPS *g);
+
 // ControlSecurity.c
 void ControlCopySecurities(CONTROL_STATE *st, const ranz_control_v1_Object *objects, UINT num);
 void ControlFreeSecurities(CONTROL_STATE *st);

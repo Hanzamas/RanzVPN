@@ -600,12 +600,13 @@ jobs:
   # Builds with -DRANZ_ASAN=ON -DRANZ_FUZZ=ON (cmake/RanzSanitizers.cmake), runs the vpntest
   # smoke test script on that build, replays the seed corpora (deterministic), then runs every
   # fuzz target of src/fuzz for a fixed time. Any of the three failing fails the job.
+  # The steps before the fuzz step take about 12 minutes, and the fuzz step has 45 (below).
   fuzz-asan:
     needs: plan
     if: needs.plan.outputs.full == 'true'
     runs-on: windows-latest
     name: fuzz-asan
-    timeout-minutes: 45
+    timeout-minutes: 60
     steps:
     - uses: actions/checkout@v4
       with:
@@ -731,9 +732,12 @@ jobs:
       timeout-minutes: 10
       run: |
         ./src/fuzz/run_fuzzers.ps1 -BuildDir build -Seconds 0
+    # The targets run one after the other, about 61 s each: the 29 targets of integration 065246a1
+    # took 29.6 minutes, and the 30th (fuzz_frame, SDN-87 #386) ran out of the 30 minutes that this
+    # step had. 45 minutes leave room for the targets to come.
     - name: Fuzz (60 s per target)
       shell: pwsh
-      timeout-minutes: 30
+      timeout-minutes: 45
       run: |
         ./src/fuzz/run_fuzzers.ps1 -BuildDir build -Seconds 60 -Seed 1
     - uses: actions/upload-artifact@v4

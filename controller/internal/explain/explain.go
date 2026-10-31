@@ -141,6 +141,14 @@ type Link struct {
 	// the sending Node (SDN-93). A Node without endpoints is dialled by no peer, so it dials them.
 	Endpoints       []Endpoint `json:"endpoints,omitempty"`
 	SourceEndpoints []Endpoint `json:"sourceEndpoints,omitempty"`
+	// TagMode is the tag mode of the VRF of a link of kind vxlan or geneve, as the sending Node has it (SDN-87): off, in
+	// which the Nodes send no source group on the link and ignore the one of a datagram, or trusted-underlay, in which
+	// they send it and take it without authenticating it. Tags is then the mark "tags not authenticated" of the Networks
+	// of the VRF, which Networks names. All three are empty for a link of kind noise, whose Noise session authenticates
+	// the source group (sourcegroup.go).
+	TagMode  string   `json:"tagMode,omitempty"`
+	Tags     string   `json:"tags,omitempty"`
+	Networks []string `json:"networks,omitempty"`
 }
 
 // Step is one thing that the packet meets on its way.
@@ -316,6 +324,8 @@ func (w *walk) send(s *node, vrf uint32, p packet) {
 	// The link of the VRF of the record carries it: a link of kind vxlan or geneve in place of the session
 	kind, vni := s.linkOf(into)
 	link := &Link{Peer: peer.GetName(), Kind: kind, Encrypted: kind == linkNoise, VNI: vni, Endpoints: endpoints(peer.GetEndpoints()), SourceEndpoints: endpoints(s.self.GetEndpoints())}
+	// The tag mode of a plain link, and whether its source group is authenticated (sourcegroup.go; SDN-87)
+	w.tags(s, into, link)
 	if kind != linkNoise && len(peer.GetVtep().GetAddress()) == 0 {
 		w.step(s, StepLink, into, Step{Link: link}, "the link to %s in VRF %s is of kind %s, unencrypted, and %s has no tunnel endpoint", peer.GetName(), w.m.vrfName(into), kind, peer.GetName())
 		w.drop(s, DropLink, "%s has no tunnel endpoint for the link of kind %s of VRF %s", peer.GetName(), kind, w.m.vrfName(into))
@@ -440,6 +450,8 @@ func linkText(s *node, peer *controlpb.Peer, l *Link, vrf string) string {
 		fmt.Fprintf(&b, "the Noise session of %s to %s carries the packet in VRF %s, encrypted", s.name, peer.GetName(), vrf)
 	} else {
 		fmt.Fprintf(&b, "the link of kind %s of VRF %s carries the packet on VNI %d to the tunnel endpoint of %s: unencrypted, plain on a network that the operator trusts", l.Kind, vrf, l.VNI, peer.GetName())
+		// ... and in the tag mode trusted-underlay its source group, unauthenticated (sourcegroup.go; SDN-87)
+		b.WriteString(tagsText(l))
 	}
 	for _, e := range []struct {
 		name string

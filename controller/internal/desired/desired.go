@@ -73,6 +73,8 @@ func Compile(in intent.Intent) (map[string]State, error) {
 		withTopology(vrfs[name], v)
 		// How the Nodes of the VRF exchange their routes (peering.go; SDN-77)
 		vrfs[name].Peering = vrfPeering(v)
+		// The tag mode of its Networks (sourcegroup.go; SDN-87)
+		vrfs[name].TagMode = tagMode(in.VRFTagMode(name))
 	}
 	networks := map[string][]*controlpb.Network{} // by VRF name
 	for name, n := range in.Networks {

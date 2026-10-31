@@ -50,6 +50,7 @@
 
 #include "NodeInternal.h"
 #include "NodeProfile.h"
+#include "NodeSourceGroup.h"
 
 #include <WinDNS.h>
 #include <iphlpapi.h>
@@ -398,14 +399,15 @@ bool NodeEvpnOutput(NODE *n, NODE_VRF_TABLES *v, UINT vrf_id, const UCHAR *packe
 	return (hop != NULL && NodeEvpnSend(et, hop, v, vrf_id, packet, size, true));
 }
 
-// A packet of the peer of the next hop from of the forwarding tables v in the VRF vrf_id, which the gateway forwards to the
-// fabric when no route of the VRF holds its destination and an IP prefix route of the fabric does (NodeOverlayDeliver). The
-// session profile of the peer and the node's own, then the policy of the VRF, judge it as a packet of the peer to the host, and
-// a Mirror of the VRF copies the packet that went, as they do with the packet of a peer to a LAN subnet behind a gateway. True
+// A packet of the peer of the next hop from of the forwarding tables v in the VRF vrf_id, with the source group that it
+// carried as claim tells, which the gateway forwards to the fabric when no route of the VRF holds its destination and an IP
+// prefix route of the fabric does (NodeOverlayDeliver). The session profile of the peer and the node's own, then the policy
+// of the VRF by the source group that the gateway takes from the claim, judge it as a packet of the peer to the host, and a
+// Mirror of the VRF copies the packet that went, as they do with the packet of a peer to a LAN subnet behind a gateway. True
 // when the fabric took the packet, whether it went or the profile, the policy or the send dropped it; false when it is no
 // packet for the fabric, and the overlay goes on with it. The caller is an online reader of the node's table snapshot, which
 // holds v.
-bool NodeEvpnTransit(NODE *n, NODE_VRF_TABLES *v, UINT vrf_id, UINT from, const UCHAR *packet, UINT size) {
+bool NodeEvpnTransit(NODE *n, NODE_VRF_TABLES *v, UINT vrf_id, UINT from, const NODE_SOURCE_CLAIM *claim, const UCHAR *packet, UINT size) {
 	UCHAR src[16], dst[16];
 	UINT addr_size = 0;
 	NODE_TABLES *t = NodeGetTables(n);
@@ -420,8 +422,10 @@ bool NodeEvpnTransit(NODE *n, NODE_VRF_TABLES *v, UINT vrf_id, UINT from, const 
 		return false;
 
 	// The session profiles (NodeProfile.c; SDN-40, #233) and the policy judge it as NodeOverlayDeliver judges the packet of a peer
-	// to the host, and a Mirror copies it as the peer sent it (NodeMirror.c)
-	if (NodeProfileInbound(n, v, vrf_id, from, packet, size) && NodePolicyInbound(n, v, vrf_id, from, packet, size) && NodeEvpnSend(et, hop, v, vrf_id, packet, size, false))
+	// to the host: the gateway is the destination of the source group that the packet carried, so a claim that the peer may
+	// not assert is dropped, counted and logged (NodeSourceGroup.c; SDN-87, #386). A Mirror copies it as the peer sent it
+	// (NodeMirror.c)
+	if (NodeProfileInbound(n, v, vrf_id, from, packet, size) && NodeSourceGroupInbound(n, v, vrf_id, from, claim, packet, size) && NodeEvpnSend(et, hop, v, vrf_id, packet, size, false))
 		NodeMirrorCopy(v, vrf_id, packet, size, false);
 
 	return true;

@@ -68,7 +68,7 @@ void NodeFreeGatewayTable(NODE_GATEWAY_TABLE *t);
 UINT NodeGatewayPick(NODE_VRF_TABLES *v, UINT hop, const UCHAR *packet, UINT size);
 UINT NodeGatewayFrom(NODE_VRF_TABLES *v, UINT from, const void *peer);
 bool NodeGatewayHub(NODE_VRF_TABLES *v, UINT vrf_id);
-bool NodeGatewayTransit(NODE *n, NODE_VRF_TABLES *v, UINT vrf_id, UINT from, UINT to, const UCHAR *record, UINT size);
+bool NodeGatewayTransit(NODE *n, NODE_VRF_TABLES *v, UINT vrf_id, UINT from, UINT to, UINT source_group, const UCHAR *record, UINT size);
 void NodeGatewayProbe(NODE *n);
 void NodeGatewayControl(NODE *n, void *peer, const UCHAR *data, UINT size);
 bool NodeGatewayDatagram(NODE *n, const UCHAR *key, const UCHAR *record, UINT size);

@@ -383,6 +383,8 @@ struct NODE_VRF_TABLES {
 	struct NODE_GATEWAY_TABLE *Gateway;
 	// The session profiles of the peers and of the node of the same Generation (NodeProfile.c; SDN-40, #233), NULL for none
 	struct NODE_PROFILE_TABLE *Profile;
+	// The source groups of the same Generation (NodeSourceGroup.c; SDN-87, #386), NULL for none
+	struct NODE_SOURCE_GROUP_TABLE *SourceGroups;
 	// The VRFs whose internet exit the node is in the same Generation (NodeEgress.c; SDN-12, #188), NULL for none
 	struct NODE_EGRESS_TABLE *Egress;
 	// The exit nodes of the same Generation and the one that the user of the client role chose (NodeExit.c; SDN-55, #248), NULL
@@ -502,6 +504,10 @@ struct NODE {
 
 	// The throttle of the Login (NodeThrottle.c; AUD1-DT-5, #453), from NewNode to FreeNode
 	struct NODE_THROTTLE *LoginThrottle;
+
+	// The source groups of the overlay (NodeSourceGroup.c; SDN-87, #386): the counters by tag mode, NULL while the overlay
+	// does not run
+	struct NODE_SOURCE_GROUPS *SourceGroups;
 
 	// The peer agent of the overlay (NodeAgent.c; CORE-S5-5, #411): the datagram path to the peers that the node reaches on no
 	// stream session, NULL while the overlay does not run

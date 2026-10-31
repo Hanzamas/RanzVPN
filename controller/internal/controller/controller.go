@@ -264,6 +264,9 @@ type Controller struct {
 	// The lives of the node keys, and the nodes that they hold back (nodekeys.go; SDN-56)
 	keyLife keyLifeState
 
+	// The numbers of the source groups that the store holds (sourcegroup.go; SDN-87)
+	groups groupState
+
 	// The delegations of the Networks, which the roles held for one Network are bound by (scope.go; SDN-38)
 	scopes scopeState
 }
@@ -381,6 +384,10 @@ func New(ctx context.Context, cfg Config) (*Controller, error) {
 	}
 	// The keys that the nodes reported about themselves, which the first compile below uses (mimic.go; SDN-94)
 	if err := c.loadPins(ctx); err != nil {
+		return nil, err
+	}
+	// The numbers of the source groups, which the first compile below keeps (sourcegroup.go; SDN-87)
+	if err := c.loadGroupNumbers(ctx); err != nil {
 		return nil, err
 	}
 	// The bans of users, which the first compile below honours (bans.go; SDN-50)
@@ -722,6 +729,9 @@ type compiled struct {
 	// holds are the Nodes of the intent that the lives of their keys held back when it was compiled, which the states of
 	// the others leave out and commit notes as the holds in force (nodekeys.go; SDN-56)
 	holds map[string]keyHold
+	// groups are the numbers of the source groups that the compilation gave and the store does not hold yet, which commit
+	// stores before the states (sourcegroup.go; SDN-87)
+	groups desired.GroupNumbers
 }
 
 // compile compiles next under lic, the licence key installed (nil for none).
@@ -747,7 +757,9 @@ func (c *Controller) compile(next intent.Intent, lic *licence.Licence) (compiled
 	}
 	// The gateways that are down, the health data of gateway HA (gateways.go; SDN-19)
 	c.withHealth(states)
-	return compiled{lic: lic, force: force, states: states, holds: holds}, nil
+	// The source groups of the Nodes that report the Capability tags (sourcegroup.go; SDN-87)
+	groups := c.withSourceGroups(next.Capped(force.Nodes), states)
+	return compiled{lic: lic, force: force, states: states, holds: holds, groups: groups}, nil
 }
 
 // commit makes next the intent and cp.lic the licence, with cp what next compiles to under it:
@@ -796,6 +808,10 @@ func (c *Controller) commit(ctx context.Context, next intent.Intent, cp compiled
 	defer cancel()
 	// No Device that the change adds takes the PresharedKey of an earlier one of its name (devicekeys.go; SDN-82-R1)
 	if err := c.clearDeviceKeys(sctx, next); err != nil {
+		return nil, err
+	}
+	// The numbers of the source groups that the states use go into the store before them (sourcegroup.go; SDN-87)
+	if err := c.saveGroupNumbers(sctx, cp.groups); err != nil {
 		return nil, err
 	}
 	if err := c.store.Commit(sctx, ch); err != nil {
@@ -1101,6 +1117,7 @@ func (c *Controller) serveConn(tc *tls.Conn) {
 	}
 	n := c.nodes[name]
 	_, seen := c.caps[string(conn.PeerKey())]
+	tagged := c.caps[string(conn.PeerKey())].GetTags()
 	caps := c.report(conn.PeerKey(), name, hello.GetCapabilities())
 	if !seen {
 		// The first Hello of this key is rare, and report writes to the store here as well
@@ -1114,6 +1131,8 @@ func (c *Controller) serveConn(tc *tls.Conn) {
 		writeRefuse(conn, refusal(controlpb.RefuseReason_REFUSE_REASON_LICENCE, capFormat, force.Tier, force.Nodes, name))
 		return
 	}
+	// A Capability tags that changed changes the source groups of the states of the node and its peers (sourcegroup.go; SDN-87)
+	c.tagsChanged(name, tagged, caps)
 	if problems := capability.Check(name, caps, n.state); len(problems) > 0 {
 		// The node keeps forwarding on the generation it applied last; the intent it cannot
 		// honour does not reach it.
