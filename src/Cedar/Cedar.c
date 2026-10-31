@@ -519,39 +519,6 @@ static void StopAllHub(CEDAR *c) {
 	Free(hubs);
 }
 
-void AddListener(CEDAR *c, LISTENER *r) {
-	if (c == NULL || r == NULL)
-		return;
-
-	LockList(c->ListenerList);
-	{
-		Add(c->ListenerList, r);
-		AddRef(r->ref);
-	}
-	UnlockList(c->ListenerList);
-}
-
-static void StopAllListener(CEDAR *c) {
-	LISTENER **array;
-	UINT num;
-	if (c == NULL)
-		return;
-
-	LockList(c->ListenerList);
-	{
-		array = ToArray(c->ListenerList);
-		num = LIST_NUM(c->ListenerList);
-		DeleteAll(c->ListenerList);
-	}
-	UnlockList(c->ListenerList);
-
-	for (UINT i = 0; i < num; i++) {
-		StopListener(array[i]);
-		ReleaseListener(array[i]);
-	}
-	Free(array);
-}
-
 // Both budgets are plain counters shared by every connection and link of the Cedar, so one atomic add
 // replaces the lock each of them had. Callers keep the queue budget in step through CedarSyncQueueBudget
 static void CedarAddQueueBudget(CEDAR *c, int diff) {
