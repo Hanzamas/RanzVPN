@@ -30,7 +30,7 @@
 //
 // The log of libjuice goes nowhere (FuzzPeerJuiceLog). Without a handler it writes to stdout, and it quotes the username
 // fragment of a check that does not match, so an input would write a line of its own into the output of the run; the
-// coverage that run_fuzzers.ps1 checks for the two reach lines below is read from the report of libFuzzer alone
+// coverage that run_fuzzers.ps1 checks for the reach lines of this file is read from the report of libFuzzer alone
 // (CORE-S5-6-R3, #574).
 //
 // fuzz-max-len: 2048
