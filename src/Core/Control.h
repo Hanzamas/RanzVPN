@@ -609,6 +609,9 @@ typedef struct CONTROL_CAPS {
 	UINT Sku;
 	bool HyperV;
 	UINT EgressTier;
+	// The node can be the gateway of a Stretch of an L2 Network (SDN-63, #290): its host is a Windows Server, and its VXLAN
+	// module runs
+	bool Evpn;
 } CONTROL_CAPS;
 
 // Fills caps, which is zeroed, with the Capabilities of the node. The client calls it for each Hello, so a node

@@ -233,6 +233,8 @@ controller/internal/intent  ParseEndpointAddress  FuzzParseValues
 controller/internal/intent  ParseVTEPAddress  FuzzParseVTEP
 # The route targets of a VRF (SDN-7 #183)
 controller/internal/intent  ParseRouteTarget  FuzzParseValues
+# The ESI of a Stretch (SDN-63 #290)
+controller/internal/intent  ParseESI  FuzzParseStretch
 # The sensor and the protocol of a Mirror (SDN-23 #199)
 controller/internal/intent  ParseSensor    FuzzParseMirror
 controller/internal/intent  ParseProtocol  FuzzParseMirror
