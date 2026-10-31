@@ -60,7 +60,8 @@ const logFile = "controller.log"
 // anyone else. A directory created under ProgramData would otherwise let every user read the
 // controller key. The owner is in the list, so the owner must be SYSTEM, the Administrators or an
 // account of the controller's own (checkDataDirOwner), or the list would give a user that made the
-// directory first a right in it.
+// directory first a right in it. A new directory gets the list in the call that makes it (makeProtectedDir),
+// so that it has no other list at any moment.
 const dataDirSDDL = "D:P(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)(A;OICI;FA;;;OW)(A;OICI;FA;;;" + serviceSID + ")"
 
 func defaultDataDir() string {
@@ -69,23 +70,6 @@ func defaultDataDir() string {
 		base = `C:\ProgramData`
 	}
 	return filepath.Join(base, "Ranz", "controller")
-}
-
-func protectDir(dir string) error {
-	sd, err := windows.SecurityDescriptorFromString(dataDirSDDL)
-	if err != nil {
-		return fmt.Errorf("data directory ACL: %w", err)
-	}
-	dacl, _, err := sd.DACL()
-	if err != nil {
-		return fmt.Errorf("data directory ACL: %w", err)
-	}
-	err = windows.SetNamedSecurityInfo(dir, windows.SE_FILE_OBJECT,
-		windows.DACL_SECURITY_INFORMATION|windows.PROTECTED_DACL_SECURITY_INFORMATION, nil, nil, dacl, nil)
-	if err != nil {
-		return fmt.Errorf("data directory ACL of %s: %w", dir, err)
-	}
-	return nil
 }
 
 func isService() bool {

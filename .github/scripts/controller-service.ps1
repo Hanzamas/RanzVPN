@@ -278,7 +278,8 @@ Get-NetTCPConnection -LocalPort 80 -State Listen -ErrorAction SilentlyContinue |
 }
 & netsh http show servicestate view=requestq | Select-String -Pattern ':80/' -SimpleMatch -Context 12, 0 | ForEach-Object { Write-Host $_ }
 
-# Test-DataDirOwner, Test-Backup and Test-ServiceRefusesDataDir (AUD1-DT-10, #458), Test-FingerprintFile (AUD1-DT-14, #496)
+# Test-DataDirOwner, Test-Backup and Test-ServiceRefusesDataDir (AUD1-DT-10, #458), Test-FingerprintFile (AUD1-DT-14, #496),
+# Test-DataDirChildren (AUD1-DT-18, #503)
 . (Join-Path $PSScriptRoot 'controller-hostfiles.ps1')
 
 $hold = $null
@@ -538,6 +539,7 @@ try {
 	Write-Host "Application log: $($resets[0].Message)"
 
 	Test-ServiceRefusesDataDir
+	Test-DataDirChildren
 
 	Write-Host (Invoke-Checked $ranz @('controller', 'uninstall'))
 	foreach ($p in @($acmePrefix, $redirectPrefix)) {
