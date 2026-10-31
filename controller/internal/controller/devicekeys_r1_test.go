@@ -20,6 +20,7 @@ import (
 	"github.com/Hanzamas/RanzVPN/controller/internal/desired"
 	"github.com/Hanzamas/RanzVPN/controller/internal/intent"
 	"github.com/Hanzamas/RanzVPN/controller/internal/keys"
+	"github.com/Hanzamas/RanzVPN/controller/internal/rqlitetest"
 	"github.com/Hanzamas/RanzVPN/controller/internal/store"
 )
 
@@ -238,6 +239,7 @@ func TestAKeyThatOpensAgainAfterARestartReachesItsGateway(t *testing.T) {
 // controller says it in its log once, at its start, with the name of the Device, however often the gateway is sent the
 // Device after; and a Device that this controller makes has a key that opens, which its gateway gets.
 func TestARestoredKeyThatDoesNotOpenIsShown(t *testing.T) {
+	rqlitetest.Own(t) // it restores a backup into rqlited
 	ctx := context.Background()
 	from := newDeviceKeysHarness(t, &logBuffer{})
 	gw, host := deviceLab(t, from, capsWireGuard)
