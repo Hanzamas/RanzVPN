@@ -99,6 +99,11 @@ func Replace(in Intent, doc Document, random io.Reader) (Intent, error) {
 			delete(base.Devices, name)
 		}
 	}
+	for name := range base.Stretches {
+		if _, ok := declared[KindStretch+"/"+name]; !ok {
+			delete(base.Stretches, name)
+		}
+	}
 	base.dropUndeclaredUsers(declared)
 	next, err := Apply(base, doc, random)
 	if err != nil {

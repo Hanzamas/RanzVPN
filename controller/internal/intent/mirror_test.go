@@ -160,7 +160,7 @@ func TestDeleteMirror(t *testing.T) {
 	if _, err := Delete(next, KindMirror, "m"); !errors.Is(err, ErrNotFound) {
 		t.Errorf("deleting Mirror m again: %v, want ErrNotFound", err)
 	}
-	if _, err := Delete(next, "Router", "r"); err == nil || !strings.Contains(err.Error(), "Policy, Mirror, Controller, NAT, DnsRecord, Group, User, Listener, Device or SessionProfile") {
+	if _, err := Delete(next, "Router", "r"); err == nil || !strings.Contains(err.Error(), "Policy, Mirror, Controller, NAT, DnsRecord, Group, User, Listener, Device, SessionProfile or Stretch") {
 		t.Errorf("deleting a resource of no kind: %v, want an error that lists the kinds", err)
 	}
 }

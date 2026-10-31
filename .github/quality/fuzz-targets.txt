@@ -35,6 +35,9 @@ src/Core  PeerOpenSignal        fuzz_peer
 src/Core  PeerOpen              fuzz_peer  via PeerOpenSignal
 src/Core  PeerEnvelopeOpen      fuzz_peer  via PeerOpenSignal
 src/Core  PeerSignalDecode      fuzz_peer
+# The symmetric-NAT punch (CORE-S5-7 #413): the payload of a punch message, which fuzz_peer also seals as a probe, a message
+# of the exchange of nonces and a keepalive, and as a punch offer or answer, for nodes whose punches are open
+src/Core  PeerPunchParse        fuzz_peer
 src/Core  PeerPunchInput        fuzz_peer  via PeerInput
 # The peer sessions of the data datagrams (CORE-H2 #399): the clear header, the handshake messages and the records,
 # and the bind challenge
@@ -233,6 +236,8 @@ controller/internal/intent  ParseEndpointAddress  FuzzParseValues
 controller/internal/intent  ParseVTEPAddress  FuzzParseVTEP
 # The route targets of a VRF (SDN-7 #183)
 controller/internal/intent  ParseRouteTarget  FuzzParseValues
+# The ESI of a Stretch (SDN-63 #290)
+controller/internal/intent  ParseESI  FuzzParseStretch
 # The sensor and the protocol of a Mirror (SDN-23 #199)
 controller/internal/intent  ParseSensor    FuzzParseMirror
 controller/internal/intent  ParseProtocol  FuzzParseMirror

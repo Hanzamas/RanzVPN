@@ -49,7 +49,8 @@ func KeyOf(o *controlpb.Object) Key {
 
 // Compile returns the desired state of every Node of in, by node name. A node gets itself with
 // its addresses, its 1:1 NAT rules (nat.go), its LAN subnets (topology.go) and the Mirrors that
-// select it (mirror.go), the VRFs it is a member of with their Networks, a Peer for every other node
+// select it (mirror.go), the VRFs it is a member of with their Networks, each L2 Network that it is
+// the gateway of a Stretch of with the Stretch (stretch.go), a Peer for every other node
 // that shares one of those VRFs (full mesh, but two spokes of a VRF of topology hub-and-spoke do
 // not share it: topology.go) or that a leak joins to it (leak.go), with that node's addresses and routes in
 // them and the routes that its VRFs leak into the node's, and with the endpoints that it is dialled
@@ -111,6 +112,8 @@ func Compile(in intent.Intent) (map[string]State, error) {
 	nat := natRules(in, vrfs)
 	leaked := leakRoutes(in, vrfs)
 	responders := in.Responders()
+	// The Stretches of the L2 Networks, which their gateways get (stretch.go; SDN-63)
+	stretched := stretches(in)
 	// The WireGuard Devices of the VRFs of each node (device.go; SDN-80)
 	devs := devices(in, vrfs)
 	// The LAN subnets behind each gateway (topology.go; SDN-19)
@@ -123,8 +126,9 @@ func Compile(in intent.Intent) (map[string]State, error) {
 			member[v] = true
 			s.add(&controlpb.Object{Kind: &controlpb.Object_Vrf{Vrf: vrfs[v]}})
 			for _, nw := range networks[v] {
-				// The node that answers DHCP for an L2 Network gets its responder (dhcp.go)
-				s.add(&controlpb.Object{Kind: &controlpb.Object_Network{Network: withDHCP(nw, responders, name)}})
+				// The node that answers DHCP for an L2 Network gets its responder (dhcp.go), and the gateway of a Stretch of it
+				// gets the Stretch (stretch.go)
+				s.add(&controlpb.Object{Kind: &controlpb.Object_Network{Network: withStretch(withDHCP(nw, responders, name), stretched[name])}})
 			}
 		}
 		self := &controlpb.NodeConfig{Name: name, Tags: slices.Clone(tags[name]), Addresses: addresses(in, name, vrfs, member), RateLimit: n.RateLimit}
