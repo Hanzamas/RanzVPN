@@ -305,6 +305,26 @@ func TestEndpointsShareRoutes(t *testing.T) {
 	}
 }
 
+// A Node that is a member of both VRFs is no consumer: it reaches the service in the source VRF itself, so the Endpoint gives it no
+// route to the published address and the Node that serves it no route back to it.
+func TestEndpointConsumersAreNoMembersOfTheSourceVRF(t *testing.T) {
+	in, err := publishApply(publishNet("10.1.0"), res(KindEndpoint, "e", plainSpec))
+	if err != nil {
+		t.Fatal(err)
+	}
+	in, err = Apply(in, doc(res(KindNode, "db", `{"publicKey": "`+key2+`", "vrfs": ["corp", "vendor"], "addresses": {"corp-lan": "10.0.0.5", "vendor-lan": "10.1.0.9"}}`)), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	routes := in.WithPublished().LeakedRoutes()
+	if want := "corp 10.1.0.1/32 via buyer from vendor\ncorp 10.1.0.2/32 via guest from vendor\nvendor 172.16.1.1/32 via app from corp"; routeLines(routes) != want {
+		t.Errorf("the compiled intent leaks\n%s\nwant\n%s", routeLines(routes), want)
+	}
+	if len(routes) != 3 || !reflect.DeepEqual(routes[2].Nodes, []string{"buyer", "guest"}) {
+		t.Errorf("the nodes that hold the route to the service are %+v, want buyer and guest, not db", routes)
+	}
+}
+
 // An Endpoint whose Node is gone, as for a Node that a licence leaves out, or that does not parse, compiles to nothing, and one
 // that no Node of its consumer VRF can use (no tag that matches) leaks nothing but keeps its other resources.
 func TestEndpointThatCompilesToNothing(t *testing.T) {

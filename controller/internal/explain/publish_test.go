@@ -5,6 +5,7 @@ import (
 	"net/netip"
 	"slices"
 	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/Hanzamas/RanzVPN/controller/internal/controlpb"
@@ -42,6 +43,11 @@ func TestPublishedEndpointByName(t *testing.T) {
 	}
 	if v := r.Verdict; !v.Delivered || v.Node != "corp-app" || v.VRF != "corp" || v.Source.String() != "172.16.2.1" || v.Destination.String() != "10.0.0.1" {
 		t.Errorf("the flow of vendor-1 to the name ends as %+v, want delivered to corp-app in corp, as 172.16.2.1 > 10.0.0.1", v)
+	}
+	// No route target leaks the route of an Endpoint, and the step says what does
+	routes := steps(r, StepRoute)
+	if len(routes) == 0 || !strings.Contains(routes[0].Text, "a route that VRF corp leaks into VRF vendor for an Endpoint, so the packet goes into VRF corp of corp-app") {
+		t.Errorf("the first route step is %+v, want the route that corp leaks into vendor for an Endpoint", routes)
 	}
 }
 

@@ -140,6 +140,9 @@ func TestACallerChangesOnlyWhatIsInItsScope(t *testing.T) {
 		{"the pool of the Network", []intent.Resource{res(intent.KindNetwork, "branch-a", `{"vrf": "corp", "ipv4Pool": "10.11.0.0/24"}`)}, `the pools of a Network are the global roles' to change`},
 		{"a VRF", []intent.Resource{res(intent.KindVRF, "corp", `{"id": 10, "ula": "fd12:3456:789a::/48", "mtu": 1400}`)}, `VRF "corp": a scoped role changes the Network of its scope and the Nodes, the Users, the Groups and the Policies in it, and a VRF is none of them`},
 		{"a Controller", []intent.Resource{res(intent.KindController, "c1", `{"address": "192.0.2.1:443", "publicKey": "`+key(30)+`"}`)}, `a Controller is none of them`},
+		{"an Endpoint, which publishes a service of one VRF into another", []intent.Resource{res(intent.KindVRF, "lab", `{"id": 20, "ula": "fd12:3456:789b::/48", "dns": true}`),
+			res(intent.KindEndpoint, "billing", `{"vrf": "corp", "node": "a-server", "address": "10.10.0.1", "port": 443, "consumer": "lab", "as": "172.16.1.1"}`)},
+			`Endpoint "billing": a scoped role changes the Network of its scope and the Nodes, the Users, the Groups and the Policies in it`},
 	} {
 		err := try(t, in, admin("branch-a"), c.rs...)
 		if c.want == "" {
