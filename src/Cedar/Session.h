@@ -182,8 +182,6 @@ struct SESSION_INFO {
 	UINT64 PacketNum;
 };
 
-SESSION *NewClientSession(CEDAR *cedar, CLIENT_OPTION *option, CLIENT_AUTH *auth, PACKET_ADAPTER *pa);
-SESSION *NewRpcSession(CEDAR *cedar, CLIENT_OPTION *option, UINT *err, char *client_str);
 SESSION *NewServerSession(CEDAR *cedar, CONNECTION *c, HUB *h, char *username, POLICY *policy);
 void ReleaseSession(SESSION *s);
 void StopSession(SESSION *s);
@@ -192,8 +190,6 @@ PACKET_ADAPTER *NewPacketAdapter(PA_INIT *init, PA_GETCANCEL *getcancel, PA_GETN
                                  PA_PUTPACKET *put, PA_FREE *free);
 void SessionMain(SESSION *s);
 SESSION *GetSessionFromKey(CEDAR *cedar, UCHAR *session_key);
-void ClientAdditionalConnectChance(SESSION *s);
-void SessionAdditionalConnect(SESSION *s);
 void AddTrafficForSession(SESSION *s, TRAFFIC *t);
 void IncrementUserTraffic(HUB *hub, char *username, SESSION *s);
 void ReleaseCancelList(LIST *o);

@@ -7,6 +7,7 @@
 #include "Connection.h"
 #include "HttpListener.h"
 #include "HubLog.h"
+#include "Protocol.h"
 #include "Server.h"
 #include "Session.h"
 

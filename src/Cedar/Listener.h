@@ -58,6 +58,7 @@ struct HTTP_LISTENER_CONN {
 
 LISTENER *NewListener(CEDAR *cedar, UINT port);
 LISTENER *NewListenerEx(CEDAR *cedar, UINT proto, UINT port);
+void AddListener(CEDAR *c, LISTENER *r);
 void ReleaseListener(LISTENER *r);
 void StopListener(LISTENER *r);
 bool WaitListenerBind(LISTENER *r, UINT timeout);

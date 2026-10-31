@@ -143,6 +143,9 @@
 
 #define MACHINE_ID_SALT_SIZE 32 // Bytes of the machine identity salt (FIX-5)
 
+// Fixed first input of the machine identity hash (ComputeMachineUniqueHash, FIX-5 #101)
+#define MACHINE_ID_LABEL "RanzVPN machine identity v1"
+
 #define HUB_ACCESSLIST_DELAY_MAX  10000
 #define HUB_ACCESSLIST_JITTER_MAX 100
 #define HUB_ACCESSLIST_LOSS_MAX   100
@@ -399,7 +402,6 @@ CEDAR *NewCedar(X *server_x, K *server_k);
 void SetCedarCertAndChain(CEDAR *c, X *server_x, K *server_k, LIST *server_chain);
 void ReleaseCedar(CEDAR *c);
 void StopCedar(CEDAR *c);
-void AddListener(CEDAR *c, LISTENER *r);
 void AddTraffic(TRAFFIC *dst, TRAFFIC *diff);
 void SubTraffic(TRAFFIC *dst, TRAFFIC *a, TRAFFIC *b);
 void TrafficCountFrame(TRAFFIC_ENTRY *e, UCHAR *buf, UINT size);
@@ -414,6 +416,9 @@ void SetCedarCipherList(CEDAR *cedar, char *name);
 struct ssl_ctx_st *GetCedarServerSslCtx(CEDAR *c);
 void InitCedar();
 void FreeCedar();
+void GenerateMachineUniqueHash(CEDAR *c, void *data);
+void SetCedarMachineIdSalt(CEDAR *c, void *salt);
+void ComputeMachineUniqueHash(void *data, char *machine_guid, void *salt, UINT salt_size);
 char *GetSvcName(CEDAR *cedar, bool udp, UINT port);
 UINT64 GetTrafficPacketSize(TRAFFIC *t);
 UINT64 GetTrafficPacketNum(TRAFFIC *t);

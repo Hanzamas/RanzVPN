@@ -13,7 +13,6 @@
 #define SERVER_DEF_PORTS_4 GC_DEFAULT_PORT
 
 extern char *SERVER_CONFIG_FILE_NAME;
-#define SERVER_DEFAULT_HUB_NAME "DEFAULT"
 
 #define SERVER_FILE_SAVE_INTERVAL_DEFAULT  (5 * 60 * 1000)
 #define SERVER_FILE_SAVE_INTERVAL_MIN      (5 * 1000)
@@ -132,9 +131,6 @@ struct CAPSLIST {
 };
 
 
-#define NUM_GLOBAL_SERVER_FLAGS       128
-#define GSF_DISABLE_SESSION_RECONNECT 9
-
 SERVER *SiNewServer(void);
 void SiReleaseServer(SERVER *s);
 void StStartServer(void);
@@ -151,7 +147,6 @@ SERVER_LISTENER *SiGetListener(SERVER *s, UINT port);
 SERVER_LISTENER_INFO *SiEnumListeners(SERVER *s, UINT *num);
 UINT SiSetHttpListener(SERVER *s, bool enabled, UINT port);
 void SiGetHttpListener(SERVER *s, bool *enabled, UINT *port, bool *listening);
-void SiSetDefaultHubOption(HUB_OPTION *o);
 FOLDER *SiWriteConfigurationToCfg(SERVER *s);
 void SiWriteMachineIdCfg(FOLDER *f, CEDAR *c);
 void SiLoadMachineIdCfg(CEDAR *c, FOLDER *f);
@@ -160,14 +155,10 @@ void StInit();
 void StFree();
 void IncrementServerConfigRevision(SERVER *s);
 UINT SiStageConfiguration(SERVER *s, char *data, UINT size);
-void GetServerProductName(SERVER *s, char *name, UINT size);
 
 
 bool SiIsSysLogSaveType(UINT save_type);
 void SiSetSysLogSetting(SERVER *s, SYSLOG_SETTING *setting);
-void SiGetSysLogSetting(SERVER *s, SYSLOG_SETTING *setting);
-void SiWriteSysLog(SERVER *s, char *typestr, char *hubname, wchar_t *message);
-UINT SiGetSysLogSaveStatus(SERVER *s);
 void SiDebugLog(SERVER *s, char *msg);
 
 CAPS *GetCaps(CAPSLIST *caps, char *name);
@@ -183,9 +174,6 @@ void InRpcSysLogSetting(SYSLOG_SETTING *t, PACK *p);
 void OutRpcSysLogSetting(PACK *p, SYSLOG_SETTING *t);
 
 void GetServerCapsMain(SERVER *s, CAPSLIST *t);
-
-void SetGlobalServerFlag(UINT index, UINT value);
-UINT GetGlobalServerFlag(UINT index);
 
 #endif
 
