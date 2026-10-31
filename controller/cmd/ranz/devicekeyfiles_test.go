@@ -17,6 +17,7 @@ import (
 	"testing"
 
 	"github.com/Hanzamas/RanzVPN/controller/internal/api"
+	"github.com/Hanzamas/RanzVPN/controller/internal/certgen"
 	"github.com/Hanzamas/RanzVPN/controller/internal/controller"
 	"github.com/Hanzamas/RanzVPN/controller/internal/devicekey/qrscan"
 )
@@ -180,5 +181,80 @@ func TestGetDevicesSaysAPresharedKeyDoesNotOpen(t *testing.T) {
 	}
 	if !strings.Contains(out.String(), `"presharedKeyDoesNotOpen": true`) {
 		t.Errorf("ranz get devices printed\n%s\nwant that the PresharedKey of phone does not open", out.String())
+	}
+}
+
+// onAVolumeWithoutAccessLists makes ranz take the volume of each file that it makes for keys as one that keeps no access
+// lists, as a FAT drive of Windows is: the file is made as certgen makes it, and the call says that the volume keeps none.
+// The check is a call that the test replaces (createKeyFile), since no volume of the runner is one of that kind.
+func onAVolumeWithoutAccessLists(t *testing.T) {
+	t.Helper()
+	was := createKeyFile
+	createKeyFile = func(path string) (*os.File, bool, error) {
+		f, _, err := certgen.CreateKeyFile(path)
+		return f, false, err
+	}
+	t.Cleanup(func() { createKeyFile = was })
+}
+
+// TestDeviceCreateMakesNoKeyFileOnAVolumeWithoutAccessLists is the second criterion of SDN-82-R2: a file on a volume that
+// keeps no access lists is as readable as the volume, whatever mode or access list it is made with, so ranz makes no file
+// for the keys of a Device there. The empty file that it just made is removed before a key is written to it. -o prints the
+// configuration instead, which shows once, as it does for a file that cannot be written, and -qr-file is an error that says
+// why, after the configuration is printed. The folder holds no file after either.
+func TestDeviceCreateMakesNoKeyFileOnAVolumeWithoutAccessLists(t *testing.T) {
+	onAVolumeWithoutAccessLists(t)
+	ctx := context.Background()
+	dir := t.TempDir()
+	conf, qr := filepath.Join(dir, "phone.conf"), filepath.Join(dir, "phone.png")
+
+	cli, _ := deviceController(t, madePhone(t), 0)
+	var out, errOut bytes.Buffer
+	if err := createDevice(ctx, cli, []string{"-network", "lab-net", "-gateway", "gw", "-o", conf, "phone"}, &out, &errOut); err != nil {
+		t.Fatalf("-o on a volume without access lists gave %v, want the configuration printed", err)
+	}
+	if out.String() != deviceConfig {
+		t.Errorf("ranz printed %q on the standard output, want the configuration, since no file can hold it", out.String())
+	}
+	for _, want := range []string{"could not be written to " + conf + ", so it is printed here instead", "its volume keeps no access lists", "ranz makes no file for keys on it"} {
+		if !strings.Contains(errOut.String(), want) {
+			t.Errorf("ranz said %q on the standard error, want it to say %q", errOut.String(), want)
+		}
+	}
+
+	cli, _ = deviceController(t, madePhone(t), 0)
+	out.Reset()
+	errOut.Reset()
+	err := createDevice(ctx, cli, []string{"-network", "lab-net", "-gateway", "gw", "-qr-file", qr, "phone"}, &out, &errOut)
+	if !errors.Is(err, errNoAccessLists) || !strings.Contains(err.Error(), "the QR code could not be written to "+qr) {
+		t.Errorf("-qr-file on a volume without access lists gave %v, want an error that says that the QR code could not be written because the volume keeps no access lists", err)
+	}
+	if out.String() != deviceConfig {
+		t.Errorf("ranz printed %q on the standard output before the error, want the configuration, which shows once", out.String())
+	}
+
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range entries {
+		t.Errorf("the folder holds %s after the refusals, want no file: a file there holds the keys for every account", e.Name())
+	}
+}
+
+// TestClientsGuideSaysWhereRanzMakesNoKeyFile: the guide says where ranz makes no file for the keys of a Device, a volume
+// that keeps no access lists and, on Windows, a name that makes a stream of a file, and what it does instead (SDN-82-R2).
+func TestClientsGuideSaysWhereRanzMakesNoKeyFile(t *testing.T) {
+	text := strings.Join(strings.Fields(readGuide(t).section(t, "Make a Device").text), " ")
+	for _, want := range []string{
+		"makes no file on a volume that keeps no access lists, such as a FAT32 or exFAT USB stick",
+		"every account of the computer could read the keys there",
+		"It prints the configuration instead, and `-qr-file` fails with a message",
+		"a name with a colon in its last element, as `notes.txt:phone.conf`, is refused before the Device is made",
+		"a stream has the access list of its file",
+	} {
+		if !strings.Contains(text, want) {
+			t.Errorf("the section Make a Device of the guide does not say %q", want)
+		}
 	}
 }

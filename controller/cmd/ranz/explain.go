@@ -18,9 +18,10 @@ import (
 //	ranz explain [flags] A B   walk the compiled model of the controller for a packet from A to B and print each
 //	                           step: the VRF, the route of the forwarding table with the VRF that a leaked route comes
 //	                           from and its route targets, the 1:1 NAT rules, the link with the endpoints of its Nodes
-//	                           and whether it encrypts, the effective session profile of each end that runs under one,
-//	                           with the User or the Group that gives it (SDN-40), and the rule of the policy of the VRF
-//	                           at each end; then where the packet ends
+//	                           and whether it encrypts, the decoy of the front door of the Node that the link leads to
+//	                           or that it has none (AUD1-DT-4, #452), the effective session profile of each end that
+//	                           runs under one, with the User or the Group that gives it (SDN-40), and the rule of the
+//	                           policy of the VRF at each end; then where the packet ends
 //	ranz explain [flags] NODE  print the BGP peering of the Node NODE (SDN-77, #357; explainpeering.go): the peers of
 //	                           its sidecar with the state of each session and the prefixes learned from each, as the
 //	                           Node reported them last, and the Nodes that the intent names as its peers

@@ -48,7 +48,8 @@ void NodeCapsReadHost(NODE_CAPS_HOST *host);
 // edition, Hyper-V, and the Egress tier that a node on the host uses as the internet exit of a VRF (SDN-12, #188), the
 // first that the host supports: RRAS NAT on a Windows Server whose Routing and Remote Access runs as a LAN router, WinNAT
 // where Hyper-V and WinNAT are present and no NAT network of WinNAT exists, and on every other host the proxy on the
-// Windows TCP/IP stack (NodeEgress.c).
+// Windows TCP/IP stack (NodeEgress.c). Whether the node can be the gateway of a Stretch of an L2 Network, the Capability
+// evpn (SDN-63, #290): a Windows Server does, a workstation does not.
 void NodeCapsDecide(const NODE_CAPS_HOST *host, CONTROL_CAPS *caps);
 
 // The procedure of the control client that tells the Capabilities of the node for each Hello (CONTROL_CAPS_PROC): they
