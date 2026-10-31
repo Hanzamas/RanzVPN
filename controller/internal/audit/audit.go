@@ -216,7 +216,7 @@ type Log struct {
 	now   func() time.Time
 
 	mu   sync.Mutex
-	seen map[string]time.Time // for each source, when its last failed authentication was recorded
+	seen map[string]time.Time // for each throttleKey, when its last failed authentication was recorded
 
 	access accessThrottle // the reads that were recorded lately (access.go)
 }
@@ -234,8 +234,9 @@ func NewLog(s Store, log *slog.Logger) *Log {
 // source gets the ones of the origin in ctx (NewContext), and ActorSystem and SourceLocal when ctx
 // has none. Any text that is too long is cut. A kind or an outcome that does not exist is refused
 // with an error that wraps ErrInvalid. Of the failed authentications of one source only the first
-// in authFailedEvery is recorded, the others are dropped without an error. The write does not end
-// when ctx does: a caller that goes away does not make the record vanish.
+// in authFailedEvery is recorded, the others are dropped without an error; one under an API token
+// counts for that token apart (throttleKey). The write does not end when ctx does: a caller that
+// goes away does not make the record vanish.
 func (l *Log) Record(ctx context.Context, r Record) error {
 	switch {
 	case !slices.Contains(Kinds, r.Kind):
@@ -254,7 +255,7 @@ func (l *Log) Record(ctx context.Context, r Record) error {
 	r.Action = clip(r.Action, maxAction)
 	r.Subject = clip(r.Subject, maxSubject)
 	r.Message = clip(r.Message, maxMessage)
-	if r.Kind == AuthFailed && !l.allow(r.Source) {
+	if r.Kind == AuthFailed && !l.allow(throttleKey(r)) {
 		return nil
 	}
 	if r.Kind == Access && !l.access.allow(r.Actor, r.Action, l.now()) {
@@ -269,13 +270,13 @@ func (l *Log) Record(ctx context.Context, r Record) error {
 	return nil
 }
 
-// allow reports whether a failed authentication from source is to be recorded now, and remembers
-// that it was.
-func (l *Log) allow(source string) bool {
+// allow reports whether a failed authentication under the throttleKey key is to be recorded now,
+// and remembers that it was.
+func (l *Log) allow(key string) bool {
 	now := l.now()
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	if last, ok := l.seen[source]; ok && now.Sub(last) < authFailedEvery {
+	if last, ok := l.seen[key]; ok && now.Sub(last) < authFailedEvery {
 		return false
 	}
 	if len(l.seen) >= maxSources {
@@ -288,7 +289,7 @@ func (l *Log) allow(source string) bool {
 			return false
 		}
 	}
-	l.seen[source] = now
+	l.seen[key] = now
 	return true
 }
 

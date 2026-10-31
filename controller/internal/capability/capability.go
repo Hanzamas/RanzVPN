@@ -43,6 +43,9 @@ type Capabilities struct {
 	// Operations: the node answers the live operations of an operator (SDN-50), which read and clear the
 	// MAC table and the IP table of its L2 Networks.
 	Operations bool `json:"operations,omitempty"`
+	// BGPPeering: the node runs the BGP peering of the standard mode (SDN-77): its release has it, and ranz.exe,
+	// which holds the sidecar that it starts, is next to it.
+	BGPPeering bool `json:"bgpPeering,omitempty"`
 }
 
 var skuNames = map[controlpb.Sku]string{
@@ -75,6 +78,7 @@ func FromProto(p *controlpb.Capabilities) *Capabilities {
 		WireGuard:       p.GetWireguard(),
 		PlainLinks:      p.GetPlainLinks(),
 		Operations:      p.GetOperations(),
+		BGPPeering:      p.GetBgpPeering(),
 	}
 	if len(p.GetWireguardKey()) > 0 {
 		c.WireGuardKey = base64.StdEncoding.EncodeToString(p.GetWireguardKey())
@@ -94,6 +98,7 @@ func (c Capabilities) Proto() (*controlpb.Capabilities, error) {
 		Wireguard:       c.WireGuard,
 		PlainLinks:      c.PlainLinks,
 		Operations:      c.Operations,
+		BgpPeering:      c.BGPPeering,
 	}
 	if c.WireGuardKey != "" {
 		k, err := base64.StdEncoding.DecodeString(c.WireGuardKey)
@@ -165,6 +170,21 @@ var requirements = []requirement{
 		},
 		capability: "plainLinks",
 		has:        func(c *controlpb.Capabilities) bool { return c.GetPlainLinks() },
+	},
+	// A VRF whose Nodes peer by BGP needs a node that runs the peering (SDN-77-R2, #532): a node of an
+	// older release passes plainLinks and ignores the settings of the sidecar, and so does a node
+	// without ranz.exe, which holds the sidecar: neither starts one. The Controller gives no route of
+	// the LAN subnets of such a VRF, so that node would lose every LAN route of the VRF, and its own LAN
+	// subnets would be gone from every other node, without an error.
+	{
+		feature: func(o *controlpb.Object) string {
+			if v := o.GetVrf(); v.GetPeering() == controlpb.Peering_PEERING_BGP {
+				return fmt.Sprintf("BGP peering of VRF %q", v.GetName())
+			}
+			return ""
+		},
+		capability: "bgpPeering",
+		has:        func(c *controlpb.Capabilities) bool { return c.GetBgpPeering() },
 	},
 }
 
