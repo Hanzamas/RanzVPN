@@ -72,9 +72,10 @@ typedef struct juice_peer_message {
 // Whether data is a STUN message (RFC 8489): its first two bits zero, the magic cookie and a length that matches
 bool juice_peer_is_stun(const char *data, size_t size);
 
-// Reads a STUN message that came to the socket, data of size bytes, into m, once for every agent of the peer layer: false
-// for one that is no STUN message or that libjuice cannot read, which no agent takes
-bool juice_peer_read(juice_peer_message_t *m, const char *data, size_t size);
+// Reads a STUN message that came to the socket, data of size bytes, into m, once for every agent of the peer layer, and
+// counts the read in *reads unless reads is NULL: false for one that is no STUN message or that libjuice cannot read,
+// which no agent takes
+bool juice_peer_read(juice_peer_message_t *m, const char *data, size_t size, volatile long long *reads);
 
 // Hands the agent the message m that juice_peer_read read, which came from src, src_len bytes of a socket address. The
 // agent takes a check that names its username fragment once it has the remote description, and an answer to one of its

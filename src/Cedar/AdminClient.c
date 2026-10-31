@@ -1,5 +1,6 @@
 // AdminClient.c
-// Admin RPC client code that only vpncmd uses: the Sc* client stubs, AdminCall, AdminDisconnect and DownloadFileFromServer (#29 open question 7)
+// Admin RPC client code: the Sc* client stubs, AdminCall, AdminDisconnect and DownloadFileFromServer (#29 open question 7).
+// vpncmd used it until CORE-S8-1 (#84); the vpntest harness drives the in-process server through it.
 
 #include "Admin.h"
 

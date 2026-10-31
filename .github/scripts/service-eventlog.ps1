@@ -2,16 +2,18 @@ param([string] $BuildDir = 'build')
 
 $ErrorActionPreference = 'Stop'
 
-# Service events in the Windows Event Log (ticket #92). vpnserver installed and started as a Windows
+# Service events in the Windows Event Log (ticket #92). ranz-node installed and started as a Windows
 # service must write "started" (event ID 1) to the Application log under its service name, and
 # "stopped" (event ID 2) when it is stopped and uninstalled, with no failure entry (event ID 3).
 # The event IDs are MS_EVENT_SERVICE_* in src/Mayaqua/Microsoft.h; the entries are written by
-# MsServiceDispatcher and MsServiceStopProc in src/Mayaqua/Microsoft.c.
+# MsServiceDispatcher and MsServiceStopProc in src/Mayaqua/Microsoft.c. The service was the slim
+# fork's vpnserver until it was retired (CORE-S8-1, #84).
 
-$exe = (Resolve-Path (Join-Path $BuildDir 'vpnserver.exe')).Path
+$exe = (Resolve-Path (Join-Path $BuildDir 'ranz-node.exe')).Path
 
-# SVC_SEVPNSERVERDEV_NAME (src/bin/hamcore/strtable_en.stb): the service name and the event source
-$service = 'sevpnserverdev'
+# GC_SVC_NAME_NODE (src/GlobalConst.h), lower case as MsServiceEx registers it: the service name and the
+# event source (ADR-0020 decision 4)
+$service = 'ranzvpnserver'
 
 # How long an entry may take to appear (s): the service writes "started" once the server runs
 $waitSeconds = 120
@@ -46,7 +48,8 @@ function Show-Diagnostics {
 			Write-Host ("  {0:u} id {1}: {2}" -f $_.TimeCreated, $_.Id, $_.Message)
 		}
 	Get-Service -Name $service -ErrorAction SilentlyContinue | ForEach-Object { Write-Host "service ${service}: $($_.Status)" }
-	$log = Get-ChildItem -Path (Join-Path $BuildDir 'server_log') -Filter '*.log' -ErrorAction SilentlyContinue |
+	# The node log of the data directory (NodeDefaultDataDir, src/Cedar/Node.c)
+	$log = Get-ChildItem -Path (Join-Path $env:ProgramData 'Hanzcodes\Ranz VPN\node_log') -Filter '*.log' -ErrorAction SilentlyContinue |
 		Sort-Object LastWriteTime | Select-Object -Last 1
 	if ($log) {
 		Write-Host "last lines of $($log.FullName):"
@@ -54,20 +57,20 @@ function Show-Diagnostics {
 	}
 }
 
-function Invoke-Vpnserver([string] $arg) {
-	# vpnserver is a GUI-subsystem program: Start-Process -Wait waits for it to exit
-	Write-Host "vpnserver $arg"
+function Invoke-Node([string] $arg) {
+	# ranz-node is a GUI-subsystem program: Start-Process -Wait waits for it to exit
+	Write-Host "ranz-node $arg"
 	$p = Start-Process -FilePath $exe -ArgumentList $arg -Wait -PassThru
-	Write-Host "vpnserver $arg exited with code $($p.ExitCode)"
+	Write-Host "ranz-node $arg exited with code $($p.ExitCode)"
 }
 
 try {
-	Invoke-Vpnserver '/install'
+	Invoke-Node '/install'
 	$started = Wait-ServiceEvent 1
 	if ($null -eq $started) { throw "no 'started' entry (event ID 1) of $service within $waitSeconds s of /install" }
 	Write-Host "started entry: $(($started.Properties | ForEach-Object { $_.Value }) -join ' | ')"
 
-	Invoke-Vpnserver '/uninstall'
+	Invoke-Node '/uninstall'
 	$stopped = Wait-ServiceEvent 2
 	if ($null -eq $stopped) { throw "no 'stopped' entry (event ID 2) of $service within $waitSeconds s of /uninstall" }
 	Write-Host "stopped entry: $(($stopped.Properties | ForEach-Object { $_.Value }) -join ' | ')"

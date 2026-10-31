@@ -40,7 +40,7 @@ func newSealedHarness(t *testing.T, sealer *keys.Sealer) *harness {
 // newSealedHarnessLost is newSealedHarness whose store tells lost, which may be nil, which target has a
 // secret that it cannot open (store.SetSealer).
 func newSealedHarnessLost(t *testing.T, sealer *keys.Sealer, lost func(table, name string)) *harness {
-	h := &harness{t: t, rq: rqlitetest.Start(t), tune: func(c *controller.Config) {
+	h := &harness{t: t, rq: rqlitetest.Fresh(t), tune: func(c *controller.Config) {
 		c.NodeDownAfter = time.Minute
 		c.EventPoll = 50 * time.Millisecond
 		c.ExportInterval = time.Hour

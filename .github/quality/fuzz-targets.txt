@@ -183,10 +183,14 @@ src/Cedar  NodeEgressFromHost   exempt  a packet of the host's own IP stack, whi
 src/Cedar  NodeL2BridgeWay  exempt  compares the first six bytes of a frame, its destination MAC address, with the address of the NIC and tests their group bit; it reads no length and no field beyond them, and a frame shorter than six bytes is not read
 # The EVPN of a gateway node (SDN-25 #201): the learned and withdrawn messages of its BGP sidecar as IP prefix routes of an
 # EVPN VRF, and the frames that the VTEPs of a fabric send on the L3 VNI of an EVPN VRF, with the two ends of their packets.
-# The functions that take what these read are listed too, as the readers of routes and packets that they are.
+# The functions that take what these read are listed too, as the readers of routes and packets that they are. A frame comes
+# in only from a VTEP that the gateway knows for its VRF (SDN-25-R1 #549): NodeEvpnSortVteps sorts the VTEPs of the routes
+# that the sidecar gave, and NodeEvpnHasVtep looks the outer source of each frame up among them, no parser word in their names.
 src/Cedar  NodeEvpnParseRoute      fuzz_evpn
 src/Cedar  NodeEvpnParseFrame      fuzz_evpn
 src/Cedar  NodeEvpnEnds            fuzz_evpn  via NodeEvpnParseFrame
+src/Cedar  NodeEvpnSortVteps       fuzz_evpn
+src/Cedar  NodeEvpnHasVtep         fuzz_evpn
 src/Cedar  NodeEvpnRoute           exempt  puts the route that NodeEvpnParseRoute (fuzz_evpn) read from a message of the node's own sidecar into the list of the routes; it reads no byte itself
 src/Cedar  NodeEvpnOutput          exempt  a packet of the host's own IP stack, whose two ends NodeNatEnds (fuzz_nat) reads as for NodeOverlayInput, and which NodeNatCopy (fuzz_nat) writes into the frame for the fabric
 src/Cedar  NodeEvpnTransit         exempt  a packet of a peer that the overlay delivered, whose two ends NodeEvpnEnds (fuzz_evpn) reads, and which the session profile (NodeProfileInbound, fuzz_nodeprofile) and the policy of the VRF (fuzz_policy) judge before it goes to the fabric as it came, and NodeMirrorCopy (fuzz_mirror) copies
