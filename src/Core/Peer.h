@@ -261,6 +261,11 @@ typedef struct PEER_CONFIG {
 #define PEER_DEFAULT_REKEY_DATAGRAMS (1ULL << 24)
 #define PEER_DEFAULT_SESSION_TIMEOUT 45000
 #define PEER_DEFAULT_KEEPALIVE       10000
+// The clock skew between two nodes that the peer layer tolerates, in the 100 ns units of the wall clock that the
+// sequences of binds, signals, punch messages and initiations follow (PeerNextSequence): 5 minutes, the default
+// tolerance of Kerberos in Windows. A new entry of a peer takes its sequences from 5 minutes before the entry was made
+// (PeerFloorOf), so a peer whose clock is behind by up to that is no replay, and a sequence of before that is.
+#define PEER_CLOCK_SKEW (5ULL * 60 * 10000000)
 
 // The peer layer of one node, Peer.c
 typedef struct PEER_AGENT PEER_AGENT;

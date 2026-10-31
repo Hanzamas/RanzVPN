@@ -554,7 +554,178 @@ static void punch_preserving() {
 	NatSimFree(sim);
 }
 
+// The burst case of the review of PR 429 (CORE-H2-R1 #436): the punch messages that a node sends before the test hands
+// them on, and the probes of the burst
+#define PUNCH_WIRE_MAX 8
+#define PUNCH_BURST    5
+
+// A node of the burst case, where the test is the network: the punch messages that its peer layer sends wait in its
+// outbox, each with the address it went to, until the test hands them on from the address of the node
+typedef struct PUNCH_WIRE {
+	PEER_KEY Key;                                  // Its static key
+	PEER_ADDR Addr;                                // Its address, at which the other node sees it
+	PEER_AGENT *Agent;                             // Its peer layer, with punching on
+	UINT Num;                                      // The messages in its outbox
+	PEER_ADDR To[PUNCH_WIRE_MAX];                  // ... the address each went to
+	UINT Size[PUNCH_WIRE_MAX];                     // ... their sizes
+	UCHAR Data[PUNCH_WIRE_MAX][PEER_MAX_ENVELOPE]; // ... and their bytes
+} PUNCH_WIRE;
+
+// The send procedure of a node of the burst case: the message goes into its outbox
+static bool punch_wire_send(void *param, const PEER_ADDR *dst, const void *data, UINT size) {
+	PUNCH_WIRE *n = (PUNCH_WIRE *)param;
+
+	if (n->Num == PUNCH_WIRE_MAX || size > PEER_MAX_ENVELOPE)
+		return false;
+
+	n->To[n->Num] = *dst;
+	n->Size[n->Num] = size;
+	CopyMemory(n->Data[n->Num], data, size);
+	n->Num++;
+
+	return true;
+}
+
+static void punch_wire_free(PUNCH_WIRE *n) {
+	if (n == NULL)
+		return;
+
+	PeerFree(n->Agent);
+	PeerKeyClose(&n->Key);
+	HeapFree(GetProcessHeap(), 0, n);
+}
+
+// A node of the burst case with the key of the fixed scalar first, at 203.0.113.last port 40000, with punching on;
+// NULL when it does not start
+static PUNCH_WIRE *punch_wire_new(UCHAR first, UCHAR last) {
+	PEER_CONFIG c;
+	PUNCH_WIRE *n = (PUNCH_WIRE *)HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, sizeof(PUNCH_WIRE));
+
+	if (n == NULL)
+		return NULL;
+
+	PeerDefaultConfig(&c);
+	c.Punch = true;
+	coretest_fixed_key(&n->Key, first);
+	PeerAddrSetV4(&n->Addr, 203, 0, 113, last, 40000);
+	n->Agent = PeerNew(&n->Key, &c, punch_wire_send, n, NULL, NULL);
+	if (n->Agent == NULL) {
+		punch_wire_free(n);
+		return NULL;
+	}
+
+	return n;
+}
+
+// The wall clock in 100 ns units, which the sequences of the punch follow (PeerNextSequence)
+static UINT64 punch_clock() {
+	FILETIME ft;
+
+	GetSystemTimePreciseAsFileTime(&ft);
+
+	return ((UINT64)ft.dwHighDateTime << 32) | ft.dwLowDateTime;
+}
+
+// The stand-in of the control plane of the burst case: a signal of from for to, sealed by the test with the address of
+// from as its reflexive candidate, which begins the punch of to with from (PeerOpenSignal). Returns what PeerOpenSignal
+// returned.
+static UINT punch_wire_signal(PUNCH_WIRE *from, PUNCH_WIRE *to) {
+	PEER_SIGNAL s;
+	UCHAR payload[PEER_MAX_ENVELOPE];
+	UCHAR env[PEER_MAX_ENVELOPE];
+
+	ZeroMemory(&s, sizeof(s));
+	s.Type = PEER_SIGNAL_OFFER;
+	s.Sequence = punch_clock();
+	s.NumCandidates = 1;
+	s.Candidates[0].Type = PEER_CANDIDATE_SRFLX;
+	s.Candidates[0].Addr = from->Addr;
+
+	UINT len = PeerSignalEncode(&s, payload, sizeof(payload));
+	UINT size = (len != 0 ? PeerEnvelopeSeal(&from->Key, to->Key.Public, PEER_MSG_SIGNAL, NULL, payload, len, env, sizeof(env)) : 0);
+
+	return (size != 0 ? PeerOpenSignal(to->Agent, env, size, NULL) : PEER_DROP_MALFORMED);
+}
+
+// A probe of the node from for the node to with the sequence seq, sealed as PeerPunchTick seals one (version 1, the
+// sequence, type 1 for a probe, and two empty nonces); returns the size of the envelope in env
+static UINT punch_wire_probe(PUNCH_WIRE *from, PUNCH_WIRE *to, UINT64 seq, UCHAR *env, UINT max) {
+	UCHAR probe[PUNCH_PAYLOAD_SIZE];
+
+	ZeroMemory(probe, sizeof(probe));
+	probe[0] = 1;
+	for (UINT i = 0; i < 8; i++)
+		probe[1 + i] = (UCHAR)(seq >> (56 - 8 * i));
+	probe[9] = 1;
+
+	return PeerEnvelopeSeal(&from->Key, to->Key.Public, PEER_MSG_PUNCH, NULL, probe, sizeof(probe), env, max);
+}
+
+// Hand the message i of the outbox of from to the node to, from the address of from
+static void punch_wire_hand(PUNCH_WIRE *from, UINT i, PUNCH_WIRE *to) {
+	if (i < from->Num)
+		PeerInput(to->Agent, &from->Addr, from->Data[i], from->Size[i]);
+}
+
+// A burst of probes from one address, each of which draws a challenge, draws one nonce at each end, so the response to
+// the first challenge meets, also when the responses to the later ones are lost. With a nonce for each message, a burst
+// of more than PEER_PUNCH_NONCES (4) evicted the first one (finding 4).
+static void punch_burst() {
+	UCHAR env[PEER_MAX_ENVELOPE];
+	PEER_INFO p;
+	PEER_STATUS ls, fs;
+
+	PUNCH_WIRE *x = punch_wire_new(1, 10);
+	PUNCH_WIRE *y = punch_wire_new(33, 20);
+	if (coretest_check(x != NULL && y != NULL, "Two nodes whose punch messages the test hands on start, with punching on") == false) {
+		punch_wire_free(x);
+		punch_wire_free(y);
+		return;
+	}
+
+	// L, the node of the lower static key, leads: it answers a probe with a challenge, and F a challenge with a response
+	PUNCH_WIRE *l = (memcmp(x->Key.Public, y->Key.Public, PEER_KEY_SIZE) < 0 ? x : y);
+	PUNCH_WIRE *f = (l == x ? y : x);
+	punch_peer(&p, "f", f->Key.Public, 10);
+	PeerSetPeers(l->Agent, &p, 1);
+	punch_peer(&p, "l", l->Key.Public, 10);
+	PeerSetPeers(f->Agent, &p, 1);
+	UINT taken = punch_wire_signal(f, l);
+	taken = (taken == PEER_OK ? punch_wire_signal(l, f) : taken);
+	PeerGetStatus(l->Agent, f->Key.Public, &ls);
+	PeerGetStatus(f->Agent, l->Key.Public, &fs);
+	coretest_check(taken == PEER_OK && ls.Punch == PEER_PUNCH_PROBING && fs.Punch == PEER_PUNCH_PROBING, "The signal of each node begins its punch with the other");
+
+	// A burst of probes of F from its one address: L answers each with a challenge to that address, and F each challenge
+	// with a response to L's address
+	UINT64 seq = punch_clock();
+	for (UINT i = 0; i < PUNCH_BURST; i++) {
+		UINT size = punch_wire_probe(f, l, seq + i, env, sizeof(env));
+		PeerInput(l->Agent, &f->Addr, env, size);
+	}
+	for (UINT i = 0; i < l->Num; i++)
+		punch_wire_hand(l, i, f);
+	coretest_check(l->Num == PUNCH_BURST && f->Num == PUNCH_BURST && PeerAddrEqual(&l->To[0], &f->Addr) && PeerAddrEqual(&f->To[0], &l->Addr),
+	               "L answers each probe of a burst from F's address with a challenge to that address, and F each challenge with a response");
+
+	// Only the response to the first challenge comes back: L meets F at F's address, and L's proof moves F to the direct
+	// path at L's address
+	punch_wire_hand(f, 0, l);
+	PeerGetStatus(l->Agent, f->Key.Public, &ls);
+	coretest_check(ls.Punch == PEER_PUNCH_CONNECTED && ls.Path == PEER_PATH_DIRECT && PeerAddrEqual(&ls.Direct, &f->Addr) && l->Num == PUNCH_BURST + 1,
+	               "The response to the first challenge of the burst meets: L sent the same nonce to that address in every challenge, and the burst evicted none");
+	punch_wire_hand(l, PUNCH_BURST, f);
+	PeerGetStatus(f->Agent, l->Key.Public, &fs);
+	coretest_check(fs.Punch == PEER_PUNCH_CONNECTED && fs.Path == PEER_PATH_DIRECT && PeerAddrEqual(&fs.Direct, &l->Addr),
+	               "L's proof moves F to the direct path at L's address: F sent the same nonce in every response to that address");
+
+	punch_wire_free(x);
+	punch_wire_free(y);
+}
+
 void punch_test() {
+	// The case of the review of PR 429 (CORE-H2-R1 #436)
+	punch_burst();
 	punch_preserving();
 	punch_sequential();
 	punch_birthday();
