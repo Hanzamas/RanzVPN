@@ -211,6 +211,8 @@ try {
 		if ("$($caps.sku)" -ne $sku) { throw "node $($s.name) reports the SKU '$($caps.sku)', and this runner is '$sku'" }
 		if ([bool] $caps.hyperV -ne $haveHyperV) { throw "node $($s.name) reports Hyper-V $($caps.hyperV), and this runner has it: $haveHyperV" }
 		if ([int] $caps.egressTier -ne $tier) { throw "node $($s.name) reports the Egress tier $($caps.egressTier), not $tier, the tier of this runner" }
+		# The gateway of a Stretch of an L2 Network (SDN-63, #290): a Windows Server, whose VXLAN module runs on every node
+		if ([bool] $caps.evpn -ne ($sku -eq 'Server')) { throw "node $($s.name) reports evpn $($caps.evpn), and this runner is '$sku': only a Windows Server can be the gateway of a Stretch" }
 	}
 	Write-Host 'the Hello of each node carried its Capabilities, which are the ones of this machine'
 
