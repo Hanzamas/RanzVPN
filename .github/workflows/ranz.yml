@@ -559,58 +559,41 @@ jobs:
         go-version: ${{ env.GO_VERSION }}
         cache-dependency-path: go.sum
     # TEMPORARY (CI-FLAKE-2, #562), removed in the last commit of this branch: the test of the thousand Nodes many times
-    # in a row while the CPU of the runner is busy, with 1, 2 and 4 busy loops for each core. The test as it was before the
-    # fix runs first, for a comparison, and may fail here; then the new test, whose failure fails the step
+    # in a row while the CPU of the runner is busy. The runs on Windows are slow under a load of one busy loop for each
+    # core (the old test took 9 s a run, 0.5 s without load, and failed 3 times in 30), so the load is half of that for
+    # the 200 runs. The test as it was before the fix runs second, for a comparison, and may fail here; the failure of
+    # the new test fails the step. The output is shown as it comes, since the step has a limit of time
     - name: TEMPORARY the thousand Nodes on a busy runner
       if: matrix.platform.ARCHITECTURE == 'x64'
       shell: pwsh
-      timeout-minutes: 30
+      timeout-minutes: 33
       run: |
         # Built before the load starts
         go test -count=1 -run '^$' ./controller/internal/port
         if ($LASTEXITCODE -ne 0) { throw "go test exited with code $LASTEXITCODE" }
         $pwsh = (Get-Process -Id $PID).Path
         $out = Join-Path $env:RUNNER_TEMP 'thousand.out'
-        function Start-Load($factor) {
-          1..($factor * [Environment]::ProcessorCount) | ForEach-Object {
+        $global:status = 0
+        function Invoke-Phase($label, $test, $loops, $times, $strict) {
+          Write-Host "::group::$label, $loops busy loops, $times times"
+          $load = 1..$loops | ForEach-Object {
             Start-Process -FilePath $pwsh -ArgumentList '-NoProfile', '-Command', 'while ($true) { }' -PassThru -WindowStyle Hidden
           }
-        }
-        function Show-Result($file, $pattern) {
-          Write-Host "passed $(@(Select-String -Path $file -Pattern '^--- PASS').Count), failed $(@(Select-String -Path $file -Pattern '^--- FAIL').Count), with attempts made again $(@(Select-String -Path $file -Pattern 'attempts made again: [1-9]').Count), with errors of Accept $(@(Select-String -Path $file -Pattern 'errors of Accept: [1-9]').Count)"
-          Select-String -Path $file -Pattern $pattern | Select-Object -First 20 | ForEach-Object { $_.Line }
+          try {
+            go test "-count=$times" -timeout 20m -v -run ('^{0}$' -f $test) ./controller/internal/port | Tee-Object -FilePath $out
+            if ($LASTEXITCODE -ne 0 -and $strict) { $global:status = 1 }
+          } finally {
+            $load | Stop-Process -Force
+          }
+          Write-Host "$label, $loops busy loops: passed $(@(Select-String -Path $out -Pattern '^--- PASS').Count), failed $(@(Select-String -Path $out -Pattern '^--- FAIL').Count), with attempts made again $(@(Select-String -Path $out -Pattern 'attempts made again: [1-9]').Count), with errors of Accept $(@(Select-String -Path $out -Pattern 'errors of Accept: [1-9]').Count)"
+          Write-Host "::endgroup::"
         }
         $env:RANZ_FLAKE_562 = '1'
-        foreach ($factor in 1, 2, 4) {
-          Write-Host "::group::the old test, $factor busy loops for each core, 30 times"
-          $load = Start-Load $factor
-          try {
-            go test -count=30 -timeout 20m -v -run '^TestOldThousandNodesBehindOneAddressConnectWithTheDefaults$' ./controller/internal/port > $out
-            Write-Host "go test exited with code $LASTEXITCODE"
-          } finally {
-            $load | Stop-Process -Force
-          }
-          Show-Result $out '^--- FAIL|limits_old_test.go'
-          Write-Host "::endgroup::"
-        }
-        Remove-Item Env:RANZ_FLAKE_562
-        $status = 0
-        foreach ($phase in @(@(2, 200), @(4, 60))) {
-          $factor = $phase[0]
-          $times = $phase[1]
-          Write-Host "::group::the new test, $factor busy loops for each core, $times times"
-          $load = Start-Load $factor
-          try {
-            go test "-count=$times" -timeout 20m -v -run '^TestThousandNodesBehindOneAddressConnectWithTheDefaults$' ./controller/internal/port > $out
-            if ($LASTEXITCODE -ne 0) { $status = 1 }
-          } finally {
-            $load | Stop-Process -Force
-          }
-          Get-Content $out
-          Show-Result $out '^--- FAIL'
-          Write-Host "::endgroup::"
-        }
-        exit $status
+        $cores = [Environment]::ProcessorCount
+        Invoke-Phase 'the new test' 'TestThousandNodesBehindOneAddressConnectWithTheDefaults' ($cores / 2) 200 $true
+        Invoke-Phase 'the old test' 'TestOldThousandNodesBehindOneAddressConnectWithTheDefaults' ($cores / 2) 40 $false
+        Invoke-Phase 'the new test' 'TestThousandNodesBehindOneAddressConnectWithTheDefaults' $cores 30 $true
+        exit $global:status
     # rqlite publishes a Windows build for x64 only: on the arm64 runner this is the x64 rqlited.exe,
     # which Windows 11 on ARM runs under emulation, and which is the member of ranz for arm64
     - name: Install rqlited
