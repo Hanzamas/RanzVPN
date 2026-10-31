@@ -16,7 +16,10 @@
 // changed a route (NodeEvpnCommit), so the data path reads them without a lock, as it reads the forwarding tables of the VRFs.
 //
 // Into the fabric: the routes of the overlay come first, so a packet goes to the fabric only to a destination that no route of
-// its VRF holds and an IP prefix route of the fabric does: a packet of the host of the gateway (NodeOverlayInput,
+// its VRF holds and an IP prefix route of the fabric does. The default route of the VRF is the one exception (SDN-25-R2, #550):
+// a VRF with an internet exit routes 0.0.0.0/0 to the exit at each of its Nodes (NodeEgress.c; SDN-12, #188), and a longer
+// route of the fabric wins over it, as the longest prefix wins; of two default routes the one of the overlay wins, as the exit
+// is the explicit choice of the operator (NodeEvpnTakes). So goes a packet of the host of the gateway (NodeOverlayInput,
 // NodeEvpnOutput), as the overlay sees it after the 1:1 NAT rules, and a packet of a peer that the gateway forwards
 // (NodeOverlayDeliver, NodeEvpnTransit). It goes behind an Ethernet header from the router MAC of the gateway to the router
 // MAC of the route, untagged, with the EtherType of IPv4 or IPv6, on the VNI of the route, to the VTEP of the route on the UDP
@@ -342,6 +345,24 @@ static const NODE_EVPN_HOP *NodeEvpnFind(NODE_EVPN_TABLE *t, UINT vrf_id, const 
 	return (i < t->NumHops ? &t->Hops[i] : NULL);
 }
 
+// The next hop of the IP prefix route of the table t of the fabric that takes a packet of the VRF vrf_id, whose forwarding
+// table is vt, to the address dst (size bytes), NULL for none. The routes of the overlay come first: a route of the fabric
+// takes the packet when no route of the VRF holds dst, or when only the default route of the VRF holds it, as at a Node of a
+// VRF with an internet exit (NodeEgress.c; SDN-12, #188), and a longer route of the fabric holds it too. Of two default
+// routes, the one of the overlay wins.
+static const NODE_EVPN_HOP *NodeEvpnTakes(NODE_EVPN_TABLE *t, NODE_VRF_TABLE *vt, UINT vrf_id, const UCHAR *dst, UINT size) {
+	if (t == NULL)
+		return NULL;
+
+	// Only the default route of the VRF holds dst: a longer route of the fabric wins over it, the default route of the fabric
+	// does not
+	if (NodeVrfDefault(vt, dst, size))
+		return (NodeVrfDefault(NodeGetVrfTable(t->Routes, vrf_id), dst, size) ? NULL : NodeEvpnFind(t, vrf_id, dst, size));
+
+	// Any other route of the VRF wins over the routes of the fabric
+	return (NodeVrfLookup(vt, dst, size) == NODE_VRF_NONE ? NodeEvpnFind(t, vrf_id, dst, size) : NULL);
+}
+
 // Send the IP packet of size bytes of the VRF vrf_id to the fabric by the route of the table t whose next hop is hop: a packet
 // of the host (host) as the overlay sees it, through the 1:1 NAT rules of the forwarding tables v, a packet of a peer as it
 // came. It goes behind an Ethernet header from the router MAC of the gateway to the router MAC of the route, untagged, with
@@ -377,10 +398,10 @@ static bool NodeEvpnSend(NODE_EVPN_TABLE *t, const NODE_EVPN_HOP *hop, NODE_VRF_
 	return ok;
 }
 
-// A packet of the host in the VRF vrf_id that the forwarding tables v route to no peer (NodeOverlayInput): it goes to the
-// fabric when its source is an address of the node, no route of the VRF holds its destination and an IP prefix route of the
-// fabric does, all as the overlay sees the packet after the 1:1 NAT rules. False when it went nowhere. The caller is an online
-// reader of the node's table snapshot, which holds v.
+// A packet of the host in the VRF vrf_id whose destination no route of the forwarding tables v holds, or only the default
+// route of the VRF (NodeOverlayInput): it goes to the fabric when its source is an address of the node and an IP prefix route
+// of the fabric takes its destination (NodeEvpnTakes), all as the overlay sees the packet after the 1:1 NAT rules. False when
+// it went nowhere. The caller is an online reader of the node's table snapshot, which holds v.
 bool NodeEvpnOutput(NODE *n, NODE_VRF_TABLES *v, UINT vrf_id, const UCHAR *packet, UINT size) {
 	UCHAR src[16], dst[16];
 	UINT addr_size = 0;
@@ -390,21 +411,21 @@ bool NodeEvpnOutput(NODE *n, NODE_VRF_TABLES *v, UINT vrf_id, const UCHAR *packe
 
 	if (et == NULL || vt == NULL || NodeNatEnds(v, vrf_id, packet, size, src, dst, &addr_size) == false)
 		return false;
-	if (NodeVrfLookup(vt, src, addr_size) != NODE_VRF_LOCAL || NodeVrfLookup(vt, dst, addr_size) != NODE_VRF_NONE)
+	if (NodeVrfLookup(vt, src, addr_size) != NODE_VRF_LOCAL)
 		return false;
 
-	const NODE_EVPN_HOP *hop = NodeEvpnFind(et, vrf_id, dst, addr_size);
+	const NODE_EVPN_HOP *hop = NodeEvpnTakes(et, vt, vrf_id, dst, addr_size);
 
 	return (hop != NULL && NodeEvpnSend(et, hop, v, vrf_id, packet, size, true));
 }
 
 // A packet of the peer of the next hop from of the forwarding tables v in the VRF vrf_id, which the gateway forwards to the
-// fabric when no route of the VRF holds its destination and an IP prefix route of the fabric does (NodeOverlayDeliver). The
-// session profile of the peer and the node's own, then the policy of the VRF, judge it as a packet of the peer to the host, and
-// a Mirror of the VRF copies the packet that went, as they do with the packet of a peer to a LAN subnet behind a gateway. True
-// when the fabric took the packet, whether it went or the profile, the policy or the send dropped it; false when it is no
-// packet for the fabric, and the overlay goes on with it. The caller is an online reader of the node's table snapshot, which
-// holds v.
+// fabric when an IP prefix route of the fabric takes its destination, as it takes the destination of a packet of the host
+// (NodeEvpnTakes, NodeOverlayDeliver). The session profile of the peer and the node's own, then the policy of the VRF, judge
+// it as a packet of the peer to the host, and a Mirror of the VRF copies the packet that went, as they do with the packet of a
+// peer to a LAN subnet behind a gateway. True when the fabric took the packet, whether it went or the profile, the policy or
+// the send dropped it; false when it is no packet for the fabric, and the overlay goes on with it. The caller is an online
+// reader of the node's table snapshot, which holds v.
 bool NodeEvpnTransit(NODE *n, NODE_VRF_TABLES *v, UINT vrf_id, UINT from, const UCHAR *packet, UINT size) {
 	UCHAR src[16], dst[16];
 	UINT addr_size = 0;
@@ -412,10 +433,10 @@ bool NodeEvpnTransit(NODE *n, NODE_VRF_TABLES *v, UINT vrf_id, UINT from, const 
 	NODE_EVPN_TABLE *et = (t != NULL ? t->Evpn : NULL);
 	NODE_VRF_TABLE *vt = NodeGetVrfTable(v, vrf_id);
 
-	if (et == NULL || vt == NULL || NodeEvpnEnds(packet, size, src, dst, &addr_size) == false || NodeVrfLookup(vt, dst, addr_size) != NODE_VRF_NONE)
+	if (et == NULL || vt == NULL || NodeEvpnEnds(packet, size, src, dst, &addr_size) == false)
 		return false;
 
-	const NODE_EVPN_HOP *hop = NodeEvpnFind(et, vrf_id, dst, addr_size);
+	const NODE_EVPN_HOP *hop = NodeEvpnTakes(et, vt, vrf_id, dst, addr_size);
 	if (hop == NULL)
 		return false;
 
