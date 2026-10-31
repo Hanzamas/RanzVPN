@@ -134,6 +134,14 @@
 // Egress tier that its host gives it, with the SKU and Hyper-V that decide it, in its Capabilities.
 // No schema version changes with them: a node of an older release skips the field it does not know.
 //
+// Stretch (SDN-63, #290, ADR-0032 amendment of 2026-10-22): the node that is the gateway of a Stretch resource gets it in the
+// object of its Network (Network.stretch): the L2 VNI of the Network in the data-centre fabric, the route targets, the ESI,
+// the BUM rate limit, the limit of remote MAC addresses, the stale timer and the irb flag. No other node gets it, and the
+// controller sends it only while the licence in force has EVPN and BGP, an Enterprise feature (ADR-0036). A node reports the
+// Capability evpn when its host is a Windows Server and its VXLAN module runs; an intent that gives a Stretch to a node that
+// does not report it is refused before apply. The Stretch moves no frame yet. No schema version changes with it: a node of an
+// older release skips the field it does not know, and reports no Capability evpn.
+//
 // BGP peering of the standard mode (SDN-77, #357): the nodes of a VRF whose links are of kind vxlan
 // or geneve and whose peering is bgp (Vrf.peering) exchange their routes there by BGP, in a full
 // mesh, each with the sidecar ranz bgp on the network that the operator trusts. A node gets the
@@ -584,6 +592,10 @@ message Network {
   // judges the frames that come to its own switch, and only while a protection of it is on. A node
   // of an older release skips the field it does not know.
   L2Security security = 7;
+  // The Stretch of an L2 Network (SDN-63 #290): only in the state of the gateway of the Stretch, and only while the controller
+  // delivers it, which it does while the licence in force has EVPN and BGP (ADR-0036). A node of an older release skips the
+  // field it does not know.
+  Stretch stretch = 8;
 }
 
 // The security of an L2 Network (SDN-41 #234, ADR-0019 decision 1): the protections of the fork
@@ -604,6 +616,22 @@ message L2Security {
   // No IPv6 router advertisements from a client, which still gets those of the gateways (RAFilter).
   bool ra_guard = 7;
   repeated string gateways = 8;  // sorted: the nodes of the gateways
+}
+
+// The Stretch of an L2 Network at its gateway (SDN-63 #290, ADR-0032 amendment of 2026-10-22): the gateway extends the Network
+// into a data-centre fabric over EVPN and VXLAN. The administrator of the fabric fixes the VNI, the route targets and the ESI,
+// and the controller only validates them (controller/internal/intent, stretch.go). A limit that the Stretch resource leaves
+// out has its default here, so no field of a Stretch that a node gets is 0 but the ESI and irb.
+message Stretch {
+  uint32 vni = 1;                     // the L2 VNI of the Network in the fabric, 1 to 16777215
+  repeated string route_targets = 2;  // imported and exported, ASN:NUMBER or IPV4:NUMBER, sorted, 8 at most
+  // The Ethernet segment identifier that the gateway shares with the other gateways of the Network (EVPN type-1 and type-4),
+  // 10 bytes; empty for a Network that has one gateway and no ESI
+  bytes esi = 3;
+  uint64 bum_rate_limit = 4;    // bits per second of broadcast, unknown-unicast and multicast frames that the gateway sends the fabric at most
+  uint32 mac_import_limit = 5;  // remote MAC addresses that the gateway imports from the fabric at most
+  uint32 stale_timer = 6;       // seconds that the remote MAC addresses stay in use after the BGP session or ranz-bgp went down
+  bool irb = 7;                 // symmetric integrated routing and bridging on the Network (the L3 VNI of the VRF)
 }
 
 // Another node that shares at least one VRF with this one (full mesh), or that a leak between a VRF
@@ -771,6 +799,9 @@ message Capabilities {
   // not report it is refused as a member of a VRF whose peering is bgp. 13 is the Capability tags of SDN-87
   // (#386), so this is 14.
   bool bgp_peering = 14;
+  // The node can be the gateway of a Stretch (SDN-63 #290, ADR-0032 amendment of 2026-10-22): its host is a Windows Server and
+  // the VXLAN module of the node runs. 13 and 14 are the fields that SDN-87 (#386) and SDN-77-R2 (#532) take, so this is 15.
+  bool evpn = 15;
 }
 
 // The Windows edition of a node's host.
@@ -860,10 +891,10 @@ message Telemetry {
   // The BGP peering of the standard mode at the node (SDN-77): in a summary of its own whenever it
   // changed, and absent from the others. 7 is the groups of SDN-87 (#386), so the peering is 8.
   PeeringReport peering = 8;
-  // The Upgrades and the Fallbacks of the Paths of the node's peer agent (CORE-S5-6), absent while
-  // its peer layer does not run. The node lists them in a summary of their own after each Hello,
-  // whenever they change and again every 15 s while they stay the same, as the controller drops a
-  // counter that its node stopped listing.
+  // The Upgrades and the Fallbacks of the Paths of the node's peer agent (CORE-S5-6), and its
+  // punches (CORE-S5-7), absent while its peer layer does not run. The node lists them in a summary
+  // of their own after each Hello, whenever they change and again every 15 s while they stay the
+  // same, as the controller drops a counter that its node stopped listing.
   PathCounters paths = 9;
 }
 
@@ -886,12 +917,17 @@ message PeeringPeer {
 }
 
 // The Paths of the peer agent of a node since the node started (CORE-S5-6, ADR-0015 decision 4):
-// the Upgrades, each a Path that moved from the Relay to the direct path that ICE validated, and
-// the Fallbacks, each a direct path whose consent freshness failed, so that its pair went back to
-// the Relay.
+// the Upgrades, each a Path that moved from the Relay to the direct path that ICE validated or a
+// punch met, and the Fallbacks, each a direct path whose consent failed, so that its pair went back
+// to the Relay. The punches (CORE-S5-7, ADR-0015 decision 2): the attempts at a direct path to a
+// peer behind a symmetric NAT, the successes among them, and the failures of the prediction, each
+// an attempt that spent its probes and met nothing.
 message PathCounters {
   uint64 upgrades = 1;
   uint64 fallbacks = 2;
+  uint64 punch_attempts = 3;
+  uint64 punch_successes = 4;
+  uint64 punch_failures = 5;
 }
 
 // The WireGuard end of one Device at its gateway (SDN-80): the last handshake, in Unix time in

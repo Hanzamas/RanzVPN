@@ -1,6 +1,7 @@
 package telemetry
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -43,6 +44,49 @@ func TestHubKeepsAndExportsTheUpgradesAndFallbacks(t *testing.T) {
 	}
 }
 
+// The punches of a node (CORE-S5-7, #413): the Hub keeps the attempts, the successes and the
+// failures of the prediction that the node reported last with its Paths, and the export has them as
+// ranz_path_punch_attempts_total, ranz_path_punch_successes_total and
+// ranz_path_punch_failures_total of the node, next to its Upgrades and Fallbacks, and in the JSON.
+func TestHubKeepsAndExportsThePunches(t *testing.T) {
+	h := NewHub(0)
+	h.Report("node-a", &controlpb.Telemetry{Paths: &controlpb.PathCounters{PunchAttempts: 1, PunchFailures: 1}})
+	h.Report("node-a", &controlpb.Telemetry{Paths: &controlpb.PathCounters{Upgrades: 1, PunchAttempts: 4, PunchSuccesses: 1, PunchFailures: 3}})
+	h.Report("node-b", summary(1))
+	want := PathCounters{Upgrades: 1, PunchAttempts: 4, PunchSuccesses: 1, PunchFailures: 3}
+	snap := h.Snapshot(nil)
+	if len(snap) != 2 || snap[0].Paths == nil || *snap[0].Paths != want || snap[1].Paths != nil {
+		t.Fatalf("the snapshot holds %+v, want the last punches of node-a and none of node-b", snap)
+	}
+
+	data, err := json.Marshal(snap[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), `"paths":{"upgrades":1,"fallbacks":0,"punchAttempts":4,"punchSuccesses":1,"punchFailures":3}`) {
+		t.Errorf("the JSON of node-a is %s, want its punches with its Paths", data)
+	}
+
+	rec := httptest.NewRecorder()
+	Handler(func() []Sample { return h.Samples(nil) }).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/v1/metrics", nil))
+	text := rec.Body.String()
+	for _, want := range []string{
+		"# TYPE ranz_path_punch_attempts_total counter",
+		`ranz_path_punch_attempts_total{node="node-a"} 4`,
+		"# TYPE ranz_path_punch_successes_total counter",
+		`ranz_path_punch_successes_total{node="node-a"} 1`,
+		"# TYPE ranz_path_punch_failures_total counter",
+		`ranz_path_punch_failures_total{node="node-a"} 3`,
+	} {
+		if !strings.Contains(text, want+"\n") {
+			t.Errorf("the metrics do not hold %q:\n%s", want, text)
+		}
+	}
+	if strings.Contains(text, `ranz_path_punch_attempts_total{node="node-b"}`) {
+		t.Errorf("node-b reported no Paths, and the metrics have a series of its punches:\n%s", text)
+	}
+}
+
 // nodePathRefresh is how often a node lists its Paths again while they stay the same:
 // CONTROL_PATH_REFRESH of the C node (src/Core/Control.h).
 const nodePathRefresh = 15 * time.Second
@@ -64,8 +108,9 @@ func TestHubKeepsThePathsOfAStableNode(t *testing.T) {
 		now = now.Add(time.Second)
 	}
 	samples := h.Samples(nil)
-	if len(samples) != 2 || samples[0].Metric != "path_upgrades" || samples[0].Value != 1 || samples[1].Metric != "path_fallbacks" || samples[1].Value != 1 {
-		t.Errorf("the export of node-a after %s holds %+v, want its Upgrades and Fallbacks", 3*DefaultStale, samples)
+	if len(samples) != 5 || samples[0].Metric != "path_upgrades" || samples[0].Value != 1 || samples[1].Metric != "path_fallbacks" || samples[1].Value != 1 ||
+		samples[2].Metric != "path_punch_attempts" || samples[3].Metric != "path_punch_successes" || samples[4].Metric != "path_punch_failures" {
+		t.Errorf("the export of node-a after %s holds %+v, want its Upgrades and Fallbacks and its punches", 3*DefaultStale, samples)
 	}
 	now = now.Add(DefaultStale + time.Second)
 	if snap := h.Snapshot(nil); len(snap) != 0 {

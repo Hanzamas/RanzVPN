@@ -25,7 +25,8 @@
 #define PEER_BOUND_SIZE 27
 // ... of a signal: PEER_VERSION, the type, the sequence, the relay key, address and port, the number of
 // candidates, then each candidate: its type, address and port; then, from a node with ICE on, the length and the
-// characters of the username fragment of its ICE session, and the length and the characters of its password
+// characters of the username fragment of its ICE session, and the length and the characters of its password. A punch
+// offer or a punch answer ends with the NAT of its sender (PEER_NAT_*), one byte, in their place.
 #define PEER_SIGNAL_FIXED  61
 #define PEER_CANDIDATE_LEN 19
 #define PEER_ICE_ATTRS_MAX (2 + PEER_ICE_UFRAG_SIZE - 1 + PEER_ICE_PWD_SIZE - 1)
@@ -34,12 +35,16 @@
 // The path of a data datagram at the ingress: the PEER_PATH_* values, and a node bound to the relay role
 #define PEER_PATH_BOUND 3
 
-// The target addresses one punch of a peer probes: the peer's predicted port, then a birthday range above each of
-// its reflexive and mapped candidates (PeerPunch.c)
-#define PEER_PUNCH_MAX_TARGETS 48
+// The target addresses one attempt of a punch probes: the one port of a peer behind a cone, or the range around the
+// predicted port of a sequential NAT (PeerPunch.c)
+#define PEER_PUNCH_MAX_TARGETS 64
 // The nonces of a punch that wait for their echo, each with the address it went to (PeerPunch.c)
 #define PEER_PUNCH_NONCES     4
 #define PEER_PUNCH_NONCE_SIZE 16
+// The destinations of the node that a NAT maps, which the punch counts to predict the next mapping, and the punch messages
+// whose times the rate of the punch holds (PeerPunch.c)
+#define PEER_PUNCH_DESTS    1024
+#define PEER_PUNCH_RATE_MAX 256
 
 // A peer session (PeerSession.c): the sizes of its handshake messages. An initiation is its kind, the source key,
 // the destination key and the sender's index, then the first message of Noise_IK with the payload of
@@ -131,21 +136,42 @@ typedef struct PEER_ICE {
 	PEER_ADDR Selected;                    // The peer's address on the direct path (the lock of the layer)
 } PEER_ICE;
 
-// The symmetric-NAT hole punch of a node with one peer (PeerPunch.c, CORE-S5-4): the probes it sends to the ports
-// it predicts of the peer, on the peer layer's own socket, while the peer stays on the relay. The control plane
-// triggers it with the signal exchange; a validated probe sets HasDirect below, like PeerSetDirect does.
+// The symmetric-NAT hole punch of a node with one peer (PeerPunch.c; CORE-S5-4, CORE-S5-7): the probes it sends to the
+// ports it predicts of the peer, on the peer layer's own socket, while the peer stays on the relay. A punch offer and a
+// punch answer of the control plane begin an attempt at each end; a validated probe sets HasDirect below, like
+// PeerSetDirect does, and the keepalives of the two ends hold the punched path while the peer answers.
 typedef struct PEER_PUNCH {
 	UINT State;                                             // PEER_PUNCH_*
-	UINT Budget;                                            // Probes left before the punch gives up
-	bool Attempted;                                         // Counted once in PunchAttempts
+	bool IceFailed;                                         // An ICE session of the pair failed since ICE last had its direct path up
+	UINT PeerNat;                                           // The NAT of the peer, from its last punch signal (PEER_NAT_*)
+	PEER_ADDR Own;                                          // The node's predicted port when its probes began, which its punch answer names
+	UINT Budget;                                            // Punch messages left of the attempt, its probes and its answers together
+	UINT Failures;                                          // Attempts in a row that met nothing, the one under way among them
+	UINT64 NextAttempt;                                     // When the next attempt may begin (PeerNow): PunchRetry after the end of one, or PunchBackoff after the last one
+	UINT64 Offered;                                         // When the node sealed its last punch offer, 0 for none or once it was answered
+	bool Answer;                                            // The last punch offer of the peer began an attempt: its punch answer is due
+	UINT64 LastProbe;                                       // When the last probe of the attempt went, or its last response: it fails PEER_PUNCH_LINGER after, once its probes are spent
+	UINT64 LastSent;                                        // When the node last sent a keepalive or a proof on the punched path
+	volatile LONG64 LastHeard;                              // When the peer was last heard on the punched path (PeerNow): a punch message or a record that opened
+	volatile LONG Moved;                                    // 1 once the peer said from the punched path that it is there: its keepalive or a record from there
+	UINT Proofs;                                            // The leader: the proofs of the meeting that it sent, PEER_PUNCH_PROOFS at most until the peer moved
+	UCHAR Proof[PEER_PUNCH_NONCE_SIZE];                     // ... and the nonce of the other end that they echo
 	UINT64 LastSeq;                                         // The last punch sequence taken from the peer, for anti-replay
-	UINT NumTargets;                                        // The addresses the probes go to: the predicted port first
+	UINT NumTargets;                                        // The addresses the probes go to, in the order of the sweep
 	UINT Next;                                              // The next target of the round over them, so one tick sends a bounded burst
 	PEER_ADDR Targets[PEER_PUNCH_MAX_TARGETS];              // ...
 	UINT NextNonce;                                         // The next slot of the nonces below, round robin
 	PEER_ADDR NonceTo[PEER_PUNCH_NONCES];                   // The addresses that a nonce of the node went to, sealed to the peer
 	UCHAR Nonces[PEER_PUNCH_NONCES][PEER_PUNCH_NONCE_SIZE]; // ... and those nonces, which the peer echoes from there
 } PEER_PUNCH;
+
+// A destination of the node that a NAT maps (PeerPunch.c): a relay that it binds, an address that its ICE sessions check,
+// an address that its punches probe. A symmetric NAT makes a mapping for each new one, on the next port.
+typedef struct PEER_PUNCH_DEST {
+	PEER_ADDR Addr; // The address
+	UINT Index;     // The number of its mapping, in the order of the destinations of the node; 0 for a free slot
+	UINT Gen;       // The generation of the destinations it belongs to: one of an older generation is gone
+} PEER_PUNCH_DEST;
 
 // One peer in the peer table, kept across PeerSetPeers while the peer stays
 typedef struct PEER {
@@ -180,6 +206,7 @@ typedef struct PEER_RELAY {
 	UINT64 BindSequence;            // The sequence of the last bind
 	UINT64 BindTick;                // When the last bind was sent (ms)
 	PEER_ADDR Observed;             // The address that the relay saw the node at: its server reflexive candidate
+	UINT Mapping;                   // With punching, the number of the node's mapping towards the relay (PeerPunchDestination)
 	bool HasCookie;                 // The relay sent a bind challenge: its cookie goes in the next binds
 	bool Answered;                  // The last bind answered a challenge, so the next challenge waits for a new bind
 	UCHAR Cookie[PEER_COOKIE_SIZE]; // ... the cookie
@@ -217,12 +244,19 @@ struct PEER_AGENT {
 	volatile LONG64 Sequence;                // The last sequence of a bind or a signal of the node
 	LONG64 RateInterval;                     // GCRA: performance counter ticks between two datagrams at RelayRate
 	LONG64 RateTolerance;                    // ... and the burst tolerance
-	volatile LONG64 Counters[12];            // Sent, Delivered, DeliveredRelay, Forwarded, Binds, Signals, Upgrades, Fallbacks, PunchAttempts, PunchSuccesses, Handshakes, Challenges
+	volatile LONG64 Counters[14];            // Sent, Delivered, DeliveredRelay, Forwarded, Binds, Signals, Upgrades, Fallbacks, PunchAttempts, PunchSuccesses, Handshakes, Challenges, PunchFailures, PunchProbes
 	volatile LONG64 Drops[PEER_NUM_REASONS]; // What the layer dropped, by reason
 	SRWLOCK IceLock;                         // Serialises the start, the remote side and the end of the ICE sessions
 	PEER_ICE_NODE Ice;                       // The port mapping of the socket, with Config.PortMap
 	volatile LONG64 StunMessages;            // The STUN messages that came to the socket, each read once (PeerIceInput)
 	UCHAR CookieSecret[CRYPTO_SHA256_SIZE];  // The relay role: the key of its bind challenges, new at every start
+	SRWLOCK PunchLock;                       // With punching, the destinations and the times below; it comes after the lock of the layer
+	PEER_PUNCH_DEST Dests[PEER_PUNCH_DESTS]; // The destinations of the node that a NAT maps, the oldest replaced first (PeerPunch.c)
+	UINT NextDest;                           // ... the slot of the next new one
+	UINT DestGen;                            // ... their generation: a relay that saw the node at a new address begins a new one
+	UINT Mappings;                           // ... the mappings that they made, counted
+	UINT64 RateTimes[PEER_PUNCH_RATE_MAX];   // When the last punch messages of the node went (PeerNow), round robin
+	UINT RateNext;                           // ... the slot of the next one
 };
 
 // The counters of a PEER_AGENT
@@ -238,6 +272,8 @@ struct PEER_AGENT {
 #define PEER_COUNT_PUNCH_SUCCESSES 9
 #define PEER_COUNT_HANDSHAKES      10
 #define PEER_COUNT_CHALLENGES      11
+#define PEER_COUNT_PUNCH_FAILURES  12
+#define PEER_COUNT_PUNCH_PROBES    13
 
 // Peer.c
 void PeerCount(PEER_AGENT *a, UINT counter);
@@ -293,9 +329,13 @@ bool PeerPortMapGet(PEER_AGENT *a, PEER_ADDR *addr);
 UINT PeerPortMapState(PEER_AGENT *a);
 
 // PeerPunch.c
-UINT PeerPunchCandidate(PEER_AGENT *a, PEER_CANDIDATE *c, UINT max);
-void PeerPunchStart(PEER_AGENT *a, const UCHAR *key);
+UINT PeerPunchDestination(PEER_AGENT *a, const PEER_ADDR *to);
+void PeerPunchRemap(PEER_AGENT *a, PEER_RELAY *r);
+UINT PeerPunchSealSignal(PEER_AGENT *a, const UCHAR *key, UINT type, UCHAR *buf, UINT size);
+void PeerPunchStart(PEER_AGENT *a, const UCHAR *key, const PEER_SIGNAL *s);
 void PeerPunchInput(PEER_AGENT *a, const PEER_ADDR *from, const UCHAR *data, UINT size);
+void PeerPunchHeard(PEER *p, const PEER_ADDR *from);
 void PeerPunchTick(PEER_AGENT *a);
+void PeerPunchStats(PEER_AGENT *a, PEER_STATS *st);
 
 #endif // CORE_PEER_INTERNAL_H
