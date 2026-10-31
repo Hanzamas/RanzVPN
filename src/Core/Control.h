@@ -602,6 +602,8 @@ typedef struct CONTROL_CAPS {
 	UCHAR WireGuardKey[NOISE_KEY_SIZE];
 	// The node runs the links of kind vxlan and geneve (SDN-76, #356)
 	bool PlainLinks;
+	// The node runs the BGP peering of the standard mode: ranz.exe, which holds its sidecar, is next to it (SDN-77-R2, #532)
+	bool BgpPeering;
 	// The Windows edition of the host (CONTROL_SKU_*), whether Hyper-V is present on it, and the Egress tier that the host
 	// gives the node as the internet exit of a VRF (CONTROL_EGRESS_*; SDN-12, #188)
 	UINT Sku;
