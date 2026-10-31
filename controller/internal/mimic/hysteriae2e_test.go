@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/tls"
 	"encoding/binary"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
@@ -19,6 +20,7 @@ import (
 
 	hyclient "github.com/apernet/hysteria/core/v2/client"
 	hyerrors "github.com/apernet/hysteria/core/v2/errors"
+	hyserver "github.com/apernet/hysteria/core/v2/server"
 	"github.com/apernet/quic-go"
 	"github.com/apernet/quic-go/http3"
 	"github.com/apernet/quic-go/quicvarint"
@@ -657,6 +659,68 @@ func TestTheHooksOfTheHysteriaServer(t *testing.T) {
 	h.TCPError(addr, "aa", "stream", io.EOF)
 	h.UDPRequest(addr, "aa", 1, "192.0.2.2:53")
 	h.UDPError(addr, "aa", 1, io.EOF)
+}
+
+// The Hysteria part never turns on the sniff of Hysteria and carries no UDP of a client, whatever its
+// settings: the configuration that it gives the server of the library has no RequestHook, the hook
+// through which the sniff (extras/v2/sniff) reads what a client sends, and DisableUDP, and a client with
+// the secret hears that the server carries no UDP and has its UDP refused. GO-2026-5288, an OOM of the
+// sniff on a QUIC packet that a client sends over UDP, needs both (.github/quality/govulncheck-accepted.txt).
+func TestTheHysteriaListenerNeverTurnsOnTheSniff(t *testing.T) {
+	cases := []struct {
+		name       string
+		salamander string
+		maxMbps    int
+	}{
+		{"the smallest part", "", 0},
+		{"every setting", testSalamander, 100},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			private, _ := keyPair(t)
+			s, _ := hysteriaSettings(t, private)
+			s.Hysteria.Secrets = append(s.Hysteria.Secrets, strings.Repeat("01", 16))
+			s.Hysteria.Salamander = c.salamander
+			s.Hysteria.MaxMbps = c.maxMbps
+			configs := make(chan *hyserver.Config, 1)
+			srv, _ := runServer(t, s, Options{skipDetect: true, onHysteria: func(config *hyserver.Config) { configs <- config }})
+			select {
+			case config := <-configs:
+				if config.RequestHook != nil || !config.DisableUDP {
+					t.Errorf("the library got the RequestHook %T and DisableUDP %v, want none and true", config.RequestHook, config.DisableUDP)
+				}
+			case <-time.After(testTimeout):
+				t.Fatal("the Hysteria part gave the library no configuration")
+			}
+
+			addr, err := net.ResolveUDPAddr("udp", srv.ready.Hysteria)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var key []byte
+			if c.salamander != "" {
+				if key, err = hex.DecodeString(c.salamander); err != nil {
+					t.Fatal(err)
+				}
+			}
+			client, info, err := hyclient.NewClient(&hyclient.Config{
+				ConnFactory: connFactory(func(net.Addr) (net.PacketConn, error) { return listenUDP("127.0.0.1:0", key) }),
+				ServerAddr:  addr,
+				Auth:        testSecret,
+				TLSConfig:   hyclient.TLSConfig{ServerName: testName, InsecureSkipVerify: true},
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer client.Close()
+			if info.UDPEnabled {
+				t.Error("the server told a client with the secret that it carries UDP")
+			}
+			if _, err := client.UDP(); err == nil {
+				t.Error("a client with the secret got UDP")
+			}
+		})
+	}
 }
 
 // The documentation tells the port of the listener of the mode, that the mode is off by default, and that

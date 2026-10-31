@@ -19,6 +19,7 @@ $ErrorActionPreference = 'Stop'
 $accepted = @{
 	'.' = @{
 		'GO-2026-4736' = 'the database names no fixed version, but the fix (osrg/gobgp 583080a7, "server: fix malformed nexthop attribute crash", 2026-03-05, issue 3305) is in v4.10.0, which go.mod pins'
+		'GO-2026-5288' = 'the database names no fixed version and no symbol, but the advisory (GHSA-9fw6-xgg2-mq9q, reviewed, 2.8.1 the last affected version) is of the sniff of Hysteria, a RequestHook of the server of the library that ranz mimic never sets: the Hysteria part gives the library no RequestHook and DisableUDP, whatever its settings (controller/internal/mimic/hysteriaserver.go:115-124, TestTheHysteriaListenerNeverTurnsOnTheSniff), and go.mod pins v2.13.0'
 	}
 }
 

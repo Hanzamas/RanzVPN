@@ -108,7 +108,11 @@ func startHysteria(ctx context.Context, cfg *hysteriaServerConfig, d *decoy, pag
 		return nil, fmt.Errorf("the Hysteria listener cannot listen on %s: %w", cfg.listen, err)
 	}
 	h.addr = conn.LocalAddr().String()
-	h.srv, err = hyserver.NewServer(&hyserver.Config{
+	// The library gets no RequestHook, the hook through which the sniff of Hysteria (extras/v2/sniff)
+	// reads what a client sends, and carries no UDP of a client (DisableUDP), whatever the settings:
+	// GO-2026-5288, an OOM of the sniff on a QUIC packet that a client sends over UDP, needs both
+	// (.github/quality/govulncheck-accepted.txt)
+	config := &hyserver.Config{
 		TLSConfig:       hyserver.TLSConfig{GetCertificate: h.certificate},
 		Conn:            conn,
 		Outbound:        h,
@@ -117,7 +121,11 @@ func startHysteria(ctx context.Context, cfg *hysteriaServerConfig, d *decoy, pag
 		Authenticator:   h,
 		EventLogger:     h,
 		MasqHandler:     http.HandlerFunc(h.masquerade),
-	})
+	}
+	if opts.onHysteria != nil {
+		opts.onHysteria(config)
+	}
+	h.srv, err = hyserver.NewServer(config)
 	if err != nil {
 		conn.Close()
 		return nil, fmt.Errorf("the Hysteria listener: %w", err)

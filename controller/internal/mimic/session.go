@@ -11,6 +11,8 @@ import (
 	"strings"
 	"sync/atomic"
 	"time"
+
+	hyserver "github.com/apernet/hysteria/core/v2/server"
 )
 
 // Options are the options of a session.
@@ -24,6 +26,9 @@ type Options struct {
 	// onBrutal hears the rate at which an end of a connection of the Hysteria mode sends, in bytes
 	// per second: Brutal at that rate, or 0 for BBR
 	onBrutal func(role string, bps uint64)
+	// onHysteria hears the configuration that the Hysteria part of the server role gives the server of
+	// the library (hysteriaserver.go)
+	onHysteria func(*hyserver.Config)
 }
 
 // Version names ranz mimic, the program that runs the sidecar, and the libraries it embeds.
