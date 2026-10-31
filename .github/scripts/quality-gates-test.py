@@ -1,6 +1,8 @@
 # Fixtures for the scripts of the ADR-0040 quality gates: fuzz-registry.py, run_fuzzers.ps1 (its lines
 # "// fuzz-reach:" and the coverage report of libFuzzer that it reads for them, with PowerShell 7),
-# coverage-floor.py, bench-gate.py, static-findings.py and govulncheck-gate.py.
+# coverage-floor.py, bench-gate.py, static-findings.py and govulncheck-gate.py; and for the guards of the start of
+# ranz-node in service-eventlog.ps1 (the source scan of the VBScript firewall path and the checks of the firewall
+# rules and of the script hosts, with PowerShell 7).
 #
 # Each gate runs on a throwaway tree or input made here and must pass what it should pass and fail
 # what it should fail: a new parser without a fuzz target, a stale registry line, a fuzz target that
@@ -493,6 +495,71 @@ def test_one_binary():
           {'.github/scripts/one-binary-check.py': 'ranz-bgp.exe\n'})
 
 
+def test_service_eventlog():
+    # service-eventlog.ps1 (CORE-S8-1-R1, #575) guards the start of ranz-node, as firewall-rule.ps1 guarded that of vpnserver:
+    # no VBScript firewall path in the sources (ticket #47, criterion 5), and, in windows.yml, no firewall rule changed by a
+    # restart of the service and no cscript or wscript started by it (criterion 2). The scan runs here on throwaway trees with
+    # a planted line, and the checks of the rules and of the script hosts on planted data (-SelfTest): each must fail on its
+    # fault. The part that needs Windows, the service, the rules of Windows Firewall and the ETW trace, plants a real rule and a
+    # real process start in windows.yml. PowerShell 7 runs the script here, on Linux.
+    pwsh = shutil.which('pwsh')
+    if pwsh is None:
+        failures.append('service-eventlog: no pwsh on the PATH, which the fixtures of service-eventlog.ps1 need')
+        print('FAIL', 'service-eventlog: no pwsh')
+        return
+    script = os.path.join(HERE, 'service-eventlog.ps1')
+
+    def run_script(*args):
+        p = subprocess.run([pwsh, '-NoProfile', '-NonInteractive', '-File', script] + list(args), stdout=subprocess.PIPE,
+                           stderr=subprocess.STDOUT)
+        return p.returncode, p.stdout.decode('utf-8', errors='replace')
+
+    sources = ('src/Mayaqua', 'src/Cedar', 'src/Core', 'src/ranz-node')
+
+    def scan(name, code, files=None, texts=(), absent=(), folders=sources):
+        # A tree with a clean source file in each folder of the scan, and the files of the fixture
+        with tempfile.TemporaryDirectory() as root:
+            for folder in folders:
+                write(root, folder + '/Clean.c', '// nothing of the old path\n')
+            for path, text in (files or {}).items():
+                write(root, path, text)
+            expect('service-eventlog scan: ' + name, run_script('-ScanRoot', root), code, *texts, absent=absent)
+
+    scan('sources that name no VBScript path', 0, texts=['name no VBScript firewall path (4 files in src/Mayaqua, src/Cedar, src/Core, src/ranz-node)'])
+    # The seven things that the VBScript firewall path of the old server was made of, each in a line of its own
+    planted = {
+        'cscript': 'Win32Run("cscript.exe", script);',
+        'wscript': 'Win32Run(L"wscript.exe", script);',
+        'a .vbs file': 'StrCpy(name, size, "detectvm.vbs");',
+        'winfire_': 'Format(name, size, "winfire_%u", pid);',
+        'FW ScriptHash': '#define KEY "FW ScriptHash"',
+        'SOFTETHER_FW_SCRIPT_HASH': 'MsRegWriteInt(REG_LOCAL_MACHINE, SOFTETHER_FW_SCRIPT_HASH, hash, 1);',
+        'RegistWindowsFirewall': 'MsRegistWindowsFirewall();',
+    }
+    for what, line in planted.items():
+        scan('a line that names ' + what, 1, {'src/Cedar/Planted.c': line + '\n'},
+             texts=['Planted.c:1: ' + line, 'lines of the sources of the Node name the VBScript firewall path'], absent=['name no VBScript firewall path'])
+    scan('a line that names it in capitals', 1, {'src/Mayaqua/Planted.c': 'run("CScript.EXE");\n'}, texts=['Planted.c:1: run("CScript.EXE");'])
+    scan('a line in a header of the program', 1, {'src/ranz-node/Planted.h': '#define HOST "wscript.exe"\n'}, texts=['Planted.h:1:'])
+    scan('a line in the new core', 1, {'src/Core/Planted.c': '// cscript\n'}, texts=['Planted.c:1:'])
+    scan('a line in the code of a third party', 0, {'src/Mayaqua/3rdparty/lib/Skip.c': 'run("cscript.exe");\n'},
+         texts=['name no VBScript firewall path'], absent=['Skip.c'])
+    scan('a line in a file that is no source', 0, {'src/Cedar/notes.txt': 'cscript\n'}, texts=['name no VBScript firewall path'])
+    scan('a folder that is not there', 1, folders=('src/Mayaqua', 'src/Cedar', 'src/ranz-node'), texts=['the source scan has no folder src/Core'])
+    scan('no source file at all', 1, {folder + '/readme.txt': 'x\n' for folder in sources}, folders=(),
+         texts=['the source scan found no .c or .h file'])
+
+    expect('service-eventlog: the checks of the rules and of the script hosts fail on their planted faults', run_script('-SelfTest'), 0,
+           'ok: the check passes the same rules',
+           'ok: the check fails on a rule that was added',
+           'ok: the check fails on a rule that was deleted',
+           'ok: the check fails on a rule that was changed',
+           'ok: the check passes a program that started no script host',
+           'ok: the check fails on a cscript.exe that the program started',
+           'ok: the check fails on a WScript.EXE that the program started',
+           'ok: the check fails on a trace that holds no start of the program')
+
+
 if __name__ == '__main__':
     test_fuzz_registry()
     test_run_fuzzers()
@@ -501,6 +568,7 @@ if __name__ == '__main__':
     test_static_findings()
     test_govulncheck_gate()
     test_one_binary()
+    test_service_eventlog()
     if failures:
         print('\n\n'.join(failures))
         print('%d fixtures failed' % len(failures))
