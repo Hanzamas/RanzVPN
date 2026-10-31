@@ -356,21 +356,6 @@ static int CompareServerListener(void *p1, void *p2) {
 		return 0;
 }
 
-void SiSetDefaultHubOption(HUB_OPTION *o) {
-	if (o == NULL)
-		return;
-
-	for (UINT i = 0; i < num_hub_option_fields; i++) {
-		HUB_OPTION_FIELD *f = &hub_option_fields[i];
-
-		if (f->Default != 0)
-			SetHubOptionField(o, f, f->Default);
-	}
-
-	// A zero default is not applied (the caller may have set NoEnum), except MaxSession which is always reset
-	o->MaxSession = 0;
-}
-
 static void SiInitDefaultHubList(SERVER *s) {
 	HUB_OPTION o;
 	if (s == NULL)
