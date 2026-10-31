@@ -518,6 +518,8 @@ func (in Intent) DeviceConfigWith(name string, gatewayKey []byte, keys DeviceKey
 	switch {
 	case len(keys.Preshared) == KeySize:
 		fmt.Fprintf(&b, "PresharedKey = %s\n", base64.StdEncoding.EncodeToString(keys.Preshared))
+	case keys.HasPreshared && keys.PresharedDoesNotOpen:
+		b.WriteString("# PresharedKey = the PresharedKey of this Device does not open with the key of the controller, so the gateway terminates the Device without it until it opens, or until the Device is made again\n")
 	case keys.HasPreshared:
 		b.WriteString("# PresharedKey = the PresharedKey of this Device, which the controller showed once when it made the Device\n")
 	}

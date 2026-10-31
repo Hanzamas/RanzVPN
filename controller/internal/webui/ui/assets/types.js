@@ -153,6 +153,7 @@
  * @property {string} [ipv6Address]
  * @property {string} [owner] - the User that the Device is a device of (SDN-82)
  * @property {boolean} [presharedKey] - the Device has a PresharedKey, which the controller showed once (SDN-82)
+ * @property {boolean} [presharedKeyDoesNotOpen] - the controller cannot open that PresharedKey, so the gateway terminates the Device without it (SDN-82-R1)
  * @property {string} [lastHandshake]
  * @property {number} txBytes
  * @property {number} rxBytes
