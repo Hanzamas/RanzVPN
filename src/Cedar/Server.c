@@ -126,42 +126,6 @@ static void SiFreeDeadLockCheck(SERVER *s) {
 	s->HaltDeadLockThread = false;
 }
 
-UINT SiGetSysLogSaveStatus(SERVER *s) {
-	SYSLOG_SETTING set;
-	if (s == NULL)
-		return SYSLOG_NONE;
-
-	SiGetSysLogSetting(s, &set);
-
-	return set.SaveType;
-}
-
-void SiWriteSysLog(SERVER *s, char *typestr, char *hubname, wchar_t *message) {
-	wchar_t tmp[1024];
-	char machinename[MAX_HOST_NAME_LEN + 1];
-	char datetime[MAX_PATH];
-	SYSTEMTIME st;
-	if (s == NULL || typestr == NULL || message == NULL)
-		return;
-
-	GetMachineName(machinename, sizeof(machinename));
-
-	LocalTime(&st);
-	if (s->StrictSyslogDatetimeFormat)
-		GetDateTimeStrRFC3339(datetime, sizeof(datetime), &st, GetCurrentTimezone());
-	else
-		GetDateTimeStrMilli(datetime, sizeof(datetime), &st);
-
-	if (IsEmptyStr(hubname) == false)
-		UniFormat(tmp, sizeof(tmp), L"[%S/VPN/%S] (%S) <%S>: %s",
-		          machinename, hubname, datetime, typestr, message);
-	else
-		UniFormat(tmp, sizeof(tmp), L"[%S/VPN] (%S) <%S>: %s",
-		          machinename, datetime, typestr, message);
-
-	SendSysLog(s->Syslog, tmp);
-}
-
 // The syslog save types: SYSLOG_NONE, SYSLOG_SERVER_AND_HUB_SECURITY_LOG and SYSLOG_SERVER_AND_HUB_ALL_LOG. Type 1
 // (the server log only) is gone
 bool SiIsSysLogSaveType(UINT save_type) {
@@ -187,13 +151,6 @@ void SiSetSysLogSetting(SERVER *s, SYSLOG_SETTING *setting) {
 		SetSysLog(s->Syslog, set.Hostname, set.Port);
 	}
 	Unlock(s->SyslogLock);
-}
-
-void SiGetSysLogSetting(SERVER *s, SYSLOG_SETTING *setting) {
-	if (s == NULL || setting == NULL)
-		return;
-
-	Copy(setting, &s->SyslogSetting, sizeof(SYSLOG_SETTING));
 }
 
 
