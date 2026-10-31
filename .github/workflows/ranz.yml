@@ -177,6 +177,26 @@ jobs:
       with:
         go-version: ${{ env.GO_VERSION }}
         cache-dependency-path: go.sum
+    # TEMPORARY (CI-FLAKE-2, #562), removed in the last commit of this branch: the test of the thousand Nodes many times
+    # in a row while the CPU of the runner is busy, with 1, 2 and 4 busy loops for each core
+    - name: TEMPORARY the thousand Nodes on a busy runner
+      timeout-minutes: 25
+      run: |
+        # Built before the load starts
+        go test -count=1 -run '^$' ./controller/internal/port
+        out="$RUNNER_TEMP/thousand.out"
+        for factor in 1 2 4; do
+          echo "::group::$factor busy loops for each core"
+          for i in $(seq 1 $((factor * $(nproc)))); do
+            (while :; do :; done) &
+          done
+          go test -count=60 -timeout 20m -v -run '^TestThousandNodesBehindOneAddressConnectWithTheDefaults$' ./controller/internal/port > "$out" || echo "go test exited with code $?"
+          kill $(jobs -p) 2>/dev/null || true
+          wait || true
+          echo "passed $(grep -c '^--- PASS' "$out"), failed $(grep -c '^--- FAIL' "$out")"
+          grep -E '^--- FAIL|limits_test.go' "$out" | head -n 20 || true
+          echo "::endgroup::"
+        done
     - uses: actions/setup-python@v5
       with:
         python-version: '3.12'
@@ -519,6 +539,34 @@ jobs:
       with:
         go-version: ${{ env.GO_VERSION }}
         cache-dependency-path: go.sum
+    # TEMPORARY (CI-FLAKE-2, #562), removed in the last commit of this branch: the test of the thousand Nodes many times
+    # in a row while the CPU of the runner is busy, with 1, 2 and 4 busy loops for each core
+    - name: TEMPORARY the thousand Nodes on a busy runner
+      if: matrix.platform.ARCHITECTURE == 'x64'
+      shell: pwsh
+      timeout-minutes: 25
+      run: |
+        # Built before the load starts
+        go test -count=1 -run '^$' ./controller/internal/port
+        if ($LASTEXITCODE -ne 0) { throw "go test exited with code $LASTEXITCODE" }
+        $pwsh = (Get-Process -Id $PID).Path
+        $out = Join-Path $env:RUNNER_TEMP 'thousand.out'
+        foreach ($factor in 1, 2, 4) {
+          Write-Host "::group::$factor busy loops for each core"
+          $load = 1..($factor * [Environment]::ProcessorCount) | ForEach-Object {
+            Start-Process -FilePath $pwsh -ArgumentList '-NoProfile', '-Command', 'while ($true) { }' -PassThru -WindowStyle Hidden
+          }
+          try {
+            go test -count=60 -timeout 20m -v -run '^TestThousandNodesBehindOneAddressConnectWithTheDefaults$' ./controller/internal/port > $out
+            Write-Host "go test exited with code $LASTEXITCODE"
+          } finally {
+            $load | Stop-Process -Force
+          }
+          Write-Host "passed $(@(Select-String -Path $out -Pattern '^--- PASS').Count), failed $(@(Select-String -Path $out -Pattern '^--- FAIL').Count)"
+          Select-String -Path $out -Pattern '^--- FAIL|limits_test.go' | Select-Object -First 20 | ForEach-Object { $_.Line }
+          Write-Host "::endgroup::"
+        }
+        exit 0
     # rqlite publishes a Windows build for x64 only: on the arm64 runner this is the x64 rqlited.exe,
     # which Windows 11 on ARM runs under emulation, and which is the member of ranz for arm64
     - name: Install rqlited
