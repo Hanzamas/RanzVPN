@@ -1,0 +1,76 @@
+package sidecar
+
+import (
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+)
+
+// The row SM-11 of the threat model, the fabric edge of an EVPN gateway (SDN-25-R1 #549), as a test. The page is written for a
+// person, so the test looks for what the criterion names in the row, with the white space of the row folded into one space,
+// and ties what the row points at to what exists: the functions of the node, its counter, the tests and the fuzz target. A
+// row that loses a phrase, or that names code or a test that is gone, fails here until the page and the code agree again.
+
+// repoText returns the text of a file of the repository, which is three levels up from this package, with the line endings
+// that a checkout on Windows may have changed (core.autocrlf) made into line feeds.
+func repoText(t *testing.T, elem ...string) string {
+	t.Helper()
+	b, err := os.ReadFile(filepath.Join(append([]string{"..", "..", ".."}, elem...)...))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return strings.ReplaceAll(string(b), "\r\n", "\n")
+}
+
+// TestThreatModelFabricEdge is the fourth criterion of SDN-25-R1: the row of the threat model for the fabric edge of an EVPN
+// gateway says what the gateway checks of a frame of the fabric, its outer source among it, and what is left, a VTEP that the
+// fabric owns and that is spoofed at the underlay; and the code, the counter and the tests that it names exist.
+func TestThreatModelFabricEdge(t *testing.T) {
+	row := ""
+	for _, l := range strings.Split(repoText(t, "docs", "threat-model.md"), "\n") {
+		if strings.HasPrefix(l, "| SM-11 |") {
+			row = strings.Join(strings.Fields(l), " ")
+		}
+	}
+	if row == "" {
+		t.Fatal("the threat model has no row SM-11, the fabric edge of an EVPN gateway")
+	}
+
+	for _, want := range []string{
+		"Forges a frame of the fabric to an EVPN gateway, at the fabric edge",
+		"The gateway takes a frame of the fabric only from a VTEP that it knows for the VRF of its VNI: the next hop of an IP prefix route of the VRF that it learned",
+		"so a frame from any other address is dropped and counted, whatever it holds",
+		"What is left: a host that sends with the address of a VTEP that the fabric owns, spoofed at the underlay, is that VTEP to the gateway",
+		"the operator's source-address validation",
+	} {
+		if !strings.Contains(row, want) {
+			t.Errorf("the row SM-11 of the threat model does not say %q", want)
+		}
+	}
+
+	// What the row names in backquotes, and where the code or the test that it names is defined
+	evpn := repoText(t, "src", "Cedar", "NodeEvpn.c")
+	for _, ref := range []struct{ name, text, def string }{
+		{"NodeEvpnReceive", evpn, "static void NodeEvpnReceive("},
+		{"NodeEvpnHasVtep", evpn, "bool NodeEvpnHasVtep("},
+		{"UnknownVtep", repoText(t, "src", "Cedar", "NodeEvpn.h"), "UINT64 UnknownVtep;"},
+		{"vpntest evpn", repoText(t, "src", "vpntest", "evpntest.c"), `RANZ_TEST("evpn",`},
+		{"TestFRREVPN", repoText(t, "ranz-bgp", "internal", "sidecar", "frr_test.go"), "func TestFRREVPN("},
+		{"fuzz_evpn", repoText(t, "src", "fuzz", "fuzz_evpn.c"), "NodeEvpnHasVtep("},
+	} {
+		if !strings.Contains(row, "`"+ref.name+"`") {
+			t.Errorf("the row SM-11 of the threat model does not name `%s`", ref.name)
+		}
+		if !strings.Contains(ref.text, ref.def) {
+			t.Errorf("the row SM-11 names `%s`, which the code does not have: no %q", ref.name, ref.def)
+		}
+	}
+
+	// The boundary of the fabric edge is B9, which names the VTEPs of the routes as what the source address is checked against
+	for _, l := range strings.Split(repoText(t, "docs", "threat-model.md"), "\n") {
+		if strings.HasPrefix(l, "| B9 |") && !strings.Contains(l, "or against the VTEPs of the routes of the fabric") {
+			t.Error("the boundary B9 of the threat model does not name the VTEPs of the routes of the fabric")
+		}
+	}
+}

@@ -6,8 +6,9 @@ package sidecar
 // with the VRFs red and blue of its kernel, which hand the same LAN to the gateway, each on its own L3 VNI and route
 // target, through the VXLAN of the kernel. The job names the container in RANZ_FRR_CONTAINER; without it the test is
 // skipped. The test is the gateway on the runner, 172.31.25.1: its sidecar, which FRR dials on port 1179, and its VTEP on
-// UDP port 4789, whose frames the test makes and reads as the node does (NodeEvpnSend and NodeEvpnParseFrame of
-// src/Cedar/NodeEvpn.c, which vpntest evpn runs against a harness VTEP on Windows).
+// UDP port 4789, whose frames the test makes and reads as the node does (NodeEvpnSend, NodeEvpnReceive and NodeEvpnParseFrame
+// of src/Cedar/NodeEvpn.c, which vpntest evpn runs against a harness VTEP on Windows): it takes a frame of FRR only from the
+// VTEP of the route, as the node takes one only from a VTEP that it knows for the VRF (SDN-25-R1 #549).
 
 import (
 	"context"
@@ -188,11 +189,16 @@ func echoFrame(t *testing.T, vni uint32, mac string, id, seq int) []byte {
 	return b
 }
 
-// echoReply reads the datagram b as the answer of FRR to the echo request id and seq on the VNI vni of an IP prefix route
-// of the fabric with the router MAC mac, as the node takes a frame of the fabric (NodeEvpnParseFrame): on that VNI, a frame
-// from mac to the router MAC of the gateway, untagged, with the EtherType of IPv4, and in it the echo reply of the host of
-// the fabric to the host of the overlay. "" for that answer, else what b is.
-func echoReply(b []byte, vni uint32, mac string, id, seq int) string {
+// echoReply reads the datagram b from the address outer as the answer of FRR to the echo request id and seq by the IP prefix
+// route r of the fabric, as the node takes a frame of the fabric (NodeEvpnReceive, NodeEvpnParseFrame): from the VTEP of the
+// route, its next hop, which is a VTEP that the gateway knows for the VRF, from any source port; on the VNI of the route, a
+// frame from its router MAC to the router MAC of the gateway, untagged, with the EtherType of IPv4, and in it the echo reply
+// of the host of the fabric to the host of the overlay. "" for that answer, else what b is.
+func echoReply(b []byte, outer netip.Addr, r Message, id, seq int) string {
+	vni, mac := r.VNI, r.RouterMAC
+	if vtep, err := netip.ParseAddr(r.NextHop); err != nil || outer != vtep.Unmap() {
+		return fmt.Sprintf("a datagram from %s, which is not the VTEP %q of the route", outer, r.NextHop)
+	}
 	if len(b) < 8+14+20 || b[0]&0x08 == 0 {
 		return fmt.Sprintf("%d bytes of no VXLAN datagram", len(b))
 	}
@@ -255,11 +261,11 @@ func (g *frrVTEP) exchange(v frrVRF, r Message, seq int, timeout time.Duration) 
 			g.t.Fatal(err)
 		}
 		for {
-			n, _, err := g.conn.ReadFromUDP(buf)
+			n, outer, err := g.conn.ReadFromUDPAddrPort(buf)
 			if err != nil {
 				break
 			}
-			why := echoReply(buf[:n], r.VNI, r.RouterMAC, int(v.vni), seq)
+			why := echoReply(buf[:n], outer.Addr().Unmap(), r, int(v.vni), seq)
 			if why == "" {
 				return true, others
 			}
@@ -273,9 +279,10 @@ func (g *frrVTEP) exchange(v frrVRF, r Message, seq int, timeout time.Duration) 
 // target, the IPv4 prefix in red and in blue, where they overlap, and the IPv6 prefix in red alone; the gateway learns
 // the LAN of each VRF of FRR in its own VRF, with the L3 VNI and the router MAC of the VRF of FRR and its VTEP. An ICMP
 // echo request of the overlay to the LAN of the fabric, in the frame that the node sends on the L3 VNI of each VRF, is
-// answered by the kernel of FRR in the frame that the node takes, on the same VNI: the packets of each VRF go both ways
-// through VXLAN. When the gateway withdraws its prefix of red, FRR loses it in red and keeps it in blue: red no longer
-// answers, and blue still does.
+// answered by the kernel of FRR in the frame that the node takes, on the same VNI and from the VTEP of FRR, the next hop of
+// its routes, which the node checks the outer source of a frame against: the packets of each VRF go both ways through
+// VXLAN. When the gateway withdraws its prefix of red, FRR loses it in red and keeps it in blue: red no longer answers, and
+// blue still does.
 func TestFRREVPN(t *testing.T) {
 	container := os.Getenv("RANZ_FRR_CONTAINER")
 	if container == "" {
