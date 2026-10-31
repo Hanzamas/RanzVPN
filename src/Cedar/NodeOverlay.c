@@ -666,9 +666,10 @@ static void NodeOverlayDeliver(NODE_OVERLAY *ov, NODE_OVERLAY_PEER *p, const UCH
 		UINT from = NodeGatewayFrom(v, NodeExitHop(v, vrf_id, NodeVrfLookup(vt, src, addr_size), src, addr_size, false), p);
 		UINT to = NodeVrfLookup(vt, dst, addr_size);
 
-		// A packet of the peer to the fabric of an EVPN gateway: no route of the VRF holds its destination, an IP prefix route
-		// of the fabric does (NodeEvpn.c; SDN-25, #201)
-		if (from < v->NumHops && v->Hops[from] == p && to == NODE_VRF_NONE && NodeEvpnTransit(ov->Node, v, vrf_id, from, packet, packet_size))
+		// A packet of the peer to the fabric of an EVPN gateway: no route of the VRF holds its destination, or only its default
+		// route, as in a VRF with an internet exit, and an IP prefix route of the fabric does (NodeEvpn.c; SDN-25, #201;
+		// SDN-25-R2, #550)
+		if (from < v->NumHops && v->Hops[from] == p && (to == NODE_VRF_NONE || (t->Evpn != NULL && NodeVrfDefault(vt, dst, addr_size))) && NodeEvpnTransit(ov->Node, v, vrf_id, from, packet, packet_size))
 			return;
 
 		// The hub of a VRF of topology hub-and-spoke sends the packet of one spoke on to another (NodeGateway.c)
@@ -1071,11 +1072,12 @@ static bool NodeOverlayForward(NODE *n, UINT vrf_id, const UCHAR *packet, UINT s
 	// A prefix that several gateways announce goes to the gateway that their group picks (NodeGateway.c; SDN-19, #195)
 	hop = NodeGatewayPick(v, hop, packet, size);
 
-	// Only to a peer: the host's own addresses and the addresses of no route stay here, but that an IP prefix route of the
-	// fabric of an EVPN gateway takes a packet of the host to an address of no route (NodeEvpn.c; SDN-25, #201)
-	if (vt == NULL || hop >= v->NumHops) {
-		bool evpn = (fabric == false && hop == NODE_VRF_NONE && NodeEvpnOutput(n, v, vrf_id, packet, size));
+	// An IP prefix route of the fabric of an EVPN gateway takes a packet of the host to an address of no route, or of the
+	// default route of the VRF alone, as in a VRF with an internet exit (NodeEvpn.c; SDN-25, #201; SDN-25-R2, #550)
+	bool evpn = (fabric == false && (hop == NODE_VRF_NONE || (t->Evpn != NULL && NodeVrfDefault(vt, dst, addr_size))) && NodeEvpnOutput(n, v, vrf_id, packet, size));
 
+	// Only to a peer: the host's own addresses and the addresses of no route stay here
+	if (evpn || vt == NULL || hop >= v->NumHops) {
 		InterlockedIncrement64(evpn ? &ov->Forwarded : &ov->Dropped);
 		return evpn;
 	}
