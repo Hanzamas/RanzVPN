@@ -14,7 +14,7 @@
 //   - The cases of the review of PR 429 (CORE-H2-R1 #436), on nodes whose datagrams the test hands on itself, in the
 //     order that each case needs: the records under keys that the peer had not confirmed yet, which the peer's next
 //     initiation overtakes, are taken; a response made from the clear header of an initiation leaves the handshake on
-//     its way; and a peer whose clock is behind by less than PEER_CLOCK_SKEW is no replay to a new entry.
+//     its way; and a peer whose clock is behind is a replay to a new entry for as long as its skew, and no longer.
 // The control plane is stood in for by the test, which hands each signal from one node to the other.
 
 #include "coretest.h"
@@ -636,10 +636,12 @@ static void ps_bench() {
 }
 
 // The wire cases of the review of PR 429 (CORE-H2-R1 #436): the datagrams that a node sends before the test hands them
-// on, a minute in the 100 ns units of the wall clock, and the prologue of the handshake of a peer session (PeerSession.c)
-#define PS_WIRE_MAX 8
-#define PS_MINUTE   600000000ULL
-#define PS_PROLOGUE "ranz peer session 1"
+// on, the prologue of the handshake of a peer session (PeerSession.c), and the clock of a peer that is behind: by how
+// many ms, and how long the case waits beyond them
+#define PS_WIRE_MAX    8
+#define PS_PROLOGUE    "ranz peer session 1"
+#define PS_SKEW        400
+#define PS_SKEW_MARGIN 100
 
 // A node of the wire cases, where the test is the network: what its peer layer sends waits in its outbox, and the test
 // hands each datagram on, from the address of the node, in the order that the case needs
@@ -907,8 +909,16 @@ static UINT ps_init_at(PEER_KEY *k, const UCHAR *to, UINT64 ts, UCHAR *buf, UINT
 	return header + len;
 }
 
-// A peer whose clock is behind by less than PEER_CLOCK_SKEW is no replay to a new entry: its signal, its bind and its
-// initiation are taken, and the ones sealed further back, as before a restart of the node, are replays (finding 3)
+// S's clock in the skew case: the wall clock of N, PS_SKEW ms behind
+static UINT64 ps_skew_clock() {
+	return ps_wall_clock() - (UINT64)PS_SKEW * 10000;
+}
+
+// A peer whose clock is behind is a replay to a new entry for as long as its skew, and no longer: its signal, its bind
+// and its initiation, sealed by that clock right after the receiver made its entry of the peer, are refused, as what a
+// right clock sealed before the entry is (coretest relaypolicy and punch), and the ones that it seals once its clock
+// passed the time of the entry are taken. The floor tolerates no skew, which would take the sequences of before a
+// restart or a new entry again; finding 3 is accepted with this bound.
 static void ps_skew() {
 	PEER_KEY ks;
 	PEER_CONFIG c;
@@ -916,6 +926,7 @@ static void ps_skew() {
 	PEER_ADDR from;
 	PEER_STATS st;
 	UCHAR buf[PEER_MAX_DATAGRAM];
+	char what[256];
 
 	// N, with the relay role so that it takes binds, and S, whose datagrams the test seals itself
 	PeerDefaultConfig(&c);
@@ -935,22 +946,23 @@ static void ps_skew() {
 	p.VrfIds[0] = 10;
 	PeerSetPeers(n->Agent, &p, 1);
 	PeerSetDirect(n->Agent, ks.Public, &from);
-	UINT64 now = ps_wall_clock();
 
-	// Sealed a minute further back than the tolerated skew: replays of before N made its entry, as after a restart of N
-	UINT64 past = now - PEER_CLOCK_SKEW - PS_MINUTE;
-	UINT size = ps_signal_at(&ks, n->Key.Public, past, buf, sizeof(buf));
+	// Right after the entry, S's clock has not reached the time of it
+	UINT64 behind = ps_skew_clock();
+	UINT size = ps_signal_at(&ks, n->Key.Public, behind, buf, sizeof(buf));
 	UINT signal = PeerOpenSignal(n->Agent, buf, size, NULL);
-	size = ps_bind_at(&ks, n->Key.Public, past, buf, sizeof(buf));
+	size = ps_bind_at(&ks, n->Key.Public, behind + 1, buf, sizeof(buf));
 	PeerInput(n->Agent, &from, buf, size);
-	size = ps_init_at(&ks, n->Key.Public, past, buf, sizeof(buf));
+	size = ps_init_at(&ks, n->Key.Public, behind + 2, buf, sizeof(buf));
 	PeerInput(n->Agent, &from, buf, size);
 	PeerGetStats(n->Agent, &st);
-	coretest_check(signal == PEER_DROP_REPLAY && st.Drops[PEER_DROP_REPLAY] == 3 && st.Signals == 0 && st.Challenges == 0 && st.Handshakes == 0 && n->Num == 0,
-	               "A signal, a bind and an initiation of S sealed a minute further back than the tolerated clock skew are replays to N's new entry of S");
+	snprintf(what, sizeof(what), "Right after N made its entry of S, the signal, the bind and the initiation that S seals by its clock, %u ms behind N's, are replays to that entry",
+	         PS_SKEW);
+	coretest_check(signal == PEER_DROP_REPLAY && st.Drops[PEER_DROP_REPLAY] == 3 && st.Signals == 0 && st.Challenges == 0 && st.Handshakes == 0 && n->Num == 0, what);
 
-	// S's clock is behind N's by a minute less than the tolerated skew
-	UINT64 behind = now - PEER_CLOCK_SKEW + PS_MINUTE;
+	// Once S's clock passed the time of the entry, PS_SKEW ms after it at most, what S seals is taken
+	Sleep(PS_SKEW + PS_SKEW_MARGIN);
+	behind = ps_skew_clock();
 	size = ps_signal_at(&ks, n->Key.Public, behind, buf, sizeof(buf));
 	signal = PeerOpenSignal(n->Agent, buf, size, NULL);
 	size = ps_bind_at(&ks, n->Key.Public, behind + 1, buf, sizeof(buf));
@@ -958,8 +970,9 @@ static void ps_skew() {
 	size = ps_init_at(&ks, n->Key.Public, behind + 2, buf, sizeof(buf));
 	PeerInput(n->Agent, &from, buf, size);
 	PeerGetStats(n->Agent, &st);
-	coretest_check(signal == PEER_OK && st.Signals == 1 && st.Challenges == 1 && st.Handshakes == 1 && st.Drops[PEER_DROP_REPLAY] == 3 && n->Num == 2,
-	               "The signal, the bind and the initiation of S, whose clock is behind N's by a minute less than the tolerated skew, are taken: the bind draws a bind challenge and the initiation a response");
+	snprintf(what, sizeof(what), "... and %u ms later, once S's clock passed the time of the entry, they are taken: the bind draws a bind challenge and the initiation a response",
+	         PS_SKEW + PS_SKEW_MARGIN);
+	coretest_check(signal == PEER_OK && st.Signals == 1 && st.Challenges == 1 && st.Handshakes == 1 && st.Drops[PEER_DROP_REPLAY] == 3 && n->Num == 2, what);
 
 	// The sequence that grows still refuses the same one again
 	size = ps_signal_at(&ks, n->Key.Public, behind, buf, sizeof(buf));

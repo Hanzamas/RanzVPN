@@ -19,16 +19,20 @@
 //   PEER_WINDOW_BITS, and when it does not decrypt: a change of any byte. An empty record is a keepalive.
 //
 // The first datagram to a peer that has no keys starts a handshake and waits in a queue of PEER_SESSION_QUEUE, which
-// goes out once the response is in; an initiation that has no answer goes again after PEER_SESSION_RETRY. When both
-// ends start at once, the end with the lower static key keeps its own handshake and ignores the other's initiation,
-// and the other gives its own up and answers, so the two end in one session. The responder sends under the new keys
-// at once when it had none; when it had keys, the new ones wait as Next until the initiator's first record under
-// them, and the old ones keep the traffic going meanwhile, so a rekey loses nothing. The keys before stay as Previous
-// for the records still on their way. The initiator of the keys replaces them after SessionRekeyTime, and either end
-// after SessionRekeyDatagrams records under them; keys three times older than SessionRekeyTime are dropped. A record
-// with a payload that had no answer for SessionKeepalive gets a keepalive back, and a session with no record from the
-// peer for SessionTimeout is dropped; the next datagram starts a new handshake. The keys belong to the pair of nodes,
-// not to the path, so an Upgrade or a Fallback keeps them.
+// goes out once the response is in; an initiation that has no answer goes again after PEER_SESSION_RETRY. The
+// initiator reads a response on a copy of its handshake, so a response that does not open is dropped and leaves the
+// handshake on its way, as WireGuard ignores one: the index that it names is in the clear, and anyone can make one
+// (CORE-H2-R1 #436). When both ends start at once, the end with the lower static key keeps its own handshake and
+// ignores the other's initiation, and the other gives its own up and answers, so the two end in one session. The
+// responder sends under the new keys at once when it had none that the initiator confirmed, and keeps the ones that it
+// had as Previous, for the records under them that the initiation overtook on the way (CORE-H2-R1 #436); when it had
+// confirmed keys, the new ones wait as Next until the initiator's first record under them, and the old ones keep the
+// traffic going meanwhile, so a rekey loses nothing. The keys before stay as Previous for the records still on their
+// way. The initiator of the keys replaces them after SessionRekeyTime, and either end after SessionRekeyDatagrams
+// records under them; keys three times older than SessionRekeyTime are dropped. A record with a payload that had no
+// answer for SessionKeepalive gets a keepalive back, and a session with no record from the peer for SessionTimeout is
+// dropped; the next datagram starts a new handshake. The keys belong to the pair of nodes, not to the path, so an
+// Upgrade or a Fallback keeps them.
 //
 // Locks: the caller holds the lock of the layer, shared, so the PEER stays; the session has a lock of its own, and
 // the handshake takes KeyLock for the Diffie-Hellman of the node's static key. Nothing here sends: the layer sends
@@ -474,11 +478,14 @@ static UINT PeerSessionTakeInit(PEER_AGENT *a, PEER *p, PEER_SESSION *s, const P
 			k.RemoteIndex = h.Sender;
 			k.Created = PeerNow();
 
-			// Keys the peer has confirmed stay in use until its first record under the new ones; else the new ones
-			// replace them at once
+			// Keys the peer has confirmed stay in use until its first record under the new ones. Else the new ones
+			// replace them at once, and keys that the peer has not confirmed yet stay as the keys before: the peer may
+			// have sent records under them that this initiation overtook on the way (CORE-H2-R1 #436)
 			if (s->Current.Valid && s->Current.Confirmed) {
 				PeerKeypairMove(&s->Next, &k);
 			} else {
+				if (s->Current.Valid)
+					PeerKeypairMove(&s->Previous, &s->Current);
 				PeerKeypairMove(&s->Current, &k);
 				s->SentUnderKey = 0;
 				o->Flush = (s->QueueNum != 0);
@@ -501,8 +508,12 @@ static UINT PeerSessionTakeInit(PEER_AGENT *a, PEER *p, PEER_SESSION *s, const P
 }
 
 // A response from the peer p to the node's initiation: the new keys become the current ones, and the queue goes out.
-// The caller holds the lock of the session.
+// The response is read on a copy of the handshake, so one that does not open is dropped and leaves the handshake on its
+// way, for the peer's own response or the timer: the index that a response names is in the clear, so anyone that saw
+// the initiation can make one, and WireGuard ignores such a response too (CORE-H2-R1 #436). The caller holds the lock
+// of the session.
 static UINT PeerSessionTakeResponse(PEER_AGENT *a, PEER_SESSION *s, const PEER_RECORD_INFO *r, const UCHAR *data, UINT size, PEER_SESSION_OUT *o) {
+	NOISE_HANDSHAKE hs;
 	UCHAR payload[PEER_RESPONSE_PAYLOAD];
 	PEER_HANDSHAKE_INFO h;
 	PEER_KEYPAIR k;
@@ -513,22 +524,30 @@ static UINT PeerSessionTakeResponse(PEER_AGENT *a, PEER_SESSION *s, const PEER_R
 
 	ZeroMemory(&k, sizeof(k));
 
+	// The copy owns no key object of the handshake: the second message of IK (<- e, ee, se) mixes no key before ee,
+	// which replaces the cipher of the first message, and IK has no KEM key
+	hs = s->Handshake;
+	hs.Cipher.Aead.Key = NULL;
+	hs.Kem.Key = NULL;
+
 	AcquireSRWLockExclusive(&a->KeyLock);
-	bool ok = NoiseHandshakeRead(&s->Handshake, data + r->HeaderSize, size - r->HeaderSize, payload, sizeof(payload), &len);
+	bool ok = NoiseHandshakeRead(&hs, data + r->HeaderSize, size - r->HeaderSize, payload, sizeof(payload), &len);
 	ReleaseSRWLockExclusive(&a->KeyLock);
 
 	ok = ok && PeerHandshakeParse(PEER_MSG_RESPONSE, payload, len, &h) && h.Sender == r->Sender && h.Receiver == s->PendingIndex;
 	if (ok)
-		CopyMemory(k.Id, s->Handshake.H, PEER_SESSION_ID_SIZE);
-	ok = ok && NoiseHandshakeSplit(&s->Handshake, &k.Send, &k.Recv);
-
-	// A response that fails ends the handshake, which failed for good; the timer starts another
-	UINT index = s->PendingIndex;
-	NoiseHandshakeFree(&s->Handshake);
-	s->Pending = false;
+		CopyMemory(k.Id, hs.H, PEER_SESSION_ID_SIZE);
+	ok = ok && NoiseHandshakeSplit(&hs, &k.Send, &k.Recv);
+	NoiseHandshakeFree(&hs);
+	SecureZeroMemory(payload, sizeof(payload));
 
 	if (ok == false)
 		return PEER_DROP_FORGED;
+
+	// The response completed the handshake
+	UINT index = s->PendingIndex;
+	NoiseHandshakeFree(&s->Handshake);
+	s->Pending = false;
 
 	k.Valid = true;
 	k.Initiator = true;
