@@ -1013,3 +1013,64 @@ void FreeCedar() {
 	FreeWaterMark();
 }
 
+// Machine identity (FIX-5, #101): the first SHA1_SIZE bytes of SHA-256 over MACHINE_ID_LABEL with its
+// terminator, the MachineGuid of Windows (trimmed, lower case) with its terminator, and the salt. Host
+// name, IP addresses and OS version are no input. An unreadable MachineGuid is the empty string, so the
+// salt alone still tells two servers apart.
+void ComputeMachineUniqueHash(void *data, char *machine_guid, void *salt, UINT salt_size) {
+	char guid[MAX_SIZE];
+	UCHAR hash[SHA256_SIZE];
+	if (data == NULL || (salt == NULL && salt_size != 0))
+		return;
+
+	StrCpy(guid, sizeof(guid), machine_guid);
+	Trim(guid);
+	StrLower(guid);
+
+	BUF *b = NewBuf();
+	WriteBuf(b, MACHINE_ID_LABEL, StrSize(MACHINE_ID_LABEL));
+	WriteBuf(b, guid, StrSize(guid));
+	WriteBuf(b, salt, salt_size);
+
+	Sha2_256(hash, b->Buf, b->Size);
+
+	FreeBuf(b);
+
+	Copy(data, hash, SHA1_SIZE);
+}
+
+// HKLM\SOFTWARE\Microsoft\Cryptography\MachineGuid in the 64-bit registry view, or "" when it cannot be read
+static void GetMachineGuid(char *guid, UINT size) {
+	if (guid == NULL)
+		return;
+
+	char *s = MsRegReadStrEx2(REG_LOCAL_MACHINE, "SOFTWARE\\Microsoft\\Cryptography", "MachineGuid", false);
+
+	StrCpy(guid, size, s);
+
+	Free(s);
+}
+
+// Set the machine identity salt of a CEDAR (NewCedar: a random one; SiLoadMachineIdCfg: the one of the
+// config file) and derive its machine identity. Called before the hubs and listeners exist, so readers
+// of the identity need no lock.
+void SetCedarMachineIdSalt(CEDAR *c, void *salt) {
+	char guid[MAX_SIZE];
+	if (c == NULL || salt == NULL)
+		return;
+
+	Copy(c->MachineIdSalt, salt, sizeof(c->MachineIdSalt));
+
+	GetMachineGuid(guid, sizeof(guid));
+
+	ComputeMachineUniqueHash(c->MachineUniqueHash, guid, c->MachineIdSalt, sizeof(c->MachineIdSalt));
+}
+
+// The machine identity of a server (SHA1_SIZE bytes): virtual hub MAC address and address, Cascade unique_id
+void GenerateMachineUniqueHash(CEDAR *c, void *data) {
+	if (c == NULL || data == NULL)
+		return;
+
+	Copy(data, c->MachineUniqueHash, SHA1_SIZE);
+}
+
