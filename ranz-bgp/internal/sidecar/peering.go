@@ -9,8 +9,10 @@ package sidecar
 // VRFs stay apart over the one session of two nodes, even for the same prefix. The node announces
 // its LAN subnets and its addresses in each VRF and installs in the forwarding table of a VRF what it
 // learns there; the sidecar reports a learned route only when the peer may announce it in that VRF
-// (accepts). A path that a node may not announce is never reported, though it may hide the path of
-// another node for the same prefix: the nodes of a VRF are trusted not to announce one. Of two nodes,
+// (accepts): exactly a prefix of its accept list, so a peer that announces more specific prefixes,
+// as many as it likes, fills the node with none of them (SDN-77-R1 #531). A path that a node may not
+// announce is never reported, though it may hide the path of another node for the same prefix: the
+// nodes of a VRF are trusted not to announce one. Of two nodes,
 // the one of the lower address connects and the other waits, so the two never race for the session.
 // GoBGP refuses a session from an address that no peer has, and the sidecar tells the node about each
 // one (refused).
@@ -161,14 +163,22 @@ func vpn(afi api.Family_Afi) *api.AfiSafi {
 
 // setPeers applies a peers message: its Ranz nodes take the place of the ones before. A node that
 // went or whose settings changed leaves, which ends its session, and a new or changed one comes; the
-// routes of a node that leaves are withdrawn.
+// routes of a node that leaves are withdrawn. A peers message with more holds part of the nodes:
+// they wait for the next message without more, with which they all apply (SDN-77-R1 #531).
 func (s *session) setPeers(ctx context.Context, m Message) error {
 	if !s.address.IsValid() {
 		return errors.New("peers: the sidecar runs no peering of the standard mode, which only a start with an address runs")
 	}
+	s.pending = append(s.pending, m.Peers...)
+	if m.More {
+		return nil
+	}
+	peers := s.pending
+	s.pending = nil
+
 	next := make(map[netip.Addr]peerConfig)
 	var order []netip.Addr
-	for _, p := range m.Peers {
+	for _, p := range peers {
 		pc, err := parsePeer(p, s.address)
 		if err != nil {
 			return fmt.Errorf("peers: %w", err)
@@ -260,7 +270,9 @@ func pathKey(p *apiutil.Path) (routeKey, bool) {
 }
 
 // accepts reports whether the Ranz node at peer may announce the prefix of key in its VRF: a VRF
-// that the two share, and a prefix inside one that the node may announce there.
+// that the two share, and exactly a prefix that the node may announce there, its address or one of
+// its LAN subnets. A more specific prefix is none of them, so a node can make the sidecar report no
+// more routes than its accept list holds (SDN-77-R1 #531).
 func (s *session) accepts(peer netip.Addr, key routeKey) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -269,8 +281,9 @@ func (s *session) accepts(peer netip.Addr, key routeKey) bool {
 	if !ok {
 		return false
 	}
+	prefix := key.prefix.Masked()
 	for _, a := range p.vrfs[key.vrf] {
-		if a.Addr().Is4() == key.prefix.Addr().Is4() && a.Bits() <= key.prefix.Bits() && a.Contains(key.prefix.Addr()) {
+		if a == prefix {
 			return true
 		}
 	}
