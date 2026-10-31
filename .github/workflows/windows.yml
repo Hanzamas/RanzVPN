@@ -200,11 +200,11 @@ jobs:
         if not "%BUILD_EXIT%"=="0" exit /b %BUILD_EXIT%
 
         rem The linker's report of what /OPT:REF discarded and /OPT:ICF folded (src/CMakeLists.txt) for
-        rem vpnserver and vpncmd, uploaded as link-verbose-<arch>: each one is linked again with /VERBOSE,
+        rem ranz-node, uploaded as link-verbose-<arch>: it is linked again with /VERBOSE,
         rem passed in _LINK_, which lld-link and link.exe add to their arguments. lld-link has no
         rem /VERBOSE:REF; its /VERBOSE lists the discarded sections and the folded functions.
         set "_LINK_=/VERBOSE"
-        for %%t in (vpnserver vpncmd) do (
+        for %%t in (ranz-node) do (
           del build\%%t.exe
           cmake --build --preset %ARCHITECTURE% --target %%t > build\link-verbose-%%t.txt 2>&1
           if errorlevel 1 (
@@ -253,7 +253,7 @@ jobs:
         path: |
           build/unused-report.txt
           build/build-log.txt
-    - name: Upload linker report (vpnserver and vpncmd)
+    - name: Upload linker report (ranz-node)
       if: ${{ !cancelled() }}
       uses: actions/upload-artifact@v4
       with:
@@ -271,7 +271,7 @@ jobs:
     - name: Version resource
       shell: pwsh
       run: |
-        foreach ($exe in 'vpnserver', 'vpncmd', 'vpntest', 'ranz-node', 'coretest') {
+        foreach ($exe in 'vpntest', 'ranz-node', 'coretest') {
           $info = [System.Diagnostics.FileVersionInfo]::GetVersionInfo((Resolve-Path "build/$exe.exe").Path)
           Write-Host "${exe}.exe: Language '$($info.Language)', FileDescription '$($info.FileDescription)', FileVersion '$($info.FileVersion)'"
           if ($info.Language -ne 'English (United States)') { throw "${exe}.exe: version resource language is '$($info.Language)', not English (United States) (0x0409)" }
@@ -290,7 +290,9 @@ jobs:
         dotnet run -- ../../src/bin/hamcore
         if ($LASTEXITCODE -ne 0) { throw "stbchecker reported differences between the string tables (exit code $LASTEXITCODE)" }
     - name: Test
-      timeout-minutes: 10
+      # The smoke loop takes about 11 minutes with the two of punchpath (CORE-S5-7, #413: ICE gives the pair up after 40 s,
+      # and the attempts wait out their backoff); a modal alert of a broken hamcore still turns red here, not at the job limit
+      timeout-minutes: 15
       shell: pwsh
       env:
         # Names build/harness-out/bench-<arch>.txt (the BENCH lines of vpntest bench)
@@ -561,14 +563,8 @@ jobs:
       shell: pwsh
       run: |
         . .github/scripts/controller-acme.ps1 -BuildDir build
-    - name: Self-check
-      timeout-minutes: 10
-      shell: pwsh
-      run: |
-        $out = & build\vpncmd.exe /TOOLS /CMD Check 2>&1 | Out-String
-        Write-Host $out
-        if ($LASTEXITCODE -ne 0) { throw "vpncmd self-check exited with code $LASTEXITCODE" }
-        if ($out -notmatch 'All checks passed') { throw "vpncmd self-check did not report 'All checks passed'" }
+    # The self-check of vpncmd (/TOOLS /CMD Check) left with vpncmd (CORE-S8-1, #84): ranz doctor runs its six checks
+    # in ranz.yml (.github/scripts/ranz-tools.ps1; SDN-53, #246).
     # vpntest trace without and inside an ETW trace session on the Debug() TraceLogging provider (ticket #92).
     # The session's .etl file is kept in build/harness-out/.
     - name: ETW trace session
@@ -576,21 +572,15 @@ jobs:
       shell: pwsh
       run: |
         . .github/scripts/etw-trace.ps1
-    # vpnserver installed, started, stopped and uninstalled as a Windows service: its start and stop entries
-    # in the Application event log (ticket #92)
+    # ranz-node installed, started, stopped and uninstalled as the ranzvpnserver service: its start and stop
+    # entries in the Application event log (ticket #92)
     - name: Service events in the Event Log
       timeout-minutes: 10
       shell: pwsh
       run: |
         . .github/scripts/service-eventlog.ps1
-    # vpnserver from an unzipped folder: /install adds the one inbound rule "Ranz VPN Server" for it,
-    # the server start adds or changes no rule and runs no VBScript, /uninstall deletes the rule
-    # (ticket #47)
-    - name: Firewall rule of /install and /uninstall
-      timeout-minutes: 10
-      shell: pwsh
-      run: |
-        . .github/scripts/firewall-rule.ps1
+    # The firewall rule of vpnserver /install and /uninstall (ticket #47) left with vpnserver (CORE-S8-1, #84):
+    # ranz-node /install adds no rule (src/ranz-node/ranz-node.c), and the nodesvc test of vpntest checks its service.
     - name: Upload harness outputs (golden bootstrap and diffs)
       if: always()
       uses: actions/upload-artifact@v4
@@ -699,7 +689,8 @@ jobs:
         key: vcpkg-bin-x64-windows-static-${{ hashFiles('vcpkg.json') }}-${{ hashFiles('vcpkg-bincache/**') }}
     - name: vpntest smoke test under ASan
       shell: pwsh
-      timeout-minutes: 10
+      # About 9 minutes with the two of punchpath (CORE-S5-7, #413), which waits for ICE and a backoff
+      timeout-minutes: 15
       env:
         # Every test that vpntest lists runs, except the ones in .github/quality/smoke-exclude.txt and in
         # .github/quality/asan-exclude.txt, which gives the reason of each (a time budget that AddressSanitizer would
@@ -1150,7 +1141,7 @@ jobs:
 
         call "%VSINSTALL%\VC\Auxiliary\Build\vcvars64.bat"
         set "COMPILER_PATH=%VSINSTALL%\VC\Tools\Llvm\x64\bin\clang-cl.exe"
-        rem The clean binaries (vpnserver for the clean-variant check, vpntest for the debugger test) and
+        rem The clean binaries (ranz-node for the clean-variant check, vpntest for the debugger test) and
         rem the release-only ranzguard, in one build. VCPKG_APPLOCAL_DEPS is off: the static triplet copies
         rem no DLLs, and the per-target applocal step otherwise contends on the installed bin dir when
         rem several targets link at once ("the process cannot access the file because it is being used by
@@ -1161,7 +1152,7 @@ jobs:
         rem contend on an output file
         cmake --build --preset hardened --target ranzguard
         if errorlevel 1 exit /b 1
-        cmake --build --preset hardened --target vpnserver
+        cmake --build --preset hardened --target ranz-node
         if errorlevel 1 exit /b 1
         cmake --build --preset hardened --target vpntest
       shell: cmd
@@ -1193,8 +1184,8 @@ jobs:
     - name: Clean variant carries no obfuscation
       shell: pwsh
       run: |
-        python .github/scripts/harden-check.py clean --binary build/vpnserver.exe
-        if ($LASTEXITCODE -ne 0) { throw "vpnserver.exe is not a clean, unobfuscated binary (exit $LASTEXITCODE)" }
+        python .github/scripts/harden-check.py clean --binary build/ranz-node.exe
+        if ($LASTEXITCODE -ne 0) { throw "ranz-node.exe is not a clean, unobfuscated binary (exit $LASTEXITCODE)" }
     # Acceptance criterion 3: run the release variant under a debugger and assert the degrade-or-deceive
     # response (it reports locked, never crashes), and that it reports unlocked when unwatched. The
     # harden self-test of vpntest drives both paths through the Win32 debug API.
@@ -1215,7 +1206,7 @@ jobs:
           build/ranzguard.pdb
 
   # Debug configuration, built without running anything: the code that build_and_test
-  # (RelWithDebInfo) never compiles, under _DEBUG (Microsoft.c and vpncmd.c) and without
+  # (RelWithDebInfo) never compiles, under _DEBUG (Microsoft.c) and without
   # WIN32_NO_DEBUG_HELP_DLL (the DbgHelp call stacks of Win32.c), with the Debug definitions of
   # cmake/RanzOptions.cmake. x64 and arm64: Win32GetCallStack captures with CaptureStackBackTrace,
   # which needs no machine type. A pull request builds arm64 only: the x64 build of build_and_test covers

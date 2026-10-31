@@ -435,6 +435,7 @@ func TestPasswordRules(t *testing.T) {
 // survives a restart of the controller; it goes when the user goes, by a delete or by a rollback, so a
 // user that is made again under the name starts with none.
 func TestPasswordsStayOutOfTheIntent(t *testing.T) {
+	rqlitetest.Own(t) // it restarts rqlited
 	h := newHarness(t)
 	ctx := context.Background()
 	const secret = "correct horse battery staple"

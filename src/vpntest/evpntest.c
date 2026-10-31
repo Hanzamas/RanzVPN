@@ -21,6 +21,10 @@
 //   a packet to the address of peer in red reaches the host of peer through gw.
 // - The guard: a datagram on a VNI of no EVPN VRF, a frame to another MAC address, a packet from a source that the fabric did
 //   not announce and a packet to an address of no route are dropped and counted, and no host takes them.
+// - The outer source (SDN-25-R1, #549): gw takes a frame of the fabric only from a VTEP that it knows for the VRF of its VNI,
+//   the VTEP of a route of the fabric in that VRF. A frame of red from 127.0.0.3, the VTEP of no route, with the VNI of red,
+//   the router MAC of gw and a source that a route of red holds, is dropped and counted, and no host takes it; the same frame
+//   from 127.0.0.2, the VTEP of the routes of the fabric, reaches the host of gw.
 // - The session profile and the Mirror: at gw, peer runs under a session profile with no-server, and a Mirror of red copies TCP
 //   port 80 to a sensor on 127.0.0.1, as for the packets of a peer to a LAN subnet behind a gateway. The SYN-ACK of a server of
 //   peer to the fabric is dropped and counted, and neither the fabric nor the sensor takes it; the SYN of a client of peer goes
@@ -455,9 +459,9 @@ static bool EvpnTestIsFrame(const UCHAR *d, UINT size, UINT vni, const UCHAR *pa
 		READ_USHORT(d + VXLAN_HEADER_SIZE + 12) == ether && Cmp(d + VXLAN_HEADER_SIZE + NODE_EVPN_ETHER, packet, packet_size) == 0);
 }
 
-// Send gw, from the harness VTEP, a VXLAN datagram on vni with the frame of packet, size bytes, from the router MAC of the
-// fabric to mac: whether it went
-static bool EvpnTestInject(EVPNTEST_CTX *ctx, UINT vni, const UCHAR *mac, const UCHAR *packet, UINT size)
+// Send gw, from the socket s, a VXLAN datagram on vni with the frame of packet, size bytes, from the router MAC of the fabric
+// to mac: whether it went
+static bool EvpnTestInjectFrom(EVPNTEST_CTX *ctx, SOCKET s, UINT vni, const UCHAR *mac, const UCHAR *packet, UINT size)
 {
 	UCHAR d[EVPNTEST_DATAGRAM];
 	struct sockaddr_in sa;
@@ -484,7 +488,14 @@ static bool EvpnTestInject(EVPNTEST_CTX *ctx, UINT vni, const UCHAR *mac, const 
 
 	UINT len = VXLAN_HEADER_SIZE + NODE_EVPN_ETHER + size;
 
-	return sendto(ctx->Vtep, (char *)d, (int)len, 0, (struct sockaddr *)&sa, sizeof(sa)) == (int)len;
+	return sendto(s, (char *)d, (int)len, 0, (struct sockaddr *)&sa, sizeof(sa)) == (int)len;
+}
+
+// Send gw, from the harness VTEP, a VXLAN datagram on vni with the frame of packet, size bytes, from the router MAC of the
+// fabric to mac: whether it went
+static bool EvpnTestInject(EVPNTEST_CTX *ctx, UINT vni, const UCHAR *mac, const UCHAR *packet, UINT size)
+{
+	return EvpnTestInjectFrom(ctx, ctx->Vtep, vni, mac, packet, size);
 }
 
 //
@@ -1098,9 +1109,9 @@ static void EvpnTestFromFabric(EVPNTEST_CTX *ctx)
 	}
 }
 
-// One packet of the guard from the harness VTEP, which no host takes and which the counter that get reads counts within
+// One packet of the guard from the socket s, which no host takes and which the counter that get reads counts within
 // EVPNTEST_WAIT
-static void EvpnTestDrop(EVPNTEST_CTX *ctx, char *what, UINT vni, const UCHAR *mac, char *src, char *dst, UINT64 (*get)(const NODE_EVPN_STATUS *))
+static void EvpnTestDropFrom(EVPNTEST_CTX *ctx, SOCKET s, char *what, UINT vni, const UCHAR *mac, char *src, char *dst, UINT64 (*get)(const NODE_EVPN_STATUS *))
 {
 	EVPNTEST_NODE *gw = &ctx->Nodes[EVPNTEST_GW];
 	EVPNTEST_NODE *peer = &ctx->Nodes[EVPNTEST_PEER];
@@ -1113,7 +1124,7 @@ static void EvpnTestDrop(EVPNTEST_CTX *ctx, char *what, UINT vni, const UCHAR *m
 	bool counted = false;
 
 	NodeEvpnGetStatus(gw->Node, &before);
-	bool sent = (size != 0 && EvpnTestInject(ctx, vni, mac, packet, size));
+	bool sent = (size != 0 && EvpnTestInjectFrom(ctx, s, vni, mac, packet, size));
 
 	while (sent && counted == false && Tick64() < end)
 	{
@@ -1129,9 +1140,20 @@ static void EvpnTestDrop(EVPNTEST_CTX *ctx, char *what, UINT vni, const UCHAR *m
 	EvpnTestCheck(ctx, counted && quiet, what, "sent %u, counted %u, no host took it %u", (UINT)sent, (UINT)counted, (UINT)quiet);
 }
 
+// One packet of the guard from the harness VTEP (EvpnTestDropFrom)
+static void EvpnTestDrop(EVPNTEST_CTX *ctx, char *what, UINT vni, const UCHAR *mac, char *src, char *dst, UINT64 (*get)(const NODE_EVPN_STATUS *))
+{
+	EvpnTestDropFrom(ctx, ctx->Vtep, what, vni, mac, src, dst, get);
+}
+
 static UINT64 EvpnTestUnknownVni(const NODE_EVPN_STATUS *st)
 {
 	return st->UnknownVni;
+}
+
+static UINT64 EvpnTestUnknownVtep(const NODE_EVPN_STATUS *st)
+{
+	return st->UnknownVtep;
 }
 
 static UINT64 EvpnTestNotOurs(const NODE_EVPN_STATUS *st)
@@ -1158,6 +1180,52 @@ static void EvpnTestGuard(EVPNTEST_CTX *ctx)
 	EvpnTestDrop(ctx, "A frame of red to another MAC address than the router MAC of gw is dropped and counted", EVPNTEST_VNI_RED, evpntest_other_mac, "172.16.1.10", "10.10.0.1", EvpnTestNotOurs);
 	EvpnTestDrop(ctx, "A packet of red from 192.0.2.99, which the fabric did not announce, is dropped and counted", EVPNTEST_VNI_RED, evpntest_gw_mac, "192.0.2.99", "10.10.0.1", EvpnTestStrangers);
 	EvpnTestDrop(ctx, "A packet of red to 10.10.0.9, an address of no route of red, is dropped and counted", EVPNTEST_VNI_RED, evpntest_gw_mac, "172.16.1.10", "10.10.0.9", EvpnTestUndelivered);
+}
+
+// The outer source of a frame of the fabric (SDN-25-R1, #549): gw takes a frame only from a VTEP that it knows for the VRF of its
+// VNI, the VTEP of a route of the fabric in that VRF. The frame of red from 172.16.1.10, which the route of 172.16.1.0/24 of red
+// holds, to the host of gw, on the VNI of red and to the router MAC of gw, is dropped and counted from 127.0.0.3, the VTEP of no
+// route, and the same frame from 127.0.0.2, the VTEP of the routes of the fabric, reaches the host of gw.
+static void EvpnTestOuterSource(EVPNTEST_CTX *ctx)
+{
+	EVPNTEST_NODE *gw = &ctx->Nodes[EVPNTEST_GW];
+	UCHAR packet[EVPNTEST_SIZE];
+	NODE_EVPN_STATUS before, after;
+	SOCKET stranger = INVALID_SOCKET;
+
+	Print("[the outer source of a frame of the fabric]\n");
+
+	// So far each frame came from the harness VTEP, which the check let through
+	USHORT port = EvpnTestBind(&stranger, 0x7F000003);
+	NodeEvpnGetStatus(gw->Node, &before);
+	EvpnTestCheck(ctx, port != 0 && before.UnknownVtep == 0, "A stranger on 127.0.0.3, and gw counted no frame of the harness VTEP on 127.0.0.2 as one of an unknown VTEP",
+		"port %u, error %u, unknown VTEP %I64u", (UINT)port, (UINT)WSAGetLastError(), before.UnknownVtep);
+
+	EvpnTestDropFrom(ctx, stranger, "A frame of red from 127.0.0.3, the VTEP of no route, with the VNI of red, the router MAC of gw and the source 172.16.1.10, which a route of red holds, is dropped and counted",
+		EVPNTEST_VNI_RED, evpntest_gw_mac, "172.16.1.10", "10.10.0.1", EvpnTestUnknownVtep);
+
+	// The same frame, the packet of EvpnTestDropFrom, from the VTEP of the route of 172.16.1.0/24 of red
+	UINT size = EvpnTestPacket(packet, "172.16.1.10", "10.10.0.1", 300);
+	LONG arrivals = InterlockedCompareExchange(&gw->Arrivals, 0, 0);
+	bool sent = (size != 0 && EvpnTestInject(ctx, EVPNTEST_VNI_RED, evpntest_gw_mac, packet, size));
+	bool arrived = sent && EvpnTestArrived(gw, arrivals + 1, EVPNTEST_WAIT);
+	bool same = false;
+
+	AcquireSRWLockShared(&gw->Lock);
+	{
+		same = (arrived && gw->LastVrf == EVPNTEST_RED && gw->LastSize == size && Cmp(gw->Last, packet, size) == 0);
+	}
+	ReleaseSRWLockShared(&gw->Lock);
+
+	NodeEvpnGetStatus(gw->Node, &after);
+	EvpnTestCheck(ctx, same && after.UnknownVtep == before.UnknownVtep + 1,
+		"The same frame from 127.0.0.2, the VTEP of the route of 172.16.1.0/24 of red, reaches the host of gw in VRF 101 as it was sent",
+		"sent %u, arrived %u, VRF %u, %u bytes, unknown VTEP %I64u to %I64u", (UINT)sent, (UINT)arrived, gw->LastVrf, gw->LastSize, before.UnknownVtep, after.UnknownVtep);
+
+	if (stranger != INVALID_SOCKET)
+	{
+		closesocket(stranger);
+	}
 }
 
 // A TCP segment of the host of peer in red from 10.10.0.2 port sport to 172.16.1.20 port dport with the flags flags, which gw
@@ -1260,12 +1328,13 @@ static void EvpnTestOverlap(EVPNTEST_CTX *ctx)
 	EvpnTestCheck(ctx, blue && EvpnTestIsFrame(d, got, EVPNTEST_VNI_BLUE, packet, size), "gw, VRF 102: the same packet still goes to the fabric on VNI 10102",
 		"taken %u, the harness VTEP took %u bytes", (UINT)blue, got);
 
-	// Six packets went to the fabric, the SYN of peer among them, and four came from it; the guard dropped one of each kind
+	// Six packets went to the fabric, the SYN of peer among them, and five came from it, the frame of the harness VTEP after the
+	// one of the stranger among them; the guard and the stranger dropped one of each kind
 	NodeEvpnGetStatus(gw->Node, &st);
-	Print("  [INFO] gw: sent %I64u, failed %I64u, delivered %I64u, undelivered %I64u, strangers %I64u, not ours %I64u, unknown VNI %I64u, malformed %I64u\n",
-		st.Sent, st.Failed, st.Delivered, st.Undelivered, st.Strangers, st.NotOurs, st.UnknownVni, st.Malformed);
-	EvpnTestCheck(ctx, st.Sent == 6 && st.Failed == 0 && st.Delivered == 4 && st.Undelivered == 1 && st.Strangers == 1 && st.NotOurs == 1 && st.UnknownVni == 1 && st.Malformed == 0,
-		"The counters of the EVPN of gw: 6 packets to the fabric, 4 from it, one drop of each kind of the guard", "%s", "see the line above");
+	Print("  [INFO] gw: sent %I64u, failed %I64u, delivered %I64u, undelivered %I64u, unknown VTEP %I64u, strangers %I64u, not ours %I64u, unknown VNI %I64u, malformed %I64u\n",
+		st.Sent, st.Failed, st.Delivered, st.Undelivered, st.UnknownVtep, st.Strangers, st.NotOurs, st.UnknownVni, st.Malformed);
+	EvpnTestCheck(ctx, st.Sent == 6 && st.Failed == 0 && st.Delivered == 5 && st.Undelivered == 1 && st.UnknownVtep == 1 && st.Strangers == 1 && st.NotOurs == 1 && st.UnknownVni == 1 &&
+		st.Malformed == 0, "The counters of the EVPN of gw: 6 packets to the fabric, 5 from it, one drop of each kind of the guard and of the stranger", "%s", "see the line above");
 }
 
 // evpn: the EVPN of a gateway against a fabric
@@ -1288,6 +1357,7 @@ void evpn_test(UINT num, char **arg)
 		EvpnTestIntoFabric(ctx);
 		EvpnTestFromFabric(ctx);
 		EvpnTestGuard(ctx);
+		EvpnTestOuterSource(ctx);
 		EvpnTestProfile(ctx);
 		EvpnTestOverlap(ctx);
 	}

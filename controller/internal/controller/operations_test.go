@@ -75,7 +75,7 @@ func (s *scripted) handle(op *controlpb.Operation) *controlpb.OperationResult {
 
 // newOperationsHarness returns a harness whose controller waits operationTimeout for the answer of a node.
 func newOperationsHarness(t *testing.T) *harness {
-	h := &harness{t: t, rq: rqlitetest.Start(t), tune: func(c *controller.Config) { c.OperationTimeout = operationTimeout }}
+	h := &harness{t: t, rq: rqlitetest.Fresh(t), tune: func(c *controller.Config) { c.OperationTimeout = operationTimeout }}
 	var err error
 	if h.key, err = keys.GenerateSoft(); err != nil {
 		t.Fatal(err)
@@ -472,6 +472,7 @@ func TestBanCutsAUserOffAtOnce(t *testing.T) {
 // of the banned user is refused after it. It goes with the user: a user that is deleted and made again is
 // not banned.
 func TestBanSurvivesARestartAndGoesWithItsUser(t *testing.T) {
+	rqlitetest.Own(t) // it restarts rqlited
 	h := newOperationsHarness(t)
 	ctx := context.Background()
 	h.apply("operations.json")

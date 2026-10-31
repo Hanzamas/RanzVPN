@@ -158,6 +158,19 @@ static bool ps_pair(PS_WORLD *w, PS_NODE *x, PS_NODE *y) {
 	return NatSimWaitIdle(w->Sim, PS_WAIT) && ok;
 }
 
+// The stand-in of the control plane times a punch: a punch offer from one node to the other and its punch answer, upon
+// which both send their probes (PeerPunch.c)
+static bool ps_punch(PS_WORLD *w, PS_NODE *x, PS_NODE *y) {
+	UCHAR env[PEER_MAX_ENVELOPE];
+
+	UINT size = PeerSealSignal(x->Agent, y->Key.Public, PEER_SIGNAL_PUNCH_OFFER, env, sizeof(env));
+	bool ok = PeerOpenSignal(y->Agent, env, size, NULL) == PEER_OK;
+	size = PeerSealSignal(y->Agent, x->Key.Public, PEER_SIGNAL_PUNCH_ANSWER, env, sizeof(env));
+	ok = PeerOpenSignal(x->Agent, env, size, NULL) == PEER_OK && ok;
+
+	return NatSimWaitIdle(w->Sim, PS_WAIT) && ok;
+}
+
 // Build the world: R and R2 with the relay role (R2 the second reflexive vantage point of the punch); A and B behind
 // sequential symmetric NATs with punching on; C, G and H public, G and H with the short timers of the rekey checks.
 // Every node is a peer of R and R2; B has the peers A and C; G and H are peers of each other.
@@ -182,7 +195,6 @@ static bool ps_world_start(PS_WORLD *w) {
 	PeerDefaultConfig(&pc);
 	pc.Punch = true;
 	pc.PunchBudget = 64;
-	pc.PunchRate = 8;
 	PeerDefaultConfig(&gc);
 	gc.SessionRekeyDatagrams = PS_REKEY_N;
 	gc.SessionRekeyTime = PS_REKEY_MS;
@@ -321,7 +333,7 @@ static void ps_capture(PS_WORLD *w) {
 	coretest_check(memcmp(before.SessionId, b_side.SessionId, PEER_SESSION_ID_SIZE) == 0 && before.Handshakes == 1 && b_side.Handshakes == 1,
 	               "A and B hold the same session: one handshake, the same id at both ends");
 
-	bool direct = ps_converge(w);
+	bool direct = ps_punch(w, &w->A, &w->B) && ps_converge(w);
 	bool upgraded = ps_send_inner(w);
 	PEER_STATUS after = ps_status(&w->A, &w->B);
 	coretest_check(direct && upgraded && w->B.ReceivedDirect == 1 && after.Path == PEER_PATH_DIRECT,

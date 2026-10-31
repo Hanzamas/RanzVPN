@@ -2,7 +2,7 @@
 # The INTERFACE target ranz_warnings: the compiler warnings of the project's own code.
 #
 # Every target of the project's own code links it PRIVATE: cedar and mayaqua, and every executable
-# (vpnserver, vpncmd, vpntest and the fuzz targets) through ranz_add_executable
+# (ranz-node, vpntest and the fuzz targets) through ranz_add_executable
 # (cmake/RanzExecutable.cmake):
 #
 #   target_link_libraries(<target> PRIVATE ranz_warnings)

@@ -1,7 +1,0 @@
-> AccessList
-ID,Action,Status,Priority,Unique ID,Contents,Memo
-1,Pass,Enable,10,<VOLATILE>,"(ipv4) Protocol=TCP, Established",Established
-2,Pass,Enable,20,<VOLATILE>,"(ipv4) Protocol=TCP, Established",est
-3,Pass,Enable,30,<VOLATILE>,"(ipv4) Protocol=TCP, Unestablished",Unestablished
-4,Pass,Enable,40,<VOLATILE>,"(ipv4) Protocol=TCP, Unestablished",UNEST
-5,Pass,Enable,50,<VOLATILE>,(ipv4) Protocol=TCP,no-state

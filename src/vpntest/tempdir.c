@@ -13,7 +13,7 @@
 // through junctions: a junction named like a temp directory, or one inside a stale temp directory,
 // had the files of its target deleted. The service process also copied System32\imm32.dll into
 // its temp directory and loaded the copy (MsDisableIme through MsLoadLibrary). The test runs
-// vpnserver.exe without arguments (MsService prints its help) with TMP and TEMP set to a test
+// ranz-node.exe without arguments (MsServiceEx prints its help) with TMP and TEMP set to a test
 // directory that holds a stale temp directory with a junction in it and a junction named like a
 // temp directory. The files in both junction targets must survive, the stale directory must go,
 // and a watch on the test directory must see the child make its temp directory and no .dll file.
@@ -49,7 +49,7 @@
 #define	TEMPDIR_TOP_TARGET		L"target_top"		// Target of TEMPDIR_STALE_LINK
 #define	TEMPDIR_NESTED_TARGET	L"target_nested"	// Target of TEMPDIR_NESTED_LINK
 #define	TEMPDIR_SENTINEL		L"sentinel.txt"		// File in each target that must survive
-#define	TEMPDIR_CHILD_EXE		L"vpnserver.exe"	// Next to vpntest.exe; without arguments MsService prints its help
+#define	TEMPDIR_CHILD_EXE		L"ranz-node.exe"	// Next to vpntest.exe; without arguments MsServiceEx prints its help
 #define	TEMPDIR_CHILD_TIMEOUT	120000				// Milliseconds the child may run
 #define	TEMPDIR_WATCH_SIZE		65536				// Bytes of the change buffer of ReadDirectoryChangesW
 #define	TEMPDIR_WATCH_IDLE		1000				// Milliseconds without a change that end the watch
@@ -471,7 +471,7 @@ static void TempDirWatchStop(TEMPDIR_WATCH *w)
 	Free(w->Buf);
 }
 
-// Run vpnserver.exe without arguments, with TMP and TEMP set to dir: its MsInit deletes the stale temp
+// Run ranz-node.exe without arguments, with TMP and TEMP set to dir: its MsInit deletes the stale temp
 // directories in dir and its exit its own one. True when it ended in time; *exit_code is its exit code.
 static bool TempDirRunChild(wchar_t *dir, DWORD *exit_code)
 {
@@ -611,7 +611,7 @@ static void TempDirChildCase(TEMPDIR_CTX *ctx)
 
 	TempDirWatchStop(w);
 
-	TempDirCheck(ctx, ended && exit_code == 0, "vpnserver.exe without arguments ran with the test directory as its %TEMP% and ended",
+	TempDirCheck(ctx, ended && exit_code == 0, "ranz-node.exe without arguments ran with the test directory as its %TEMP% and ended",
 		"ended %u, exit code 0x%X", ended, (UINT)exit_code);
 
 	TempDirCheck(ctx, w->NumTempDirs >= 1, "The child made its temp directory in the test directory",

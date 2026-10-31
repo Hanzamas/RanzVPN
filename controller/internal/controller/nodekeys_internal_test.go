@@ -57,7 +57,7 @@ func (c *stepClock) advance(d time.Duration) {
 // looks at the lives of the keys every hour, so in a test it does so only when the test calls sweepKeys.
 func newLifeController(t *testing.T, clk *stepClock) *Controller {
 	t.Helper()
-	rq := rqlitetest.Start(t)
+	rq := rqlitetest.Fresh(t)
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()
 	st, err := store.Open(ctx, rq.URL())

@@ -2293,8 +2293,6 @@ static UINT RtResourceDir(RT_CTX *ctx, char *dir, char *rel)
 // Executables of the build that carry the same hamcore resources as vpntest.exe, next to it
 static wchar_t *rt_resource_exes[] =
 {
-	L"vpnserver.exe",
-	L"vpncmd.exe",
 	L"ranz-node.exe",
 };
 
@@ -2335,9 +2333,9 @@ static BOOL CALLBACK RtResourceCompare(HMODULE module, LPCSTR type, LPSTR name, 
 // resources: the hamcore files (src/bin/hamcore) that ReadHamcore and the "|" prefix read.
 // Every file with its exact bytes, "\" read as "/", a leading "/" skipped, a missing name, a
 // new buffer for each read, a loose "hamcore" folder next to the executable winning over the
-// built-in file, no hamcore.se2 archive next to the executable, and vpnserver.exe and
-// vpncmd.exe carrying the same resources as vpntest.exe (#89)
-RANZ_TEST("resources", resources_test, "Resources: every hamcore file through ReadHamcore and |, the loose hamcore folder, no hamcore.se2, the same resources in vpnserver and vpncmd.");
+// built-in file, no hamcore.se2 archive next to the executable, and ranz-node.exe carrying
+// the same resources as vpntest.exe (#89)
+RANZ_TEST("resources", resources_test, "Resources: every hamcore file through ReadHamcore and |, the loose hamcore folder, no hamcore.se2, the same resources in ranz-node.");
 void resources_test(UINT num, char **arg)
 {
 	RT_CTX ctx;
@@ -2360,7 +2358,7 @@ void resources_test(UINT num, char **arg)
 	// The executable carries the files itself: the build writes no hamcore.se2 archive
 	RtCheck(&ctx, IsFileExistsW(se2_path) == false, "No hamcore.se2 next to the executable", "%S exists", se2_path);
 
-	// vpnserver.exe and vpncmd.exe carry the same files: each holds every resource of type
+	// ranz-node.exe carries the same files: it holds every resource of type
 	// HAMCORE_RESOURCE_TYPE of this executable with the same bytes, and no other one
 	for (UINT i = 0;i < _countof(rt_resource_exes);i++)
 	{
