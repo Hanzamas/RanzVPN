@@ -28,7 +28,13 @@
 // the seeds or of the fuzzer passes the check of its integrity and reaches the processing of a check by libjuice: the
 // roles, USE-CANDIDATE and the peer reflexive candidates.
 //
+// The log of libjuice goes nowhere (FuzzPeerJuiceLog). Without a handler it writes to stdout, and it quotes the username
+// fragment of a check that does not match, so an input would write a line of its own into the output of the run; the
+// coverage that run_fuzzers.ps1 checks for the reach lines of this file is read from the report of libFuzzer alone
+// (CORE-S5-6-R3, #574).
+//
 // fuzz-max-len: 2048
+// fuzz-libs: libjuice
 // fuzz-reach: agent_dispatch_stun
 // fuzz-reach: agent_process_stun_binding
 
@@ -36,6 +42,7 @@
 
 #include "Core/Peer.h"
 #include <bcrypt.h>
+#include <juice/juice.h>
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -106,6 +113,12 @@ static bool FuzzPeerSend(void *param, const PEER_ADDR *dst, const void *data, UI
 	}
 
 	return true;
+}
+
+// The log of libjuice: libjuice still formats every message, what an input puts into it as well, so the fuzzer still
+// checks that, and the message goes nowhere
+static void FuzzPeerJuiceLog(juice_log_level_t level, const char *message)
+{
 }
 
 // The send procedure of A: its datagrams reach the node B from A's address
@@ -487,6 +500,8 @@ static bool FuzzPeerSetup()
 		return true;
 	}
 
+	juice_set_log_handler(FuzzPeerJuiceLog);
+
 	if (FuzzPeerKey(&fuzz_relay_key, 129) == false || FuzzPeerKey(&fuzz_a_key, 1) == false || FuzzPeerKey(&fuzz_b_key, 33) == false)
 	{
 		return false;
@@ -550,7 +565,8 @@ static bool FuzzPeerSetup()
 	PeerSetHostCandidates(fuzz_ice, &b_addr, 1);
 	UINT size = PeerSealSignal(fuzz_ice, fuzz_a_key.Public, PEER_SIGNAL_OFFER, env, sizeof(env));
 
-	// A's answer gives the session the remote description; without it the session takes no check (fuzz-reach)
+	// A's answer gives the session the remote description; without it the session takes no check, and no seed reaches
+	// agent_dispatch_stun
 	FuzzPeerAnswer(env, size);
 
 	// The punch: A and B behind sequential symmetric NATs, whose punch offer of A and punch answer of B begin an attempt
