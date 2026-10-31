@@ -43,6 +43,8 @@ type client struct {
 	dialOuter func(ctx context.Context, network, address string) (net.Conn, error)
 	// now is the clock whose time the proof of a link carries; tests set it to another time
 	now func() time.Time
+	// hysteria are the links of the Hysteria mode, by address (hysteriaclient.go)
+	hysteria map[string]*hyLink
 }
 
 // startClient listens on the data pipe.
@@ -59,6 +61,7 @@ func startClient(ctx context.Context, cfg *clientConfig, pipe string, count *cou
 	if c.now == nil {
 		c.now = time.Now
 	}
+	c.hysteria = hysteriaLinks(cfg, log, opts)
 	c.wg.Add(1)
 	go c.acceptLoop()
 	return c, nil
@@ -114,6 +117,10 @@ func (c *client) handle(pipe net.Conn) {
 		c.refuse(pipe, "the address is not a link")
 		return
 	}
+	if link.hysteria != nil {
+		c.handleHysteria(pipe, link)
+		return
+	}
 
 	ctx, cancel := context.WithTimeout(c.ctx, c.cfg.dialTimeout)
 	conn, err := c.connect(ctx, link)
@@ -161,6 +168,9 @@ func (c *client) refuse(pipe net.Conn, reason string) {
 func (c *client) stop() {
 	c.cancel()
 	c.ln.Close()
+	for _, l := range c.hysteria {
+		l.close()
+	}
 	c.conns.closeAll()
 	c.wg.Wait()
 }
