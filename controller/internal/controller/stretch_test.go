@@ -271,6 +271,37 @@ func TestStretchRefusals(t *testing.T) {
 	}
 }
 
+// TestStretchGatewayHello is the third criterion of SDN-63 at the Hello of a node. The Controller checks a node against the
+// Capabilities that it reported, so a gateway that has reported none takes the Stretch into its desired state unchecked and is
+// checked at its first Hello (ADR-0033): without evpn the Hello is refused, with the reason capability and the node, the Network and
+// the Capability named, and a gateway that reports evpn is served the Stretch.
+func TestStretchGatewayHello(t *testing.T) {
+	h := newHarness(t)
+	h.setLicence(stretchEnterprise())
+	h.applyDoc(stretchDoc("", stretchOf("dc-stretch", "gw-1", "dc-l2", 5010, ``)))
+
+	// A gateway whose host is a Windows Server and whose release does not report evpn
+	gw := h.newSim("gw-1", keyBranch1)
+	gw.start(h)
+	refuse := gw.refusal(t).GetRefuse()
+	want := `Node "gw-1" (Server, x64): Stretch of Network "dc-l2" needs evpn, which the node does not report`
+	if refuse.GetReason() != controlpb.RefuseReason_REFUSE_REASON_CAPABILITY || !strings.Contains(refuse.GetMessage(), want) {
+		t.Errorf("the Hello of gw-1 without evpn was refused with %v, want the reason capability and a message with %q", refuse, want)
+	}
+	if n := h.node("gw-1"); n.Connected {
+		t.Errorf("gw-1, which was refused for the lack of evpn, is connected: %+v", n)
+	}
+
+	// The same gateway reports evpn in its next Hello and takes the Stretch
+	gw.Capabilities = capsEVPN
+	gw.start(h)
+	if nw := stretchNetwork(gw.update(t), "dc-l2"); nw == nil || nw.GetStretch().GetVni() != 5010 {
+		t.Errorf("the update of gw-1 has the Network %v, want the Stretch of VNI 5010", nw)
+	}
+	h.waitNode("gw-1", 1, true)
+	h.checkState(gw)
+}
+
 // TestStretchPastTheLicence is the fourth criterion of SDN-63: a Stretch is part of EVPN and BGP, so the Personal tier refuses it,
 // and when an Enterprise licence runs out, with no fallback licence for the version, the Stretch is no longer part of the desired
 // state of its gateway: it gets a Generation whose Network object has none, the intent keeps the Stretch, and a licence that has EVPN
@@ -346,4 +377,51 @@ func TestStretchPastTheLicence(t *testing.T) {
 	}
 	h.waitNode("gw-1", 4, true)
 	h.checkState(gw)
+}
+
+// TestStretchKeepsTheFallbackLicence is the other side of the fourth criterion of SDN-63, what the grace period keeps. An Enterprise
+// subscription that ran out keeps EVPN and BGP for the versions that its perpetual fallback licence covers, so the Stretch is made
+// and stays part of the desired state of its gateway. Past that, when the fallback licence is for an older version than the one
+// the Controller runs, the Personal tier is in force and the gateway gets the Network without the Stretch, as it does when the
+// subscription runs out with no fallback licence.
+func TestStretchKeepsTheFallbackLicence(t *testing.T) {
+	ctx := context.Background()
+	h := newHarnessAt(t, "0.2.3")
+	sub := licence.Licence{ID: "ent-1", Licensee: "Test", Tier: licence.Enterprise, Nodes: 5, Expires: time.Now().Add(-24 * time.Hour), FallbackVersion: "0.2"}
+	if st := h.setLicence(sub); st.State != licence.StateFallback || st.Tier != licence.Enterprise {
+		t.Fatalf("the licence in force is %+v, want the fallback licence of the Enterprise subscription", st)
+	}
+	h.applyDoc(stretchDoc(""))
+	gw := h.newSim("gw-1", keyBranch1)
+	gw.Capabilities = capsEVPN
+	gw.start(h)
+	gw.update(t)
+	h.waitNode("gw-1", 1, true)
+
+	// Under the fallback licence the Stretch is made, and it is part of the state of its gateway
+	if _, err := h.api.Apply(ctx, stretchDoc("", stretchOf("dc-stretch", "gw-1", "dc-l2", 5010, ``))); err != nil {
+		t.Fatalf("a Stretch under the fallback licence: %v", err)
+	}
+	if nw := stretchNetwork(gw.update(t), "dc-l2"); nw == nil || nw.GetStretch().GetVni() != 5010 {
+		t.Errorf("the update of gw-1 under the fallback licence has the Network %v, want the Stretch of VNI 5010", nw)
+	}
+	h.waitNode("gw-1", 2, true)
+	if got := h.stretchList(); !strings.Contains(got, `"delivered":true`) || strings.Contains(got, `"held"`) {
+		t.Errorf("under the fallback licence the API lists %s, want the Stretch delivered", got)
+	}
+	h.checkState(gw)
+
+	// A fallback licence for an older version does not cover this Controller: the licence is past its grace period
+	sub.FallbackVersion = "0.1"
+	if st := h.setLicence(sub); st.State != licence.StateExpired || st.Tier != licence.Personal {
+		t.Fatalf("with a fallback licence for 0.1 the licence in force is %+v, want the Personal tier", st)
+	}
+	m := gw.update(t)
+	if nw := stretchNetwork(m, "dc-l2"); nw == nil || nw.GetStretch() != nil || len(m.GetUpdate().GetRemove()) != 0 {
+		t.Errorf("the update of gw-1 past the fallback licence is %v, want the Network dc-l2 without a Stretch", m)
+	}
+	h.waitNode("gw-1", 3, true)
+	if got := h.stretchList(); !strings.Contains(got, `"delivered":false`) || !strings.Contains(got, `"held":"EVPN and BGP is an Enterprise feature, and the licence in force is Personal"`) {
+		t.Errorf("past the fallback licence the API lists %s, want the Stretch held by the licence", got)
+	}
 }
