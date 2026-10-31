@@ -2,6 +2,7 @@ package capability
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 
 	"google.golang.org/protobuf/proto"
@@ -10,8 +11,20 @@ import (
 	"github.com/Hanzamas/RanzVPN/controller/internal/intent"
 )
 
+// problemsAbout returns the problems that name the Capability evpn, the ones of the Stretch.
+func problemsAbout(problems []error) []string {
+	var out []string
+	for _, p := range problems {
+		if strings.Contains(p.Error(), "needs evpn") {
+			out = append(out, p.Error())
+		}
+	}
+	return out
+}
+
 // A Stretch needs evpn at its gateway (SDN-63): the problem names the node, the Network and the Capability, a node that reports it
-// takes the Stretch, and a node that is no gateway of one needs nothing, whatever it reports.
+// takes the Stretch, and a node that is no gateway of one needs nothing for it, whatever it reports. The L2 Network of the Stretch
+// needs an L2 backend as any L2 Network does, which is the problem of another row.
 func TestStretchNeedsEVPN(t *testing.T) {
 	states := compile(t,
 		res(intent.KindVRF, "dc", `{"id": 30, "ula": "fd30:1:2::/48"}`),
@@ -21,17 +34,16 @@ func TestStretchNeedsEVPN(t *testing.T) {
 		res(intent.KindStretch, "s", `{"gateway": "gw", "network": "dc-l2", "vni": 5010, "routeTargets": ["65000:5010"]}`),
 	)
 
-	// A Windows Server with every other Capability, and a node that reports none at all, lack evpn
-	for _, c := range []struct {
-		caps *controlpb.Capabilities
-		want string
-	}{
-		{server, `Node "gw" (Server, x64): Stretch of Network "dc-l2" needs evpn, which the node does not report`},
-		{nil, `Node "gw": Stretch of Network "dc-l2" needs evpn, which the node does not report`},
-		{&controlpb.Capabilities{}, `Node "gw": Stretch of Network "dc-l2" needs evpn, which the node does not report`},
-	} {
-		if problems := Check("gw", c.caps, states["gw"]); len(problems) != 1 || problems[0].Error() != c.want {
-			t.Errorf("the problems of gw with the Capabilities %v are %v, want [%s]", c.caps, problems, c.want)
+	// A Windows Server with every other Capability has the L2 backend, so evpn is the one that it lacks
+	want := `Node "gw" (Server, x64): Stretch of Network "dc-l2" needs evpn, which the node does not report`
+	if problems := Check("gw", server, states["gw"]); len(problems) != 1 || problems[0].Error() != want {
+		t.Errorf("the problems of gw with the Capabilities of a Server are %v, want [%s]", problems, want)
+	}
+	// A node that reports no Capability at all lacks it as well, besides the L2 backend
+	for _, caps := range []*controlpb.Capabilities{nil, {}} {
+		want := `Node "gw": Stretch of Network "dc-l2" needs evpn, which the node does not report`
+		if got := problemsAbout(Check("gw", caps, states["gw"])); len(got) != 1 || got[0] != want {
+			t.Errorf("the problems of gw about evpn with the Capabilities %v are %v, want [%s]", caps, got, want)
 		}
 	}
 
@@ -42,11 +54,14 @@ func TestStretchNeedsEVPN(t *testing.T) {
 		t.Errorf("a node that reports evpn was refused: %v", problems)
 	}
 
-	// The other node of the VRF gets no Stretch, so it needs nothing
+	// The other node of the VRF gets no Stretch, so it needs no evpn, and a Server needs nothing at all
 	for _, caps := range []*controlpb.Capabilities{nil, {}, armHome, server} {
-		if problems := Check("host", caps, states["host"]); len(problems) > 0 {
-			t.Errorf("host, which is no gateway, with the Capabilities %v was refused: %v", caps, problems)
+		if got := problemsAbout(Check("host", caps, states["host"])); len(got) > 0 {
+			t.Errorf("host, which is no gateway, with the Capabilities %v needs evpn: %v", caps, got)
 		}
+	}
+	if problems := Check("host", server, states["host"]); len(problems) > 0 {
+		t.Errorf("host, which is no gateway, was refused by a Server: %v", problems)
 	}
 
 	// An L2 Network that no Stretch binds needs no evpn
