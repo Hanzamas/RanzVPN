@@ -3,9 +3,12 @@
 package certgen
 
 import (
+	"errors"
 	"fmt"
 	"io/fs"
 	"os"
+	"path/filepath"
+	"strings"
 	"unsafe"
 
 	"golang.org/x/sys/windows"
@@ -34,16 +37,37 @@ func protectFile(path string) error {
 	return nil
 }
 
+// ErrStream is why CheckKeyFileName refuses a name (SDN-82-R2).
+var ErrStream = errors.New("its name has a colon in its last element, which makes a stream of a file on Windows, and a stream has the access list of that file, not the protected list of a key file")
+
+// CheckKeyFileName refuses the name path for a file that holds a secret, when a file under that name could
+// not get the protected ACL of keyFileSDDL. A colon in the last element of a name, as in
+// C:\temp\notes.txt:phone.conf, names a stream of the file notes.txt. When that file exists, CREATE_NEW makes
+// the stream inside it, since only the stream is new, and the ACL that a call gives is for a new file: the
+// stream has the ACL of notes.txt, which other accounts may read. So no name with such a colon is a name for
+// keys, whether the file exists or not. A colon of the drive, as in C:phone.conf, is no such colon. The error
+// wraps ErrStream. ranz device create asks before it makes a Device, and CreateKeyFile asks again.
+func CheckKeyFileName(path string) error {
+	if strings.Contains(filepath.Base(path), ":") {
+		return &fs.PathError{Op: "create", Path: path, Err: ErrStream}
+	}
+	return nil
+}
+
 // CreateKeyFile makes the file path for a secret, such as the keys of a WireGuard Device, with the
 // protected ACL of keyFileSDDL from the moment it exists, and opens it for writing by this process
 // alone until it is closed. Windows checks the ACL of a file when a handle is opened, not at each read:
 // a file that took the ACL of its folder first and got its own after would leave a handle that another
 // account opened in between, and that handle would read what is written after. The mode 0600 of
 // os.OpenFile means nothing to Windows. A file that exists is refused with an error that wraps
-// fs.ErrExist, and so is a link that is there, which it does not follow (CREATE_NEW). It reports whether
+// fs.ErrExist, and so is a link that is there, which it does not follow (CREATE_NEW). A name that makes a
+// stream of a file is refused with an error that wraps ErrStream (CheckKeyFileName). It reports whether
 // the volume keeps ACLs: one that has none, such as a FAT drive, ignores the ACL, and the file there is
 // as readable as the volume.
 func CreateKeyFile(path string) (*os.File, bool, error) {
+	if err := CheckKeyFileName(path); err != nil {
+		return nil, false, err
+	}
 	sd, err := windows.SecurityDescriptorFromString(keyFileSDDL)
 	if err != nil {
 		return nil, false, fmt.Errorf("certgen: the ACL of a key file: %w", err)
