@@ -13,7 +13,9 @@
 // with each other, so that the probes, the exchange of nonces and the keepalives of an input reach the punch of the
 // leader and of the other end past the envelope, which no fuzzed byte opens; and as the payload of a punch offer or a
 // punch answer, sealed likewise, at an A and a B that can tell their NATs, so that the candidates and the NAT of an
-// input reach the targets of an attempt.
+// input reach the targets of an attempt. The seeds punch_*.bin of src/fuzz/seeds/fuzz_peer_punch.py are a punch message
+// of each type and punch signals of each NAT; a response at A and a proof at B reach the check of the echo of a nonce:
+// fuzz-reach: PeerPunchEcho
 // The keys are the fixed ones of coretest (src/coretest/envelope.c), so a seed can be a datagram between the
 // two bound nodes or a known answer of coretest.
 //
@@ -231,7 +233,8 @@ static void FuzzPeerBound(PEER_AGENT *node, PEER_KEY *key, UINT i, PEER_KEY *rel
 // A punching node of key whose one peer is other: R and R2 see it at the ports port and port + step of the public
 // address 203.0.113.at of its NAT, so that it tells its NAT is a cone (step 0) or a sequential symmetric one (step 1). No
 // number of attempts reaches the backoff, so that every punch offer of an input that the node can take begins an
-// attempt, as the first one did.
+// attempt, as the first one did; and no number of answers spends the budget of an attempt, which counts them with the
+// probes, so that a probe or a challenge of an input draws its answer as the first one did, within the rate.
 static PEER_AGENT *FuzzPeerPuncher(PEER_KEY *key, PEER_INFO *other, UCHAR at, USHORT port, USHORT step)
 {
 	PEER_CONFIG c;
@@ -241,6 +244,7 @@ static PEER_AGENT *FuzzPeerPuncher(PEER_KEY *key, PEER_INFO *other, UCHAR at, US
 	PeerDefaultConfig(&c);
 	c.Punch = true;
 	c.PunchAttempts = 0xFFFFFFFF;
+	c.PunchBudget = 0xFFFFFFFF;
 
 	PEER_AGENT *a = PeerNew(key, &c, FuzzPeerPunchSend, NULL, NULL, NULL);
 	if (a == NULL)
