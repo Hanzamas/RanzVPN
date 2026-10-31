@@ -37,13 +37,13 @@
 // and its answers to the messages of the peer together. Its probes go round robin over its targets and leave
 // PEER_PUNCH_ANSWERS of the budget to the answers; an answer that finds the budget spent does not go. So neither the peer
 // nor an attacker that sends captured probes of the peer from addresses of its own makes the node send more. The attempt
-// fails PEER_PUNCH_LINGER after its last probe when nothing met. The node sends PunchRate punch messages in any second at
-// most, probes and answers together, across its peers, and only the proof that completes a meeting goes when the rate is
-// spent, as nothing sends it again. The next attempt waits PunchRetry from the end
-// of the one before, so that the attempt of the peer, which began a little earlier, ended too. After PunchAttempts
-// attempts in a row that met nothing, the pair stays on the relay for PunchBackoff from the end of the last one, and a
-// punch offer that comes meanwhile is refused. The node counts the attempts, the successes and the failures, which its
-// control stream reports.
+// fails PEER_PUNCH_LINGER after its last probe, or after its last response to a challenge, when nothing met. The node
+// sends PunchRate punch messages in any second at most, probes and answers together, across its peers, and only the first
+// proof of a meeting goes when the rate is spent, as the other end waits for it. The next attempt waits PunchRetry from
+// the end of the one before, so that the attempt of the peer, which began a little earlier, ended too. After
+// PunchAttempts attempts in a row that met nothing, the pair stays on the relay for PunchBackoff from the end of the last
+// one, and a punch offer that comes meanwhile is refused. The node counts the attempts, the successes and the failures,
+// which its control stream reports.
 //
 // The proof. A probe proves who sent it, not where the sender is: an attacker on the path can send a captured probe
 // from an address of its own (finding F3 of the second review of AUD-5, PR 405). So a meeting moves the peer to the
@@ -55,6 +55,11 @@
 // peer to the direct path there, and sends a proof that echoes the second nonce, which moves the other end to the direct
 // path at the address that proof came from, the one its own nonce went to. Only the peer can read a nonce, and it can
 // echo one only from where the nonce reached it, so a probe that names an address the peer does not own sets no path.
+// A proof can be lost on the way, which would leave the other end on the relay while the leader sends on the direct
+// path. So the other end says from the direct path with a keepalive that it moved there, and the leader sends the proof
+// again every PEER_PUNCH_PROOF_RETRY until it hears that or a record of the peer session from there, PEER_PUNCH_PROOFS
+// proofs in all; the other end answers a proof that comes after its move with a keepalive too. The other end keeps its
+// attempt open PEER_PUNCH_LINGER after its response, so that a proof sent again finds it.
 // Each end moves once, on the one exchange that completed, so the two ends use the same pair of mappings; the relay
 // carries the traffic of the pair until then, so nothing is interrupted. A punch message of a node that is no peer, or
 // of a peer with no punch open, is dropped and counted.
@@ -81,6 +86,8 @@
 #define PEER_PUNCH_LINGER        2000 // ms that an attempt whose budget is spent waits for the answers on their way
 #define PEER_PUNCH_ANSWERS       8    // Punch messages of the rate that the probes leave to the answers and the keepalives, and of the budget of an attempt to its answers
 #define PEER_PUNCH_WINDOW        1500 // ms over which the rate counts: a second, and the time that sealing a burst may take
+#define PEER_PUNCH_PROOFS        8    // The most proofs of a meeting that the leader sends, until the other end says that it moved
+#define PEER_PUNCH_PROOF_RETRY   200  // ms between two of them
 
 // The types of a punch message
 #define PEER_PUNCH_PROBE     1 // A probe to a predicted address
@@ -98,11 +105,12 @@ typedef struct PEER_PUNCH_MODEL {
 	UINT Mappings;  // The mappings of the node now
 } PEER_PUNCH_MODEL;
 
-// One punch message of a tick: the peer it is for, the address it goes to and its type
+// One punch message of a tick: the peer it is for, the address it goes to, its type, and the echo of a proof
 typedef struct PEER_PUNCH_SEND {
 	UCHAR Key[PEER_KEY_SIZE];
 	PEER_ADDR To;
 	UINT Type;
+	UCHAR Echo[PEER_PUNCH_NONCE_SIZE];
 } PEER_PUNCH_SEND;
 
 // The limits of the punch, the configured values or the defaults
@@ -755,8 +763,8 @@ static bool PeerPunchEcho(PEER_PUNCH *punch, const PEER_ADDR *from, const UCHAR 
 // The timer of the punches, from PeerTick: the next burst of probes of every attempt, within the rate of the node and the
 // budget of the attempt, of which the probes leave PeerPunchKeep to the answers; an attempt whose probes are spent fails
 // PEER_PUNCH_LINGER after its last probe, and the next one waits the retry, or the backoff after the last of the
-// attempts, from then; and on a punched path the keepalive of the node, or the Fallback once the peer said nothing there
-// for PunchConsent.
+// attempts, from then; and on a punched path the proof of the leader again until the other end said that it moved there,
+// the keepalive of the node, or the Fallback once the peer said nothing there for PunchConsent.
 void PeerPunchTick(PEER_AGENT *a) {
 	PEER_PUNCH_SEND send[PEER_PUNCH_TICK_MAX];
 	UINT num = 0;
@@ -814,6 +822,19 @@ void PeerPunchTick(PEER_AGENT *a) {
 				punch->State = PEER_PUNCH_NONE;
 				punch->NextAttempt = now + retry;
 				fallbacks++;
+			} else if (punch->State == PEER_PUNCH_CONNECTED && punch->Proofs != 0 && punch->Proofs < PEER_PUNCH_PROOFS && InterlockedCompareExchange(&punch->Moved, 0, 0) == 0 &&
+			           now - punch->LastSent >= PEER_PUNCH_PROOF_RETRY && left != 0 && num < PEER_PUNCH_TICK_MAX) {
+				// The leader: the other end has not said from the punched path that it moved there, so its proof may have been
+				// lost on the way, and goes again
+				CopyMemory(send[num].Key, p->Info.Key, PEER_KEY_SIZE);
+				send[num].To = p->Direct;
+				send[num].Type = PEER_PUNCH_PROOF;
+				CopyMemory(send[num].Echo, punch->Proof, PEER_PUNCH_NONCE_SIZE);
+				num++;
+				left--;
+
+				punch->Proofs++;
+				punch->LastSent = now;
 			} else if (punch->State == PEER_PUNCH_CONNECTED && now - punch->LastSent >= consent / 4 && left != 0 && num < PEER_PUNCH_TICK_MAX) {
 				CopyMemory(send[num].Key, p->Info.Key, PEER_KEY_SIZE);
 				send[num].To = p->Direct;
@@ -831,8 +852,9 @@ void PeerPunchTick(PEER_AGENT *a) {
 	ReleaseSRWLockExclusive(&a->Lock);
 
 	for (UINT i = 0; i < num; i++)
-		if (PeerPunchSend(a, send[i].Key, &send[i].To, send[i].Type, NULL, NULL) && send[i].Type == PEER_PUNCH_PROBE)
+		if (PeerPunchSend(a, send[i].Key, &send[i].To, send[i].Type, NULL, (send[i].Type == PEER_PUNCH_PROOF ? send[i].Echo : NULL)) && send[i].Type == PEER_PUNCH_PROBE)
 			PeerCount(a, PEER_COUNT_PUNCH_PROBES);
+	SecureZeroMemory(send, sizeof(send));
 
 	for (UINT i = 0; i < failed; i++)
 		PeerCount(a, PEER_COUNT_PUNCH_FAILURES);
@@ -844,11 +866,13 @@ void PeerPunchTick(PEER_AGENT *a) {
 // punch that is open, then take its part in the exchange of nonces. A probe draws a challenge from the leader and a probe
 // from the other end; a challenge draws a response from the other end; a response that echoes the leader's nonce from the
 // address it went to moves the peer to the direct path at the leader and draws a proof; a proof that echoes the other
-// end's nonce from the address it went to moves the peer to the direct path there. A node already on the direct path
-// takes a message and answers none, so a late probe of a burst leaves the path on the pair that met, and a word of the
-// peer from there is its consent. A meeting counts as a prediction success and an Upgrade. The answers of an attempt take
-// from its budget and go within the rate of the node, and the proof also when the rate is spent. Called from PeerInput for
-// a PEER_MSG_PUNCH datagram.
+// end's nonce from the address it went to moves the peer to the direct path there, and draws a keepalive that says so to
+// the leader. A node already on the direct path takes a message and answers none but a proof, which the other end
+// answers with a keepalive again, so a late probe of a burst leaves the path on the pair that met; a word of the peer
+// from there is its consent, and its keepalive says to the leader that it moved there, so the proof goes no more
+// (PeerPunchTick). A meeting counts as a prediction success and an Upgrade. The answers of an attempt take from its
+// budget and go within the rate of the node, and the proof also when the rate is spent. Called from PeerInput for a
+// PEER_MSG_PUNCH datagram.
 void PeerPunchInput(PEER_AGENT *a, const PEER_ADDR *from, const UCHAR *data, UINT size) {
 	UCHAR sender[PEER_KEY_SIZE];
 	UCHAR payload[PEER_PUNCH_PAYLOAD_SIZE];
@@ -900,9 +924,16 @@ void PeerPunchInput(PEER_AGENT *a, const PEER_ADDR *from, const UCHAR *data, UIN
 			punch->LastSeq = seq;
 
 			if (punch->State == PEER_PUNCH_CONNECTED) {
-				// On the direct path already: the exchange that got it there is the only one
-				if (p->HasDirect && PeerAddrEqual(&p->Direct, from))
+				// On the direct path already: the exchange that got it there is the only one. A word of the peer from there is
+				// its consent; its keepalive also says that it moved there, so the leader sends its proof no more, and the other
+				// end answers a proof that the leader sent again with a keepalive, as the one before may have been lost.
+				if (p->HasDirect && PeerAddrEqual(&p->Direct, from)) {
 					InterlockedExchange64(&punch->LastHeard, (LONG64)PeerNow());
+					if (type == PEER_PUNCH_KEEPALIVE)
+						InterlockedExchange(&punch->Moved, 1);
+					else if (type == PEER_PUNCH_PROOF && leader == false)
+						reply = PEER_PUNCH_KEEPALIVE;
+				}
 			} else if (type == PEER_PUNCH_PROBE) {
 				reply = (leader ? PEER_PUNCH_CHALLENGE : PEER_PUNCH_PROBE);
 			} else if (type == PEER_PUNCH_CHALLENGE && leader == false) {
@@ -919,16 +950,23 @@ void PeerPunchInput(PEER_AGENT *a, const PEER_ADDR *from, const UCHAR *data, UIN
 					punch->NextAttempt = 0;
 					punch->LastSent = now;
 					InterlockedExchange64(&punch->LastHeard, (LONG64)now);
-					reply = (leader ? PEER_PUNCH_PROOF : 0);
+					InterlockedExchange(&punch->Moved, 0);
+
+					// The leader sends the proof, and again until the other end says that it moved (PeerPunchTick); the other
+					// end says so at once, with a keepalive
+					punch->Proofs = (leader ? 1 : 0);
+					if (leader)
+						CopyMemory(punch->Proof, their_nonce, PEER_PUNCH_NONCE_SIZE);
+					reply = (leader ? PEER_PUNCH_PROOF : PEER_PUNCH_KEEPALIVE);
 				}
 			}
 
 			// An answer of the attempt takes its share of the budget of the attempt, as a probe does, and goes within the rate
-			// of the node: one that finds the budget or the rate spent does not go, and counts as over the rate. The proof
-			// completes the meeting that moved the node to the direct path, once for each meeting, and nothing sends it
-			// again, so it goes and counts when the rate is spent too; it takes nothing of the budget of the attempt, which
-			// met. A nonce is drawn only for an answer that goes, so its slots hold the nonces that went out, not the ones of
-			// the answers that the budget or the rate held back.
+			// of the node: one that finds the budget or the rate spent does not go, and counts as over the rate. The first
+			// proof completes the meeting that moved the node to the direct path, once for each meeting, so it goes and counts
+			// when the rate is spent too; it and the keepalive of the other end take nothing of the budget of the attempt,
+			// which met. A nonce is drawn only for an answer that goes, so its slots hold the nonces that went out, not the
+			// ones of the answers that the budget or the rate held back.
 			bool answer = (reply != 0 && probing && connected == false);
 
 			if ((answer && punch->Budget == 0) || (reply != 0 && PeerPunchAllow(a, reply == PEER_PUNCH_PROOF) == false)) {
@@ -939,6 +977,13 @@ void PeerPunchInput(PEER_AGENT *a, const PEER_ADDR *from, const UCHAR *data, UIN
 			}
 			if ((reply == PEER_PUNCH_CHALLENGE || reply == PEER_PUNCH_RESPONSE) && PeerPunchNonce(punch, from, nonce) == false)
 				reply = 0;
+
+			// An attempt that answered a challenge waits PEER_PUNCH_LINGER from then for the proof, so that a proof that the
+			// leader sends again finds it open; a keepalive of the other end is one on the punched path
+			if (reply == PEER_PUNCH_RESPONSE)
+				punch->LastProbe = PeerNow();
+			else if (reply == PEER_PUNCH_KEEPALIVE)
+				punch->LastSent = PeerNow();
 		}
 	}
 	ReleaseSRWLockExclusive(&a->Lock);
@@ -957,7 +1002,7 @@ void PeerPunchInput(PEER_AGENT *a, const PEER_ADDR *from, const UCHAR *data, UIN
 	}
 
 	// A challenge carries the node's nonce; a response echoes the peer's and carries the node's; a proof echoes the
-	// peer's
+	// peer's; a keepalive carries none
 	if (reply == PEER_PUNCH_PROBE)
 		PeerPunchSend(a, sender, from, PEER_PUNCH_PROBE, NULL, NULL);
 	else if (reply == PEER_PUNCH_CHALLENGE)
@@ -966,19 +1011,24 @@ void PeerPunchInput(PEER_AGENT *a, const PEER_ADDR *from, const UCHAR *data, UIN
 		PeerPunchSend(a, sender, from, PEER_PUNCH_RESPONSE, nonce, their_nonce);
 	else if (reply == PEER_PUNCH_PROOF)
 		PeerPunchSend(a, sender, from, PEER_PUNCH_PROOF, NULL, their_nonce);
+	else if (reply == PEER_PUNCH_KEEPALIVE)
+		PeerPunchSend(a, sender, from, PEER_PUNCH_KEEPALIVE, NULL, NULL);
 
 	SecureZeroMemory(nonce, sizeof(nonce));
 	SecureZeroMemory(payload, sizeof(payload));
 }
 
 // A record of the peer session with the peer p, which opened, came from the address from (PeerInputData): on the punched
-// path of p it is a word of the peer there, its consent. Only a record that opened counts, as any datagram can name the
-// peer as its source. The caller holds the lock of the layer, shared.
+// path of p it is a word of the peer there, its consent, and says that the peer moved there, as it sends its records on
+// the direct path only once it is there. Only a record that opened counts, as any datagram can name the peer as its
+// source. The caller holds the lock of the layer, shared.
 void PeerPunchHeard(PEER *p, const PEER_ADDR *from) {
 	PEER_PUNCH *punch = &p->Punch;
 
-	if (punch->State == PEER_PUNCH_CONNECTED && p->HasDirect && PeerAddrEqual(&p->Direct, from))
+	if (punch->State == PEER_PUNCH_CONNECTED && p->HasDirect && PeerAddrEqual(&p->Direct, from)) {
 		InterlockedExchange64(&punch->LastHeard, (LONG64)PeerNow());
+		InterlockedExchange(&punch->Moved, 1);
+	}
 }
 
 // The NAT of the node and the address of its next mapping, into st

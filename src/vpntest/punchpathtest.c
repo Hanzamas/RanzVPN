@@ -14,9 +14,10 @@
 //   the desired state, the Signals of the Nodes, which it carries to the Node they name, and the Telemetry with the Paths
 //   and the punches of each Node.
 // - A fake adapter stands in for the host of each Node, and the test sends the packets of each host into its Node. A tap
-//   sees every datagram that a host sends, counts the punch messages of each Node with their times, and keeps the last
-//   probe of node-b, which an attacker on the link of node-a sends again from an address of its own. A cut of the
-//   simulator loses every datagram between the two NATs while the test holds the punch back.
+//   sees every datagram that a host sends, counts the punch messages of each Node with their times, keeps the last
+//   probe of node-b, which an attacker on the link of node-a sends again from an address of its own, and loses the first
+//   proof of the meeting on the way. A cut of the simulator loses every datagram between the two NATs while the test
+//   holds the punch back.
 // The steps:
 // a. Bring-up: node-a and node-b apply Generation 1 and come up through relay-1; each tells from the answers of its binds
 //    to relay-1 and relay-2 that its NAT is a sequential symmetric one, and predicts the port of its next mapping. The
@@ -33,7 +34,8 @@
 //    session.
 // d. The punch: the cut is lifted before the backoff ends, and the attempt after it meets: both ends move to the direct
 //    path, in the same peer session, at the mapping of the peer that proved itself; relay-1 carries no data of the pair
-//    after the move.
+//    after the move. The first proof of the meeting is lost on the way: the Node of the lower key sends it again, and the
+//    other Node moves in the same attempt.
 // e. Fallback: the path between the NATs is cut again, the keepalives of the punched path go unanswered, and both ends
 //    fall back to relay-1 with their peer session. Records that name node-b as their source and open in no session, which
 //    an attacker sends node-a from the address of node-b on the punched path, do not hold node-a there.
@@ -87,7 +89,8 @@
 #define	PUNCHPATH_BACKOFF		20000		// The PunchBackoff of the Nodes (ms)
 #define	PUNCHPATH_CONSENT		6000		// The PunchConsent of the Nodes: ms of silence that end a punched path
 #define	PUNCHPATH_FAIL_WAIT		60000		// ms for the attempts before the backoff to begin and fail
-#define	PUNCHPATH_MEET_WAIT		30000		// ms for the attempt after the backoff to begin and meet
+#define	PUNCHPATH_MEET_WAIT		30000		// ms for the attempt after the backoff to begin and meet ...
+#define	PUNCHPATH_PROOF_WAIT	3000		// ... and from its start to both ends on the direct path, its first proof lost on the way
 #define	PUNCHPATH_FALL_WAIT		30000		// ms for a punched path whose peer went silent to fall back ...
 #define	PUNCHPATH_FALL_SLACK	3000		// ... which it does within this time after its PunchConsent
 #define	PUNCHPATH_FORGE_EVERY	500			// ms between two datagrams of the attacker on the punched path, well under the PunchConsent
@@ -116,6 +119,7 @@
 #define	PUNCHPATH_HOST_PORT		5000		// The port of the socket of the peer agent of each Node on its host
 #define	PUNCHPATH_ECHO_PORT		7			// The UDP port that the packets of the hosts go to
 #define	PUNCHPATH_PAYLOAD_SIZE	42			// A punch message: version, sequence, type, a nonce and an echo of 16 bytes each
+#define	PUNCHPATH_PROOF			4			// The type of a proof, the punch message that moves the Node of the higher key (Core/PeerPunch.c)
 
 // What a read of a frame of a control stream at the stand-in gave
 #define	PUNCHPATH_FRAME_DONE	0			// A whole frame is in Frame
@@ -199,13 +203,18 @@ typedef struct PUNCHPATH_CTX
 	volatile LONG Halt;								// Ends the threads of the test
 
 	// The capture of every datagram that a host sends
-	SRWLOCK TapLock;						// Everything below to Watched
+	SRWLOCK TapLock;						// Everything below to ProofsLost
 	UINT NumTimes[PUNCHPATH_NUM_NODES];		// The punch messages that each Node sent ...
 	UINT64 Times[PUNCHPATH_NUM_NODES][PUNCHPATH_TIMES];	// ... the times of the first PUNCHPATH_TIMES of them (ms of the performance counter)
 	UCHAR Probe[PEER_MAX_DATAGRAM];			// The last punch message of node-b ...
 	UINT ProbeSize;							// ... and its size, 0 for none
 	PEER_ADDR Watch;						// The datagrams of node-a to this address ...
 	UINT Watched;							// ... are counted here
+	NATSIM_HOST *ProofFrom;					// The host of the Node of the lower key, whose proofs step d watches ...
+	PEER_KEY *ProofKey;						// ... the key of the other Node, which the proofs are sealed to ...
+	UINT Proofs;							// ... the proofs that the tap saw ...
+	UINT ProofsLost;						// ... and the ones that it lost on the way: the first one
+	volatile LONG ProofWatch;				// 1 while step d watches the proofs
 	volatile LONG64 RelayRecords;			// The records of peer sessions on the links of the Nodes with relay-1
 
 	// The transports: the data streams between the Nodes, which neither dials, and the control streams to the stand-in
@@ -399,7 +408,8 @@ static bool PunchPathSameIp(const PEER_ADDR *a, const PEER_ADDR *b)
 
 // The tap of the network (NATSIM_TAP): every datagram that a host sends, on whatever link, before the network routes it.
 // It counts the punch messages of each Node with their times, keeps the last one of node-b, counts the datagrams of
-// node-a to the watched address, and the records of peer sessions on the links of the Nodes with relay-1.
+// node-a to the watched address, and the records of peer sessions on the links of the Nodes with relay-1; while step d
+// watches them, it loses the first proof of the Node of the lower key on the way.
 static bool PunchPathTap(void *param, NATSIM_HOST *from, const PEER_ADDR *dst, const UCHAR *data, UINT size)
 {
 	PUNCHPATH_CTX *ctx = (PUNCHPATH_CTX *)param;
@@ -450,6 +460,33 @@ static bool PunchPathTap(void *param, NATSIM_HOST *from, const PEER_ADDR *dst, c
 		if (to_relay || from_relay)
 		{
 			InterlockedIncrement64(&ctx->RelayRecords);
+		}
+	}
+
+	// While step d watches the proofs: each punch message of the Node of the lower key opens with the key of the other Node,
+	// to which it is sealed, and the first proof among them is lost on the way
+	if (data[0] == PEER_MSG_PUNCH && InterlockedCompareExchange(&ctx->ProofWatch, 0, 0) != 0 && from == ctx->ProofFrom)
+	{
+		UCHAR sender[PEER_KEY_SIZE];
+		UCHAR payload[PUNCHPATH_PAYLOAD_SIZE];
+		UINT len = 0;
+		bool lose = false;
+
+		if (PeerEnvelopeOpen(ctx->ProofKey, data, size, sender, payload, sizeof(payload), &len) && len == sizeof(payload) && payload[9] == PUNCHPATH_PROOF)
+		{
+			AcquireSRWLockExclusive(&ctx->TapLock);
+			ctx->Proofs++;
+			lose = (ctx->Proofs == 1);
+			if (lose)
+			{
+				ctx->ProofsLost++;
+			}
+			ReleaseSRWLockExclusive(&ctx->TapLock);
+		}
+
+		if (lose)
+		{
+			return false;
 		}
 	}
 
@@ -1615,7 +1652,8 @@ static bool PunchPathLimits(PUNCHPATH_CTX *ctx, UINT64 *third)
 
 // d. The punch: the cut is lifted before the backoff ends, and the attempt after it meets; both ends move to the direct path
 // in the same peer session, at the mapping of the peer that proved itself, and relay-1 carries no data of the pair after
-// the move
+// the move. The tap loses the first proof of the meeting on the way, so the Node of the higher key moves only on a proof
+// that the Node of the lower key sends again.
 static bool PunchPathMeet(PUNCHPATH_CTX *ctx, UINT64 third)
 {
 	PEER_STATUS ab, ba;
@@ -1624,8 +1662,18 @@ static bool PunchPathMeet(PUNCHPATH_CTX *ctx, UINT64 third)
 	char what[MAX_SIZE];
 	char words[MAX_SIZE * 2];
 	char addr_a[64], addr_b[64];
+	UINT lower = PunchPathLower(ctx);
+	UINT higher = (lower == PUNCHPATH_A ? PUNCHPATH_B : PUNCHPATH_A);
 
-	Print("[d. the punch: the cut is lifted, and the attempt after the backoff meets]\n");
+	Print("[d. the punch: the cut is lifted, and the attempt after the backoff meets, though its first proof is lost on the way]\n");
+
+	AcquireSRWLockExclusive(&ctx->TapLock);
+	ctx->ProofFrom = ctx->Nodes[lower].Host;
+	ctx->ProofKey = &ctx->Nodes[higher].Key;
+	ctx->Proofs = 0;
+	ctx->ProofsLost = 0;
+	ReleaseSRWLockExclusive(&ctx->TapLock);
+	InterlockedExchange(&ctx->ProofWatch, 1);
 
 	NatSimCut(ctx->Sim, ctx->Nodes[PUNCHPATH_A].Nat, false);
 
@@ -1633,7 +1681,7 @@ static bool PunchPathMeet(PUNCHPATH_CTX *ctx, UINT64 third)
 	bool met = false;
 	for (UINT64 end = Tick64() + PUNCHPATH_MEET_WAIT;Tick64() < end && met == false;SleepThread(PUNCHPATH_POLL))
 	{
-		PunchPathStats(ctx, PunchPathLower(ctx), &st_a);
+		PunchPathStats(ctx, lower, &st_a);
 		if (began == 0 && st_a.PunchAttempts > PUNCHPATH_ATTEMPTS)
 		{
 			began = Tick64();
@@ -1641,7 +1689,13 @@ static bool PunchPathMeet(PUNCHPATH_CTX *ctx, UINT64 third)
 		met = (PunchPathStatus(ctx, PUNCHPATH_A, PUNCHPATH_B, &ab) && PunchPathStatus(ctx, PUNCHPATH_B, PUNCHPATH_A, &ba) && ab.Path == PEER_PATH_DIRECT && ba.Path == PEER_PATH_DIRECT);
 	}
 	UINT64 at = Tick64();
+	InterlockedExchange(&ctx->ProofWatch, 0);
+	AcquireSRWLockShared(&ctx->TapLock);
+	UINT proofs = ctx->Proofs;
+	UINT lost = ctx->ProofsLost;
+	ReleaseSRWLockShared(&ctx->TapLock);
 	Print("  [INFO] the attempt after the backoff began %I64u ms after the third one, and both ends were on the direct path %I64u ms after it began\n", began - third, began != 0 ? at - began : 0);
+	Print("  [INFO] %s sent %u proofs of the meeting by then, and the tap lost %u of them on the way\n", ctx->Nodes[lower].Name, proofs, lost);
 
 	PunchPathStats(ctx, PUNCHPATH_A, &st_a);
 	PunchPathStats(ctx, PUNCHPATH_B, &st_b);
@@ -1651,6 +1705,13 @@ static bool PunchPathMeet(PUNCHPATH_CTX *ctx, UINT64 third)
 
 	PunchPathCheck(ctx, met && ab.Punch == PEER_PUNCH_CONNECTED && ba.Punch == PEER_PUNCH_CONNECTED && st_a.PunchSuccesses == 1 && st_b.PunchSuccesses == 1,
 		"In the world with two symmetric NATs the pair gets a direct path by punching: the probes of the two ends meet and both move off relay-1", "%s", words);
+
+	// A proof that is lost leaves the Node of the higher key on relay-1 only until the next one: the Node of the lower key
+	// sends the proof again until the other says from the direct path that it moved there
+	Format(what, sizeof(what), "The first proof of the meeting is lost on the way, and %s sends it again until %s says that it moved: both ends are on the direct path within %u ms of the start of the attempt, in the one meeting",
+		ctx->Nodes[lower].Name, ctx->Nodes[higher].Name, (UINT)PUNCHPATH_PROOF_WAIT);
+	PunchPathCheck(ctx, met && began != 0 && at - began <= PUNCHPATH_PROOF_WAIT && lost == 1 && proofs >= 2, what, "%u proofs, %u of them lost; both ends on the direct path %I64u ms after the attempt began",
+		proofs, lost, began != 0 ? at - began : 0);
 
 	// The direct path is at the mapping of the peer on its NAT, which echoed the nonce, and not the attacker's
 	PeerAddrToStr(addr_a, sizeof(addr_a), &ba.Direct);
@@ -2316,7 +2377,7 @@ static void PunchPathCloseKeys(PUNCHPATH_CTX *ctx)
 }
 
 // punchpath: a pair of Nodes behind two symmetric NATs, which ICE leaves on the Relay, gets a direct path by punching
-RANZ_TEST_TAGS("punchpath", punchpath_test, "core", "Punch path of the new core (CORE-S5-7): a pair of Nodes behind two symmetric NATs of the simulator, which ICE leaves on the Relay, gets a direct path by port prediction and birthday punching in the same peer session; the probes are authenticated, limited per second and per attempt, and wait out a backoff after the attempts that met nothing; a probe that names an address the peer does not own sets no path; a punched path whose peer goes silent falls back to the Relay; each Node exports its punches; and the success rate over seeds of the other subscribers of the NATs. vpntest punchpath [seed]");
+RANZ_TEST_TAGS("punchpath", punchpath_test, "core", "Punch path of the new core (CORE-S5-7): a pair of Nodes behind two symmetric NATs of the simulator, which ICE leaves on the Relay, gets a direct path by port prediction and birthday punching in the same peer session, though the first proof of the meeting is lost; the probes are authenticated, limited per second and per attempt with their answers, and wait out a backoff after the attempts that met nothing; a probe that names an address the peer does not own sets no path; a punched path whose peer goes silent falls back to the Relay, whatever datagrams that do not open come from its address; each Node exports its punches; and the success rate over seeds of the other subscribers of the NATs. vpntest punchpath [seed]");
 void punchpath_test(UINT num, char **arg)
 {
 	PUNCHPATH_CTX *ctx = ZeroMalloc(sizeof(PUNCHPATH_CTX));
