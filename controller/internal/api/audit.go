@@ -32,6 +32,11 @@ import (
 // shorten it, so the audit targets and the retention need admin (AUD1-DT-9, #457). A target must not
 // name an address that the admin destination lists keep from it (export.Guard). A request that is
 // not valid is answered with 400 Bad Request.
+//
+// The log names the API tokens that acted (token:NAME), and a call with a token after its expiry is
+// recorded under that token (auditexpired.go), so a viewer reads the names of tokens, though
+// GET /api/v1/tokens needs admin. That is the decision of AUD1-DT-15-R1 (#561), written in AP-5 and
+// AP-8 of docs/threat-model.md and held by TestAViewerReadsTheNamesOfTheTokensInTheAuditLog.
 
 // auditTargetsPath is the root of the audit targets and auditRetentionPath the retention of the audit
 // log, which only an admin changes (Needs).

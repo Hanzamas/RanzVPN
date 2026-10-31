@@ -10,8 +10,11 @@ import (
 
 // The audit record of a call that the Guard refuses because its token has expired (AUD1-DT-15, #497). The answer of the Guard says
 // when the token ended and not its name (AUD1-DT-13, #461), since it tells the holder of the secret no more than he has. The audit log
-// is the operator's, and a leaked token that is tried after its expiry must show up there as that token and not as one that is
-// unknown. AuditRefusals gives each call a note that the Guard fills in with the token, and records the refusal under it.
+// names the tokens that act, and a leaked token that is tried after its expiry must show up there as that token and not as one that is
+// unknown. A viewer reads the audit log (ADR-0030, ADR-0031), so it reads that name as it reads the name of any token that made a call
+// that is recorded, though it cannot list the tokens (GET /api/v1/tokens is the admin's): AP-5 and AP-8 of docs/threat-model.md say so,
+// and TestAViewerReadsTheNamesOfTheTokensInTheAuditLog holds it (AUD1-DT-15-R1, #561). AuditRefusals gives each call a note that the
+// Guard fills in with the token, and records the refusal under it.
 
 // refusalKey is the key of the refusalNote in the context of a call.
 type refusalKey struct{}
