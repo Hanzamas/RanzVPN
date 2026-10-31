@@ -2,7 +2,8 @@
 # builds and the format check, and the quality gates of ADR-0040 for the C code: the performance
 # regression gate in build_and_test, the coverage floor of the new core (coverage), clang-tidy and
 # MSVC /analyze (static-analysis) and Application Verifier (appverif). The fuzz targets run in
-# fuzz-asan; quality.yml checks that every parser has one.
+# fuzz-asan; quality.yml checks that every parser has one. The job compat builds ranz-compat from the
+# frozen Cedar of the slim fork (compat/CMakeLists.txt).
 #
 # Two sets of jobs, which the plan job chooses (ci-plan.yml, .github/scripts/ci-plan.py):
 # - The fast set, on a pull request: the format check, build_and_test for x64 (the build with its tests
@@ -1236,6 +1237,62 @@ jobs:
         path: |
           build/ranzguard.exe
           build/ranzguard.pdb
+
+  # ranz-compat (ADR-0037; SDN-L1 #207) builds from the frozen Cedar of the slim fork, which CORE-S8-3 (#577) deletes
+  # from this tree: the commit of the branch frozen/cedar-se-vpn that compat/CMakeLists.txt pins by its sha (CORE-S8-2,
+  # #576). The job checks that commit out with its submodules and builds compat/, which configures the tree of the
+  # commit as a project of its own and builds its cedar and mayaqua libraries, with OpenSSL from vcpkg and liboqs. The
+  # msquic headers and the nanopb generator of its new core come from the scripts of that commit, so that the build of
+  # the frozen tree stays the one of its own time.
+  compat:
+    needs: plan
+    if: needs.plan.outputs.full == 'true'
+    runs-on: windows-latest
+    name: ranz-compat (frozen Cedar)
+    timeout-minutes: 45
+    steps:
+    - uses: actions/checkout@v4
+    - name: The pinned commit of the frozen Cedar
+      id: frozen
+      shell: pwsh
+      run: |
+        $text = Get-Content -Raw -LiteralPath compat/CMakeLists.txt
+        if ($text -notmatch 'set\(RANZ_FROZEN_CEDAR_SHA "([0-9a-f]{40})"\)') { throw 'compat/CMakeLists.txt pins no RANZ_FROZEN_CEDAR_SHA' }
+        Write-Host "The frozen Cedar of ranz-compat: $($Matches[1])"
+        "sha=$($Matches[1])" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+    - uses: actions/checkout@v4
+      with:
+        ref: ${{ steps.frozen.outputs.sha }}
+        path: frozen-cedar
+        submodules: true
+    - name: Restore vcpkg binary cache
+      uses: actions/cache/restore@v4
+      with:
+        path: vcpkg-bincache
+        key: vcpkg-bin-x64-windows-static-${{ hashFiles('frozen-cedar/vcpkg.json') }}-none
+        restore-keys: vcpkg-bin-x64-windows-static-${{ hashFiles('frozen-cedar/vcpkg.json') }}-
+    - name: Fetch msquic
+      shell: pwsh
+      run: |
+        frozen-cedar/.github/scripts/fetch-msquic.ps1 -Arch x64
+    - name: Install the nanopb generator
+      uses: ./frozen-cedar/.github/actions/nanopb
+    - name: Build ranz-compat
+      run: |
+        if not exist "%VCPKG_BINCACHE%" mkdir "%VCPKG_BINCACHE%"
+
+        for /f "usebackq delims=" %%i in (`"%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -property installationPath`) do set "VSINSTALL=%%i"
+        if "%VSINSTALL%"=="" (
+          echo Visual Studio installation was not found.
+          exit /b 1
+        )
+
+        call "%VSINSTALL%\VC\Auxiliary\Build\vcvars64.bat"
+        set "COMPILER_PATH=%VSINSTALL%\VC\Tools\Llvm\x64\bin\clang-cl.exe"
+        cmake -S compat -B build-compat -G Ninja -DCMAKE_C_COMPILER="%COMPILER_PATH%" -DRANZ_FROZEN_CEDAR_DIR="%GITHUB_WORKSPACE%\frozen-cedar"
+        if errorlevel 1 exit /b 1
+        cmake --build build-compat
+      shell: cmd
 
   # Debug configuration, built without running anything: the code that build_and_test
   # (RelWithDebInfo) never compiles, under _DEBUG (Microsoft.c) and without
