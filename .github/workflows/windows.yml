@@ -572,15 +572,20 @@ jobs:
       shell: pwsh
       run: |
         . .github/scripts/etw-trace.ps1
-    # ranz-node installed, started, stopped and uninstalled as the ranzvpnserver service: its start and stop
-    # entries in the Application event log (ticket #92)
-    - name: Service events in the Event Log
+    # ranz-node installed and started as the ranzvpnserver service, restarted, stopped and uninstalled
+    # (.github/scripts/service-eventlog.ps1): its start and stop entries in the Application event log (ticket #92); no
+    # firewall rule added, deleted or changed by /install, the start, the restart or /uninstall, judged by the rules that
+    # Windows Firewall reports, and no cscript.exe or wscript.exe started by the program, read from an ETW trace session
+    # (ticket #47, criterion 2); and no VBScript firewall path in the sources of src/Mayaqua, src/Cedar, src/Core and
+    # src/ranz-node (criterion 5). The checks of the rule and of the script host left with vpnserver (CORE-S8-1, #84) and
+    # are back against ranz-node (CORE-S8-1-R1, #575). Each fails on a planted fault first: on data, on a real rule and on a
+    # real process start. quality.yml runs the script on Linux, with the fixtures of the source scan (quality-gates-test.py).
+    # The nodesvc test of vpntest checks the install, the roles and the stop of the service.
+    - name: Service events, firewall rules and script hosts of the Node
       timeout-minutes: 10
       shell: pwsh
       run: |
         . .github/scripts/service-eventlog.ps1
-    # The firewall rule of vpnserver /install and /uninstall (ticket #47) left with vpnserver (CORE-S8-1, #84):
-    # ranz-node /install adds no rule (src/ranz-node/ranz-node.c), and the nodesvc test of vpntest checks its service.
     - name: Upload harness outputs (golden bootstrap and diffs)
       if: always()
       uses: actions/upload-artifact@v4
