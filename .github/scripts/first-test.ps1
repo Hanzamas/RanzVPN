@@ -354,6 +354,35 @@ function Get-Node([string] $name) {
 	}
 }
 
+# Whether the default admin source allowlist of ranz install holds an IPv4 address because it is on a private subnet (RFC 1918)
+function Test-PrivateAddress([string] $address) {
+	return ($address -match '^(10\.|192\.168\.|172\.(1[6-9]|2[0-9]|3[01])\.)')
+}
+
+# The prefixes of the admin source allowlist that the Controller holds, as ranz admin-sources list prints them
+function Get-Allowlist {
+	return @((Invoke-Ranz @('admin-sources', 'list')).prefixes | ForEach-Object { $_ })
+}
+
+# The admin source allowlist must hold the address that a PC calls the Controller from (step 13). A private address is in the default
+# list; any other is named by hand with ranz admin-sources set, which replaces the list, so the entries that it holds are named too, as
+# the runbook says. The change is an event of its own, which the steps that count the events expect.
+function Assert-AllowlistHolds([string] $address) {
+	if (Test-PrivateAddress $address) {
+		Write-Host "the address $address is private, so the allowlist holds it"
+		return
+	}
+	Write-Host "the address $address is not private, so the allowlist does not hold it: it is added now"
+	$held = @(Get-Allowlist)
+	$null = Invoke-Ranz (@('admin-sources', 'set') + $held + @($address))
+	$script:allowlistEvents++
+	$now = @(Get-Allowlist)
+	if ($now -notcontains "$address/32") { throw "ranz admin-sources set did not put $address into the allowlist, which holds $($now -join ', ')" }
+	foreach ($prefix in $held) {
+		if ($now -notcontains $prefix) { throw "ranz admin-sources set took $prefix out of the allowlist, which holds $($now -join ', ')" }
+	}
+}
+
 # A source file that the Gap steps read: whether a pattern is in the files of a folder, tests left out
 function Test-Source([string] $folder, [string] $filter, [string] $pattern) {
 	$files = @(Get-ChildItem -Path (Join-Path $repo $folder) -Filter $filter -File -ErrorAction SilentlyContinue | Where-Object { $_.Name -notlike '*_test.go' })
@@ -526,13 +555,20 @@ try {
 		if ($status.starterRule.name -ne 'default-allow-all' -or $status.starterRule.note -notmatch 'allows all traffic inside VRF default' -or $status.starterRule.note -notmatch 'docs/first-test\.md') { throw "ranz status says $($status.starterRule | ConvertTo-Json -Compress) about the starter rule" }
 		# PC B reaches the Controller through the address of the runner (step 13), so the allowlist must hold it. A runner on a
 		# private subnet is in the default; one on a public address is named by hand, as the runbook says
-		$held = @($status.adminAccess.sources | ForEach-Object { $_ })
-		if ($values['PC-A'] -notmatch '^(10\.|192\.168\.|172\.(1[6-9]|2[0-9]|3[01])\.)') {
-			Write-Host "the address $($values['PC-A']) of the runner is not private, so the allowlist does not hold it: it is added now"
-			$null = Invoke-Ranz (@('admin-sources', 'set') + $held + @($values['PC-A']))
-			# The change is an event of its own, which the steps that count the events expect
-			$script:allowlistEvents++
+		foreach ($case in @(@('10.1.0.39', $true), @('172.15.255.255', $false), @('172.16.0.1', $true), @('172.31.255.255', $true), @('172.32.0.1', $false), @('192.168.1.1', $true), @('192.169.0.1', $false), @('100.64.0.1', $false), @('203.0.113.77', $false), @('8.8.8.8', $false))) {
+			if ((Test-PrivateAddress $case[0]) -ne $case[1]) { throw "the script takes the address $($case[0]) for private: $(Test-PrivateAddress $case[0]), not $($case[1])" }
 		}
+		Assert-AllowlistHolds $values['PC-A']
+		# A runner of CI is on a private subnet, so the branch for an address that is not private is never taken for it (AUD1-DT-15,
+		# #497). Take it here for an address of the documentation range (RFC 5737), which no host holds, then put the list back. The two
+		# changes are events of their own, which the steps that count the events expect
+		$before = @(Get-Allowlist)
+		Assert-AllowlistHolds '203.0.113.77'
+		$null = Invoke-Ranz (@('admin-sources', 'set') + $before)
+		$script:allowlistEvents++
+		$after = @(Get-Allowlist)
+		if (($after -join ',') -ne ($before -join ',')) { throw "the allowlist holds $($after -join ', ') after the check of the branch for an address that is not private, and held $($before -join ', ') before it" }
+		Write-Host "the allowlist is as it was: $($after -join ', ')"
 		# What the log says at the first start is what the API says
 		# (the log writer quotes a value that holds an equals sign, as a base64 key does)
 		$log = Read-Shared (Join-Path $controllerData 'controller.log')

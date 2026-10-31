@@ -372,7 +372,9 @@ func (in Intent) leakedRoutes() ([]LeakedRoute, []error) {
 // its addresses: the outside prefixes of the 1:1 NAT rules of the peer in the VRFs that the two
 // share, the routes leaked into the VRFs of the Node that lead to the peer, the LAN subnets of the
 // peer and the prefixes of the VRFs whose hub it is (topology.go), and the default route of each
-// VRF of the two whose internet exit the peer is (egress.go).
+// VRF of the two whose internet exit the peer is (egress.go). The LAN subnets of the peer in a VRF
+// that peers by BGP count too: the Controller gives no route of them, but the Node learns them and
+// puts each one among the routes of the peer, in one of the same slots (peering.go; SDN-77-R2).
 func (in Intent) validatePeerRoutes(leaked []LeakedRoute) []error {
 	count := map[[2]string]int{} // by Node and peer
 	for _, name := range sortedNames(in.Nodes) {
@@ -392,7 +394,8 @@ func (in Intent) validatePeerRoutes(leaked []LeakedRoute) []error {
 		// The default routes of the internet exits (egress.go; SDN-12)
 		in.egressRoutes(name, count)
 	}
-	// The LAN subnets of the gateways and the prefixes that lead to a hub (SDN-19, topology.go)
+	// The LAN subnets of the gateways and the prefixes that lead to a hub (SDN-19, topology.go), and the LAN
+	// subnets that a Node learns from its peers by BGP (SDN-77-R2, peering.go)
 	in.gatewayRouteCounts(count)
 	var problems []error
 	for _, k := range slices.SortedFunc(maps.Keys(count), func(a, b [2]string) int { return cmp.Or(cmp.Compare(a[0], b[0]), cmp.Compare(a[1], b[1])) }) {

@@ -87,6 +87,35 @@ func TestCompilePeering(t *testing.T) {
 	}
 }
 
+// The hold time of a session is the shortest of the VRFs that its two Nodes share and that peer by BGP, and a VRF that
+// names none has the default one (SDN-77-R2): VRFs of the hold times default and 120 give the session 90 s, not 120,
+// whichever of the two comes first, and the Peer object of each Node says so.
+func TestPeeringHoldTimeIsTheShortest(t *testing.T) {
+	for _, c := range []struct {
+		name, dc, lab string
+		want          uint32
+	}{
+		{"default and 120", `{"protocol": "bgp"}`, `{"protocol": "bgp", "holdTime": 120}`, intent.DefaultHoldTime},
+		{"120 and default", `{"protocol": "bgp", "holdTime": 120}`, `{"protocol": "bgp"}`, intent.DefaultHoldTime},
+		{"default and default", `{"protocol": "bgp"}`, `{"protocol": "bgp"}`, intent.DefaultHoldTime},
+		{"default and 30", `{"protocol": "bgp"}`, `{"protocol": "bgp", "holdTime": 30}`, 30},
+		{"9 and 120", `{"protocol": "bgp", "holdTime": 9}`, `{"protocol": "bgp", "holdTime": 120}`, 9},
+		{"120 and 120", `{"protocol": "bgp", "holdTime": 120}`, `{"protocol": "bgp", "holdTime": 120}`, 120},
+	} {
+		states := compile(t,
+			res(intent.KindVRF, "dc", `{"id": 30, "ula": "fd12:3456:789c::/48", "link": "vxlan", "peering": `+c.dc+`}`),
+			res(intent.KindVRF, "lab", `{"id": 40, "ula": "fd12:3456:789d::/48", "link": "geneve", "peering": `+c.lab+`}`),
+			res(intent.KindNode, "gw", `{"publicKey": "`+key1+`", "vrfs": ["dc", "lab"], "vtep": {"address": "10.1.0.1"}}`),
+			res(intent.KindNode, "db", `{"publicKey": "`+key2+`", "vrfs": ["dc", "lab"], "vtep": {"address": "10.1.0.2"}}`),
+		)
+		for _, p := range [][2]string{{"gw", "db"}, {"db", "gw"}} {
+			if got := states[p[0]][Key{controlpb.Kind_KIND_PEER, p[1]}].GetPeer().GetPeering().GetHoldTime(); got != c.want {
+				t.Errorf("VRFs of the hold times %s: the hold time of the Peer %s of %s is %d s, want %d s", c.name, p[1], p[0], got, c.want)
+			}
+		}
+	}
+}
+
 // The end of the peering of a VRF changes the state of its Nodes, and of no other: the Vrf object, the
 // NodeConfig and the Peer objects. The delta of each changed Node is one Update, which takes the old
 // state to the new one.

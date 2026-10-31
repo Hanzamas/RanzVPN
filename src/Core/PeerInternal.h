@@ -124,6 +124,7 @@ typedef struct PEER_ICE {
 	juice_agent_t *Juice;                  // The agent of libjuice
 	bool Controlling;                      // The node offered: its agent nominates the pair (IceLock)
 	bool Mapped;                           // The node had the public port of its home gateway when it made the session
+	UINT64 Started;                        // When the node made it (PeerNow): an offer waits for its answer from then on
 	char Ufrag[PEER_ICE_UFRAG_SIZE];       // The credentials of the session, which the node's signals to the peer carry
 	char Pwd[PEER_ICE_PWD_SIZE];           // ...
 	char RemoteUfrag[PEER_ICE_UFRAG_SIZE]; // The peer's username fragment, empty before its signal (IceLock)
@@ -222,6 +223,7 @@ struct PEER_AGENT {
 	volatile LONG64 Drops[PEER_NUM_REASONS]; // What the layer dropped, by reason
 	SRWLOCK IceLock;                         // Serialises the start, the remote side and the end of the ICE sessions
 	PEER_ICE_NODE Ice;                       // The port mapping of the socket, with Config.PortMap
+	volatile LONG64 StunMessages;            // The STUN messages that came to the socket, each read once (PeerIceInput)
 	UCHAR CookieSecret[CRYPTO_SHA256_SIZE];  // The relay role: the key of its bind challenges, new at every start
 };
 
@@ -278,6 +280,7 @@ void PeerIceStop(PEER_AGENT *a);
 void PeerIceOffer(PEER_AGENT *a, const UCHAR *key);
 void PeerIceRemote(PEER_AGENT *a, const UCHAR *key, const PEER_SIGNAL *s);
 void PeerIceRetire(PEER *peers, UINT num);
+void PeerIceTick(PEER_AGENT *a);
 bool PeerIceValid(PEER_ICE *ice);
 bool PeerIceUp(PEER_ICE *ice);
 bool PeerIceIsStun(const UCHAR *data, UINT size);
