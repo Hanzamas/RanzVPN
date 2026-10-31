@@ -16,6 +16,11 @@
 //
 // One delivery thread hands the datagrams to PeerInput of the receiving host, in the order they were sent, so
 // that a receiver that sends from its receive procedure queues behind the datagram it took.
+//
+// A carrier-grade NAT shares its public ports with other subscribers (CORE-S5-7, #413): NatSimTake lets them take a
+// number of ports that the seeded generator of the NAT draws, so the next mapping of a host lands that many ports further
+// on, as the port prediction of a host cannot know. A cut loses the datagrams between two NATs on the way, as a path that
+// went down, and an injection hands a host a datagram past its NAT, as an attacker on its link would.
 
 #include "natsim.h"
 
@@ -23,8 +28,8 @@
 
 #define NATSIM_MAX_HOSTS    16
 #define NATSIM_MAX_NATS     8
-#define NATSIM_MAX_MAPPINGS 64
-#define NATSIM_MAX_SENT     16    // Destinations that one mapping remembers for its filter
+#define NATSIM_MAX_MAPPINGS 512   // The punch of CORE-S5-7 makes a mapping for each probe of a symmetric NAT
+#define NATSIM_MAX_SENT     32    // Destinations that one mapping remembers for its filter
 #define NATSIM_FIRST_PORT   40000 // The first public port that a NAT allocates
 
 // One mapping of a NAT
@@ -50,6 +55,7 @@ struct NATSIM_NAT {
 	volatile LONG Filtered;                       // Datagrams from outside that its filter dropped
 	UINT Timeout;                                 // ms after which a mapping that carried nothing out is gone, 0 for never
 	volatile LONG Expired;                        // Mappings that aged out
+	bool Cut;                                     // The datagrams between it and another NAT are lost on the way (NatSimCut)
 };
 
 struct NATSIM_HOST {
@@ -82,6 +88,7 @@ struct NATSIM {
 	volatile LONG Queued;                // Datagrams queued so far
 	volatile LONG Done;                  // ... and handed to their receiver so far
 	volatile LONG Unroutable;            // Datagrams to an address that no host and no NAT has
+	volatile LONG CutCount;              // Datagrams between two NATs that a cut lost (NatSimCut)
 	NATSIM_TAP *Tap;                     // Sees every datagram sent and may drop it, NULL for none
 	void *TapParam;                      // ... its parameter
 	volatile LONG Hold;                  // The delivery waits while it is set
@@ -417,6 +424,11 @@ bool NatSimSend(void *param, const PEER_ADDR *dst, const void *data, UINT size) 
 		for (UINT i = 0; i < s->NumNats && to == NULL && routed == false; i++) {
 			if (NatSimSameIp(&s->Nats[i].Public, dst)) {
 				routed = true;
+				if (h->Nat != NULL && (h->Nat->Cut || s->Nats[i].Cut)) {
+					// A cut between two NATs loses it on the way, after the NAT of the sender mapped it
+					InterlockedIncrement(&s->CutCount);
+					break;
+				}
 				NatSimAge(&s->Nats[i], now);
 				to = NatSimInbound(s, &s->Nats[i], dst->Port, &item->From);
 			}
@@ -576,6 +588,73 @@ UINT NatSimDrop(NATSIM *s, NATSIM_NAT *n, const PEER_ADDR *inside) {
 	LeaveCriticalSection(&s->Lock);
 
 	return dropped;
+}
+
+// The other subscribers of a carrier-grade NAT take public ports now, between two mappings of the hosts of the test: as
+// many as the seeded generator of the NAT draws from 0 to max, so the next mapping of a host lands that many ports
+// further on, a step that its port prediction cannot see. Only a NAT that allocates in order has ports to take; returns
+// how many the others took.
+UINT NatSimTake(NATSIM *s, NATSIM_NAT *n, UINT max) {
+	UINT taken = 0;
+
+	EnterCriticalSection(&s->Lock);
+	if (n->Allocation == NATSIM_ALLOC_SEQUENTIAL) {
+		taken = NatSimRand(n) % (max + 1);
+
+		for (UINT i = 0; i < taken; i++) {
+			while (NatSimPortUsed(n, n->NextPort))
+				n->NextPort++;
+			n->NextPort++;
+		}
+	}
+	LeaveCriticalSection(&s->Lock);
+
+	return taken;
+}
+
+// Cut the NAT off from every other NAT, or join it again: while it is cut, a datagram between its public address and the
+// public address of another NAT is lost on the way, after the NAT that sent it mapped it, as on a path that went down,
+// while the datagrams to and from the public hosts pass
+void NatSimCut(NATSIM *s, NATSIM_NAT *n, bool cut) {
+	EnterCriticalSection(&s->Lock);
+	n->Cut = cut;
+	LeaveCriticalSection(&s->Lock);
+}
+
+// The datagrams between two NATs that a cut lost
+UINT NatSimCutCount(NATSIM *s) {
+	return (UINT)InterlockedCompareExchange(&s->CutCount, 0, 0);
+}
+
+// Hand the host to a datagram from the address from, past its NAT, as an attacker on the link of the host would; it
+// queues behind the datagrams on their way. False when there is no memory for it.
+bool NatSimInject(NATSIM_HOST *to, const PEER_ADDR *from, const void *data, UINT size) {
+	NATSIM *s = to->Sim;
+
+	if (size == 0 || size > PEER_MAX_DATAGRAM)
+		return false;
+
+	NATSIM_ITEM *item = (NATSIM_ITEM *)HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, sizeof(NATSIM_ITEM));
+	if (item == NULL)
+		return false;
+
+	item->To = to;
+	item->From = *from;
+	item->Size = size;
+	CopyMemory(item->Data, data, size);
+
+	EnterCriticalSection(&s->Lock);
+	if (s->Tail != NULL)
+		s->Tail->Next = item;
+	else
+		s->Head = item;
+	s->Tail = item;
+	InterlockedIncrement(&s->Queued);
+	LeaveCriticalSection(&s->Lock);
+
+	SetEvent(s->Event);
+
+	return true;
 }
 
 // The public address and port of the newest mapping of the NAT for the private address inside, for the checks of

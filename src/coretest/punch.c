@@ -1,21 +1,29 @@
 // punch.c
 // Named test of port prediction and birthday-paradox hole punching for symmetric NAT (src/Core/PeerPunch.c;
-// CORE-S5-4 #266), on the NAT simulator of natsim.c, as relay.c runs. The punch is Ranz's own code on the peer
-// layer's own socket (not libjuice), so the simulated NATs carry it: a pair that ICE (CORE-S5-3) leaves on the relay
-// because both ends are symmetric gets a direct path here when the ports can be predicted or hit.
+// CORE-S5-4 #266, CORE-S5-7 #413), on the NAT simulator of natsim.c, as relay.c runs. The punch is Ranz's own code on
+// the peer layer's own socket (not libjuice), so the simulated NATs carry it: a pair that ICE (CORE-S5-3) leaves on the
+// relay because a NAT of it is symmetric gets a direct path here when the ports can be predicted or hit.
 //
-// punch: three pairs, each behind two NATs the simulator allocates ports for in one of the three ways, come up
-//   through the relay R and then try the punch, which the control plane triggers with the signal exchange:
-//   - two sequential-allocation symmetric NATs meet by port prediction: each aims its first probe at the next port
-//     the other predicted of itself, so the two mappings address each other, and the pair moves to the direct path;
-//     a late probe of one end's burst, which reaches the other end after the pair met, leaves the pair on that path;
+// punch: pairs behind two NATs that the simulator allocates ports for in one of the three ways come up through the relay R
+//   and then try the punch, which the control plane times with a punch offer and its answer:
+//   - two sequential-allocation symmetric NATs meet by port prediction: each node tells its NAT from the answers of its
+//     binds to R and R2, its punch offer or answer names the port of its next mapping, and the sweeps of the two ends
+//     cross, so the pair moves to the direct path; a late probe of a burst, which reaches the other end after the pair
+//     met, leaves the pair on that path, and a probe of a node that is no peer is dropped and counted;
 //   - a full-cone NAT and a random-allocation symmetric NAT meet by birthday punching: the random side reaches the
-//     cone's one predictable port, and the cone learns the random side's mapping from that probe and answers it;
-//   - two random-allocation symmetric NATs predict nothing, so the probes miss until the budget runs out and the
-//     pair stays on the relay, its traffic flowing there throughout.
-//   The test also checks that the probe count and rate stay within the configured budget and rate, that the punch
-//   begins only once the control plane has carried the signals, and that the prediction success rate and the
-//   direct-versus-relay split come out as metrics. A port-preserving NAT's allocation is checked on its own.
+//     cone's one port, and the cone learns the random side's mapping from that probe and answers it; a probe that an
+//     attacker sends from an address of its own moves the cone to no direct path there;
+//   - two random-allocation symmetric NATs predict nothing: neither end takes the punch, no probe leaves either, and the
+//     pair stays on the relay, its traffic flowing there throughout;
+//   - two sequential NATs whose direct path is cut: each attempt spends its budget of probes within the rate of the node
+//     and fails, the pair stays on the relay, and after the attempts that met nothing an offer is refused until the
+//     backoff ends;
+//   - the same, where the attempts of B run longer than the ones of A: each offer of A, which comes once its own attempt
+//     ended, ends the attempt of B that still runs and begins the next at both ends, so the two count the same attempts
+//     and reach the backoff on the same offer, and an offer that B refuses gets no answer, so A begins no attempt alone.
+//   The test also checks that a probe begins only once the control plane carried the punch signals, and that the
+//   attempts, the successes and the failures of the prediction come out as metrics. A port-preserving NAT's allocation
+//   is checked on its own.
 // The control plane is stood in for by the test, which hands each signal from one node to the other, as relay.c and
 // the controller's conformance test do.
 
@@ -23,12 +31,20 @@
 
 #include <string.h>
 
-#define PUNCH_WAIT         10000 // ms: a bounded wait for the network to carry everything sent
-#define PUNCH_BUDGET       64    // Probes one punch of a peer may send before it gives up
-#define PUNCH_PORTS        16    // The birthday range above a predicted or reflexive port
-#define PUNCH_RATE         8     // Probes one PeerTick sends per punching peer
-#define PUNCH_TICKS        40    // The most tick rounds a pair is given to meet, or a punch to spend its budget
-#define PUNCH_PAYLOAD_SIZE 42    // A punch message: version, sequence, type, a nonce and an echo of 16 bytes each
+#define PUNCH_WAIT          10000 // ms: a bounded wait for the network to carry everything sent
+#define PUNCH_BUDGET        64    // Punch messages one attempt of a punch may send, its probes and its answers
+#define PUNCH_PORTS         12    // The birthday range above a predicted port
+#define PUNCH_RATE          64    // Punch messages a node sends in any second at most
+#define PUNCH_TICKS         40    // The most tick rounds a pair is given to meet
+#define PUNCH_PAYLOAD_SIZE  42    // A punch message: version, sequence, type, a nonce and an echo of 16 bytes each
+#define PUNCH_TICK          100   // ms between two ticks of the limits case, as the agent of a node ticks its peer layer
+#define PUNCH_LIMIT_BUDGET  40    // The budget of an attempt of the limits case ...
+#define PUNCH_LIMIT_RATE    32    // ... its rate, below the budget, so that one attempt spans two windows of the rate ...
+#define PUNCH_LIMIT_TRIES   3     // ... its attempts before the backoff ...
+#define PUNCH_LIMIT_RETRY   300   // ... the retry ...
+#define PUNCH_LIMIT_BACKOFF 8000  // ... and the backoff (ms), longer than an attempt takes to fail
+#define PUNCH_LIMIT_WAIT    15000 // ms that an attempt of the limits case is given to fail
+#define PUNCH_TAP_MAX       1024  // Punch datagrams that the tap of the limits case keeps the times of, per node
 
 // One node of the test and what it received
 typedef struct PUNCH_NODE {
@@ -51,6 +67,14 @@ typedef struct PUNCH_WORLD {
 	NATSIM_NAT *NatB; // B's NAT
 	PUNCH_NODE R, R2, A, B;
 } PUNCH_WORLD;
+
+// What the tap of the limits case saw: the times of the punch datagrams that A and B sent (ms of the performance counter)
+typedef struct PUNCH_TAP {
+	CRITICAL_SECTION Lock;
+	NATSIM_HOST *Hosts[2];
+	UINT Num[2];
+	UINT64 Times[2][PUNCH_TAP_MAX];
+} PUNCH_TAP;
 
 // The receive procedure of every node: count the datagram by its path; with Echo, answer "ping ..." with "pong ..."
 static void punch_recv(PEER_AGENT *a, void *param, const UCHAR *src, UINT path, const void *data, UINT size) {
@@ -103,11 +127,20 @@ static void punch_relay_info(PEER_RELAY_INFO *r, PUNCH_NODE *relay) {
 	r->Addr = relay->Addr;
 }
 
-// Build the world: R and R2 on the public side with the relay role, A behind NatA and B behind NatB, both with
-// punching on. A's NAT maps and allocates by a_map/a_filter/a_alloc (and a_seed for a random one), B's by the b_
+// The configuration of the peer layer of A and B: punching on, the budget, the range and the rate of the test
+static void punch_config(PEER_CONFIG *pc) {
+	PeerDefaultConfig(pc);
+	pc->Punch = true;
+	pc->PunchBudget = PUNCH_BUDGET;
+	pc->PunchPorts = PUNCH_PORTS;
+	pc->PunchRate = PUNCH_RATE;
+}
+
+// Build the world: R and R2 on the public side with the relay role, A behind NatA and B behind NatB, both with the
+// configuration pc. A's NAT maps and allocates by a_map/a_filter/a_alloc (and a_seed for a random one), B's by the b_
 // parameters. Then the peers and the relays of every node, and the binds to R and R2.
-static bool punch_world_start(PUNCH_WORLD *w, UINT a_map, UINT a_filter, UINT a_alloc, UINT32 a_seed, UINT b_map, UINT b_filter, UINT b_alloc, UINT32 b_seed) {
-	PEER_CONFIG rc, pc;
+static bool punch_world_start(PUNCH_WORLD *w, PEER_CONFIG *pc, UINT a_map, UINT a_filter, UINT a_alloc, UINT32 a_seed, UINT b_map, UINT b_filter, UINT b_alloc, UINT32 b_seed) {
+	PEER_CONFIG rc;
 	PEER_ADDR addr;
 	PEER_INFO p[2];
 	PEER_RELAY_INFO ri[2];
@@ -126,19 +159,13 @@ static bool punch_world_start(PUNCH_WORLD *w, UINT a_map, UINT a_filter, UINT a_
 	PeerDefaultConfig(&rc);
 	rc.Relay = true;
 
-	PeerDefaultConfig(&pc);
-	pc.Punch = true;
-	pc.PunchBudget = PUNCH_BUDGET;
-	pc.PunchPorts = PUNCH_PORTS;
-	pc.PunchRate = PUNCH_RATE;
-
 	PeerAddrSetV4(&addr, 198, 51, 100, 1, 3478);
 	ok = punch_node(w, &w->R, "r", 129, NULL, &addr, &rc) && ok;
 	PeerAddrSetV4(&addr, 198, 51, 100, 2, 3478);
 	ok = punch_node(w, &w->R2, "r2", 161, NULL, &addr, &rc) && ok;
 	PeerAddrSetV4(&addr, 10, 0, 0, 2, 5000);
-	ok = punch_node(w, &w->A, "a", 1, w->NatA, &addr, &pc) && ok;
-	ok = punch_node(w, &w->B, "b", 33, w->NatB, &addr, &pc) && ok;
+	ok = punch_node(w, &w->A, "a", 1, w->NatA, &addr, pc) && ok;
+	ok = punch_node(w, &w->B, "b", 33, w->NatB, &addr, pc) && ok;
 
 	if (ok == false)
 		return false;
@@ -191,13 +218,34 @@ static UINT punch_signal(PUNCH_NODE *from, PUNCH_NODE *to, UINT type, PEER_SIGNA
 	return PeerOpenSignal(to->Agent, env, size, sig);
 }
 
-// Bring the pair A and B up through the relay: an offer A to B and the answer B to A, which also triggers each end's
-// punch of the other. Returns true when both signals were taken.
+// Bring the pair A and B up through the relay: an offer A to B and the answer B to A. Returns true when both signals
+// were taken.
 static bool punch_exchange(PUNCH_WORLD *w) {
 	PEER_SIGNAL offer, answer;
 
 	bool ok = punch_signal(&w->A, &w->B, PEER_SIGNAL_OFFER, &offer) == PEER_OK;
 	ok = punch_signal(&w->B, &w->A, PEER_SIGNAL_ANSWER, &answer) == PEER_OK && ok;
+
+	return NatSimWaitIdle(w->Sim, PUNCH_WAIT) && ok;
+}
+
+// The punch status of a node with a peer now
+static UINT punch_state(PUNCH_NODE *from, PUNCH_NODE *to) {
+	PEER_STATUS ps;
+
+	PeerGetStatus(from->Agent, to->Key.Public, &ps);
+
+	return ps.Punch;
+}
+
+// The punch of the control plane: a punch offer from x to y, which y takes, and y's punch answer to x when y took the
+// offer and began its probes. The offer goes into offer and the answer into answer. Returns true when the offer was
+// taken by y and its answer by x.
+static bool punch_offer(PUNCH_WORLD *w, PUNCH_NODE *x, PUNCH_NODE *y, PEER_SIGNAL *offer, PEER_SIGNAL *answer) {
+	ZeroMemory(answer, sizeof(PEER_SIGNAL));
+
+	bool ok = punch_signal(x, y, PEER_SIGNAL_PUNCH_OFFER, offer) == PEER_OK && punch_state(y, x) == PEER_PUNCH_PROBING;
+	ok = ok && punch_signal(y, x, PEER_SIGNAL_PUNCH_ANSWER, answer) == PEER_OK;
 
 	return NatSimWaitIdle(w->Sim, PUNCH_WAIT) && ok;
 }
@@ -225,18 +273,15 @@ static bool punch_converge(PUNCH_WORLD *w) {
 	return false;
 }
 
-// Drive the punch until both ends have spent their budget, at most PUNCH_TICKS rounds; true once both failed
+// Drive the punch every PUNCH_TICK ms, as the agent of a node does, until the attempt of A and the one of B both failed,
+// within PUNCH_LIMIT_WAIT
 static bool punch_exhaust(PUNCH_WORLD *w) {
-	for (UINT i = 0; i < PUNCH_TICKS; i++) {
-		PEER_STATUS pa, pb;
-
+	for (UINT64 end = GetTickCount64() + PUNCH_LIMIT_WAIT; GetTickCount64() < end; Sleep(PUNCH_TICK)) {
 		PeerTick(w->A.Agent);
 		PeerTick(w->B.Agent);
 		NatSimWaitIdle(w->Sim, PUNCH_WAIT);
 
-		PeerGetStatus(w->A.Agent, w->B.Key.Public, &pa);
-		PeerGetStatus(w->B.Agent, w->A.Key.Public, &pb);
-		if (pa.Punch == PEER_PUNCH_FAILED && pb.Punch == PEER_PUNCH_FAILED)
+		if (punch_state(&w->A, &w->B) == PEER_PUNCH_FAILED && punch_state(&w->B, &w->A) == PEER_PUNCH_FAILED)
 			return true;
 	}
 
@@ -249,6 +294,14 @@ static UINT64 punch_sent(PUNCH_NODE *n) {
 	PeerGetStats(n->Agent, &st);
 
 	return st.Sent;
+}
+
+static PEER_STATS punch_stats(PUNCH_NODE *n) {
+	PEER_STATS st;
+
+	PeerGetStats(n->Agent, &st);
+
+	return st;
 }
 
 // Send one datagram from one node to another with the text text
@@ -280,10 +333,10 @@ static UINT64 punch_drops(PUNCH_NODE *n) {
 	return sum;
 }
 
-// A probe of B for A, sealed as PeerPunchTick seals one (version 1, the sequence, type 1 for a probe, and two empty
-// nonces) into env; returns its size. Its sequence is the wall clock in 100 ns units, as PeerNextSequence draws one,
-// so it is above every sequence B sent before.
-static UINT punch_seal_probe(PUNCH_WORLD *w, UCHAR *env, UINT max) {
+// A probe of the node of key for the node of to, sealed as PeerPunchTick seals one (version 1, the sequence, type 1 for a
+// probe, and two empty nonces) into env; returns its size. Its sequence is the wall clock in 100 ns units, as
+// PeerNextSequence draws one, so it is above every sequence the sender sent before.
+static UINT punch_seal_probe(PEER_KEY *key, const UCHAR *to, UCHAR *env, UINT max) {
 	FILETIME ft;
 	UCHAR probe[PUNCH_PAYLOAD_SIZE];
 
@@ -296,14 +349,14 @@ static UINT punch_seal_probe(PUNCH_WORLD *w, UCHAR *env, UINT max) {
 		probe[1 + i] = (UCHAR)(seq >> (56 - 8 * i));
 	probe[9] = 1;
 
-	return PeerEnvelopeSeal(&w->B.Key, w->A.Key.Public, PEER_MSG_PUNCH, NULL, probe, sizeof(probe), env, max);
+	return PeerEnvelopeSeal(key, to, PEER_MSG_PUNCH, NULL, probe, sizeof(probe), env, max);
 }
 
 // A probe of B for A, sent from B's host to the address to, so it leaves through B's mapping towards to
 static void punch_probe_from_b(PUNCH_WORLD *w, const PEER_ADDR *to) {
 	UCHAR env[PEER_MAX_ENVELOPE];
 
-	UINT size = punch_seal_probe(w, env, sizeof(env));
+	UINT size = punch_seal_probe(&w->B.Key, w->A.Key.Public, env, sizeof(env));
 	NatSimSend(w->B.Host, to, env, size);
 	NatSimWaitIdle(w->Sim, PUNCH_WAIT);
 }
@@ -316,12 +369,15 @@ static bool punch_send_nowhere(void *param, const PEER_ADDR *dst, const void *da
 // Two sequential symmetric NATs: the pair moves to the direct path by port prediction
 static void punch_sequential() {
 	PUNCH_WORLD w;
-	PEER_SIGNAL offer;
+	PEER_CONFIG pc;
+	PEER_SIGNAL offer, answer;
 	PEER_STATS st_a, st_b, st_r;
 	PEER_STATUS ps_a, ps_b;
-	PEER_ADDR predicted;
+	PEER_ADDR predicted, next_a;
+	PEER_ADDR mapped;
 
-	bool started = punch_world_start(&w, NATSIM_MAP_ADDRESS_PORT_DEPENDENT, NATSIM_FILTER_ADDRESS_PORT_DEPENDENT, NATSIM_ALLOC_SEQUENTIAL, 0,
+	punch_config(&pc);
+	bool started = punch_world_start(&w, &pc, NATSIM_MAP_ADDRESS_PORT_DEPENDENT, NATSIM_FILTER_ADDRESS_PORT_DEPENDENT, NATSIM_ALLOC_SEQUENTIAL, 0,
 	                                 NATSIM_MAP_ADDRESS_PORT_DEPENDENT, NATSIM_FILTER_ADDRESS_PORT_DEPENDENT, NATSIM_ALLOC_SEQUENTIAL, 0);
 	coretest_check(started, "The network starts: R and R2 on the public side, A and B each behind a sequential-allocation symmetric NAT");
 	if (started == false) {
@@ -329,66 +385,89 @@ static void punch_sequential() {
 		return;
 	}
 
-	PeerGetStats(w.A.Agent, &st_a);
-	PeerGetStats(w.B.Agent, &st_b);
+	st_a = punch_stats(&w.A);
+	st_b = punch_stats(&w.B);
 	coretest_check(st_a.NumBound == 2 && st_b.NumBound == 2, "A and B each bind R and R2, so two reflexive observations let them learn their NAT's pattern");
-	coretest_check(st_a.PunchAttempts == 0 && st_b.PunchAttempts == 0, "No punch has begun before the control plane carries a signal");
+	coretest_check(st_a.Nat == PEER_NAT_SEQUENTIAL && st_b.Nat == PEER_NAT_SEQUENTIAL,
+	               "From the answers of their two binds, A and B each tell their NAT is symmetric and allocates in order");
 
-	// The signal exchange triggers the punch; it begins only now, so its timing comes from the control plane
-	coretest_check(punch_exchange(&w), "A and B exchange one signal each through the control plane");
-	PeerGetStats(w.A.Agent, &st_a);
-	PeerGetStats(w.B.Agent, &st_b);
-	coretest_check(st_a.PunchAttempts == 1 && st_b.PunchAttempts == 1, "The punch begins only once the signals are exchanged: its timing comes from the control plane");
+	// The NAT of A made the mappings towards R and R2 on its first two ports: the next one is the third
+	next_a = st_a.Predicted;
+	coretest_check(NatSimMapped(w.NatA, &w.A.Addr, &mapped) && next_a.Port == mapped.Port + 1, "A predicts the port of its next mapping: one after the mapping towards R2");
 
-	// A's signal carries the predicted next port of its NAT
-	ZeroMemory(&predicted, sizeof(predicted));
-	UINT r = punch_signal(&w.A, &w.B, PEER_SIGNAL_OFFER, &offer);
-	coretest_check(r == PEER_OK && punch_candidate(&offer, PEER_CANDIDATE_PREDICTED, &predicted) && predicted.Port != 0, "A's offer carries the predicted next port of its NAT");
+	coretest_check(punch_exchange(&w), "A and B exchange an offer and an answer through the control plane, which brings them up through R");
+	st_a = punch_stats(&w.A);
+	st_b = punch_stats(&w.B);
+	coretest_check(st_a.PunchAttempts == 0 && st_b.PunchAttempts == 0, "An offer and an answer begin no punch");
 
 	// Relay-first: a datagram now, before any probe, goes through R
 	bool sent = punch_send(&w.B, &w.A, "relayed first");
 	NatSimWaitIdle(w.Sim, PUNCH_WAIT);
 	coretest_check(sent && w.A.Received == 1 && w.A.ReceivedRelay == 1 && w.A.ReceivedDirect == 0, "Before the probes meet, the pair's traffic flows through R");
 
+	// The punch offer and its answer begin the punch: its timing comes from the control plane
+	ZeroMemory(&predicted, sizeof(predicted));
+	bool offered = punch_offer(&w, &w.A, &w.B, &offer, &answer);
+	st_a = punch_stats(&w.A);
+	st_b = punch_stats(&w.B);
+	coretest_check(offered && st_a.PunchAttempts == 1 && st_b.PunchAttempts == 1, "The punch begins only once the punch offer and its answer went: its timing comes from the control plane");
+	coretest_check(punch_candidate(&offer, PEER_CANDIDATE_PREDICTED, &predicted) && PeerAddrEqual(&predicted, &next_a) && offer.Nat == PEER_NAT_SEQUENTIAL,
+	               "A's punch offer names its NAT and the port of its next mapping");
+	coretest_check(st_a.PunchProbes == 0 && st_b.PunchProbes == 0, "No probe went before the next tick");
+
 	bool direct = punch_converge(&w);
 	PeerGetStatus(w.A.Agent, w.B.Key.Public, &ps_a);
 	PeerGetStatus(w.B.Agent, w.A.Key.Public, &ps_b);
-	coretest_check(direct && ps_a.Punch == PEER_PUNCH_CONNECTED && ps_b.Punch == PEER_PUNCH_CONNECTED, "Port prediction gets the pair a direct path: each aimed its first probe at the other's predicted port");
+	coretest_check(direct && ps_a.Punch == PEER_PUNCH_CONNECTED && ps_b.Punch == PEER_PUNCH_CONNECTED, "Port prediction gets the pair a direct path: the sweeps of the two ends cross");
 
 	// Both ways on the direct path, with R forwarding nothing
 	InterlockedExchange(&w.B.Echo, 1);
 	LONG received = w.A.Received;
 	LONG a_direct = w.A.ReceivedDirect;
-	PeerGetStats(w.R.Agent, &st_r);
+	st_r = punch_stats(&w.R);
 	UINT64 forwarded = st_r.Forwarded;
 	sent = punch_send(&w.A, &w.B, "ping direct");
 	NatSimWaitIdle(w.Sim, PUNCH_WAIT);
-	PeerGetStats(w.R.Agent, &st_r);
+	st_r = punch_stats(&w.R);
 	coretest_check(sent && w.A.Received == received + 1 && w.A.ReceivedDirect == a_direct + 1 && st_r.Forwarded == forwarded, "A's ping and B's pong both take the direct path; R forwards neither");
 
-	PeerGetStats(w.A.Agent, &st_a);
-	PeerGetStats(w.B.Agent, &st_b);
-	coretest_check(st_a.PunchSuccesses == 1 && st_b.PunchSuccesses == 1 && st_a.PunchAttempts == 1, "Each end's prediction success rate is one of one: the metric is exported");
+	st_a = punch_stats(&w.A);
+	st_b = punch_stats(&w.B);
+	coretest_info("A sent %llu probes and B %llu", st_a.PunchProbes, st_b.PunchProbes);
+	coretest_check(st_a.PunchSuccesses == 1 && st_b.PunchSuccesses == 1 && st_a.PunchAttempts == 1 && st_a.PunchFailures == 0 && st_b.PunchFailures == 0,
+	               "Each end's prediction success rate is one of one, with no failure: the metric is exported");
+	coretest_check(st_a.Upgrades == 1 && st_b.Upgrades == 1, "The move off the relay counts as an Upgrade at each end");
+	coretest_check(st_a.PunchProbes <= PUNCH_BUDGET && st_b.PunchProbes <= PUNCH_BUDGET, "Each end sent no more than its budget of probes");
 	coretest_check(st_a.DeliveredRelay >= 1 && st_a.Delivered > st_a.DeliveredRelay, "The direct-versus-relay split is a metric: A took its first datagram through R and its later one directly");
 
-	// A late probe of B's burst. B sends a burst of probes in one tick and can take A's answer while it still sends
-	// them, so the rest of the burst reaches A after the pair met, each probe from another of B's mappings. This one
-	// comes from B's mapping towards A's second mapping, one port above A's predicted one, where B's second probe went.
-	PEER_ADDR late = predicted;
-	late.Port++;
+	// A late probe of B, from B's mapping towards A's address on the direct path: A takes it and stays on that pair
 	UINT filtered = NatSimFiltered(w.NatA);
 	UINT64 drops = punch_drops(&w.A);
-	punch_probe_from_b(&w, &late);
-	coretest_check(NatSimFiltered(w.NatA) == filtered && punch_drops(&w.A) == drops, "A late probe of B's burst, from B's mapping towards A's second mapping, reaches A, which takes it");
+	punch_probe_from_b(&w, &ps_b.Direct);
+	coretest_check(NatSimFiltered(w.NatA) == filtered && punch_drops(&w.A) == drops, "A late probe of B, from B's mapping towards A's address on the direct path, reaches A, which takes it");
 
 	received = w.A.Received;
 	a_direct = w.A.ReceivedDirect;
-	PeerGetStats(w.R.Agent, &st_r);
+	st_r = punch_stats(&w.R);
 	forwarded = st_r.Forwarded;
 	sent = punch_send(&w.A, &w.B, "ping after the late probe");
 	NatSimWaitIdle(w.Sim, PUNCH_WAIT);
-	PeerGetStats(w.R.Agent, &st_r);
-	coretest_check(sent && w.A.Received == received + 1 && w.A.ReceivedDirect == a_direct + 1 && st_r.Forwarded == forwarded, "After it, A's ping and B's pong still take the direct path: A stays on the pair it met B on, whose mapping B took A's answer from");
+	st_r = punch_stats(&w.R);
+	coretest_check(sent && w.A.Received == received + 1 && w.A.ReceivedDirect == a_direct + 1 && st_r.Forwarded == forwarded, "After it, A's ping and B's pong still take the direct path, on the pair that met");
+
+	// A probe of a node that is no peer of A: dropped and counted, unanswered
+	PEER_KEY stranger;
+	UCHAR env[PEER_MAX_ENVELOPE];
+	PEER_ADDR from;
+	coretest_fixed_key(&stranger, 97);
+	PeerAddrSetV4(&from, 198, 51, 100, 77, 4000);
+	UINT size = punch_seal_probe(&stranger, w.A.Key.Public, env, sizeof(env));
+	UINT64 policy = punch_stats(&w.A).Drops[PEER_DROP_POLICY];
+	UINT64 a_sent = punch_sent(&w.A);
+	PeerInput(w.A.Agent, &from, env, size);
+	coretest_check(size != 0 && punch_stats(&w.A).Drops[PEER_DROP_POLICY] == policy + 1 && punch_sent(&w.A) == a_sent,
+	               "A probe of a node that is no peer is dropped and counted, and A answers it nothing");
+	PeerKeyClose(&stranger);
 
 	punch_world_stop(&w);
 }
@@ -396,9 +475,12 @@ static void punch_sequential() {
 // A full-cone NAT and a random symmetric NAT: the pair meets by birthday punching
 static void punch_birthday() {
 	PUNCH_WORLD w;
+	PEER_CONFIG pc;
+	PEER_SIGNAL offer, answer;
 	PEER_STATS st_a, st_b;
 
-	bool started = punch_world_start(&w, NATSIM_MAP_ENDPOINT_INDEPENDENT, NATSIM_FILTER_ENDPOINT_INDEPENDENT, NATSIM_ALLOC_SEQUENTIAL, 0,
+	punch_config(&pc);
+	bool started = punch_world_start(&w, &pc, NATSIM_MAP_ENDPOINT_INDEPENDENT, NATSIM_FILTER_ENDPOINT_INDEPENDENT, NATSIM_ALLOC_SEQUENTIAL, 0,
 	                                 NATSIM_MAP_ADDRESS_PORT_DEPENDENT, NATSIM_FILTER_ADDRESS_PORT_DEPENDENT, NATSIM_ALLOC_RANDOM, 0x51ED2C9B);
 	coretest_check(started, "The network starts: A behind a full-cone NAT, B behind a random-allocation symmetric NAT");
 	if (started == false) {
@@ -406,7 +488,12 @@ static void punch_birthday() {
 		return;
 	}
 
-	coretest_check(punch_exchange(&w), "A and B exchange one signal each through the control plane");
+	st_a = punch_stats(&w.A);
+	st_b = punch_stats(&w.B);
+	coretest_check(st_a.Nat == PEER_NAT_CONE && st_b.Nat == PEER_NAT_RANDOM, "A tells its NAT is a cone, B that its NAT is symmetric and allocates at random");
+
+	coretest_check(punch_exchange(&w), "A and B exchange an offer and an answer through the control plane");
+	coretest_check(punch_offer(&w, &w.A, &w.B, &offer, &answer), "B takes A's punch offer, a random NAT with a cone, and answers it");
 
 	// Before any probe: an attacker on the path sends a probe of B, which it captured, to A's port from an address of
 	// its own. A takes it as B's, but moves to no direct path there: its answer goes to that address, sealed to B
@@ -418,7 +505,7 @@ static void punch_birthday() {
 	NATSIM_HOST *m = NatSimAddHost(w.Sim, NULL, &attacker);
 	NatSimMapped(w.NatA, &w.A.Addr, &a_public);
 	UINT64 a_sent = punch_sent(&w.A);
-	UINT size = punch_seal_probe(&w, env, sizeof(env));
+	UINT size = punch_seal_probe(&w.B.Key, w.A.Key.Public, env, sizeof(env));
 	NatSimSend(m, &a_public, env, size);
 	NatSimWaitIdle(w.Sim, PUNCH_WAIT);
 	PeerGetStatus(w.A.Agent, w.B.Key.Public, &ps);
@@ -426,23 +513,23 @@ static void punch_birthday() {
 	               "A probe of B that an attacker sends from its own address moves A to no direct path there: A answers it once, sealed to B, and waits for the echo that only B can give");
 
 	bool direct = punch_converge(&w);
-	PeerGetStats(w.A.Agent, &st_a);
-	PeerGetStats(w.B.Agent, &st_b);
+	st_a = punch_stats(&w.A);
+	st_b = punch_stats(&w.B);
 	PeerGetStatus(w.A.Agent, w.B.Key.Public, &ps);
 	coretest_check(direct && st_a.PunchSuccesses == 1 && st_b.PunchSuccesses == 1, "Birthday punching gets the pair a direct path within the probe budget: the random side reaches the cone's one port and the cone learns the random mapping");
 	coretest_check(PeerAddrEqual(&ps.Direct, &attacker) == false && ps.Direct.Port != 0, "A's direct path to B is at B's own mapping, which proved itself with the echo of A's nonce, not at the attacker's address");
 
 	// A probe of B sealed before A restarts is a replay at the new peer layer of A, which takes no sequence older than
-	// its entry of B, while a fresh one is taken
-	PEER_CONFIG pc;
+	// its entry of B, while a fresh one is no replay: it is dropped as one of no open punch
+	PEER_CONFIG pc2;
 	PEER_INFO p;
 	PEER_RELAY_INFO ri[2];
 	PEER_ADDR from;
-	UINT old_size = punch_seal_probe(&w, env, sizeof(env));
+	UINT old_size = punch_seal_probe(&w.B.Key, w.A.Key.Public, env, sizeof(env));
 	Sleep(2);
-	PeerDefaultConfig(&pc);
-	pc.Punch = true;
-	PEER_AGENT *a2 = PeerNew(&w.A.Key, &pc, punch_send_nowhere, NULL, NULL, NULL);
+	PeerDefaultConfig(&pc2);
+	pc2.Punch = true;
+	PEER_AGENT *a2 = PeerNew(&w.A.Key, &pc2, punch_send_nowhere, NULL, NULL, NULL);
 	if (a2 != NULL) {
 		UCHAR sig[PEER_MAX_ENVELOPE];
 		UCHAR fresh[PEER_MAX_ENVELOPE];
@@ -454,19 +541,19 @@ static void punch_birthday() {
 		PeerSetRelays(a2, ri, 2);
 		UINT sig_size = PeerSealSignal(w.B.Agent, w.A.Key.Public, PEER_SIGNAL_OFFER, sig, sizeof(sig));
 		UINT taken = PeerOpenSignal(a2, sig, sig_size, NULL);
-		PeerGetStatus(a2, w.B.Key.Public, &ps);
 
 		PeerAddrSetV4(&from, 203, 0, 113, 20, 40000);
 		PeerInput(a2, &from, env, old_size);
 		PEER_STATS st;
 		PeerGetStats(a2, &st);
 		UINT64 replay = st.Drops[PEER_DROP_REPLAY];
+		UINT64 forged = st.Drops[PEER_DROP_FORGED];
 
-		UINT fresh_size = punch_seal_probe(&w, fresh, sizeof(fresh));
+		UINT fresh_size = punch_seal_probe(&w.B.Key, w.A.Key.Public, fresh, sizeof(fresh));
 		PeerInput(a2, &from, fresh, fresh_size);
 		PeerGetStats(a2, &st);
-		coretest_check(taken == PEER_OK && ps.Punch == PEER_PUNCH_PROBING && replay == 1 && st.Drops[PEER_DROP_REPLAY] == 1,
-		               "After A restarts, a probe of B from before the restart is a replay, and a fresh one is taken");
+		coretest_check(taken == PEER_OK && replay == 1 && st.Drops[PEER_DROP_REPLAY] == 1 && st.Drops[PEER_DROP_FORGED] == forged + 1,
+		               "After A restarts, a probe of B from before the restart is a replay, and a fresh one is no replay but finds no punch open");
 	}
 	coretest_check(a2 != NULL, "A's peer layer starts again with the same key");
 	PeerFree(a2);
@@ -480,13 +567,15 @@ static void punch_birthday() {
 	punch_world_stop(&w);
 }
 
-// Two random symmetric NATs: nothing is predictable, so the pair stays on the relay within a bounded budget
+// Two random symmetric NATs: nothing is predictable, so neither end takes the punch and the pair stays on the relay
 static void punch_random() {
 	PUNCH_WORLD w;
+	PEER_CONFIG pc;
+	PEER_SIGNAL offer;
 	PEER_STATS st_a, st_b;
-	UINT64 before, after;
 
-	bool started = punch_world_start(&w, NATSIM_MAP_ADDRESS_PORT_DEPENDENT, NATSIM_FILTER_ADDRESS_PORT_DEPENDENT, NATSIM_ALLOC_RANDOM, 0x1A2B3C4D,
+	punch_config(&pc);
+	bool started = punch_world_start(&w, &pc, NATSIM_MAP_ADDRESS_PORT_DEPENDENT, NATSIM_FILTER_ADDRESS_PORT_DEPENDENT, NATSIM_ALLOC_RANDOM, 0x1A2B3C4D,
 	                                 NATSIM_MAP_ADDRESS_PORT_DEPENDENT, NATSIM_FILTER_ADDRESS_PORT_DEPENDENT, NATSIM_ALLOC_RANDOM, 0x7788AA55);
 	coretest_check(started, "The network starts: A and B each behind a random-allocation symmetric NAT");
 	if (started == false) {
@@ -494,33 +583,234 @@ static void punch_random() {
 		return;
 	}
 
-	coretest_check(punch_exchange(&w), "A and B exchange one signal each through the control plane");
+	st_a = punch_stats(&w.A);
+	st_b = punch_stats(&w.B);
+	coretest_check(st_a.Nat == PEER_NAT_RANDOM && st_b.Nat == PEER_NAT_RANDOM && st_a.Predicted.Port == 0, "A and B each tell their NAT allocates at random, whose next port they cannot predict");
 
-	// The probe rate: one tick sends no more than the configured rate, counted from the first probe of the punch
-	before = punch_sent(&w.A);
-	PeerTick(w.A.Agent);
-	NatSimWaitIdle(w.Sim, PUNCH_WAIT);
-	after = punch_sent(&w.A);
-	coretest_check(after - before <= PUNCH_RATE, "One tick of a punch sends no more than the configured rate of probes");
+	coretest_check(punch_exchange(&w), "A and B exchange an offer and an answer through the control plane");
 
-	// The budget: the punch gives up after it, and the total probes of the punch stay within it
-	bool exhausted = punch_exhaust(&w);
-	after = punch_sent(&w.A);
-	coretest_check(exhausted, "With nothing to predict, both ends spend their budget and the punch fails");
-	coretest_check(after - before <= PUNCH_BUDGET, "A sent no more than its configured budget of probes");
+	// The punch offer of A: B does not take it, as two random NATs predict nothing that the probes could aim at
+	UINT taken = punch_signal(&w.A, &w.B, PEER_SIGNAL_PUNCH_OFFER, &offer);
+	for (UINT i = 0; i < 4; i++) {
+		PeerTick(w.A.Agent);
+		PeerTick(w.B.Agent);
+		NatSimWaitIdle(w.Sim, PUNCH_WAIT);
+	}
+	st_a = punch_stats(&w.A);
+	st_b = punch_stats(&w.B);
+	coretest_check(taken == PEER_OK && offer.Nat == PEER_NAT_RANDOM && punch_state(&w.B, &w.A) == PEER_PUNCH_NONE && st_b.PunchAttempts == 0 && st_a.PunchAttempts == 0,
+	               "B takes the signal but no punch: two random NATs cannot meet");
+	coretest_check(st_a.PunchProbes == 0 && st_b.PunchProbes == 0, "No probe leaves either end");
+	coretest_check(punch_path(&w.A, &w.B) == PEER_PATH_RELAY && punch_path(&w.B, &w.A) == PEER_PATH_RELAY, "The pair stays on the relay");
 
-	coretest_check(punch_path(&w.A, &w.B) == PEER_PATH_RELAY && punch_path(&w.B, &w.A) == PEER_PATH_RELAY, "The pair stays on the relay: no probe met");
-
-	PeerGetStats(w.A.Agent, &st_a);
-	PeerGetStats(w.B.Agent, &st_b);
-	coretest_check(st_a.PunchAttempts == 1 && st_b.PunchAttempts == 1 && st_a.PunchSuccesses == 0 && st_b.PunchSuccesses == 0, "The metric records the attempt and no success: the prediction success rate is zero of one");
-
-	// Traffic keeps flowing on the relay throughout, with no interruption
+	// Traffic keeps flowing on the relay, with no interruption
 	InterlockedExchange(&w.B.Echo, 1);
 	LONG received = w.A.Received;
 	bool sent = punch_send(&w.A, &w.B, "ping relayed");
 	NatSimWaitIdle(w.Sim, PUNCH_WAIT);
-	coretest_check(sent && w.A.Received == received + 1 && w.A.ReceivedRelay >= 1 && w.A.ReceivedDirect == 0, "The pair's ping and pong flow through R while the punch runs and after it fails");
+	coretest_check(sent && w.A.Received == received + 1 && w.A.ReceivedRelay >= 1 && w.A.ReceivedDirect == 0, "The pair's ping and pong flow through R");
+
+	punch_world_stop(&w);
+}
+
+// The tap of the limits case: the times of the punch datagrams that A and B send, before the cut loses them
+static bool punch_tap(void *param, NATSIM_HOST *from, const PEER_ADDR *dst, const UCHAR *data, UINT size) {
+	PUNCH_TAP *t = (PUNCH_TAP *)param;
+	LARGE_INTEGER now, freq;
+
+	if (size == 0 || data[0] != PEER_MSG_PUNCH)
+		return true;
+
+	QueryPerformanceCounter(&now);
+	QueryPerformanceFrequency(&freq);
+
+	EnterCriticalSection(&t->Lock);
+	for (UINT i = 0; i < 2; i++) {
+		if (t->Hosts[i] == from && t->Num[i] < PUNCH_TAP_MAX)
+			t->Times[i][t->Num[i]++] = (UINT64)now.QuadPart * 1000 / (UINT64)freq.QuadPart;
+	}
+	LeaveCriticalSection(&t->Lock);
+
+	return true;
+}
+
+// The most punch datagrams of node i of the tap within any 1000 ms
+static UINT punch_tap_peak(PUNCH_TAP *t, UINT i) {
+	UINT peak = 0;
+
+	EnterCriticalSection(&t->Lock);
+	for (UINT k = 0; k < t->Num[i]; k++) {
+		UINT n = 0;
+
+		for (UINT j = k; j < t->Num[i] && t->Times[i][j] - t->Times[i][k] < 1000; j++)
+			n++;
+		if (n > peak)
+			peak = n;
+	}
+	LeaveCriticalSection(&t->Lock);
+
+	return peak;
+}
+
+// Two sequential NATs whose direct path is cut: the attempts spend their probes within the limits and fail, the pair
+// stays on the relay, and after the attempts that met nothing an offer is refused until the backoff ends
+static void punch_limits() {
+	PUNCH_WORLD w;
+	PUNCH_TAP tap;
+	PEER_CONFIG pc;
+	PEER_SIGNAL offer, answer;
+	PEER_STATS st_a, st_b;
+	char what[256];
+
+	punch_config(&pc);
+	pc.PunchBudget = PUNCH_LIMIT_BUDGET;
+	pc.PunchRate = PUNCH_LIMIT_RATE;
+	pc.PunchAttempts = PUNCH_LIMIT_TRIES;
+	pc.PunchRetry = PUNCH_LIMIT_RETRY;
+	pc.PunchBackoff = PUNCH_LIMIT_BACKOFF;
+
+	bool started = punch_world_start(&w, &pc, NATSIM_MAP_ADDRESS_PORT_DEPENDENT, NATSIM_FILTER_ADDRESS_PORT_DEPENDENT, NATSIM_ALLOC_SEQUENTIAL, 0,
+	                                 NATSIM_MAP_ADDRESS_PORT_DEPENDENT, NATSIM_FILTER_ADDRESS_PORT_DEPENDENT, NATSIM_ALLOC_SEQUENTIAL, 0);
+	coretest_check(started, "The network starts: A and B each behind a sequential-allocation symmetric NAT, their direct path cut");
+	if (started == false) {
+		punch_world_stop(&w);
+		return;
+	}
+
+	ZeroMemory(&tap, sizeof(tap));
+	InitializeCriticalSection(&tap.Lock);
+	tap.Hosts[0] = w.A.Host;
+	tap.Hosts[1] = w.B.Host;
+	NatSimSetTap(w.Sim, punch_tap, &tap);
+	NatSimCut(w.Sim, w.NatA, true);
+
+	coretest_check(punch_exchange(&w), "A and B exchange an offer and an answer through the control plane");
+	InterlockedExchange(&w.B.Echo, 1);
+
+	bool all_failed = true;
+	bool within_budget = true;
+	bool relayed = true;
+	UINT64 probes_a = 0, probes_b = 0;
+	for (UINT k = 0; k < PUNCH_LIMIT_TRIES; k++) {
+		bool offered = punch_offer(&w, &w.A, &w.B, &offer, &answer);
+		bool failed = punch_exhaust(&w);
+
+		st_a = punch_stats(&w.A);
+		st_b = punch_stats(&w.B);
+		coretest_info("attempt %u: A sent %llu probes and B %llu", k + 1, st_a.PunchProbes - probes_a, st_b.PunchProbes - probes_b);
+		within_budget = within_budget && st_a.PunchProbes - probes_a <= PUNCH_LIMIT_BUDGET && st_b.PunchProbes - probes_b <= PUNCH_LIMIT_BUDGET &&
+		                st_a.PunchProbes > probes_a && st_b.PunchProbes > probes_b;
+		probes_a = st_a.PunchProbes;
+		probes_b = st_b.PunchProbes;
+		all_failed = all_failed && offered && failed;
+
+		// The traffic of the pair goes on through R while the attempt fails
+		LONG received = w.A.Received;
+		bool sent = punch_send(&w.A, &w.B, "ping while the punch fails");
+		NatSimWaitIdle(w.Sim, PUNCH_WAIT);
+		relayed = relayed && sent && w.A.Received == received + 1 && w.A.ReceivedDirect == 0;
+
+		Sleep(PUNCH_LIMIT_RETRY);
+	}
+
+	st_a = punch_stats(&w.A);
+	st_b = punch_stats(&w.B);
+	snprintf(what, sizeof(what), "Each of the %u attempts that a punch offer began at both ends spent its probes and failed, as the path between the NATs is cut", PUNCH_LIMIT_TRIES);
+	coretest_check(all_failed && st_a.PunchAttempts == PUNCH_LIMIT_TRIES && st_b.PunchAttempts == PUNCH_LIMIT_TRIES && st_a.PunchFailures == PUNCH_LIMIT_TRIES && st_b.PunchFailures == PUNCH_LIMIT_TRIES &&
+	                   st_a.PunchSuccesses == 0 && st_b.PunchSuccesses == 0,
+	               what);
+	snprintf(what, sizeof(what), "Each attempt sent at most its budget of %u probes", PUNCH_LIMIT_BUDGET);
+	coretest_check(within_budget, what);
+
+	UINT peak_a = punch_tap_peak(&tap, 0);
+	UINT peak_b = punch_tap_peak(&tap, 1);
+	coretest_info("the tap saw at most %u punch datagrams of A and %u of B within one second", peak_a, peak_b);
+	snprintf(what, sizeof(what), "No node sent more than its rate of %u punch messages within any second", PUNCH_LIMIT_RATE);
+	coretest_check(peak_a <= PUNCH_LIMIT_RATE && peak_b <= PUNCH_LIMIT_RATE && peak_a != 0, what);
+	coretest_check(relayed && punch_path(&w.A, &w.B) == PEER_PATH_RELAY && punch_path(&w.B, &w.A) == PEER_PATH_RELAY,
+	               "The pair stayed on the relay with its traffic flowing while the attempts failed");
+
+	// After the attempts that met nothing, B refuses a punch offer until the backoff ends
+	UINT taken = punch_signal(&w.A, &w.B, PEER_SIGNAL_PUNCH_OFFER, &offer);
+	coretest_check(taken == PEER_OK && punch_state(&w.B, &w.A) != PEER_PUNCH_PROBING && punch_stats(&w.B).PunchAttempts == PUNCH_LIMIT_TRIES,
+	               "In the backoff after the attempts that met nothing, B refuses the next punch offer: no probe begins");
+
+	Sleep(PUNCH_LIMIT_BACKOFF);
+	taken = punch_signal(&w.A, &w.B, PEER_SIGNAL_PUNCH_OFFER, &offer);
+	coretest_check(taken == PEER_OK && punch_state(&w.B, &w.A) == PEER_PUNCH_PROBING && punch_stats(&w.B).PunchAttempts == PUNCH_LIMIT_TRIES + 1,
+	               "Once the backoff ended, B takes the next punch offer");
+
+	NatSimSetTap(w.Sim, NULL, NULL);
+	punch_world_stop(&w);
+	DeleteCriticalSection(&tap.Lock);
+}
+
+// Tick A alone every PUNCH_TICK ms until its attempt failed, within PUNCH_LIMIT_WAIT; true when the attempt of B, which is
+// not ticked, still runs then
+static bool punch_end_a(PUNCH_WORLD *w) {
+	for (UINT64 end = GetTickCount64() + PUNCH_LIMIT_WAIT; GetTickCount64() < end; Sleep(PUNCH_TICK)) {
+		PeerTick(w->A.Agent);
+		NatSimWaitIdle(w->Sim, PUNCH_WAIT);
+
+		if (punch_state(&w->A, &w->B) == PEER_PUNCH_FAILED)
+			return punch_state(&w->B, &w->A) == PEER_PUNCH_PROBING;
+	}
+
+	return false;
+}
+
+// Two sequential NATs whose direct path is cut, where the attempts of B run longer than the ones of A: each punch offer of A,
+// which comes once its own attempt ended, ends the attempt of B that still runs, as one that met nothing, and begins the next
+// at both ends, so the two count the same attempts and reach the backoff on the same offer; the offer that B refuses in the
+// backoff, while its last attempt still runs, gets no answer, so A begins no attempt alone
+static void punch_overlap() {
+	PUNCH_WORLD w;
+	PEER_CONFIG pc;
+	PEER_SIGNAL offer, answer;
+	PEER_STATS st_a, st_b;
+	UCHAR env[PEER_MAX_ENVELOPE];
+	char what[256];
+
+	punch_config(&pc);
+	pc.PunchBudget = PUNCH_LIMIT_BUDGET;
+	pc.PunchRate = PUNCH_LIMIT_RATE;
+	pc.PunchAttempts = PUNCH_LIMIT_TRIES;
+	pc.PunchRetry = PUNCH_LIMIT_RETRY;
+	pc.PunchBackoff = PUNCH_LIMIT_BACKOFF;
+
+	bool started = punch_world_start(&w, &pc, NATSIM_MAP_ADDRESS_PORT_DEPENDENT, NATSIM_FILTER_ADDRESS_PORT_DEPENDENT, NATSIM_ALLOC_SEQUENTIAL, 0,
+	                                 NATSIM_MAP_ADDRESS_PORT_DEPENDENT, NATSIM_FILTER_ADDRESS_PORT_DEPENDENT, NATSIM_ALLOC_SEQUENTIAL, 0);
+	coretest_check(started, "The network starts: A and B each behind a sequential-allocation symmetric NAT, their direct path cut, B's attempts slower than A's");
+	if (started == false) {
+		punch_world_stop(&w);
+		return;
+	}
+
+	NatSimCut(w.Sim, w.NatA, true);
+	coretest_check(punch_exchange(&w), "A and B exchange an offer and an answer through the control plane");
+
+	// Each offer of A goes once its own attempt ended, while the one of B, which the test does not tick, still runs
+	bool in_step = true;
+	for (UINT k = 0; k < PUNCH_LIMIT_TRIES; k++) {
+		bool offered = punch_offer(&w, &w.A, &w.B, &offer, &answer);
+
+		st_a = punch_stats(&w.A);
+		st_b = punch_stats(&w.B);
+		coretest_info("offer %u: A made %llu attempts and B %llu, of which B ended %llu that still ran", k + 1, st_a.PunchAttempts, st_b.PunchAttempts, st_b.PunchFailures);
+		bool ended = punch_end_a(&w);
+		in_step = in_step && offered && st_a.PunchAttempts == k + 1 && st_b.PunchAttempts == k + 1 && st_b.PunchFailures == k && ended;
+	}
+	snprintf(what, sizeof(what), "Each of the %u punch offers of A ends the attempt of B that still runs, as one that met nothing, and begins the next at both ends: the two count the same attempts",
+	         PUNCH_LIMIT_TRIES);
+	coretest_check(in_step, what);
+
+	// Both ends reached the backoff on the third offer: B refuses the next one and seals no answer to it, though its attempt
+	// still runs
+	UINT taken = punch_signal(&w.A, &w.B, PEER_SIGNAL_PUNCH_OFFER, &offer);
+	st_b = punch_stats(&w.B);
+	UINT sealed = PeerSealSignal(w.B.Agent, w.A.Key.Public, PEER_SIGNAL_PUNCH_ANSWER, env, sizeof(env));
+	coretest_check(taken == PEER_OK && punch_state(&w.B, &w.A) == PEER_PUNCH_PROBING && st_b.PunchAttempts == PUNCH_LIMIT_TRIES && sealed == 0,
+	               "In the backoff that both ends reached on the same offer, B refuses the next punch offer of A while its last attempt still runs, and seals no answer to it: A begins no attempt alone");
 
 	punch_world_stop(&w);
 }
@@ -730,4 +1020,6 @@ void punch_test() {
 	punch_sequential();
 	punch_birthday();
 	punch_random();
+	punch_limits();
+	punch_overlap();
 }

@@ -25,8 +25,9 @@
 // pair is on the relay again. A session that failed answers no check (juice_peer_take), so the consent of the peer
 // fails too and both ends fall back. A new offer starts a new session, as libjuice has no ICE restart: after one that
 // failed, and in place of one that is still checking when the home gateway granted its public port since it started,
-// so the checks go to that port. A pair whose NATs let no check through, as two symmetric NATs do, stays on the relay;
-// port prediction and birthday punching are CORE-S5-4 (#266).
+// so the checks go to that port. A pair whose NATs let no check through, as two symmetric NATs do, stays on the relay
+// until the port prediction and birthday punching of PeerPunch.c meet (CORE-S5-7, #413), which the failure of its ICE
+// session lets the node offer; the checks of a session count among the mappings that the punch predicts from.
 //
 // Locks: libjuice calls back under the mutex of the agent, on the thread of the session or on the thread of PeerInput,
 // and the callbacks take the lock of the layer, so nothing here calls libjuice under that lock. IceLock serialises the
@@ -168,6 +169,10 @@ static bool PeerIceRemoteSdp(char *sdp, UINT size, const PEER_SIGNAL *s) {
 		UINT preference = (c->Type == PEER_CANDIDATE_HOST ? 126 : 100);
 		UINT priority = (preference << 24) | ((65535 - i) << 8) | 255;
 
+		// A port that the punch predicts is no address of the peer yet (PeerPunch.c)
+		if (c->Type == PEER_CANDIDATE_PREDICTED || c->Type == PEER_CANDIDATE_TOWARD)
+			continue;
+
 		PeerIceHost(host, sizeof(host), &c->Addr);
 		if (host[0] == 0)
 			continue;
@@ -189,6 +194,9 @@ static int PeerIceIoSend(void *user_ptr, const struct sockaddr *dst, int dst_len
 
 	if (size == 0 || size > PEER_MAX_DATAGRAM || PeerIceFromSockaddr(&to, (const SOCKADDR *)dst, dst_len) == false)
 		return -1;
+
+	// A check to a new address makes a new mapping of a symmetric NAT, which the punch counts (PeerPunch.c)
+	PeerPunchDestination(ice->Agent, &to);
 
 	return (PeerSendRaw(ice->Agent, &to, data, (UINT)size) ? (int)size : -1);
 }

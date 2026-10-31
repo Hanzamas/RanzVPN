@@ -10,6 +10,13 @@ func protectFile(path string) error {
 	return os.Chmod(path, 0o600)
 }
 
+// CheckKeyFileName accepts every name: a colon is an ordinary character of a name here, so no name makes a
+// stream of a file, and the mode that CreateKeyFile sets is the one that the file has. It is there for the
+// callers that also run on Windows, where it refuses some names (SDN-82-R2).
+func CheckKeyFileName(string) error {
+	return nil
+}
+
 // chmodKeyFile sets the mode of the file that CreateKeyFile made: the call that a test replaces with one
 // that fails, since no file that the test makes refuses its mode.
 var chmodKeyFile = (*os.File).Chmod

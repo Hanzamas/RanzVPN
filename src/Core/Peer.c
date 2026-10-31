@@ -115,6 +115,7 @@ PEER_AGENT *PeerNew(PEER_KEY *key, PEER_CONFIG *c, PEER_SEND_PROC *send, void *s
 	InitializeSRWLock(&a->KeyLock);
 	InitializeSRWLock(&a->Lock);
 	InitializeSRWLock(&a->IceLock);
+	InitializeSRWLock(&a->PunchLock);
 	a->Ice.PortMap = -1;
 
 	if (c != NULL)
@@ -341,6 +342,9 @@ void PeerBind(PEER_AGENT *a, const UCHAR *relay_key, bool answer) {
 			r->BindTick = PeerNow();
 			to = r->Info.Addr;
 			found = true;
+			// The punch counts the mapping that the NAT of the node makes towards the relay (PeerPunch.c)
+			if (r->Mapping == 0)
+				r->Mapping = PeerPunchDestination(a, &to);
 		}
 	}
 	ReleaseSRWLockExclusive(&a->Lock);
@@ -539,6 +543,9 @@ bool PeerSetDirect(PEER_AGENT *a, const UCHAR *key, const PEER_ADDR *addr) {
 				p->Direct = *addr;
 			else
 				ZeroMemory(&p->Direct, sizeof(PEER_ADDR));
+			// A punched path that is taken away ends its punch (PeerPunch.c)
+			if (addr == NULL && p->Punch.State == PEER_PUNCH_CONNECTED)
+				p->Punch.State = PEER_PUNCH_NONE;
 			ret = true;
 		}
 	}
@@ -588,8 +595,9 @@ static UINT PeerPathOf(PEER_AGENT *a, PEER *p) {
 // one failed, or it still checks without the public port that the home gateway granted since: a new offer restarts
 // ICE. An answer carries no credentials while that session is the node's own offer that waits for the answer of the
 // peer: the node did not take the offer of the peer then, as its key is higher, and the peer takes the node's offer
-// instead (PeerIceRemote), so the two never end up both controlling. Returns the size of the envelope in buf, 0 when
-// peer is no peer or the envelope does not fit size.
+// instead (PeerIceRemote), so the two never end up both controlling. A punch offer or a punch answer carries the NAT and
+// the prediction of the node instead (PeerPunchSealSignal). Returns the size of the envelope in buf, 0 when peer is no
+// peer or the envelope does not fit size.
 UINT PeerSealSignal(PEER_AGENT *a, const UCHAR *peer, UINT type, UCHAR *buf, UINT size) {
 	PEER_SIGNAL s;
 	UCHAR payload[PEER_MAX_SIGNAL];
@@ -597,6 +605,9 @@ UINT PeerSealSignal(PEER_AGENT *a, const UCHAR *peer, UINT type, UCHAR *buf, UIN
 
 	if (a == NULL || peer == NULL || buf == NULL)
 		return 0;
+
+	if (type == PEER_SIGNAL_PUNCH_OFFER || type == PEER_SIGNAL_PUNCH_ANSWER)
+		return PeerPunchSealSignal(a, peer, type, buf, size);
 
 	ZeroMemory(&s, sizeof(s));
 	s.Type = type;
@@ -630,11 +641,6 @@ UINT PeerSealSignal(PEER_AGENT *a, const UCHAR *peer, UINT type, UCHAR *buf, UIN
 				s.Candidates[s.NumCandidates].Addr = a->Hosts[i];
 				s.NumCandidates++;
 			}
-
-			// With punching on, the predicted next port of the node's own NAT, so a symmetric-NAT peer knows where
-			// to aim its probes (PeerPunch.c)
-			if (a->Config.Punch && s.NumCandidates < PEER_MAX_CANDIDATES)
-				s.NumCandidates += PeerPunchCandidate(a, &s.Candidates[s.NumCandidates], 1);
 		}
 
 		if (a->NumRelays != 0) {
@@ -739,9 +745,9 @@ UINT PeerOpenSignal(PEER_AGENT *a, const UCHAR *env, UINT size, PEER_SIGNAL *sig
 	if (a->Config.Ice && s.IceUfrag[0] != 0)
 		PeerIceRemote(a, sender, &s);
 
-	// The control plane triggers the symmetric-NAT punch with the signal exchange (PeerPunch.c, CORE-S5-4)
-	if (a->Config.Punch)
-		PeerPunchStart(a, sender);
+	// The control plane times the symmetric-NAT punch with a punch offer and its answer (PeerPunch.c, CORE-S5-7)
+	if (s.Type == PEER_SIGNAL_PUNCH_OFFER || s.Type == PEER_SIGNAL_PUNCH_ANSWER)
+		PeerPunchStart(a, sender, &s);
 
 	if (sig != NULL)
 		*sig = s;
@@ -866,6 +872,10 @@ static void PeerInputData(PEER_AGENT *a, const PEER_ADDR *from, const UCHAR *dat
 			PEER *p = PeerFind(a, src);
 
 			reason = (p != NULL ? PeerSessionInput(a, p, &r, data, size, &out) : PEER_DROP_POLICY);
+
+			// A record that opened is a word of the peer: on its punched path, its consent there (PeerPunch.c)
+			if (reason == PEER_OK && r.Kind == PEER_MSG_RECORD)
+				PeerPunchHeard(p, from);
 		} else if (reason == PEER_OK) {
 			// For another node: only the relay role forwards, and only from a node bound to it to another one
 			PEER_BINDING *s = (path == PEER_PATH_BOUND ? PeerFindBinding(a, src) : NULL);
@@ -1032,9 +1042,17 @@ static void PeerInputBound(PEER_AGENT *a, const PEER_ADDR *from, const UCHAR *da
 		} else if (r->Binding == false || seq != r->BindSequence) {
 			reason = PEER_DROP_REPLAY;
 		} else {
+			PEER_ADDR seen;
+
+			CopyMemory(seen.Ip, payload + 9, sizeof(seen.Ip));
+			seen.Port = PeerGetUint16(payload + 25);
+
+			// A relay that sees the node at another address saw a new mapping of its NAT (PeerPunch.c)
+			if (r->Bound && PeerAddrEqual(&r->Observed, &seen) == false)
+				PeerPunchRemap(a, r);
+
 			r->Bound = true;
-			CopyMemory(r->Observed.Ip, payload + 9, sizeof(r->Observed.Ip));
-			r->Observed.Port = PeerGetUint16(payload + 25);
+			r->Observed = seen;
 		}
 	}
 	ReleaseSRWLockExclusive(&a->Lock);
@@ -1283,8 +1301,13 @@ void PeerGetStats(PEER_AGENT *a, PEER_STATS *st) {
 	st->PunchSuccesses = (UINT64)ReadAcquire64(&a->Counters[PEER_COUNT_PUNCH_SUCCESSES]);
 	st->Handshakes = (UINT64)ReadAcquire64(&a->Counters[PEER_COUNT_HANDSHAKES]);
 	st->Challenges = (UINT64)ReadAcquire64(&a->Counters[PEER_COUNT_CHALLENGES]);
+	st->PunchFailures = (UINT64)ReadAcquire64(&a->Counters[PEER_COUNT_PUNCH_FAILURES]);
+	st->PunchProbes = (UINT64)ReadAcquire64(&a->Counters[PEER_COUNT_PUNCH_PROBES]);
 	for (UINT i = 0; i < PEER_NUM_REASONS; i++)
 		st->Drops[i] = (UINT64)ReadAcquire64(&a->Drops[i]);
+
+	// The NAT of the node and its next mapping, which the punch predicts (PeerPunch.c)
+	PeerPunchStats(a, st);
 
 	// libplum is never called under the lock of the layer
 	st->PortMap = PeerPortMapState(a);
