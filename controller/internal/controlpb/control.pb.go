@@ -4782,10 +4782,10 @@ type Telemetry struct {
 	// The BGP peering of the standard mode at the node (SDN-77): in a summary of its own whenever it
 	// changed, and absent from the others. 7 is the groups of SDN-87 (#386), so the peering is 8.
 	Peering *PeeringReport `protobuf:"bytes,8,opt,name=peering,proto3" json:"peering,omitempty"`
-	// The Upgrades and the Fallbacks of the Paths of the node's peer agent (CORE-S5-6), absent while
-	// its peer layer does not run. The node lists them in a summary of their own after each Hello,
-	// whenever they change and again every 15 s while they stay the same, as the controller drops a
-	// counter that its node stopped listing.
+	// The Upgrades and the Fallbacks of the Paths of the node's peer agent (CORE-S5-6), and its
+	// punches (CORE-S5-7), absent while its peer layer does not run. The node lists them in a summary
+	// of their own after each Hello, whenever they change and again every 15 s while they stay the
+	// same, as the controller drops a counter that its node stopped listing.
 	Paths         *PathCounters `protobuf:"bytes,9,opt,name=paths,proto3" json:"paths,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -4997,15 +4997,20 @@ func (x *PeeringPeer) GetLearned() []*Route {
 }
 
 // The Paths of the peer agent of a node since the node started (CORE-S5-6, ADR-0015 decision 4):
-// the Upgrades, each a Path that moved from the Relay to the direct path that ICE validated, and
-// the Fallbacks, each a direct path whose consent freshness failed, so that its pair went back to
-// the Relay.
+// the Upgrades, each a Path that moved from the Relay to the direct path that ICE validated or a
+// punch met, and the Fallbacks, each a direct path whose consent failed, so that its pair went back
+// to the Relay. The punches (CORE-S5-7, ADR-0015 decision 2): the attempts at a direct path to a
+// peer behind a symmetric NAT, the successes among them, and the failures of the prediction, each
+// an attempt that spent its probes and met nothing.
 type PathCounters struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Upgrades      uint64                 `protobuf:"varint,1,opt,name=upgrades,proto3" json:"upgrades,omitempty"`
-	Fallbacks     uint64                 `protobuf:"varint,2,opt,name=fallbacks,proto3" json:"fallbacks,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	Upgrades       uint64                 `protobuf:"varint,1,opt,name=upgrades,proto3" json:"upgrades,omitempty"`
+	Fallbacks      uint64                 `protobuf:"varint,2,opt,name=fallbacks,proto3" json:"fallbacks,omitempty"`
+	PunchAttempts  uint64                 `protobuf:"varint,3,opt,name=punch_attempts,json=punchAttempts,proto3" json:"punch_attempts,omitempty"`
+	PunchSuccesses uint64                 `protobuf:"varint,4,opt,name=punch_successes,json=punchSuccesses,proto3" json:"punch_successes,omitempty"`
+	PunchFailures  uint64                 `protobuf:"varint,5,opt,name=punch_failures,json=punchFailures,proto3" json:"punch_failures,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
 }
 
 func (x *PathCounters) Reset() {
@@ -5048,6 +5053,27 @@ func (x *PathCounters) GetUpgrades() uint64 {
 func (x *PathCounters) GetFallbacks() uint64 {
 	if x != nil {
 		return x.Fallbacks
+	}
+	return 0
+}
+
+func (x *PathCounters) GetPunchAttempts() uint64 {
+	if x != nil {
+		return x.PunchAttempts
+	}
+	return 0
+}
+
+func (x *PathCounters) GetPunchSuccesses() uint64 {
+	if x != nil {
+		return x.PunchSuccesses
+	}
+	return 0
+}
+
+func (x *PathCounters) GetPunchFailures() uint64 {
+	if x != nil {
+		return x.PunchFailures
 	}
 	return 0
 }
@@ -6486,10 +6512,13 @@ const file_ranz_control_v1_control_proto_rawDesc = "" +
 	"\vPeeringPeer\x12\x18\n" +
 	"\aaddress\x18\x01 \x01(\fR\aaddress\x12\x14\n" +
 	"\x05state\x18\x02 \x01(\tR\x05state\x120\n" +
-	"\alearned\x18\x03 \x03(\v2\x16.ranz.control.v1.RouteR\alearned\"H\n" +
+	"\alearned\x18\x03 \x03(\v2\x16.ranz.control.v1.RouteR\alearned\"\xbf\x01\n" +
 	"\fPathCounters\x12\x1a\n" +
 	"\bupgrades\x18\x01 \x01(\x04R\bupgrades\x12\x1c\n" +
-	"\tfallbacks\x18\x02 \x01(\x04R\tfallbacks\"\x8a\x01\n" +
+	"\tfallbacks\x18\x02 \x01(\x04R\tfallbacks\x12%\n" +
+	"\x0epunch_attempts\x18\x03 \x01(\x04R\rpunchAttempts\x12'\n" +
+	"\x0fpunch_successes\x18\x04 \x01(\x04R\x0epunchSuccesses\x12%\n" +
+	"\x0epunch_failures\x18\x05 \x01(\x04R\rpunchFailures\"\x8a\x01\n" +
 	"\x0eDeviceCounters\x12\x16\n" +
 	"\x06device\x18\x01 \x01(\tR\x06device\x12*\n" +
 	"\x11last_handshake_ms\x18\x02 \x01(\x04R\x0flastHandshakeMs\x12\x19\n" +

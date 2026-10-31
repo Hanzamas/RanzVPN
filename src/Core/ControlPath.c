@@ -6,7 +6,9 @@
 // controller that the node reaches anew has them, and whenever they changed, at most every CONTROL_PATH_REPORT ms. The
 // controller exports them, and drops a counter that its node did not report for a while (telemetry.DefaultStale, 5 minutes),
 // as a counter that the node no longer has: so the client sends the counts again every CONTROL_PATH_REFRESH ms while they
-// stay the same, as they do for hours on a node whose pairs keep their paths.
+// stay the same, as they do for hours on a node whose pairs keep their paths. The same message holds the punches of the
+// node (CORE-S5-7, #413): its attempts at a direct path to a peer behind a symmetric NAT, the ones that met and the ones
+// whose prediction failed (ControlSetPunches).
 
 #include "Core/ControlInternal.h"
 
@@ -20,6 +22,9 @@ struct CONTROL_PATHS {
 	bool Set;                           // The owner set the counts: the client sends them after each Hello
 	UINT64 Upgrades;                    // The counts that the owner set last
 	UINT64 Fallbacks;                   // ...
+	UINT64 PunchAttempts;               // ...
+	UINT64 PunchSuccesses;              // ...
+	UINT64 PunchFailures;               // ...
 	bool Changed;                       // They changed since the client sent them
 	UINT64 Sent;                        // When the client sent them last, 0 for never on the stream that runs
 	ranz_control_v1_Telemetry *Message; // The message that the thread of the client writes
@@ -68,6 +73,23 @@ void ControlSetPaths(CONTROL_PATHS *p, UINT64 upgrades, UINT64 fallbacks) {
 		p->Set = true;
 		p->Upgrades = upgrades;
 		p->Fallbacks = fallbacks;
+		p->Changed = true;
+	}
+	ReleaseSRWLockExclusive(&p->Lock);
+}
+
+// Put the counts of the punches in place of the ones before: they go in the message of the Paths, which the client sends
+// when they differ from the ones it sent
+void ControlSetPunches(CONTROL_PATHS *p, UINT64 attempts, UINT64 successes, UINT64 failures) {
+	if (p == NULL)
+		return;
+
+	AcquireSRWLockExclusive(&p->Lock);
+	if (p->Set == false || p->PunchAttempts != attempts || p->PunchSuccesses != successes || p->PunchFailures != failures) {
+		p->Set = true;
+		p->PunchAttempts = attempts;
+		p->PunchSuccesses = successes;
+		p->PunchFailures = failures;
 		p->Changed = true;
 	}
 	ReleaseSRWLockExclusive(&p->Lock);
@@ -128,6 +150,9 @@ bool ControlWritePaths(CONTROL_PATHS *p, TRANSPORT_STREAM *s) {
 		m->has_paths = true;
 		m->paths.upgrades = p->Upgrades;
 		m->paths.fallbacks = p->Fallbacks;
+		m->paths.punch_attempts = p->PunchAttempts;
+		m->paths.punch_successes = p->PunchSuccesses;
+		m->paths.punch_failures = p->PunchFailures;
 		p->Changed = false;
 		p->Sent = now;
 		due = true;

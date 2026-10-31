@@ -891,10 +891,10 @@ message Telemetry {
   // The BGP peering of the standard mode at the node (SDN-77): in a summary of its own whenever it
   // changed, and absent from the others. 7 is the groups of SDN-87 (#386), so the peering is 8.
   PeeringReport peering = 8;
-  // The Upgrades and the Fallbacks of the Paths of the node's peer agent (CORE-S5-6), absent while
-  // its peer layer does not run. The node lists them in a summary of their own after each Hello,
-  // whenever they change and again every 15 s while they stay the same, as the controller drops a
-  // counter that its node stopped listing.
+  // The Upgrades and the Fallbacks of the Paths of the node's peer agent (CORE-S5-6), and its
+  // punches (CORE-S5-7), absent while its peer layer does not run. The node lists them in a summary
+  // of their own after each Hello, whenever they change and again every 15 s while they stay the
+  // same, as the controller drops a counter that its node stopped listing.
   PathCounters paths = 9;
 }
 
@@ -917,12 +917,17 @@ message PeeringPeer {
 }
 
 // The Paths of the peer agent of a node since the node started (CORE-S5-6, ADR-0015 decision 4):
-// the Upgrades, each a Path that moved from the Relay to the direct path that ICE validated, and
-// the Fallbacks, each a direct path whose consent freshness failed, so that its pair went back to
-// the Relay.
+// the Upgrades, each a Path that moved from the Relay to the direct path that ICE validated or a
+// punch met, and the Fallbacks, each a direct path whose consent failed, so that its pair went back
+// to the Relay. The punches (CORE-S5-7, ADR-0015 decision 2): the attempts at a direct path to a
+// peer behind a symmetric NAT, the successes among them, and the failures of the prediction, each
+// an attempt that spent its probes and met nothing.
 message PathCounters {
   uint64 upgrades = 1;
   uint64 fallbacks = 2;
+  uint64 punch_attempts = 3;
+  uint64 punch_successes = 4;
+  uint64 punch_failures = 5;
 }
 
 // The WireGuard end of one Device at its gateway (SDN-80): the last handshake, in Unix time in

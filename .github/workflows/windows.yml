@@ -290,7 +290,9 @@ jobs:
         dotnet run -- ../../src/bin/hamcore
         if ($LASTEXITCODE -ne 0) { throw "stbchecker reported differences between the string tables (exit code $LASTEXITCODE)" }
     - name: Test
-      timeout-minutes: 10
+      # The smoke loop takes about 11 minutes with the two of punchpath (CORE-S5-7, #413: ICE gives the pair up after 40 s,
+      # and the attempts wait out their backoff); a modal alert of a broken hamcore still turns red here, not at the job limit
+      timeout-minutes: 15
       shell: pwsh
       env:
         # Names build/harness-out/bench-<arch>.txt (the BENCH lines of vpntest bench)
@@ -687,7 +689,8 @@ jobs:
         key: vcpkg-bin-x64-windows-static-${{ hashFiles('vcpkg.json') }}-${{ hashFiles('vcpkg-bincache/**') }}
     - name: vpntest smoke test under ASan
       shell: pwsh
-      timeout-minutes: 10
+      # About 9 minutes with the two of punchpath (CORE-S5-7, #413), which waits for ICE and a backoff
+      timeout-minutes: 15
       env:
         # Every test that vpntest lists runs, except the ones in .github/quality/smoke-exclude.txt and in
         # .github/quality/asan-exclude.txt, which gives the reason of each (a time budget that AddressSanitizer would
