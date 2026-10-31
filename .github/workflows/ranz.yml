@@ -177,14 +177,16 @@ jobs:
       with:
         go-version: ${{ env.GO_VERSION }}
         cache-dependency-path: go.sum
-    # TEMPORARY (CI-FLAKE-2, #562), removed in the last commit of this branch: the test of the thousand Nodes many times
-    # in a row while the CPU of the runner is busy, with 1, 2 and 4 busy loops for each core. The test as it was before the
-    # fix runs first, for a comparison, and may fail here; then the new test, whose failure fails the step
+    # TEMPORARY (CI-FLAKE-2, #562), removed in the last commit of this branch: the test of the thousand Nodes 200 times
+    # in a row while the CPU of the runner is busy, with 2 busy loops for each core, and 20 times under the race detector,
+    # as the step Test runs it. The job has little room (40 minutes, about 27 without this step), so the load is not
+    # heavier. The failure of the test fails the step
     - name: TEMPORARY the thousand Nodes on a busy runner
-      timeout-minutes: 30
+      timeout-minutes: 15
       run: |
         # Built before the load starts
         go test -count=1 -run '^$' ./controller/internal/port
+        go test -race -count=1 -run '^$' ./controller/internal/port
         out="$RUNNER_TEMP/thousand.out"
         busy() {
           for i in $(seq 1 $(($1 * $(nproc)))); do
@@ -195,26 +197,20 @@ jobs:
           kill $(jobs -p) 2>/dev/null || true
           wait || true
         }
-        for factor in 1 2 4; do
-          echo "::group::the old test, $factor busy loops for each core, 30 times"
-          busy $factor
-          RANZ_FLAKE_562=1 go test -count=30 -timeout 20m -v -run '^TestOldThousandNodesBehindOneAddressConnectWithTheDefaults$' ./controller/internal/port > "$out" || echo "go test exited with code $?"
-          calm
-          echo "passed $(grep -c '^--- PASS' "$out"), failed $(grep -c '^--- FAIL' "$out")"
-          grep -E '^--- FAIL|limits_old_test.go' "$out" | head -n 10 || true
-          echo "::endgroup::"
-        done
         status=0
-        for phase in "2 200" "4 60"; do
-          set -- $phase
-          echo "::group::the new test, $1 busy loops for each core, $2 times"
+        phase() {
+          echo "::group::the test, $1 busy loops for each core, $2 times $3"
           busy $1
-          go test -count=$2 -timeout 20m -v -run '^TestThousandNodesBehindOneAddressConnectWithTheDefaults$' ./controller/internal/port > "$out" || status=1
+          go test $3 -count=$2 -timeout 20m -v -run '^TestThousandNodesBehindOneAddressConnectWithTheDefaults$' ./controller/internal/port > "$out" || status=1
           calm
           cat "$out"
-          echo "passed $(grep -c '^--- PASS' "$out"), failed $(grep -c '^--- FAIL' "$out"), with attempts made again $(grep -c 'attempts made again: [1-9]' "$out"), with errors of Accept $(grep -c 'errors of Accept: [1-9]' "$out")"
+          passed=$(grep -c '^--- PASS' "$out" || true)
+          echo "passed $passed, failed $(grep -c '^--- FAIL' "$out" || true), with attempts made again $(grep -c 'attempts made again: [1-9]' "$out" || true), with errors of Accept $(grep -c 'errors of Accept: [1-9]' "$out" || true)"
+          if [ "$passed" != "$2" ]; then status=1; fi
           echo "::endgroup::"
-        done
+        }
+        phase 2 200
+        phase 2 20 -race
         exit $status
     - uses: actions/setup-python@v5
       with:
@@ -558,11 +554,10 @@ jobs:
       with:
         go-version: ${{ env.GO_VERSION }}
         cache-dependency-path: go.sum
-    # TEMPORARY (CI-FLAKE-2, #562), removed in the last commit of this branch: the test of the thousand Nodes many times
-    # in a row while the CPU of the runner is busy. The runs on Windows are slow under a load of one busy loop for each
-    # core (the old test took 9 s a run, 0.5 s without load, and failed 3 times in 30), so the load is half of that for
-    # the 200 runs. The test as it was before the fix runs second, for a comparison, and may fail here; the failure of
-    # the new test fails the step. The output is shown as it comes, since the step has a limit of time
+    # TEMPORARY (CI-FLAKE-2, #562), removed in the last commit of this branch: the test of the thousand Nodes 200 times
+    # in a row while the CPU of the runner is busy, and 30 times with twice that load. The runs on Windows are slow under
+    # a load of one busy loop for each core (9 s a run, 0.5 s without load), so the 200 runs have half of that. The failure
+    # of the test fails the step. The output is shown as it comes, since the step has a limit of time
     - name: TEMPORARY the thousand Nodes on a busy runner
       if: matrix.platform.ARCHITECTURE == 'x64'
       shell: pwsh
@@ -574,25 +569,25 @@ jobs:
         $pwsh = (Get-Process -Id $PID).Path
         $out = Join-Path $env:RUNNER_TEMP 'thousand.out'
         $global:status = 0
-        function Invoke-Phase($label, $test, $loops, $times, $strict) {
-          Write-Host "::group::$label, $loops busy loops, $times times"
+        function Invoke-Phase($loops, $times) {
+          Write-Host "::group::the test, $loops busy loops, $times times"
           $load = 1..$loops | ForEach-Object {
             Start-Process -FilePath $pwsh -ArgumentList '-NoProfile', '-Command', 'while ($true) { }' -PassThru -WindowStyle Hidden
           }
           try {
-            go test "-count=$times" -timeout 20m -v -run ('^{0}$' -f $test) ./controller/internal/port | Tee-Object -FilePath $out
-            if ($LASTEXITCODE -ne 0 -and $strict) { $global:status = 1 }
+            go test "-count=$times" -timeout 20m -v -run '^TestThousandNodesBehindOneAddressConnectWithTheDefaults$' ./controller/internal/port | Tee-Object -FilePath $out
+            $exit = $LASTEXITCODE
           } finally {
             $load | Stop-Process -Force
           }
-          Write-Host "$label, $loops busy loops: passed $(@(Select-String -Path $out -Pattern '^--- PASS').Count), failed $(@(Select-String -Path $out -Pattern '^--- FAIL').Count), with attempts made again $(@(Select-String -Path $out -Pattern 'attempts made again: [1-9]').Count), with errors of Accept $(@(Select-String -Path $out -Pattern 'errors of Accept: [1-9]').Count)"
+          $passed = @(Select-String -Path $out -Pattern '^--- PASS').Count
+          Write-Host "$loops busy loops: passed $passed, failed $(@(Select-String -Path $out -Pattern '^--- FAIL').Count), with attempts made again $(@(Select-String -Path $out -Pattern 'attempts made again: [1-9]').Count), with errors of Accept $(@(Select-String -Path $out -Pattern 'errors of Accept: [1-9]').Count), go test exited with code $exit"
+          if ($exit -ne 0 -or $passed -ne $times) { $global:status = 1 }
           Write-Host "::endgroup::"
         }
-        $env:RANZ_FLAKE_562 = '1'
         $cores = [Environment]::ProcessorCount
-        Invoke-Phase 'the new test' 'TestThousandNodesBehindOneAddressConnectWithTheDefaults' ($cores / 2) 200 $true
-        Invoke-Phase 'the old test' 'TestOldThousandNodesBehindOneAddressConnectWithTheDefaults' ($cores / 2) 40 $false
-        Invoke-Phase 'the new test' 'TestThousandNodesBehindOneAddressConnectWithTheDefaults' $cores 30 $true
+        Invoke-Phase ($cores / 2) 200
+        Invoke-Phase $cores 30
         exit $global:status
     # rqlite publishes a Windows build for x64 only: on the arm64 runner this is the x64 rqlited.exe,
     # which Windows 11 on ARM runs under emulation, and which is the member of ranz for arm64

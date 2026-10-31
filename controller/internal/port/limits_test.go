@@ -386,10 +386,9 @@ func (l *acceptErrors) Accept() (net.Conn, error) {
 }
 
 // connectNode is a Node that connects to the TLS port at addr: it opens a TCP connection, completes the TLS handshake of
-// the control stream and has Control echo a byte. It adds 1 to progress for each step that it takes, and when it fails it
-// returns the step, "dial", "handshake" or "stream", with the error. Its connection closes when it returns or when ctx is
-// done.
-func connectNode(ctx context.Context, addr string, progress *atomic.Int64) (string, error) {
+// the control stream and has Control echo a byte. When it fails it returns the step that failed, "dial", "handshake" or
+// "stream", with the error. Its connection closes when it returns or when ctx is done.
+func connectNode(ctx context.Context, addr string) (string, error) {
 	var d net.Dialer
 	raw, err := d.DialContext(ctx, "tcp", addr)
 	if err != nil {
@@ -398,12 +397,10 @@ func connectNode(ctx context.Context, addr string, progress *atomic.Int64) (stri
 	defer raw.Close()
 	stop := context.AfterFunc(ctx, func() { raw.Close() })
 	defer stop()
-	progress.Add(1)
 	tc := tls.Client(raw, &tls.Config{InsecureSkipVerify: true, NextProtos: []string{control.ALPN}})
 	if err := tc.HandshakeContext(ctx); err != nil {
 		return "handshake", err
 	}
-	progress.Add(1)
 	if _, err := tc.Write([]byte{1}); err != nil {
 		return "stream", err
 	}
@@ -417,25 +414,127 @@ func connectNode(ctx context.Context, addr string, progress *atomic.Int64) (stri
 	return "", nil
 }
 
+// nodesResult is what connectNodes saw.
+type nodesResult struct {
+	stall   time.Duration // how long connectNodes let no Node be done before it stopped waiting
+	served  int           // the Nodes whose byte came back
+	waited  time.Duration // how long connectNodes waited
+	stalled bool          // it stopped waiting because no Node was done for the stall, and cancelled the Nodes that were left
+	retried failures      // the attempts that ended before the Node had a stream, and were made again
+	gaveUp  failures      // the Nodes whose stream broke
+}
+
+func (r *nodesResult) String() string {
+	ended := "every Node was done"
+	if r.stalled {
+		ended = fmt.Sprintf("no Node was done for %v", r.stall)
+	}
+	return fmt.Sprintf("waited %v, until %s; attempts made again: %s; streams that broke: %s", r.waited, ended, &r.retried, &r.gaveUp)
+}
+
+// connectNodes starts nodes Nodes in the same moment, with at most room of them on their way at once, and waits for them.
+// A Node runs connect until it has a stream. The host can end an attempt before the port has counted it: a busy runner
+// accepts slowly, and when the queue of the connections that the port has not accepted yet is full, Windows resets the
+// next connect. So an attempt that ends at the step "dial" or "handshake" is made again, as a Node does, after a redial
+// delay of some milliseconds that doubles with each failure. A Node whose stream breaks is done, and is not made again.
+// connectNodes waits until every Node is done, or until no Node was done for stall, and then it cancels the Nodes that
+// are left: a Node that is made again for ever does not keep it waiting.
+func connectNodes(nodes, room int, stall time.Duration, connect func(ctx context.Context) (string, error)) *nodesResult {
+	res := &nodesResult{stall: stall}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	var (
+		wg     sync.WaitGroup
+		done   atomic.Int64 // the Nodes that are done: served, or with a stream that broke
+		served atomic.Int64
+	)
+	start := make(chan struct{})
+	slots := make(chan struct{}, room)
+	for i := 0; i < nodes; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			<-start
+			select {
+			case slots <- struct{}{}:
+				defer func() { <-slots }()
+			case <-ctx.Done():
+				return
+			}
+			// The redial delay of a Node: it doubles with each attempt that fails
+			redial := 10 * time.Millisecond
+			for {
+				step, err := connect(ctx)
+				switch {
+				case ctx.Err() != nil:
+					return
+				case err == nil:
+					served.Add(1)
+				case step == "stream":
+					res.gaveUp.add(step, err)
+				default:
+					res.retried.add(step, err)
+					select {
+					case <-time.After(redial + rand.N(redial)):
+					case <-ctx.Done():
+						return
+					}
+					redial = min(2*redial, 160*time.Millisecond)
+					continue
+				}
+				done.Add(1)
+				return
+			}
+		}()
+	}
+	began := time.Now()
+	close(start)
+	finished := make(chan struct{})
+	go func() {
+		wg.Wait()
+		close(finished)
+	}()
+	seen, seenAt := done.Load(), began
+	tick := time.NewTicker(50 * time.Millisecond)
+	defer tick.Stop()
+wait:
+	for {
+		select {
+		case <-finished:
+			break wait
+		case <-tick.C:
+			if d := done.Load(); d != seen {
+				seen, seenAt = d, time.Now()
+			} else if time.Since(seenAt) > stall {
+				res.stalled = true
+				cancel()
+				<-finished
+				break wait
+			}
+		}
+	}
+	res.waited = time.Since(began).Round(time.Millisecond)
+	res.served = int(served.Load())
+	return res
+}
+
 // 1000 Nodes behind one address connect with the defaults, all in the same moment: the fourth criterion of
 // AUD1-DT-3 (#451). Each opens a TCP connection from the loopback address, which is one source, completes the TLS
 // handshake of the control stream and has a byte echoed by Control; none is refused.
 //
 // The result does not depend on how fast the runner is (CI-FLAKE-2, #562). The limits count in a clock that stands
 // still, so the burst of the defaults alone has to admit the Nodes, however long a slow runner takes, and no token comes
-// back. The host can end an attempt before the port has counted it: a busy runner accepts slowly, and when the queue of
-// the connections that the port has not accepted yet is full, Windows resets the next connect. A Node whose attempt ends
-// before it has a stream tries again after a redial delay of some milliseconds, as a Node does. The test waits until
-// every Node is served, or until no Node has taken a step for stall, and then says how many connected and how long it
-// waited. An attempt that the port did count and lost is not hidden by the retry: it is one admission more than the
-// Nodes, and the check on the refusals fails.
+// back. A Node whose connect the host ended before the port counted it tries again (connectNodes). The test waits until
+// every Node is served, or until no Node was done for stall, and then says how many connected and how long it waited.
+// An attempt that the port did count and lost is not hidden by the retry: it is one admission more than the Nodes, and
+// the check on the refusals fails.
 func TestThousandNodesBehindOneAddressConnectWithTheDefaults(t *testing.T) {
 	const (
 		nodes = 1000
 		// room is how many Nodes are on their way at once. The loopback of Windows resets connections when more than a few
 		// hundred are opened in one instant, which is the host's backlog and no limit of the port
 		room = 200
-		// stall is how long no Node may take a step before the test stops waiting for them
+		// stall is how long no Node may be done before the test stops waiting for them
 		stall = 30 * time.Second
 	)
 	var connected atomic.Int64
@@ -456,99 +555,65 @@ func TestThousandNodesBehindOneAddressConnectWithTheDefaults(t *testing.T) {
 		s.Close()
 	}()
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	var (
-		wg       sync.WaitGroup
-		progress atomic.Int64 // the steps that the Nodes took: a connection, a handshake, a byte echoed, an end
-		served   atomic.Int64 // the Nodes whose byte came back
-		retried  failures     // the attempts that ended before the Node had a stream, and were made again
-		gaveUp   failures     // the Nodes whose stream broke
-	)
 	addr := ln.Addr().String()
-	start := make(chan struct{})
-	slots := make(chan struct{}, room)
-	for i := 0; i < nodes; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			<-start
-			select {
-			case slots <- struct{}{}:
-				defer func() { <-slots }()
-			case <-ctx.Done():
-				return
-			}
-			// The redial delay of a Node, in milliseconds: it doubles with each attempt that fails
-			redial := 10 * time.Millisecond
-			for {
-				step, err := connectNode(ctx, addr, &progress)
-				switch {
-				case ctx.Err() != nil:
-					return
-				case err == nil:
-					served.Add(1)
-				case step == "stream":
-					gaveUp.add(step, err)
-				default:
-					retried.add(step, err)
-					select {
-					case <-time.After(redial + rand.N(redial)):
-					case <-ctx.Done():
-						return
-					}
-					redial = min(2*redial, 160*time.Millisecond)
-					continue
-				}
-				progress.Add(1)
-				return
-			}
-		}()
-	}
-	began := time.Now()
-	close(start)
-	finished := make(chan struct{})
-	go func() {
-		wg.Wait()
-		close(finished)
-	}()
-	seen, seenAt := progress.Load(), began
-	stalled := false
-	tick := time.NewTicker(50 * time.Millisecond)
-	defer tick.Stop()
-wait:
-	for {
-		select {
-		case <-finished:
-			break wait
-		case <-tick.C:
-			if p := progress.Load(); p != seen {
-				seen, seenAt = p, time.Now()
-			} else if time.Since(seenAt) > stall {
-				stalled = true
-				cancel()
-				<-finished
-				break wait
-			}
-		}
-	}
-	waited := time.Since(began).Round(time.Millisecond)
+	res := connectNodes(nodes, room, stall, func(ctx context.Context) (string, error) { return connectNode(ctx, addr) })
 
-	if n := served.Load(); n != nodes || connected.Load() != nodes {
-		ended := "every Node was done"
-		if stalled {
-			ended = fmt.Sprintf("no Node took a step for %v", stall)
-		}
-		t.Errorf("%d of %d Nodes behind one address did not connect, and Control took %d streams: the test waited %v, until %s; "+
-			"attempts made again: %s; streams that broke: %s; errors of Accept: %s",
-			nodes-n, nodes, connected.Load(), waited, ended, &retried, &gaveUp, &ln.errs)
+	if res.served != nodes || connected.Load() != nodes {
+		t.Errorf("%d of %d Nodes behind one address connected, and Control took %d streams: the test %v; errors of Accept: %s",
+			res.served, nodes, connected.Load(), res, &ln.errs)
 	}
 	r := s.Refusals()
 	if r.Admitted != nodes || r.Full+r.Source+r.Rate+r.Handshake != 0 {
 		t.Errorf("the refusals are %+v, want %d admitted and none refused", r, nodes)
 	}
 	if !t.Failed() {
-		t.Logf("%d Nodes behind one address connected in %v; attempts made again: %s; errors of Accept: %s", nodes, waited, &retried, &ln.errs)
+		t.Logf("%d Nodes behind one address connected: the test %v; errors of Accept: %s", nodes, res, &ln.errs)
+	}
+}
+
+// connectNodes waits for the Nodes by their progress, and not by the clock, and says what it saw (CI-FLAKE-2, #562). The
+// Nodes here are functions that fail as a host that resets a connect, or a port that refuses, so the test does not depend
+// on the speed of the runner.
+func TestConnectNodesWaitsForTheNodes(t *testing.T) {
+	const nodes = 20
+	reset := errors.New("reset")
+	// run connects the Nodes with attempt, which is told the number of each attempt of all the Nodes, from 1
+	run := func(stall time.Duration, attempt func(n int64) (string, error)) *nodesResult {
+		var n atomic.Int64
+		return connectNodes(nodes, nodes, stall, func(context.Context) (string, error) { return attempt(n.Add(1)) })
+	}
+
+	// The first attempts end at the host: the Nodes try again, and every Node is served
+	res := run(time.Minute, func(n int64) (string, error) {
+		if n <= 2*nodes {
+			return "dial", reset
+		}
+		return "", nil
+	})
+	if res.served != nodes || res.stalled || res.retried.n != 2*nodes || res.gaveUp.n != 0 {
+		t.Errorf("with attempts that the host ended, %d of %d Nodes were served, and the test %v; want all served and %d attempts made again",
+			res.served, nodes, res, 2*nodes)
+	}
+
+	// The port refuses all the Nodes but a few, which are served: no Node is done for the stall, and the wait ends there,
+	// though the Nodes that are left try again for ever
+	const served = 5
+	res = run(time.Second, func(n int64) (string, error) {
+		if n <= served {
+			return "", nil
+		}
+		return "handshake", io.EOF
+	})
+	if res.served != served || !res.stalled || res.retried.n < nodes-served || res.gaveUp.n != 0 {
+		t.Errorf("with a port that refuses, %d of %d Nodes were served, and the test %v; want %d served and a stop at the stall",
+			res.served, nodes, res, served)
+	}
+
+	// A stream that breaks ends its Node, which is not made again
+	res = run(time.Minute, func(int64) (string, error) { return "stream", io.ErrUnexpectedEOF })
+	if res.served != 0 || res.stalled || res.retried.n != 0 || res.gaveUp.n != nodes {
+		t.Errorf("with streams that break, %d of %d Nodes were served, and the test %v; want none served, none made again and %d streams broken",
+			res.served, nodes, res, nodes)
 	}
 }
 
