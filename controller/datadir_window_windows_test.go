@@ -3,7 +3,9 @@
 package controllercmd
 
 import (
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -242,6 +244,14 @@ func TestNewDataDirPassesALaterChangeOfItsListDown(t *testing.T) {
 // slash, in a folder that has the access list of C:\ProgramData, and wants the call to make the folder, with its own protected
 // list that has no entry for the Users group, so that a standard user cannot open it for adding files and folders, and the
 // start of the service that follows to keep it.
+//
+// A tail that ends in a period or a space is one that filepath.Clean keeps and Windows drops: Windows takes trailing periods
+// and spaces off the end of a path, so `D:\RanzData\ `, `D:\RanzData\...` and `D:\RanzData\. ` name D:\RanzData, and so does
+// `D:\RanzData\ \` once filepath.Clean has taken its separator off. filepath.Dir of the cleaned path is the folder itself, so
+// the step that made the folder above it made the data directory with the access list of its folder, as with the trailing
+// separator before (finding E of the read-only review of PR 541, at the head 8d282cf3). And the files of the Controller,
+// whose names are joined to the path, would go into a folder of that name inside it, which Windows keeps. The test wants each
+// way of making the folder, and the start that follows, to refuse such a path, and nothing to be made.
 func TestNewDataDirWithATrailingSeparatorIsMadeWithItsOwnList(t *testing.T) {
 	requireAdministrator(t)
 	for _, c := range []struct {
@@ -253,7 +263,17 @@ func TestNewDataDirWithATrailingSeparatorIsMadeWithItsOwnList(t *testing.T) {
 		{"the start of the service", makeDataDir},
 		{"the step of the start of the service that makes the folder", createDataDir},
 	} {
-		for _, tail := range []struct{ name, text string }{{"a trailing backslash", `\`}, {"a trailing slash", "/"}} {
+		for _, tail := range []struct {
+			name, text string
+			refused    bool // Windows drops the tail, and filepath.Clean does not
+		}{
+			{"a trailing backslash", `\`, false},
+			{"a trailing slash", "/", false},
+			{"a trailing space", `\ `, true},
+			{"three trailing periods", `\...`, true},
+			{"a trailing period and space", `\. `, true},
+			{"a trailing space and backslash", `\ \`, true},
+		} {
 			t.Run(c.name+" with "+tail.name, func(t *testing.T) {
 				parent := filepath.Join(t.TempDir(), "ProgramData")
 				if err := os.Mkdir(parent, 0o700); err != nil {
@@ -262,8 +282,31 @@ func TestNewDataDirWithATrailingSeparatorIsMadeWithItsOwnList(t *testing.T) {
 				setDACL(t, parent, programDataSDDL)
 				dir := filepath.Join(parent, "Ranz", "controller")
 				typed := dir + tail.text
-				if above := filepath.Dir(typed); above != dir {
-					t.Fatalf("filepath.Dir of %q is %q, not the folder itself: a step that works on the path as it was typed does not make the folder with the list of its folder, so this test shows nothing", typed, above)
+				// The folder above that a step makes: from the path as it was typed, or, for a tail that filepath.Clean
+				// keeps, from the path as filepath.Clean leaves it
+				above := filepath.Dir(typed)
+				if tail.refused {
+					above = filepath.Dir(filepath.Clean(typed))
+				}
+				if above != dir {
+					t.Fatalf("the folder above %q is %q, not the folder itself: a step that makes the folder above does not make the folder with the list of its folder, so this test shows nothing", typed, above)
+				}
+
+				if tail.refused {
+					wantRefused := func(what string, err error) {
+						t.Helper()
+						if err == nil || !strings.Contains(err.Error(), "ends in a period or a space") {
+							t.Errorf("%s answered %v for %q, want a refusal that says that it ends in a period or a space", what, err, typed)
+						}
+					}
+					wantRefused(c.name, c.create(typed))
+					wantRefused("the start of the service that follows", makeDataDir(typed))
+					if _, err := os.Lstat(dir); err == nil {
+						t.Errorf("the data directory %s is there, with the security %s, after %s was given %q: want nothing made", dir, securityOf(t, dir), c.name, typed)
+					} else if !errors.Is(err, fs.ErrNotExist) {
+						t.Errorf("looking for %s: %v", dir, err)
+					}
+					return
 				}
 
 				if err := c.create(typed); err != nil {
