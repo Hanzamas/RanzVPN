@@ -561,9 +561,20 @@ try {
 		# #497). Take it here for an address of the documentation range (RFC 5737), which no host holds, then put the list back. The two
 		# changes are events of their own, which the steps that count the events expect
 		$before = @(Get-Allowlist)
-		Assert-AllowlistHolds '203.0.113.77'
-		$null = Invoke-Ranz (@('admin-sources', 'set') + $before)
-		$script:allowlistEvents++
+		try {
+			Assert-AllowlistHolds '203.0.113.77'
+		} finally {
+			# The list goes back also when the check above throws, the read back of the list included (AUD1-DT-15-R1, #561): a machine
+			# that keeps its data directory would hold the address at its next run, and the Controller refuses a list that holds an
+			# address twice. A call that fails here must not hide the error that is in flight, and the read back below fails the step
+			# when the list is not as it was
+			try {
+				$null = Invoke-Ranz (@('admin-sources', 'set') + $before)
+				$script:allowlistEvents++
+			} catch {
+				Write-Host "the allowlist could not be put back: $($_.Exception.Message)"
+			}
+		}
 		$after = @(Get-Allowlist)
 		if (($after -join ',') -ne ($before -join ',')) { throw "the allowlist holds $($after -join ', ') after the check of the branch for an address that is not private, and held $($before -join ', ') before it" }
 		Write-Host "the allowlist is as it was: $($after -join ', ')"
