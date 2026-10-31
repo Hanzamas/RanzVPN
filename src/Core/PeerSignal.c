@@ -330,15 +330,25 @@ static bool PeerIceString(const char *str, UINT len, UINT min, UINT max) {
 	return true;
 }
 
+// Whether type is the type of a punch offer or a punch answer, which ends with the NAT of its sender
+static bool PeerSignalIsPunch(UINT type) {
+	return type == PEER_SIGNAL_PUNCH_OFFER || type == PEER_SIGNAL_PUNCH_ANSWER;
+}
+
 // The payload of a signal: PEER_VERSION, the type, the sequence (big-endian), the relay key, the relay address
 // and port, the number of candidates, then each candidate: its type, address and port; then, when s carries the
-// credentials of an ICE session, the length and the characters of its username fragment and of its password.
+// credentials of an ICE session, the length and the characters of its username fragment and of its password; a punch
+// offer or a punch answer, which carries no credentials, ends with the NAT of its sender (PEER_NAT_*, one byte).
 // Returns its size, 0 when s is not a signal or it does not fit size.
 UINT PeerSignalEncode(const PEER_SIGNAL *s, UCHAR *buf, UINT size) {
 	UINT ufrag = 0;
 	UINT pwd = 0;
 
-	if (s == NULL || buf == NULL || (s->Type != PEER_SIGNAL_OFFER && s->Type != PEER_SIGNAL_ANSWER) || s->NumCandidates > PEER_MAX_CANDIDATES)
+	if (s == NULL || buf == NULL || s->Type < PEER_SIGNAL_OFFER || s->Type > PEER_SIGNAL_PUNCH_ANSWER || s->NumCandidates > PEER_MAX_CANDIDATES)
+		return 0;
+
+	bool punch = PeerSignalIsPunch(s->Type);
+	if (punch && (s->IceUfrag[0] != 0 || s->Nat > PEER_NAT_RANDOM))
 		return 0;
 
 	if (s->IceUfrag[0] != 0) {
@@ -348,7 +358,7 @@ UINT PeerSignalEncode(const PEER_SIGNAL *s, UCHAR *buf, UINT size) {
 			return 0;
 	}
 
-	UINT total = PEER_SIGNAL_FIXED + s->NumCandidates * PEER_CANDIDATE_LEN + (ufrag != 0 ? 2 + ufrag + pwd : 0);
+	UINT total = PEER_SIGNAL_FIXED + s->NumCandidates * PEER_CANDIDATE_LEN + (ufrag != 0 ? 2 + ufrag + pwd : 0) + (punch ? 1 : 0);
 	if (total > size)
 		return 0;
 
@@ -375,13 +385,17 @@ UINT PeerSignalEncode(const PEER_SIGNAL *s, UCHAR *buf, UINT size) {
 		CopyMemory(p + 2 + ufrag, s->IcePwd, pwd);
 	}
 
+	if (punch)
+		buf[total - 1] = (UCHAR)s->Nat;
+
 	return total;
 }
 
 // Decode the payload of a signal into s. False unless it is exactly one signal of this version, with a known type,
 // no more than PEER_MAX_CANDIDATES candidates of known types, a port with its relay key, and, when it carries the
-// credentials of an ICE session, a username fragment of 4 to 16 and a password of 22 to 32 ice-chars. The sender is
-// left zero: PeerOpenSignal sets it from the envelope.
+// credentials of an ICE session, a username fragment of 4 to 16 and a password of 22 to 32 ice-chars; a punch offer or
+// a punch answer ends with a known NAT and carries no credentials. The sender is left zero: PeerOpenSignal sets it from
+// the envelope.
 bool PeerSignalDecode(const UCHAR *buf, UINT size, PEER_SIGNAL *s) {
 	static const UCHAR zero[PEER_KEY_SIZE] = {0};
 
@@ -389,12 +403,21 @@ bool PeerSignalDecode(const UCHAR *buf, UINT size, PEER_SIGNAL *s) {
 		return false;
 
 	ZeroMemory(s, sizeof(PEER_SIGNAL));
-	if (buf == NULL || size < PEER_SIGNAL_FIXED || buf[0] != PEER_VERSION || (buf[1] != PEER_SIGNAL_OFFER && buf[1] != PEER_SIGNAL_ANSWER))
+	if (buf == NULL || size < PEER_SIGNAL_FIXED || buf[0] != PEER_VERSION || buf[1] < PEER_SIGNAL_OFFER || buf[1] > PEER_SIGNAL_PUNCH_ANSWER)
 		return false;
 
 	UINT num = buf[60];
 	if (num > PEER_MAX_CANDIDATES || size < PEER_SIGNAL_FIXED + num * PEER_CANDIDATE_LEN)
 		return false;
+
+	// The NAT of the sender of a punch signal, its last byte
+	if (PeerSignalIsPunch(buf[1])) {
+		if (size != PEER_SIGNAL_FIXED + num * PEER_CANDIDATE_LEN + 1 || buf[size - 1] > PEER_NAT_RANDOM)
+			return false;
+
+		s->Nat = buf[size - 1];
+		size--;
+	}
 
 	// The credentials of an ICE session after the candidates, or nothing
 	const UCHAR *ice = buf + PEER_SIGNAL_FIXED + num * PEER_CANDIDATE_LEN;
@@ -424,7 +447,7 @@ bool PeerSignalDecode(const UCHAR *buf, UINT size, PEER_SIGNAL *s) {
 	for (UINT i = 0; i < num; i++) {
 		const UCHAR *p = buf + PEER_SIGNAL_FIXED + i * PEER_CANDIDATE_LEN;
 
-		if ((p[0] != PEER_CANDIDATE_HOST && p[0] != PEER_CANDIDATE_SRFLX && p[0] != PEER_CANDIDATE_MAPPED && p[0] != PEER_CANDIDATE_PREDICTED) || PeerGetUint16(p + 17) == 0) {
+		if (p[0] < PEER_CANDIDATE_HOST || p[0] > PEER_CANDIDATE_TOWARD || PeerGetUint16(p + 17) == 0) {
 			ZeroMemory(s, sizeof(PEER_SIGNAL));
 			return false;
 		}

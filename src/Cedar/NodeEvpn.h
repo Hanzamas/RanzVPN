@@ -43,6 +43,14 @@ typedef struct NODE_EVPN_ROUTE {
 	char Peer[NODE_EVPN_TEXT];    // The BGP peer that the route came from
 } NODE_EVPN_ROUTE;
 
+// A VTEP of the fabric that a gateway knows for one of its EVPN VRFs: the VTEP of an IP prefix route of the VRF that it learned,
+// as the table snapshot holds it (NodeEvpnSortVteps), the only address that the gateway takes a frame of the VRF from
+// (NodeEvpnHasVtep; SDN-25-R1, #549)
+typedef struct NODE_EVPN_VTEP {
+	UINT VrfId;   // The EVPN VRF
+	UCHAR Ip[16]; // The address of the VTEP, an IPv4 address as an IPv4-mapped one, as VXLAN_ADDR holds the source of a datagram
+} NODE_EVPN_VTEP;
+
 // The IP packet of a frame of the fabric (NodeEvpnParseFrame)
 typedef struct NODE_EVPN_FRAME {
 	const UCHAR *Packet; // The packet, inside the frame
@@ -63,6 +71,7 @@ typedef struct NODE_EVPN_STATUS {
 	UINT64 Failed;      // Packets for the fabric that could not go: a frame too large, or a failed send
 	UINT64 Delivered;   // Packets of the fabric that the overlay took, for the host or a peer
 	UINT64 Undelivered; // ... that it did not take: no route of the VRF to their destination, the policy, or a failed send
+	UINT64 UnknownVtep; // Frames of the fabric from an address that is the VTEP of no IP prefix route of their VRF: dropped
 	UINT64 Strangers;   // Packets of the fabric from a source that no IP prefix route of their VRF holds: dropped
 	UINT64 NotOurs;     // Frames of the fabric to another MAC address than the router MAC of the gateway: dropped
 	UINT64 UnknownVni;  // Datagrams on a VNI of no EVPN VRF: dropped
@@ -73,6 +82,8 @@ typedef struct NODE_EVPN_STATUS {
 UINT NodeEvpnParseRoute(const char *line, NODE_EVPN_ROUTE *r);
 UINT NodeEvpnParseFrame(const UCHAR *frame, UINT size, const UCHAR *router_mac, NODE_EVPN_FRAME *f);
 bool NodeEvpnEnds(const UCHAR *packet, UINT size, UCHAR *src, UCHAR *dst, UINT *addr_size);
+UINT NodeEvpnSortVteps(NODE_EVPN_VTEP *vteps, UINT num);
+bool NodeEvpnHasVtep(const NODE_EVPN_VTEP *vteps, UINT num, UINT vrf_id, const UCHAR *ip);
 struct cJSON;
 void NodeEvpnStart(NODE *n, struct cJSON *cfg);
 void NodeEvpnStop(NODE *n);

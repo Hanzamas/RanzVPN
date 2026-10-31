@@ -1,6 +1,6 @@
 # Source formatting
 
-The layout of `src/Cedar`, `src/Mayaqua` (without `3rdparty`), `src/vpnserver`, `src/vpncmd`, `src/ranz-node`, the new core `src/Core` and its test program `src/coretest` is set by `.clang-format` at the repository root: attached braces, tabs for indentation, no column limit (line breaks and one-line statements stay as written), no include sorting. Trailing comments and `#define` values of consecutive lines are aligned with spaces; a comment on its own line follows the indentation of its code. Driver sources (`src/SeLow`), the test and fuzz programs (`src/vpntest`, `src/fuzz`) and third-party code are not formatted. `python .github/scripts/format_check.py files` prints the exact file list.
+The layout of `src/Cedar`, `src/Mayaqua` (without `3rdparty`), `src/ranz-node`, the new core `src/Core` and its test program `src/coretest` is set by `.clang-format` at the repository root: attached braces, tabs for indentation, no column limit (line breaks and one-line statements stay as written), no include sorting. Trailing comments and `#define` values of consecutive lines are aligned with spaces; a comment on its own line follows the indentation of its code. Driver sources (`src/SeLow`), the test and fuzz programs (`src/vpntest`, `src/fuzz`) and third-party code are not formatted. `python .github/scripts/format_check.py files` prints the exact file list.
 
 The formatter is pinned: clang-format 22.1.8 from PyPI.
 

@@ -72,7 +72,7 @@ func (l *logBuffer) String() string {
 // of another kind sets h.tune again.
 func newDeviceKeysHarness(t *testing.T, logs io.Writer) *harness {
 	t.Helper()
-	h := &harness{t: t, rq: rqlitetest.Start(t)}
+	h := &harness{t: t, rq: rqlitetest.Fresh(t)}
 	logging := loggingTo(t, logs)
 	h.tune = func(c *controller.Config) {
 		logging(c)
@@ -204,6 +204,7 @@ func makePhone(t *testing.T, c *api.Client) (created controller.DeviceCreated, p
 // the PresharedKey is in the frames of the gateway of the Device only, in clear, where WireGuardNT takes
 // it, and in the store only sealed.
 func TestDeviceKeysAreFoundNowhere(t *testing.T) {
+	rqlitetest.Own(t) // it stops rqlited and reads its files
 	logs := &logBuffer{}
 	h := newDeviceKeysHarness(t, logs)
 	ctx := context.Background()
@@ -396,6 +397,7 @@ func TestDeviceKeysAreFoundNowhere(t *testing.T) {
 // store was restored on is, opens none of the sealed keys, says so in its log, and sends the Device without
 // it, so that no copy of the store gives a PresharedKey to a controller that has not the key.
 func TestPresharedKeyIsSealedAtRest(t *testing.T) {
+	rqlitetest.Own(t) // it restarts rqlited
 	logs := &logBuffer{}
 	h := newDeviceKeysHarness(t, logs)
 	ctx := context.Background()

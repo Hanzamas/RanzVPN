@@ -15,7 +15,7 @@ ADR-0022 fixed how the control plane talks to a node (protobuf encoded with nano
 5. **A VRF table is applied atomically:** the node rebuilds it beside the live table and swaps it in (ADR-0025).
 6. **No controller reachable:** the node keeps forwarding on its last applied Generation.
 7. **The schema is versioned.** A controller supports nodes of version N and N-1 and refuses older ones with a clear error, so a node never runs half-understood state. Controller clusters upgrade rolling, and the fleet follows in rolling steps.
-8. **The same stream carries the node's reports:** Capabilities (ADR-0033), telemetry summaries (ADR-0030), and the ICE candidate exchange of ADR-0015.
+8. **The same stream carries the node's reports:** Capabilities (ADR-0033), telemetry summaries (ADR-0030), and the ICE candidate exchange of ADR-0015. The keys that a node reports about itself (`Pins`: the public key of its mimic server, ADR-0023) go on the same stream. The controller applies one change of the keys of a node in 10 s: a report that comes sooner is held, and the last one is applied when the interval ends (AUD1-DT-20, #522).
 
 ## Consequences
 

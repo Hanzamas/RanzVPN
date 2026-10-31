@@ -24,10 +24,15 @@
 // as RFC 8365 section 5.1.3 carries it.
 //
 // Out of the fabric: the module carries the L3 VNI of each EVPN VRF and drops a datagram on any other VNI. A frame of an L3 VNI
-// goes into its VRF when it is addressed to the router MAC of the gateway, untagged, and holds an IP packet of the version of
-// its EtherType (NodeEvpnParseFrame), and when an IP prefix route of the fabric in the VRF holds the source of the packet: the
-// fabric speaks only for the prefixes that it announced there. Any VTEP of the fabric may send it, as any leaf of a fabric
-// routes the subnets of its VRFs. The overlay takes it to the host or on to a peer, as the table of the VRF routes its
+// goes into its VRF when it comes from a VTEP that the gateway knows for the VRF, the VTEP of an IP prefix route of the VRF that
+// it learned (NodeEvpnHasVtep; SDN-25-R1, #549): the address alone names a VTEP, which sends from any source port (RFC 7348
+// section 5), and a frame from any other address has no honest reason to exist, so whoever can send to the UDP port of the VTEP
+// of the gateway cannot forge one. A host that sends with the address of a VTEP of the fabric is that VTEP to the gateway: the
+// source-address validation of the underlay answers it, which the operator provides (docs/threat-model.md, SM-11). The frame
+// must then be addressed to the router MAC of the gateway, untagged, and hold an IP packet of the version of its EtherType
+// (NodeEvpnParseFrame), and an IP prefix route of the fabric in the VRF must hold the source of the packet: the fabric speaks
+// only for the prefixes that it announced there. Any VTEP that the gateway knows for the VRF may send it, as any leaf of a
+// fabric routes the subnets of its VRFs. The overlay takes it to the host or on to a peer, as the table of the VRF routes its
 // destination (NodeOverlayFabricInput). Any other frame is dropped and counted.
 //
 // At the gateway the fabric stands where the LAN of a gateway stands: the session profile of the peer and the policy of the VRF
@@ -49,6 +54,7 @@
 
 #include <WinDNS.h>
 #include <iphlpapi.h>
+#include <stdlib.h>
 
 #include <cjson/cJSON.h>
 
@@ -60,12 +66,14 @@ typedef struct NODE_EVPN_HOP {
 } NODE_EVPN_HOP;
 
 // The IP prefix routes of the fabric as the table snapshot of the node holds them (NodeSwapEvpn): one longest-prefix-match
-// table per EVPN VRF, whose next hop i is Hops[i]
+// table per EVPN VRF, whose next hop i is Hops[i], and the VTEPs of the routes, which are the VTEPs that the gateway knows
 struct NODE_EVPN_TABLE {
 	NODE_EVPN *Evpn;         // The EVPN of the gateway, whose module sends the packets of the routes
 	NODE_VRF_TABLES *Routes; // The tables
 	UINT NumHops;            // The routes ...
 	NODE_EVPN_HOP *Hops;     // ... and their next hops
+	UINT NumVteps;           // The VTEP of each route with its VRF, once for each VRF ...
+	NODE_EVPN_VTEP *Vteps;   // ... sorted (NodeEvpnSortVteps), in room for one per route
 };
 
 // The EVPN of a gateway, from the start of its BGP sidecar to its stop (NodeBgp.c)
@@ -89,6 +97,7 @@ struct NODE_EVPN {
 	volatile LONG64 Failed;
 	volatile LONG64 Delivered;
 	volatile LONG64 Undelivered;
+	volatile LONG64 UnknownVtep;
 	volatile LONG64 Strangers;
 	volatile LONG64 NotOurs;
 	volatile LONG64 Malformed;
@@ -440,22 +449,61 @@ static bool NodeEvpnHasVrf(const NODE_EVPN *e, UINT vrf_id) {
 	return false;
 }
 
-// The receiver of the module: a frame of the L3 VNI vni from a VTEP of the fabric, on the receive thread of the socket, which
-// registers itself as a reader of the tables of the node with its first frame. It goes into the VRF of the VNI when
-// NodeEvpnParseFrame takes it and an IP prefix route of the fabric in the VRF holds the source of its packet; any other frame
-// is dropped and counted.
+// The order of two VTEPs that a gateway knows: by VRF, then by address
+static int NodeEvpnCompareVtep(const void *p1, const void *p2) {
+	const NODE_EVPN_VTEP *a = (const NODE_EVPN_VTEP *)p1;
+	const NODE_EVPN_VTEP *b = (const NODE_EVPN_VTEP *)p2;
+
+	if (a->VrfId != b->VrfId)
+		return (a->VrfId < b->VrfId ? -1 : 1);
+
+	return Cmp(a->Ip, b->Ip, sizeof(a->Ip));
+}
+
+// Sort the num VTEPs of vteps by VRF and address, each VTEP of a VRF once, as NodeEvpnHasVtep looks them up: the number of them,
+// which are the first of vteps; the rest of the array holds what the duplicates left
+UINT NodeEvpnSortVteps(NODE_EVPN_VTEP *vteps, UINT num) {
+	UINT n = 0;
+
+	if (vteps == NULL || num == 0)
+		return 0;
+
+	qsort(vteps, num, sizeof(NODE_EVPN_VTEP), NodeEvpnCompareVtep);
+
+	for (UINT i = 0; i < num; i++)
+		if (n == 0 || NodeEvpnCompareVtep(&vteps[n - 1], &vteps[i]) != 0)
+			vteps[n++] = vteps[i];
+
+	return n;
+}
+
+// Whether the address ip, 16 bytes with an IPv4 address as an IPv4-mapped one, is a VTEP of the VRF vrf_id among the num VTEPs of
+// vteps, which NodeEvpnSortVteps sorted: one binary search
+bool NodeEvpnHasVtep(const NODE_EVPN_VTEP *vteps, UINT num, UINT vrf_id, const UCHAR *ip) {
+	NODE_EVPN_VTEP key;
+
+	if (vteps == NULL || num == 0 || ip == NULL)
+		return false;
+
+	key.VrfId = vrf_id;
+	Copy(key.Ip, ip, sizeof(key.Ip));
+
+	return (bsearch(&key, vteps, num, sizeof(NODE_EVPN_VTEP), NodeEvpnCompareVtep) != NULL);
+}
+
+// The receiver of the module: a frame of the L3 VNI vni from the address from, on the receive thread of the socket, which
+// registers itself as a reader of the tables of the node with its first frame. It goes into the VRF of the VNI when from is a
+// VTEP that the gateway knows for the VRF, the VTEP of an IP prefix route of the VRF (NodeEvpnHasVtep), NodeEvpnParseFrame takes
+// it and an IP prefix route of the fabric in the VRF holds the source of its packet. Any other frame is dropped and counted, one
+// from another address as such, whatever it holds.
 static void NodeEvpnReceive(VXLAN *x, void *param, UINT vni, const VXLAN_ADDR *from, const UCHAR *frame, UINT size) {
 	NODE_EVPN *e = (NODE_EVPN *)param;
 	NODE_EVPN_FRAME f;
 	UINT vrf_id = NodeEvpnVrfOf(e, vni);
 	UINT parsed = NodeEvpnParseFrame(frame, size, e->RouterMac, &f);
 
-	if (vrf_id == 0 || parsed == NODE_EVPN_FRAME_MALFORMED) {
+	if (vrf_id == 0) {
 		InterlockedIncrement64(&e->Malformed);
-		return;
-	}
-	if (parsed == NODE_EVPN_FRAME_NOT_OURS) {
-		InterlockedIncrement64(&e->NotOurs);
 		return;
 	}
 
@@ -468,8 +516,16 @@ static void NodeEvpnReceive(VXLAN *x, void *param, UINT vni, const VXLAN_ADDR *f
 	NodeReaderOnline(e->Node, &e->Reader);
 	{
 		NODE_TABLES *t = NodeGetTables(e->Node);
+		NODE_EVPN_TABLE *et = (t != NULL ? t->Evpn : NULL);
 
-		if (NodeEvpnFind(t != NULL ? t->Evpn : NULL, vrf_id, f.Src, f.AddrSize) == NULL)
+		// The address alone names the VTEP: a VTEP sends from any source port (RFC 7348 section 5)
+		if (et == NULL || NodeEvpnHasVtep(et->Vteps, et->NumVteps, vrf_id, from->Ip) == false)
+			InterlockedIncrement64(&e->UnknownVtep);
+		else if (parsed == NODE_EVPN_FRAME_MALFORMED)
+			InterlockedIncrement64(&e->Malformed);
+		else if (parsed == NODE_EVPN_FRAME_NOT_OURS)
+			InterlockedIncrement64(&e->NotOurs);
+		else if (NodeEvpnFind(et, vrf_id, f.Src, f.AddrSize) == NULL)
 			InterlockedIncrement64(&e->Strangers);
 		else if (NodeOverlayFabricInput(e->Node, vrf_id, f.Packet, f.Size, e->NatBuf))
 			InterlockedIncrement64(&e->Delivered);
@@ -503,6 +559,8 @@ void NodeEvpnFreeTable(NODE_EVPN_TABLE *t) {
 	NodeFreeVrfTables(t->Routes);
 	Zero(t->Hops, sizeof(NODE_EVPN_HOP) * t->NumHops);
 	Free(t->Hops);
+	Zero(t->Vteps, sizeof(NODE_EVPN_VTEP) * t->NumVteps);
+	Free(t->Vteps);
 
 	Zero(t, sizeof(NODE_EVPN_TABLE));
 	Free(t);
@@ -523,8 +581,9 @@ static NODE_EVPN_TABLE *NodeEvpnBuild(NODE_EVPN *e) {
 	t->Evpn = e;
 	t->NumHops = num;
 	t->Hops = ZeroMalloc(sizeof(NODE_EVPN_HOP) * num);
+	t->Vteps = ZeroMalloc(sizeof(NODE_EVPN_VTEP) * num);
 
-	// Each route has a next hop of its own
+	// Each route has a next hop of its own, and its VTEP is one that the gateway knows for its VRF (NodeEvpnReceive)
 	for (UINT i = 0; i < num; i++) {
 		const NODE_EVPN_ROUTE *r = LIST_DATA(e->Routes, i);
 		NODE_EVPN_HOP *h = &t->Hops[i];
@@ -541,7 +600,11 @@ static NODE_EVPN_TABLE *NodeEvpnBuild(NODE_EVPN *e) {
 		routes[i].AddressSize = r->AddressSize;
 		routes[i].Length = r->Length;
 		routes[i].NextHop = i;
+
+		t->Vteps[i].VrfId = r->VrfId;
+		Copy(t->Vteps[i].Ip, r->Vtep, sizeof(t->Vteps[i].Ip));
 	}
+	t->NumVteps = NodeEvpnSortVteps(t->Vteps, num);
 
 	t->Routes = NodeNewVrfTables(0, routes, num, hops, num);
 	Free(hops);
@@ -835,6 +898,7 @@ void NodeEvpnGetStatus(NODE *n, NODE_EVPN_STATUS *st) {
 			st->Failed = (UINT64)ReadAcquire64(&e->Failed);
 			st->Delivered = (UINT64)ReadAcquire64(&e->Delivered);
 			st->Undelivered = (UINT64)ReadAcquire64(&e->Undelivered);
+			st->UnknownVtep = (UINT64)ReadAcquire64(&e->UnknownVtep);
 			st->Strangers = (UINT64)ReadAcquire64(&e->Strangers);
 			st->NotOurs = (UINT64)ReadAcquire64(&e->NotOurs);
 			st->UnknownVni = vs.Drops[VXLAN_DROP_VNI];

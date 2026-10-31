@@ -29,6 +29,13 @@
 // address does not move the binding. A punch moves a peer to the direct path only at an address that proved, by
 // echoing a nonce sealed to the peer, that the peer receives there (PeerPunch.c).
 //
+// A pair that ICE leaves on the relay because a node of it sits behind a symmetric NAT tries a punch (PeerPunch.c,
+// CORE-S5-7 #413): a node tells its NAT is symmetric from the answers of the binds to its first two relays, predicts the
+// port of its next mapping, and the two nodes exchange a punch offer and a punch answer, signals that carry the NAT and
+// the prediction of each, upon which both send authenticated probes to the ports that the predictions name and to a
+// range of ports around them. The punch messages, probes and answers together, are limited per second and per attempt,
+// and after PunchAttempts attempts that met nothing the pair stays on the relay for PunchBackoff.
+//
 // Every data datagram between two nodes goes in a peer session (PeerSession.c, CORE-H2 #399): Noise_IK between
 // the static keys of the two nodes, in the manner of WireGuard. The first datagram to a peer starts the
 // handshake on the path in use; the datagrams that wait for it are queued, so none is lost. A datagram keeps a
@@ -79,14 +86,23 @@
 #define PEER_MSG_RECORD    9 // Datagram: a record of a peer session, a frame from a node to a node or a keepalive
 
 // The type of a signal
-#define PEER_SIGNAL_OFFER  1 // Sent to a new peer
-#define PEER_SIGNAL_ANSWER 2 // Sent back for an offer
+#define PEER_SIGNAL_OFFER        1 // Sent to a new peer
+#define PEER_SIGNAL_ANSWER       2 // Sent back for an offer
+#define PEER_SIGNAL_PUNCH_OFFER  3 // Asks a peer on the relay, whose ICE failed, for a punch now: the NAT and the prediction of the sender (PeerPunch.c)
+#define PEER_SIGNAL_PUNCH_ANSWER 4 // Sent back for a punch offer that the receiver took: its probes go already
+
+// The NAT of a node, as the answers of the binds to its first two relays show it (PEER_STATS; PeerPunch.c)
+#define PEER_NAT_UNKNOWN    0 // Fewer than two answers: the node cannot tell
+#define PEER_NAT_CONE       1 // The two relays saw the same port: one mapping for every destination
+#define PEER_NAT_SEQUENTIAL 2 // Symmetric, a new port for each destination, a small step on from the last: the next one can be predicted
+#define PEER_NAT_RANDOM     3 // Symmetric, the ports far apart: the next one cannot be predicted
 
 // The type of an ICE candidate (RFC 8445 section 5.1.1)
 #define PEER_CANDIDATE_HOST      1 // An address of the node itself
 #define PEER_CANDIDATE_SRFLX     2 // Server reflexive: the address that its home relay saw it at, in the answer of its bind
 #define PEER_CANDIDATE_MAPPED    3 // A public port that the node's home gateway granted (PCP, NAT-PMP or UPnP)
 #define PEER_CANDIDATE_PREDICTED 4 // The public port the node's own NAT will give its next mapping (PeerPunch.c, CORE-S5-4)
+#define PEER_CANDIDATE_TOWARD    5 // A punch signal: the public port of the sender's mapping towards the receiver's reflexive address (CORE-S5-7)
 
 // The ICE session of a node with a peer (PEER_STATUS)
 #define PEER_ICE_NONE      0 // None: ICE is off, or no signal of the session yet
@@ -99,9 +115,9 @@
 // 39.5 s that it gives the checks of a session only once it has the credentials of the peer, which the answer brings
 #define PEER_ICE_ANSWER_TIMEOUT 40000
 
-// The symmetric-NAT hole punch of a node with a peer (PEER_STATUS; PeerPunch.c, CORE-S5-4). It runs on the peer
-// layer's own socket, not libjuice, so the simulated NATs of the harness carry it.
-#define PEER_PUNCH_NONE      0 // Off, or no signal of the peer yet
+// The symmetric-NAT hole punch of a node with a peer (PEER_STATUS; PeerPunch.c, CORE-S5-4 and CORE-S5-7). It runs on
+// the peer layer's own socket, not libjuice, so the simulated NATs of the harness carry it.
+#define PEER_PUNCH_NONE      0 // Off, no punch signal of the peer yet, or a punched path that lost its consent
 #define PEER_PUNCH_PROBING   1 // Sending probes to the predicted ports while the peer stays on the relay
 #define PEER_PUNCH_CONNECTED 2 // A probe met one of the peer's: the direct path is up
 #define PEER_PUNCH_FAILED    3 // The probe budget ran out with no meeting: the peer stays on the relay
@@ -125,7 +141,7 @@
 #define PEER_DROP_SOURCE    5  // A data datagram from an address that is no path of its source
 #define PEER_DROP_NOT_RELAY 6  // A bind to, or a datagram to forward through, a node without the relay role
 #define PEER_DROP_NOT_BOUND 7  // A datagram to forward to a node that is not bound to the relay
-#define PEER_DROP_RATE      8  // Over the rate of the relay for its source
+#define PEER_DROP_RATE      8  // Over a rate: of the relay for its source, or of the punch messages of the node (PunchRate, PunchBudget)
 #define PEER_DROP_RELAY     9  // A signal or a bound from a relay that the control plane did not assign
 #define PEER_DROP_SEND      10 // The send procedure failed
 #define PEER_DROP_CLEAR     11 // A data datagram of the old clear form (PEER_MSG_DATA): there is no downgrade to it
@@ -184,6 +200,7 @@ typedef struct PEER_SIGNAL {
 	PEER_CANDIDATE Candidates[PEER_MAX_CANDIDATES]; // ... and their types and addresses
 	char IceUfrag[PEER_ICE_UFRAG_SIZE];             // The username fragment of the sender's ICE session with the receiver, empty without
 	char IcePwd[PEER_ICE_PWD_SIZE];                 // ... and its password
+	UINT Nat;                                       // A punch offer or answer: the NAT of the sender (PEER_NAT_*), 0 in the others
 } PEER_SIGNAL;
 
 // How a node reaches one peer (PeerGetStatus)
@@ -208,10 +225,12 @@ typedef struct PEER_STATS {
 	UINT64 Forwarded;               // Data datagrams that the relay role forwarded
 	UINT64 Binds;                   // Binds that the relay role took
 	UINT64 Signals;                 // Signals taken
-	UINT64 Upgrades;                // ICE sessions that validated a direct path: peers that moved off the relay
-	UINT64 Fallbacks;               // ... of them whose direct path failed later: peers back on the relay
-	UINT64 PunchAttempts;           // Symmetric-NAT hole punches started (one per peer per control-plane trigger)
+	UINT64 Upgrades;                // Peers that moved off the relay to a direct path that ICE validated or a punch met
+	UINT64 Fallbacks;               // ... of them whose direct path failed later, its consent lost: peers back on the relay
+	UINT64 PunchAttempts;           // Symmetric-NAT hole punches whose probes began, one for each attempt with a peer
 	UINT64 PunchSuccesses;          // ... of them that reached a direct path by port prediction or birthday punching
+	UINT64 PunchFailures;           // ... of them that spent their probes and met nothing: failures of the prediction
+	UINT64 PunchProbes;             // Probes that the punches sent
 	UINT64 Handshakes;              // Handshakes of peer sessions that completed, as initiator or responder
 	UINT64 Challenges;              // Bind challenges that the relay role sent: binds from an address it had no cookie for
 	UINT64 StunMessages;            // STUN messages that came to the socket with ICE on, each read once whatever the number of ICE sessions
@@ -220,6 +239,8 @@ typedef struct PEER_STATS {
 	UINT NumIce;                    // ICE sessions now
 	UINT PortMap;                   // PEER_PORTMAP_*: the port mapping of the home gateway
 	PEER_ADDR Mapped;               // ... the public address and port that it granted, zero for none
+	UINT Nat;                       // PEER_NAT_*: the NAT of the node, from the answers of the binds to its first two relays
+	PEER_ADDR Predicted;            // ... the public address and port of its next mapping, zero when it cannot be predicted
 	UINT64 Drops[PEER_NUM_REASONS]; // What the peer layer dropped, by reason (PEER_DROP_*)
 } PEER_STATS;
 
@@ -237,23 +258,35 @@ typedef struct PEER_CONFIG {
 	bool PortMap;                 // With Ice, ask the home gateway for a public port of the socket (libplum)
 	UINT PortMapTimeout;          // ms that the port mapping waits for a gateway, per protocol; 0 for 10 s
 	bool Punch;                   // Try port prediction and birthday punching for a symmetric-NAT peer (PeerPunch.c)
-	UINT PunchBudget;             // The most probes one punch of a peer may send before it gives up; 0 for the default
-	UINT PunchPorts;              // The ports swept above a predicted or reflexive one in the birthday range; 0 for the default
-	UINT PunchRate;               // Probes one PeerTick sends per punching peer, so a burst stays bounded; 0 for the default
+	UINT PunchBudget;             // The most punch messages one attempt of a punch may send, its probes and its answers; 0 for the default
+	UINT PunchPorts;              // The ports above a predicted one that the birthday range covers; 0 for the default
+	UINT PunchRate;               // The most punch messages the node sends in any second, across its peers; 0 for the default
+	UINT PunchAttempts;           // Attempts in a row that met nothing, after which the pair stays on the relay for PunchBackoff; 0 for the default
+	UINT PunchRetry;              // ms from the end of an attempt to the next one with the same peer; 0 for the default
+	UINT PunchBackoff;            // ms that the pair stays on the relay after the end of PunchAttempts failed attempts; 0 for the default
+	UINT PunchConsent;            // ms without a word of the peer on a punched path, after which the pair falls back to the relay; 0 for the default
 	UINT SessionRekeyTime;        // ms after which the initiator of a peer session's keys replaces them; 0 for the default
 	UINT64 SessionRekeyDatagrams; // Records sent under one key after which the sender replaces it; 0 for the default
 	UINT SessionTimeout;          // ms without a record from the peer after which its session is dropped; 0 for the default
 	UINT SessionKeepalive;        // ms after a record received with none sent, when a keepalive answers it; 0 for the default
 } PEER_CONFIG;
 
-#define PEER_DEFAULT_RELAY_RATE   20000
-#define PEER_DEFAULT_RELAY_BURST  2000
-#define PEER_DEFAULT_BIND         25000 // Below the 30 s UDP mapping timeout of common NATs (RFC 4787 REQ-5 asks 2 min)
-#define PEER_DEFAULT_BIND_RETRY   1000
-#define PEER_DEFAULT_BIND_EXPIRY  90000
-#define PEER_DEFAULT_PUNCH_BUDGET 256 // Bounded (ADR-0015 item 2): a punch stops here and the peer stays on the relay
-#define PEER_DEFAULT_PUNCH_PORTS  16  // The birthday range: a sequential NAT's next port is within a few of the predicted one
-#define PEER_DEFAULT_PUNCH_RATE   16  // Probes per tick, so the probe rate stays within a configurable bound
+#define PEER_DEFAULT_RELAY_RATE  20000
+#define PEER_DEFAULT_RELAY_BURST 2000
+#define PEER_DEFAULT_BIND        25000 // Below the 30 s UDP mapping timeout of common NATs (RFC 4787 REQ-5 asks 2 min)
+#define PEER_DEFAULT_BIND_RETRY  1000
+#define PEER_DEFAULT_BIND_EXPIRY 90000
+// The limits of the punch (ADR-0015 item 2; CORE-S5-7 #413), so that its probes do not look like a scan: 128 punch
+// messages an attempt at most, its probes and its answers together, 64 punch messages a second at most, and after 3
+// attempts in a row that met nothing the pair stays on the relay for 30 min. A punched path whose peer said nothing for
+// 30 s falls back to the relay.
+#define PEER_DEFAULT_PUNCH_BUDGET   128     // Punch messages of an attempt, its probes and its answers: then the peer stays on the relay
+#define PEER_DEFAULT_PUNCH_PORTS    12      // The birthday range: the next port of a sequential NAT within 12 above the predicted one
+#define PEER_DEFAULT_PUNCH_RATE     64      // Punch messages per second, probes and answers
+#define PEER_DEFAULT_PUNCH_ATTEMPTS 3       // Attempts that meet nothing before the backoff
+#define PEER_DEFAULT_PUNCH_RETRY    20000   // ms from the end of one attempt to the next
+#define PEER_DEFAULT_PUNCH_BACKOFF  1800000 // ms on the relay after the attempts
+#define PEER_DEFAULT_PUNCH_CONSENT  30000   // ms of silence that end a punched path, as consent freshness ends one of ICE
 // The timers of a peer session, those of the Noise session (Noise.h): rekey after 2 min or 2^24 records under one
 // key, which keeps AES-GCM within the limit of RFC 8446 section 5.5; a keepalive 10 s after a record that had no
 // answer; the session dropped after 45 s without a record from the peer
@@ -296,6 +329,10 @@ void PeerAddrSetV4(PEER_ADDR *a, UCHAR b0, UCHAR b1, UCHAR b2, UCHAR b3, USHORT 
 bool PeerAddrEqual(const PEER_ADDR *a, const PEER_ADDR *b);
 const char *PeerReasonName(UINT reason);
 
+// PeerIce.c: the timer of the ICE sessions at a clock that the caller gives (ms, the clock of PeerTick), for a test of a
+// session that started after the clock of a tick
+void PeerIceTickAt(PEER_AGENT *a, UINT64 now);
+
 // PeerSignal.c
 bool PeerKeyFromScalar(PEER_KEY *k, const UCHAR *priv);
 bool PeerKeyOpen(PEER_KEY *k, const wchar_t *name);
@@ -327,6 +364,19 @@ typedef struct PEER_HANDSHAKE_INFO {
 // PeerSession.c
 bool PeerRecordParse(const UCHAR *data, UINT size, PEER_RECORD_INFO *r);
 bool PeerHandshakeParse(UINT kind, const UCHAR *payload, UINT size, PEER_HANDSHAKE_INFO *h);
+
+// The payload of a punch message (PeerPunchParse): a probe, a message of the exchange of nonces that proves the address
+// at which two probes met, or a keepalive on the punched path
+typedef struct PEER_PUNCH_INFO {
+	UINT64 Sequence;    // The sequence of the sender, which grows with the clock (PeerNextSequence)
+	UINT Type;          // The type of the message: a probe, a challenge, a response, a proof or a keepalive (PeerPunch.c)
+	const UCHAR *Nonce; // A nonce of the sender, in the payload: that of a challenge or of a response
+	const UCHAR *Echo;  // The echo of a nonce of the receiver, in the payload: that of a response or of a proof
+} PEER_PUNCH_INFO;
+
+// PeerPunch.c
+bool PeerPunchDue(PEER_AGENT *a, const UCHAR *key);
+bool PeerPunchParse(const UCHAR *payload, UINT size, PEER_PUNCH_INFO *m);
 
 // PeerUdp.c
 PEER_UDP *PeerUdpNew(USHORT port);

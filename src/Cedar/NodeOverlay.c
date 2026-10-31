@@ -100,8 +100,8 @@ struct NODE_OVERLAY {
 	CONTROL_EVENTS *Events;
 	NODE_FLAP *Flap;
 	// The applies of the states and the forwarding tables that the BGP peering builds anew, one at a time (NodePeering.c;
-	// SDN-77, #357)
-	LOCK *ApplyLock;
+	// SDN-77, #357): a rebuild only tries it, so the worker of the peering never waits for an apply (SDN-77-R1, #531)
+	SRWLOCK ApplyLock;
 };
 
 // The IPv4 addresses of a CONTROL_ADDRESS list, in network byte order, and the VRF of each; the forwarding tables take
@@ -266,7 +266,7 @@ static void NodeOverlayState(void *param, const CONTROL_STATE *state) {
 	NODE_OVERLAY *ov = (NODE_OVERLAY *)param;
 	// One state or rebuild of the forwarding tables at a time, and the routes that the BGP peering learned go in with the state
 	// (NodePeering.c; SDN-77, #357)
-	Lock(ov->ApplyLock);
+	AcquireSRWLockExclusive(&ov->ApplyLock);
 	const CONTROL_STATE *with = NodePeeringWith(ov->Node, state);
 	// A client takes the default route of a peer only from the exit node that its user chose: the state without them (NodeExit.c;
 	// SDN-55, #248)
@@ -382,53 +382,58 @@ static void NodeOverlayState(void *param, const CONTROL_STATE *state) {
 	NodePeeringApplied(ov->Node, state, swapped);
 	NodeExitFreeState(exits);
 	NodePeeringDone(with, state);
-	Unlock(ov->ApplyLock);
+	ReleaseSRWLockExclusive(&ov->ApplyLock);
 }
 
 // Build the forwarding tables of the state with anew and swap them in, as the BGP peering does when the routes that its sidecar
 // learned change (NodePeering.c; SDN-77, #357): with is the Generation in force, with those routes among the routes of its peers,
-// and the adapters of the host take it too. False when another Generation went in meanwhile, which took the routes itself, or
-// when the tables could not be built or installed.
-bool NodeOverlayRebuild(NODE *n, const CONTROL_STATE *with) {
+// and the adapters of the host take it too. It never waits for an apply that runs: NODE_REBUILD_BUSY then, and NODE_REBUILD_STALE
+// when another Generation went in meanwhile, whose apply took the routes of its own time and woke the peering, so that it builds
+// the tables anew with that one (SDN-77-R1, #531). NODE_REBUILD_FAILED when the tables could not be built or installed.
+UINT NodeOverlayRebuild(NODE *n, const CONTROL_STATE *with) {
 	NODE_OVERLAY *ov = (n != NULL ? n->Overlay : NULL);
-	bool swapped = false;
+	UINT ret = NODE_REBUILD_FAILED;
 
 	if (ov == NULL || with == NULL)
-		return false;
+		return NODE_REBUILD_FAILED;
 
-	Lock(ov->ApplyLock);
+	if (TryAcquireSRWLockExclusive(&ov->ApplyLock) == FALSE)
+		return NODE_REBUILD_BUSY;
 	{
 		// The tables of a client take the default route of a peer only from the exit node that its user chose here too (NodeExit.c;
 		// SDN-55, #248)
 		const CONTROL_STATE *st = with;
 		NODE_EXIT_STATE *exits = NodeExitFilter(ov->Config.Exit, &st);
 		NODE_OVERLAY_PEER **hops = ZeroMalloc(sizeof(NODE_OVERLAY_PEER *) * MAX(st->NumPeers, 1));
-		bool found = false;
+		bool current = false;
+		bool found = true;
 		UINT num_vrfs = 0;
 
 		// Next hop i of the tables is the peer of st->Peers[i], which the Generation in force holds
 		Lock(ov->Lock);
 		{
-			found = (ov->Generation == st->Generation);
-			for (UINT i = 0; i < st->NumPeers && found; i++) {
+			current = (ov->Generation == st->Generation);
+			for (UINT i = 0; i < st->NumPeers && current && found; i++) {
 				hops[i] = NodeOverlayPeer(ov, st->Peers[i].Name, st->Peers[i].Key);
 				found = (hops[i] != NULL);
 			}
 		}
 		Unlock(ov->Lock);
 
-		if (found)
-			swapped = NodeOverlaySwapTables(ov, st, exits, hops, &num_vrfs);
+		if (current == false)
+			ret = NODE_REBUILD_STALE;
+		else if (found && NodeOverlaySwapTables(ov, st, exits, hops, &num_vrfs))
+			ret = NODE_REBUILD_DONE;
 		Free(hops);
 
 		// The host's adapter of each VRF takes the routes too
-		if (swapped && ov->Config.State != NULL)
+		if (ret == NODE_REBUILD_DONE && ov->Config.State != NULL)
 			ov->Config.State(ov->Node, ov->Config.AdapterParam, st);
 		NodeExitFreeState(exits);
 	}
-	Unlock(ov->ApplyLock);
+	ReleaseSRWLockExclusive(&ov->ApplyLock);
 
-	return swapped;
+	return ret;
 }
 
 //
@@ -904,7 +909,7 @@ bool NodeOverlayStart(NODE *n, NODE_OVERLAY_CONFIG *cfg) {
 	ov->Node = n;
 	Copy(&ov->Config, cfg, sizeof(NODE_OVERLAY_CONFIG));
 	ov->Lock = NewLock();
-	ov->ApplyLock = NewLock();
+	InitializeSRWLock(&ov->ApplyLock);
 	ov->Peers = NewListFast(NULL);
 	ov->Buf = Malloc(NOISE_MAX_PAYLOAD);
 	ov->NatBuf = Malloc(NOISE_MAX_PAYLOAD + NODE_NAT_GROWTH);
@@ -1045,7 +1050,6 @@ void NodeOverlayStop(NODE *n) {
 
 	n->Overlay = NULL;
 	ReleaseList(ov->Peers);
-	DeleteLock(ov->ApplyLock);
 	DeleteLock(ov->Lock);
 	Free(ov->Buf);
 	Free(ov->NatBuf);

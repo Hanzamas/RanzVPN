@@ -105,6 +105,7 @@ type session struct {
 	cancel    context.CancelFunc
 	address   netip.Addr                // the node's own address in the peering of the standard mode, as in config
 	announced map[routeKey]uuid.UUID    // the read loop only
+	pending   []Peer                    // the read loop only: the peers of the peers messages with more so far
 	learned   map[routeKey]learnedRoute // the watch goroutine only
 
 	// The Ranz nodes among the peers in the peering of the standard mode, by address, which the read
@@ -201,6 +202,8 @@ func Run(ctx context.Context, conn io.ReadWriteCloser, opts Options) error {
 			err = s.withdraw(m)
 		case TypePeers:
 			err = s.setPeers(ctx, m)
+		case TypePing:
+			err = s.ping(ctx)
 		case TypeStart:
 			err = errors.New("BGP runs already: start comes once")
 		default:
@@ -471,6 +474,16 @@ func (s *session) send(m Message) {
 	}
 }
 
+// ping answers the node that the sidecar runs: pong, once GoBGP answered a question too, so that a
+// sidecar whose BGP hangs answers nothing and the node ends it (SDN-77-R1 #531).
+func (s *session) ping(ctx context.Context) error {
+	if _, err := s.bgp.GetBgp(ctx, &api.GetBgpRequest{}); err != nil {
+		return fmt.Errorf("ping: GoBGP does not answer: %w", err)
+	}
+	s.send(Message{Type: TypePong})
+	return nil
+}
+
 // announce applies an announce message: the prefix goes to the peers as a path of the node, a
 // unicast path, or a VPN path of its VRF in the peering of the standard mode.
 func (s *session) announce(m Message) error {
@@ -589,10 +602,14 @@ func (s *session) onPeer(ev *apiutil.WatchEventMessage_PeerEvent, _ time.Time) {
 // withdrawn. The paths of one call are applied in order, so a best path that moves from one
 // peer to another ends as the later one, without a withdrawn message between. In the peering of
 // the standard mode a prefix is one of the VRF of its path, and a path that its Ranz node may not
-// announce there counts as none (accepts in peering.go).
+// announce there counts as none (accepts in peering.go); one log line counts those of a call, so
+// that a peer that announces many of them does not fill the log.
 func (s *session) onBestPath(paths []*apiutil.Path, _ time.Time) {
 	next := make(map[routeKey]*learnedRoute)
 	var order []routeKey
+	var refused int
+	var firstRefused routeKey
+	var refusedPeer netip.Addr
 	for _, p := range paths {
 		key, ok := pathKey(p)
 		if !ok {
@@ -615,12 +632,19 @@ func (s *session) onBestPath(paths []*apiutil.Path, _ time.Time) {
 			// The next hop of an IPv6 route over an IPv4 session comes as an IPv4-mapped address
 			nh = nh.Unmap()
 			if !s.accepts(p.PeerAddress, key) {
-				s.log.Warn("learned path not taken: the peer may not announce it in its VRF", "vrf", key.vrf, "prefix", key.prefix, "peer", p.PeerAddress)
+				if refused == 0 {
+					firstRefused, refusedPeer = key, p.PeerAddress
+				}
+				refused++
 				next[key] = nil
 				continue
 			}
 		}
 		next[key] = &learnedRoute{nextHop: nh.String(), peer: p.PeerAddress.Unmap().String()}
+	}
+	if refused > 0 {
+		s.log.Warn("learned paths not taken: their peer may not announce them in their VRF", "paths", refused,
+			"vrf", firstRefused.vrf, "prefix", firstRefused.prefix, "peer", refusedPeer)
 	}
 	for _, key := range order {
 		old, had := s.learned[key]

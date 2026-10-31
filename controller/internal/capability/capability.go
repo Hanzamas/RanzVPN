@@ -49,6 +49,9 @@ type Capabilities struct {
 	// BGPPeering: the node runs the BGP peering of the standard mode (SDN-77): its release has it, and ranz.exe,
 	// which holds the sidecar that it starts, is next to it.
 	BGPPeering bool `json:"bgpPeering,omitempty"`
+	// EVPN: the node can be the gateway of a Stretch (SDN-63): its host is a Windows Server and the VXLAN module of the node
+	// runs. The Controller refuses a Stretch whose gateway does not report it (stretch.go).
+	EVPN bool `json:"evpn,omitempty"`
 }
 
 var skuNames = map[controlpb.Sku]string{
@@ -83,6 +86,7 @@ func FromProto(p *controlpb.Capabilities) *Capabilities {
 		Operations:      p.GetOperations(),
 		Tags:            p.GetTags(),
 		BGPPeering:      p.GetBgpPeering(),
+		EVPN:            p.GetEvpn(),
 	}
 	if len(p.GetWireguardKey()) > 0 {
 		c.WireGuardKey = base64.StdEncoding.EncodeToString(p.GetWireguardKey())
@@ -104,6 +108,7 @@ func (c Capabilities) Proto() (*controlpb.Capabilities, error) {
 		Operations:      c.Operations,
 		Tags:            c.Tags,
 		BgpPeering:      c.BGPPeering,
+		Evpn:            c.EVPN,
 	}
 	if c.WireGuardKey != "" {
 		k, err := base64.StdEncoding.DecodeString(c.WireGuardKey)

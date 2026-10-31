@@ -78,12 +78,13 @@ const (
 const capFormat = "the %s licence in force allows %d nodes, and Node %q is above that cap (nodes count in name order)"
 
 // enterpriseKinds are the resource kinds of an Enterprise feature: the BGP and EVPN peers of a
-// gateway (ADR-0032, #176 "Resource model"). The intent does not hold them yet (SDN-25, #201):
-// with an Enterprise licence the intent refuses them as unknown kinds, and without one the
-// licence refuses them first.
+// gateway (ADR-0032, #176 "Resource model") and the Stretch of an L2 Network (SDN-63, stretch.go).
+// The intent does not hold the peers yet (SDN-25, #201): with an Enterprise licence the intent
+// refuses them as unknown kinds, and without one the licence refuses them first.
 var enterpriseKinds = map[string]licence.Feature{
 	"BgpPeer":  licence.FeatureEVPN,
 	"EvpnPeer": licence.FeatureEVPN,
+	"Stretch":  licence.FeatureEVPN,
 }
 
 // Config is what a controller runs with.
@@ -740,7 +741,9 @@ func (c *Controller) compile(next intent.Intent, lic *licence.Licence) (compiled
 	holds := c.keyHolds(next, c.keyNow())
 	// The Nodes of the banned users are left out of the states of the others (bans.go; SDN-50), and so are the
 	// Nodes held back
-	states, err := c.compileStates(next.Capped(force.Nodes), holds)
+	// The Stretches are part of EVPN and BGP, an Enterprise feature: the Nodes get none while the licence in force lacks it
+	// (stretch.go; SDN-63)
+	states, err := c.compileStates(licensedStretches(next.Capped(force.Nodes), force), holds)
 	if err != nil {
 		return compiled{}, err
 	}

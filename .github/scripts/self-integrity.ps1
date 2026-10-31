@@ -1,5 +1,5 @@
 param(
-	[string] $X64Dir,       # The Binaries-x64 artifact: vpnserver.exe, vpncmd.exe, ranz-node.exe, vpntest.exe and the PDBs
+	[string] $X64Dir,       # The Binaries-x64 artifact: ranz-node.exe, vpntest.exe and the PDBs
 	[string] $Arm64Dir,     # The Binaries-arm64 artifact (the same executables for arm64)
 	[string] $Wxs,          # .github/signing/signing-proof.wxs
 	[string] $LicenseFile,  # The LICENSE of the repository (unused payload, kept for parity with the release spec)
@@ -53,9 +53,10 @@ $ErrorActionPreference = 'Stop'
 # on any non-zero native exit.
 $PSNativeCommandUseErrorActionPreference = $false
 
-# The shipped executables of the current server and the new-core node (ADR-0020). vpntest is a test tool,
-# not shipped; it is signed only to run the self-integrity test against a signed binary.
-$shipped = @('vpnserver.exe', 'vpncmd.exe', 'ranz-node.exe')
+# The shipped C executable: the new-core node (ADR-0020), since the slim fork's vpnserver and vpncmd were
+# retired (CORE-S8-1, #84). vpntest is a test tool, not shipped; it is signed only to run the self-integrity
+# test against a signed binary.
+$shipped = @('ranz-node.exe')
 
 New-Item -ItemType Directory -Force -Path $OutDir | Out-Null
 
@@ -223,14 +224,14 @@ if ($env:GITHUB_OUTPUT) {
 }
 
 # ---------------------------------------------------------------------------------------------------
-# 1 (continued). Build an MSI that packages the signed x64 vpnserver.exe, sign it and verify it.
+# 1 (continued). Build an MSI that packages the signed x64 ranz-node.exe, sign it and verify it.
 # ---------------------------------------------------------------------------------------------------
 $msi = Join-Path $OutDir 'ranz-vpn-signing-proof.msi'
 $version = "0.0.0.$($env:GITHUB_RUN_NUMBER)"
 if (-not $env:GITHUB_RUN_NUMBER) { $version = '0.0.0.1' }
 wix build -arch x64 `
 	-d "Version=$version" `
-	-d "ServerExe=$(Join-Path $X64Dir 'vpnserver.exe')" `
+	-d "NodeExe=$(Join-Path $X64Dir 'ranz-node.exe')" `
 	-o $msi `
 	$Wxs
 if ($LASTEXITCODE -ne 0) { throw "wix build failed (exit $LASTEXITCODE)" }
@@ -298,7 +299,7 @@ foreach ($pair in @(@{ Dir = $X64Dir; Arch = 'x64' }, @{ Dir = $Arm64Dir; Arch =
 }
 
 # No public PDB in the MSI: the File table names no .pdb (the package is built from signing-proof.wxs,
-# which declares only vpnserver.exe). The COM object is called directly; the InvokeMember reflection path
+# which declares only ranz-node.exe). The COM object is called directly; the InvokeMember reflection path
 # mis-marshals the open-mode argument (DISP_E_TYPEMISMATCH).
 $installer = New-Object -ComObject WindowsInstaller.Installer
 $db = $installer.OpenDatabase($msi, 0)

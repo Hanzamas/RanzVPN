@@ -35,6 +35,9 @@ src/Core  PeerOpenSignal        fuzz_peer
 src/Core  PeerOpen              fuzz_peer  via PeerOpenSignal
 src/Core  PeerEnvelopeOpen      fuzz_peer  via PeerOpenSignal
 src/Core  PeerSignalDecode      fuzz_peer
+# The symmetric-NAT punch (CORE-S5-7 #413): the payload of a punch message, which fuzz_peer also seals as a probe, a message
+# of the exchange of nonces and a keepalive, and as a punch offer or answer, for nodes whose punches are open
+src/Core  PeerPunchParse        fuzz_peer
 src/Core  PeerPunchInput        fuzz_peer  via PeerInput
 # The peer sessions of the data datagrams (CORE-H2 #399): the clear header, the handshake messages and the records,
 # and the bind challenge
@@ -190,10 +193,14 @@ src/Cedar  NodeEgressFromHost   exempt  a packet of the host's own IP stack, whi
 src/Cedar  NodeL2BridgeWay  exempt  compares the first six bytes of a frame, its destination MAC address, with the address of the NIC and tests their group bit; it reads no length and no field beyond them, and a frame shorter than six bytes is not read
 # The EVPN of a gateway node (SDN-25 #201): the learned and withdrawn messages of its BGP sidecar as IP prefix routes of an
 # EVPN VRF, and the frames that the VTEPs of a fabric send on the L3 VNI of an EVPN VRF, with the two ends of their packets.
-# The functions that take what these read are listed too, as the readers of routes and packets that they are.
+# The functions that take what these read are listed too, as the readers of routes and packets that they are. A frame comes
+# in only from a VTEP that the gateway knows for its VRF (SDN-25-R1 #549): NodeEvpnSortVteps sorts the VTEPs of the routes
+# that the sidecar gave, and NodeEvpnHasVtep looks the outer source of each frame up among them, no parser word in their names.
 src/Cedar  NodeEvpnParseRoute      fuzz_evpn
 src/Cedar  NodeEvpnParseFrame      fuzz_evpn
 src/Cedar  NodeEvpnEnds            fuzz_evpn  via NodeEvpnParseFrame
+src/Cedar  NodeEvpnSortVteps       fuzz_evpn
+src/Cedar  NodeEvpnHasVtep         fuzz_evpn
 src/Cedar  NodeEvpnRoute           exempt  puts the route that NodeEvpnParseRoute (fuzz_evpn) read from a message of the node's own sidecar into the list of the routes; it reads no byte itself
 src/Cedar  NodeEvpnOutput          exempt  a packet of the host's own IP stack, whose two ends NodeNatEnds (fuzz_nat) reads as for NodeOverlayInput, and which NodeNatCopy (fuzz_nat) writes into the frame for the fabric
 src/Cedar  NodeEvpnTransit         exempt  a packet of a peer that the overlay delivered, whose two ends NodeEvpnEnds (fuzz_evpn) reads, and which the session profile (NodeProfileInbound, fuzz_nodeprofile) and the policy of the VRF (fuzz_policy) judge before it goes to the fabric as it came, and NodeMirrorCopy (fuzz_mirror) copies; the source group that it carried is the claim that NodeFrameParse (fuzz_frame), VxlanParseGroup (fuzz_vxlan) or VxlanParseGroupOption (fuzz_geneve) read, which NodeSourceGroupInbound judges against the tables of the node without reading a byte
@@ -236,6 +243,8 @@ controller/internal/intent  ParseEndpointAddress  FuzzParseValues
 controller/internal/intent  ParseVTEPAddress  FuzzParseVTEP
 # The route targets of a VRF (SDN-7 #183)
 controller/internal/intent  ParseRouteTarget  FuzzParseValues
+# The ESI of a Stretch (SDN-63 #290)
+controller/internal/intent  ParseESI  FuzzParseStretch
 # The sensor and the protocol of a Mirror (SDN-23 #199)
 controller/internal/intent  ParseSensor    FuzzParseMirror
 controller/internal/intent  ParseProtocol  FuzzParseMirror

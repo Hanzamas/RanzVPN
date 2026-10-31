@@ -1,16 +1,15 @@
 # Ranz VPN
 
-Ranz VPN is a Windows-only, lightweight VPN server maintained by Hanzcodes. It focuses strictly on the native SE-VPN protocol (SSL-VPN over TCP with UDP Acceleration) and strips out unrelated modules to keep the core small.
+Ranz VPN is a Windows-only VPN maintained by Hanzcodes. Its data plane is the Node of the new core (`ranz-node.exe`), driven by the Controller (`ranz controller`) through one `ranz.exe`. It started as a slimmed fork of SoftEther VPN; the fork's `vpnserver.exe` and `vpncmd.exe` are retired (CORE-S8-1, #84), and the fork's Hub, Account, Sam and logging live on inside the Node.
 
 The version format is `0.1.N`, where `N` represents the GitHub Actions build run number.
 
 ## What it is
 
-- Headless binaries: `vpnserver.exe` (runs directly or as a Windows service), `vpncmd.exe` (CLI administration tool), and `vpntest.exe` (diagnostics). No GUI is included.
-- Platform support: Windows 10 and Windows Server 2016 or newer, on x64 and arm64 architectures. 32-bit (x86) and other operating systems are unsupported.
-- Default listening port: TCP 443. A fresh configuration falls back to TCP 5555 when 443 cannot be bound at its first start, logs why, and keeps 5555 on later starts (ADR-0020). Listeners on any other TCP port can be added with `ListenerCreate`.
-- Client compatibility: Emits build version 5.02.5187 and the `SE-VPN4-PROTOCOL` signature, so SE-VPN clients and servers can connect today because the legacy SE-VPN path is unchanged. This is not a guaranteed feature: in the final product, SE-VPN compatibility comes back through the `ranz-compat` sidecar (Legacy phase).
-- Configuration: Loaded exclusively from `ranz_server.config` in the same directory as `vpnserver.exe`. Legacy configuration files (`vpn_server.config`) are ignored.
+- Headless binaries: `ranz-node.exe` (the Node, the `ranzvpnserver` Windows service), `ranz.exe` (the Controller, the BGP sidecar, the tray and the command line), `vpntest.exe` and `coretest.exe` (tests). No GUI is included besides the web UI of the Controller.
+- Retired with the slim fork (CORE-S8-1, #84): `vpnserver.exe` and its SE-VPN listener, whose sessions the Noise sessions of the Node over QUIC and TLS on 443 replace, and `vpncmd.exe`, whose administration the Controller's intent API, its web UI and the `ranz` command line replace, and whose tools `ranz doctor`, `ranz test throughput` and `ranz cert` replace. SE-VPN compatibility comes back only through the `ranz-compat` sidecar in the Legacy phase (ADR-0037).
+- Platform support: Windows 11 and Windows Server 2022 or newer for the Node (ADR-0022), on x64 and arm64 architectures. 32-bit (x86) and other operating systems are unsupported.
+- Configuration: the Node keeps its Configuration store `ranz_node.db` in `%ProgramData%\Hanzcodes\Ranz VPN`; the intent lives in the Controller.
 - Registry keys: Stored under `Software\Hanzcodes\Ranz VPN`.
 
 ## Design and exclusions

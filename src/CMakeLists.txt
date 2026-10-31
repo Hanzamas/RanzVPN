@@ -71,13 +71,7 @@ add_subdirectory(Cedar)
 # Mayaqua kernel
 add_subdirectory(Mayaqua)
 
-# vpnserver
-add_subdirectory(vpnserver)
-
-# vpncmd
-add_subdirectory(vpncmd)
-
-# ranz-node, the node of the new core
+# ranz-node, the node of the new core. The slim fork's vpnserver and vpncmd are retired (CORE-S8-1, #84).
 add_subdirectory(ranz-node)
 
 # vpntest

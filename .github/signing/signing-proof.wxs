@@ -2,12 +2,12 @@
 <!--
   The MSI that .github/scripts/self-integrity.ps1 builds and signs to prove the signing path covers an
   installer as well as an executable (SEC-3 #281, ADR-0020 amendment of 2026-10-22). It is not the
-  release installer of the node (REL-5, #50 owns that): it packages one file, the signed vpnserver.exe,
+  release installer of the node (REL-5, #50 owns that): it packages one file, the signed ranz-node.exe,
   so the package is a real, signable MSI with no pay-load beyond the proof. CI signs it with a
   self-signed certificate and checks that a signature is present, and checks that the package carries no
-  public PDB.
+  public PDB. It packaged vpnserver.exe until the slim fork's server was retired (CORE-S8-1, #84).
 
-  Preprocessor variables: Version and ServerExe (the signed vpnserver.exe).
+  Preprocessor variables: Version and NodeExe (the signed ranz-node.exe).
 -->
 <Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
   <Package Name="Ranz VPN signing proof (CI)" Manufacturer="Hanzcodes" Version="$(var.Version)" UpgradeCode="{7F3A1C62-9D54-4B8E-AE21-3C5D6F0A9B14}" Scope="perMachine" Language="1033">
@@ -18,9 +18,9 @@
       <Directory Id="INSTALLFOLDER" Name="Ranz VPN" />
     </StandardDirectory>
 
-    <Feature Id="Server" Title="Server" Level="1" AllowAbsent="no">
-      <Component Id="ServerExe" Directory="INSTALLFOLDER">
-        <File Id="ServerExe" Source="$(var.ServerExe)" Name="vpnserver.exe" KeyPath="yes" />
+    <Feature Id="Node" Title="Node" Level="1" AllowAbsent="no">
+      <Component Id="NodeExe" Directory="INSTALLFOLDER">
+        <File Id="NodeExe" Source="$(var.NodeExe)" Name="ranz-node.exe" KeyPath="yes" />
       </Component>
     </Feature>
   </Package>
