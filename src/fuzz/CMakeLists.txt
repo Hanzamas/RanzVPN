@@ -10,7 +10,9 @@
 #                                .github/scripts/fuzz-registry.py fails without it)
 #   // fuzz-libs: <target>...    the libraries of the new core that the target links (src/Core/CMakeLists.txt); optional
 #   // fuzz-reach: <function>    a function that the seeds must reach, which run_fuzzers.ps1 checks in the coverage of
-#                                their replay; optional, one line for each
+#                                their replay; optional, one line for each; a line that names no function fails the
+#                                run and the registry check, which also fails without the lines that REACH of
+#                                fuzz-registry.py gives a target
 file(GLOB RANZ_FUZZ_SOURCES RELATIVE "${CMAKE_CURRENT_SOURCE_DIR}" CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/fuzz_*.c")
 list(REMOVE_ITEM RANZ_FUZZ_SOURCES "fuzz_common.c")
 

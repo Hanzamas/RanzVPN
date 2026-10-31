@@ -1,5 +1,6 @@
-# Fixtures for the scripts of the ADR-0040 quality gates: fuzz-registry.py, coverage-floor.py,
-# bench-gate.py, static-findings.py and govulncheck-gate.py.
+# Fixtures for the scripts of the ADR-0040 quality gates: fuzz-registry.py, run_fuzzers.ps1 (its lines
+# "// fuzz-reach:", with PowerShell 7), coverage-floor.py, bench-gate.py, static-findings.py and
+# govulncheck-gate.py.
 #
 # Each gate runs on a throwaway tree or input made here and must pass what it should pass and fail
 # what it should fail: a new parser without a fuzz target, a stale registry line, a fuzz target that
@@ -11,11 +12,13 @@
 
 import json
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
 
 HERE = os.path.dirname(os.path.abspath(__file__))
+ROOT = os.path.dirname(os.path.dirname(HERE))
 failures = []
 
 
@@ -133,6 +136,23 @@ def test_fuzz_registry():
           **{'src/fuzz/fuzz_x.c': FUZZ_C.replace('4096', 'big')})
     check('a C target without seeds', 1, 'no seed corpus', **{'src/fuzz/corpus/fuzz_x/seed.bin': None,
                                                               'src/fuzz/corpus/fuzz_z/seed.bin': 'z'})
+    # The lines "// fuzz-reach: <function>" (CORE-S5-6-R2, #557): one that names no function, and the lines of fuzz_peer
+    reach = '// fuzz-max-len: 4096\n// fuzz-reach: %s\n'
+    check('a fuzz-reach line that names a function', 0, 'has a fuzz target',
+          **{'src/fuzz/fuzz_x.c': FUZZ_C.replace('// fuzz-max-len: 4096\n', reach % 'XDecode')})
+    check('a fuzz-reach line that names no function', 1, 'src/fuzz/fuzz_x.c:5: a line "// fuzz-reach:" that names no function',
+          **{'src/fuzz/fuzz_x.c': FUZZ_C.replace('// fuzz-max-len: 4096\n', reach % 'XDecode()')})
+    check('a fuzz-reach line that names two functions', 1, 'src/fuzz/fuzz_x.c:5: a line "// fuzz-reach:" that names no function',
+          **{'src/fuzz/fuzz_x.c': FUZZ_C.replace('// fuzz-max-len: 4096\n', reach % 'XDecode XParse')})
+    peer = FUZZ_C.replace('fuzz_x.c', 'fuzz_peer.c')
+    both = '// fuzz-reach: agent_dispatch_stun\n// fuzz-reach: agent_process_stun_binding\n'
+    check('fuzz_peer with its fuzz-reach lines', 0, 'has a fuzz target',
+          **{'src/fuzz/fuzz_peer.c': peer + both, 'src/fuzz/corpus/fuzz_peer/seed.bin': 'p'})
+    check('fuzz_peer without its fuzz-reach lines', 1, 'src/fuzz/fuzz_peer.c: no line "// fuzz-reach: agent_dispatch_stun"',
+          'src/fuzz/fuzz_peer.c: no line "// fuzz-reach: agent_process_stun_binding"',
+          **{'src/fuzz/fuzz_peer.c': peer, 'src/fuzz/corpus/fuzz_peer/seed.bin': 'p'})
+    check('fuzz_peer with one of its fuzz-reach lines gone', 1, 'no line "// fuzz-reach: agent_process_stun_binding"',
+          **{'src/fuzz/fuzz_peer.c': peer + both.split('\n')[0] + '\n', 'src/fuzz/corpus/fuzz_peer/seed.bin': 'p'})
     check('a Go fuzz test that no line names', 1, 'FuzzLonely is listed for no function',
           **{'controller/internal/wire/lonely_test.go': 'package wire\n\nimport "testing"\n\nfunc FuzzLonely(f *testing.F) {}\n'})
 
@@ -143,6 +163,41 @@ def test_fuzz_registry():
         # The module at the repository root names its packages by their path from the root
         expect('fuzz-registry: go-targets of the module at the root', run('fuzz-registry.py', 'go-targets', '.', '--root', root), 0,
                './controller/internal/wire FuzzDecode', absent=['src/Core', 'fuzz_x'])
+
+
+def test_run_fuzzers():
+    # run_fuzzers.ps1 of the tree on a throwaway src/fuzz, with a stand-in for the libFuzzer target fuzz_x that prints the
+    # coverage of its seeds as libFuzzer does: a function that the seeds reach passes the replay, one that they miss fails
+    # it, and a line "// fuzz-reach:" that names no function stops the run before the target runs (CORE-S5-6-R2, #557).
+    # The stand-in is a shell script, so the fixtures run where the quality workflow runs them, on Linux.
+    if os.name == 'nt':
+        print('skip run_fuzzers: the stand-in of a target is a shell script')
+        return
+    pwsh = shutil.which('pwsh')
+    if pwsh is None:
+        failures.append('run_fuzzers: no pwsh on the PATH, which the fixtures of run_fuzzers.ps1 need')
+        print('FAIL', 'run_fuzzers: no pwsh')
+        return
+    with open(os.path.join(ROOT, 'src', 'fuzz', 'run_fuzzers.ps1'), encoding='utf-8') as f:
+        script = f.read()
+    fuzzer = '#!/bin/sh\necho "COVERED_FUNC: hits: 1 edges: 1/2 XDecode x.c:1"\necho "UNCOVERED_FUNC: hits: 0 edges: 0/2 XOther x.c:9"\n' \
+             'echo "NO MEMORY LEAKS"\n'
+
+    def check(name, code, texts, line, absent=()):
+        with tempfile.TemporaryDirectory() as root:
+            write(root, 'src/fuzz/run_fuzzers.ps1', script)
+            write(root, 'src/fuzz/fuzz_x.c', FUZZ_C + line)
+            write(root, 'src/fuzz/corpus/fuzz_x/seed.bin', 'x')
+            write(root, 'build/fuzz_x.exe', fuzzer)
+            os.chmod(os.path.join(root, 'build', 'fuzz_x.exe'), 0o755)
+            p = subprocess.run([pwsh, '-NoProfile', '-NonInteractive', '-File', os.path.join(root, 'src', 'fuzz', 'run_fuzzers.ps1'),
+                                '-BuildDir', os.path.join(root, 'build'), '-Seconds', '0'], stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+            expect('run_fuzzers: ' + name, (p.returncode, p.stdout.decode('utf-8', errors='replace')), code, *texts, absent=absent)
+
+    check('a function that the seeds reach', 0, ['the seeds reach XDecode', 'All fuzz targets passed'], '// fuzz-reach: XDecode\n')
+    check('a function that no seed reaches', 1, ['no seed reaches XOther (fuzz-reach)'], '// fuzz-reach: XOther\n')
+    check('a fuzz-reach line that names no function', 1, ["'// fuzz-reach: XDecode()' is not a line '// fuzz-reach: <function>'"],
+          '// fuzz-reach: XDecode()\n', absent=['All fuzz targets passed', 'the seeds reach'])
 
 
 def test_coverage_floor():
@@ -401,6 +456,7 @@ def test_one_binary():
 
 if __name__ == '__main__':
     test_fuzz_registry()
+    test_run_fuzzers()
     test_coverage_floor()
     test_bench_gate()
     test_static_findings()

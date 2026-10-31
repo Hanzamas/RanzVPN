@@ -21,7 +21,9 @@
 # (src/fuzz/CMakeLists.txt): a new target is a new file and needs no line here. Its source gives the largest input,
 # the -max_len of libFuzzer, in a line "// fuzz-max-len: <bytes>"; the target is not run without one. It may name a
 # function that its seeds must reach, in a line "// fuzz-reach: <function>" each: the replay then prints the coverage
-# of the seeds (-print_coverage=1), and fails unless libFuzzer lists each such function as covered (COVERED_FUNC).
+# of the seeds (-print_coverage=1), and fails unless libFuzzer lists each such function as covered (COVERED_FUNC). A
+# line that starts with "// fuzz-reach:" and names no function stops the run, as it would turn that check off without a
+# word; the registry check (.github/scripts/fuzz-registry.py) fails without the lines that a target must have.
 #
 # Usage: pwsh -File src/fuzz/run_fuzzers.ps1 [-BuildDir build] [-Seconds 60] [-Seed 1] [-Targets fuzz_pack,...]
 
@@ -51,11 +53,20 @@ function Get-MaxLen([string] $Target) {
 	return [int] $found[0].Matches[0].Groups[1].Value
 }
 
-# The functions that the seeds of a target must reach: the "// fuzz-reach: <function>" lines of its source
+# The functions that the seeds of a target must reach: the "// fuzz-reach: <function>" lines of its source. Every line
+# that starts with "// fuzz-reach:" must name one function, or the run stops (CORE-S5-6-R2, #557).
 function Get-Reach([string] $Target) {
 	$source = Join-Path $PSScriptRoot "$Target.c"
-	return @(Select-String -LiteralPath $source -CaseSensitive -Pattern '^//\s*fuzz-reach:\s*(\w+)\s*$' |
-		ForEach-Object { $_.Matches[0].Groups[1].Value })
+	$functions = @()
+	foreach ($line in @(Select-String -LiteralPath $source -CaseSensitive -Pattern '^//\s*fuzz-reach:')) {
+		if ($line.Line -cmatch '^//\s*fuzz-reach:\s*(\w+)\s*$') {
+			$functions += $Matches[1]
+		} else {
+			Write-Host "::error::${source}:$($line.LineNumber): '$($line.Line)' is not a line '// fuzz-reach: <function>'"
+			exit 1
+		}
+	}
+	return $functions
 }
 
 $BuildDir = (Resolve-Path $BuildDir).Path

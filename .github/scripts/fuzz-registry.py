@@ -23,6 +23,9 @@
 #   corpus; and a src/fuzz/CMakeLists.txt or run_fuzzers.ps1 that does not find the targets by their
 #   file names (fuzz_*.c), so that CI would not build or run a new one: a target is a new file and
 #   is in no list;
+# - a line "// fuzz-reach:" of a C target that names no function, which run_fuzzers.ps1 refuses, and a
+#   target of REACH without its lines "// fuzz-reach: <function>": without them run_fuzzers.ps1 would no
+#   longer check that the seeds reach those functions, and say nothing (CORE-S5-6-R2, #557);
 # - a Go fuzz test of GO_SCOPE that no line names, which CI would never run (CI runs the targets of
 #   this file: the go-targets mode).
 #
@@ -47,6 +50,11 @@ PARSER_WORDS = {'Parse', 'Decode', 'Unmarshal', 'Deserialize', 'Read', 'Receive'
 
 REGISTRY = '.github/quality/fuzz-targets.txt'
 FUZZ_DIR = 'src/fuzz'
+
+# The functions that the seeds of a C target must reach, each named in a line "// fuzz-reach: <function>" of the target,
+# which run_fuzzers.ps1 checks in the coverage of the replay of the seeds. fuzz_peer reaches the dispatch of a STUN
+# message by libjuice and the processing of a check whose MESSAGE-INTEGRITY holds (CORE-S5-6-R1 #537, CORE-S5-6-R2 #557).
+REACH = {'fuzz_peer': ('agent_dispatch_stun', 'agent_process_stun_binding')}
 
 _WORD_RE = re.compile(r'[A-Z]+(?=[A-Z][a-z])|[A-Z]?[a-z]+|[A-Z]+|\d+')
 # A C function head at the start of a line: return type, name and '('; the definition is the head
@@ -171,6 +179,20 @@ def max_len_of(path):
     return int(m.group(1)) if m else None
 
 
+def reach_of(path):
+    # The functions of the lines "// fuzz-reach: <function>" of a target, and the numbers of its lines that start with
+    # "// fuzz-reach:" and name no function, as run_fuzzers.ps1 reads them
+    functions, malformed = [], []
+    for number, line in enumerate(read(path).splitlines(), 1):
+        if re.match(r'//\s*fuzz-reach:', line):
+            m = re.match(r'//\s*fuzz-reach:\s*(\w+)\s*$', line)
+            if m:
+                functions.append(m.group(1))
+            else:
+                malformed.append(number)
+    return functions, malformed
+
+
 def names_word(text, word):
     return re.search(r'(?<![\w])' + re.escape(word) + r'(?![\w])', text) is not None
 
@@ -260,6 +282,14 @@ def check(root):
                             % (FUZZ_DIR, name, FUZZ_DIR))
         if not os.path.isdir(os.path.join(root, FUZZ_DIR, 'corpus', name)):
             problems.append('%s/%s.c: no seed corpus %s/corpus/%s' % (FUZZ_DIR, name, FUZZ_DIR, name))
+        functions, malformed = reach_of(os.path.join(root, FUZZ_DIR, name + '.c'))
+        for number in malformed:
+            problems.append('%s/%s.c:%d: a line "// fuzz-reach:" that names no function, which run_fuzzers.ps1 refuses: '
+                            'it is "// fuzz-reach: <function>"' % (FUZZ_DIR, name, number))
+        for function in REACH.get(name, ()):
+            if function not in functions:
+                problems.append('%s/%s.c: no line "// fuzz-reach: %s", without which %s/run_fuzzers.ps1 no longer checks '
+                                'that the seeds reach %s' % (FUZZ_DIR, name, function, FUZZ_DIR, function))
     for directory, target in sorted(set(go_fuzz) - named_go):
         problems.append('%s: %s is listed for no function in %s, so CI does not run it' % (directory, target, REGISTRY))
 

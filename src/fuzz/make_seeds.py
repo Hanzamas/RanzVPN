@@ -798,8 +798,11 @@ def make_peer_seeds():
     write_seed('fuzz_peer', 'bound_garbage.bin', b'\x03' + PEER_RELAY + PEER_A + b'\0' * 43)
     # The STUN messages of ICE at B, whose session with A has A's answer (CORE-S5-6-R1, #537): a check of A that names the
     # username fragment of that session as RanzUfrg, which fuzz_peer.c puts in its place, so the session takes it and
-    # libjuice dispatches it (agent_dispatch_stun); the same with USE-CANDIDATE; and an answer to no check of B. Each has a
-    # MESSAGE-INTEGRITY that is no HMAC, and no FINGERPRINT, which the fragment put in its place would break.
+    # libjuice dispatches it (agent_dispatch_stun); the same with USE-CANDIDATE; the same with ICE-CONTROLLING in place of
+    # ICE-CONTROLLED, a role conflict with B, whose session is controlling and keeps its role against the tiebreaker 1;
+    # and an answer to no check of B. The MESSAGE-INTEGRITY of each is zeros, which fuzz_peer.c makes the HMAC of B's
+    # session in the copy for B once the fragment is in its place (CORE-S5-6-R2, #557), so the checks pass the check of
+    # their integrity and reach agent_process_stun_binding. None has a FINGERPRINT, which the fragment would break.
     check = (stun_attr(0x0006, b'RanzUfrg:RanzPeer') + stun_attr(0x0024, struct.pack('>I', 0x6E7F1EFF)) +
              stun_attr(0x8029, struct.pack('>Q', 0x0102030405060708)))
     integrity = stun_attr(0x0008, bytes(20))
@@ -808,6 +811,10 @@ def make_peer_seeds():
     nominate = check + stun_attr(0x0025, b'') + integrity
     write_seed('fuzz_peer', 'stun_check_use_candidate.bin',
                struct.pack('>HHI', 0x0001, len(nominate), STUN_COOKIE) + STUN_TID + nominate)
+    conflict = (stun_attr(0x0006, b'RanzUfrg:RanzPeer') + stun_attr(0x0024, struct.pack('>I', 0x6E7F1EFF)) +
+                stun_attr(0x802A, struct.pack('>Q', 1)) + integrity)
+    write_seed('fuzz_peer', 'stun_check_role_conflict.bin',
+               struct.pack('>HHI', 0x0001, len(conflict), STUN_COOKIE) + STUN_TID + conflict)
     write_seed('fuzz_peer', 'stun_answer.bin',
                stun_response(stun_attr(0x0020, stun_address(1, 40000, bytes([203, 0, 113, 20]), True)) + integrity))
 
