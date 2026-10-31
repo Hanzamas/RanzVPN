@@ -15,7 +15,7 @@ import (
 //	PATCH /api/v1/tokens/{name}   a TokenPatch; the rbac.Token with its new role   admin
 //
 // The secret of the token stays, so whoever holds it keeps it and calls with the new role from the next
-// call on. The last admin token cannot lose the role admin (409), as it cannot be deleted.
+// call on. The last admin token that has not expired cannot lose the role admin (409), as it cannot be deleted.
 
 // TokenPatch is the body of PATCH /api/v1/tokens/{name}: the role that the token gets. A token that is held for
 // one Network (SDN-38, scoped.go) stays so, unless Network says otherwise: the Network that it is held for from

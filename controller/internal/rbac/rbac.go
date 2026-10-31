@@ -74,8 +74,8 @@ var (
 	ErrNotFound = errors.New("no such token")
 	// ErrExists marks the creation of a token whose name is taken.
 	ErrExists = errors.New("the token exists")
-	// ErrLastAdmin marks the delete of the last admin token, which would leave the controller
-	// without anyone who may manage the tokens.
+	// ErrLastAdmin marks the delete of the last admin token that has not expired, which would leave
+	// the controller without anyone who may manage the tokens (lastadmin.go).
 	ErrLastAdmin = errors.New("the last admin token")
 )
 
@@ -265,7 +265,8 @@ func (t *Tokens) CreateExpiring(ctx context.Context, name string, role Role, exp
 }
 
 // Delete deletes the token name, whether it has expired or not, and returns it. It refuses to delete
-// the last admin token.
+// the last admin token that has not expired, and an admin token that has expired when it is the last
+// admin token there is (lastadmin.go).
 func (t *Tokens) Delete(ctx context.Context, name string) (Token, error) {
 	sts, err := t.st.Tokens(ctx)
 	if err != nil {
@@ -280,17 +281,18 @@ func (t *Tokens) Delete(ctx context.Context, name string) (Token, error) {
 	if gone == nil {
 		return Token{}, fmt.Errorf("%w: %q", ErrNotFound, name)
 	}
-	ok, err := t.st.DeleteToken(ctx, name, string(Admin))
+	now := t.now()
+	ok, err := t.st.DeleteToken(ctx, name, string(Admin), now)
 	if err != nil {
 		return Token{}, err
 	}
 	if !ok {
 		if gone.Role == string(Admin) {
-			return Token{}, fmt.Errorf("%w: %q is the last token with the role %s, and the controller keeps one; create another admin token first", ErrLastAdmin, name, Admin)
+			return Token{}, lastAdmin(name, expiredStored(*gone, now), "create another admin token first")
 		}
 		return Token{}, fmt.Errorf("%w: %q", ErrNotFound, name)
 	}
-	return token(*gone, t.now())
+	return token(*gone, now)
 }
 
 // Bootstrap creates the admin token FirstAdmin when the store holds no token at all, which is
@@ -304,7 +306,7 @@ func (t *Tokens) Bootstrap(ctx context.Context, save func(secret string) error) 
 		return false, err
 	}
 	if err := save(secret); err != nil {
-		if _, derr := t.st.DeleteToken(ctx, FirstAdmin, ""); derr != nil {
+		if _, derr := t.st.DeleteToken(ctx, FirstAdmin, "", t.now()); derr != nil {
 			return false, fmt.Errorf("%w; deleting the token again: %w", err, derr)
 		}
 		return false, err
@@ -322,7 +324,7 @@ func (t *Tokens) Recover(ctx context.Context, name string, save func(secret stri
 		return NewToken{}, err
 	}
 	if err := save(tok.Secret); err != nil {
-		if _, derr := t.st.DeleteToken(ctx, name, ""); derr != nil {
+		if _, derr := t.st.DeleteToken(ctx, name, "", t.now()); derr != nil {
 			return NewToken{}, fmt.Errorf("%w; deleting the token again: %w", err, derr)
 		}
 		return NewToken{}, err

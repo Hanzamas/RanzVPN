@@ -182,6 +182,7 @@ func Guard(tokens *rbac.Tokens, h http.Handler) http.Handler {
 		}
 		tok, err := tokens.Authenticate(r.Context(), secret)
 		if errors.Is(err, rbac.ErrExpired) {
+			noteExpired(r.Context(), tok) // the audit log names the token, which the answer does not (auditexpired.go)
 			// Told to the holder of the secret, who has it already: when the token ended, not its name
 			w.Header().Set("WWW-Authenticate", challenge+`, error="invalid_token", error_description="`+expiredDescription+`"`)
 			reply(w, http.StatusUnauthorized, Problem{Error: fmt.Sprintf("the bearer token expired at %s: an admin makes a new one", tok.Expires.Format(time.RFC3339))})

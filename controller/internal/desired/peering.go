@@ -42,8 +42,9 @@ func nodePeering(in intent.Intent, n intent.Node, vrfs map[string]*controlpb.Vrf
 }
 
 // peerPeering returns the BGP peering with the Node other, o, for the Peer object of a Node with which
-// it shares the VRFs shared: nil when none of them peers by BGP. The hold time is the shortest that
-// those VRFs name.
+// it shares the VRFs shared: nil when none of them peers by BGP. The hold time is the shortest of those
+// VRFs, and a VRF that names none has the default one (SDN-77-R2): VRFs of the hold times default and
+// 120 give 90 s, not 120.
 func peerPeering(in intent.Intent, other string, o intent.Node, shared map[string]bool, vrfs map[string]*controlpb.Vrf) *controlpb.PeerPeering {
 	var names []string
 	var hold uint32
@@ -54,7 +55,7 @@ func peerPeering(in intent.Intent, other string, o intent.Node, shared map[strin
 		}
 		names = append(names, v)
 		member[v] = true
-		if h := in.VRFs[v].Peering.HoldTime; h != 0 && (hold == 0 || h < hold) {
+		if h := in.VRFs[v].Peering.Hold(); hold == 0 || h < hold {
 			hold = h
 		}
 	}

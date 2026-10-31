@@ -230,13 +230,14 @@ bool NodeWireGuardKey(const PEER_KEY *key, UCHAR *priv, UCHAR *pub) {
 	return ok;
 }
 
-// The Capabilities of the node of param (CONTROL_CAPS_PROC): those of its host (NodeCapsProc), and wireguard with the
-// public key of its WireGuard interface when wireguard.dll loads
+// The Capabilities of the node of param (CONTROL_CAPS_PROC): those of its host (NodeCapsProc), the BGP peering when its
+// sidecar is there (NodeCapsPeering), and wireguard with the public key of its WireGuard interface when wireguard.dll loads
 void NodeWireGuardCaps(void *param, CONTROL_CAPS *caps) {
 	NODE *n = (NODE *)param;
 	NODE_WIREGUARD *wg = (n != NULL ? n->WireGuard : NULL);
 
 	NodeCapsProc(NULL, caps);
+	NodeCapsPeering(n, caps);
 
 	if (wg == NULL || wg->HasKey == false || NodeWireGuardAvailable(NULL) == false)
 		return;

@@ -145,6 +145,52 @@ func (f *FrontDoor) handoff(p net.Conn) {
 	go f.srv.ServeConn(c)
 }
 
+// handleFlagProtectFromClose is HANDLE_FLAG_PROTECT_FROM_CLOSE: CloseHandle does not close a handle that has it.
+const handleFlagProtectFromClose = 0x2
+
+// closeSocketFile closes file, which holds the handle h of a socket, and the socket with it, as closesocket does.
+// os.File closes a handle with CloseHandle, which Winsock does not hear of: Winsock keeps state by the value of each
+// socket handle, the remote address among it, until closesocket drops it, and a socket that comes by the same value
+// later starts with that state. The next handoff then got a connection that reported the client of an older one as its
+// remote address (#534), which the API and the limits for a source go by. So h is protected from the close of the file,
+// which then fails and leaves it open, and closesocket closes it.
+func closeSocketFile(file *os.File, h windows.Handle) {
+	// A debugger takes the close of a protected handle for an exception, which would end the process, so there the file
+	// closes the handle itself
+	if windows.RtlGetCurrentPeb().BeingDebugged != 0 || windows.SetHandleInformation(h, handleFlagProtectFromClose, handleFlagProtectFromClose) != nil {
+		file.Close()
+		return
+	}
+	if file.Close() == nil {
+		// The handle is closed after all, and no longer ours to close
+		return
+	}
+	_ = windows.SetHandleInformation(h, handleFlagProtectFromClose, 0)
+	_ = windows.Closesocket(h)
+}
+
+// fileConnTries is how often fileConn tries net.FileConn.
+const fileConnTries = 8
+
+// fileConn is net.FileConn of file, tried again after an error.
+//
+// FileConn makes a socket of its own of the one in file: WSADuplicateSocket and WSASocket in this process, which give the
+// new socket the next free value of a handle. Winsock keeps an entry of each socket by the value of its handle until
+// closesocket, and Windows gives the value of a closed handle to the next handle that it makes. The entry of a socket that
+// was closed with CloseHandle stays, so a socket that comes by its value gets the entry of the older one, a socket that
+// was never bound, and FileConn fails in getsockname or in WSASocket. The standard library leaves such an entry in each
+// process that dials: the socket that LoadConnectEx makes is closed with CloseHandle. The next try does not meet the same
+// entry, as FileConn closes the socket of a try that failed in getsockname with closesocket, which drops the entry. Without
+// the next try about one new process in a hundred refused a handoff, and its client saw the connection reset (#534).
+func fileConn(file *os.File) (c net.Conn, err error) {
+	for range fileConnTries {
+		if c, err = net.FileConn(file); err == nil {
+			return c, nil
+		}
+	}
+	return nil, err
+}
+
 // rebuild makes the controller's own socket of the WSAPROTOCOL_INFOW of a handoff and returns it as
 // a TCP connection of package net.
 func rebuild(info [protocolInfoSize]byte) (net.Conn, error) {
@@ -158,8 +204,8 @@ func rebuild(info [protocolInfoSize]byte) (net.Conn, error) {
 	}
 	// FileConn takes a socket of its own of the file, so the file closes after
 	file := os.NewFile(uintptr(h), "front door handoff")
-	c, err := net.FileConn(file)
-	file.Close()
+	c, err := fileConn(file)
+	closeSocketFile(file, h)
 	if err != nil {
 		return nil, fmt.Errorf("port: the socket of a handoff: %w", err)
 	}
