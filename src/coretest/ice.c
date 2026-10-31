@@ -13,6 +13,16 @@
 //   can reach, nor a mapping that lets the other in, so every check fails, as between two symmetric NATs: the pair
 //   stays on the relay, and its traffic flows there throughout. The port prediction and birthday punching that a
 //   direct path would take are CORE-S5-4 (#266).
+// iceanswer (CORE-S5-6-R1, #537): A and B, each behind a port-restricted cone NAT, offer at once, as when the dial of the
+//   end of the higher key failed, and both keep the offer of the higher key; the answer to it is lost on the way. The
+//   session of that offer waits for its answer, and libjuice runs no timer before it has one: it fails after
+//   PEER_ICE_ANSWER_TIMEOUT, about 40 s, while the pair stays on the relay with its traffic flowing. ICE then runs again
+//   for the pair: the end of the lower key offers again, the other takes the offer, as its failed session waits for no
+//   answer, and the new sessions move the pair to the direct path.
+// iceinput (CORE-S5-6-R1, #537): B holds an ICE session with A, and later ICE_MANY more. A STUN message that any sender
+//   sends to B's socket is read once, whatever the number of B's sessions: a check that names the username fragment of
+//   the session with A goes to that session, as does an answer to the last check of that session, and a check that names
+//   no session, an answer to no check and a message that does not read are dropped.
 
 #include <winsock2.h>
 #include <ws2tcpip.h>
@@ -33,6 +43,16 @@
 #define ICE_BIND_RETRY  200   // ... and their retry (ms)
 #define ICE_PORT        5000  // The port of the socket of A and B on their home networks
 #define ICE_MAP_TIMEOUT 2000  // ms that libplum waits for a gateway per protocol
+#define ICE_ANSWER_LATE 10000 // ms past PEER_ICE_ANSWER_TIMEOUT within which a session without its answer fails
+#define ICE_MANY        48    // The sessions of B besides the one with A in the second round of iceinput
+#define ICE_ID_SIZE     12    // The transaction id of a STUN message (RFC 8489 section 5)
+
+// The world of a test: A behind the symmetric NAT of its home gateway, which grants it a public port, and B behind a
+// port-restricted cone (iceupgrade); A and B each behind a symmetric NAT (icesymmetric); or each behind a
+// port-restricted cone (iceanswer, iceinput)
+#define ICE_WORLD_GATEWAY   1
+#define ICE_WORLD_SYMMETRIC 2
+#define ICE_WORLD_CONES     3
 
 // One node of a test and what it received
 typedef struct ICE_NODE {
@@ -48,15 +68,18 @@ typedef struct ICE_NODE {
 
 // The network of a test: the relay R on the public side, A and B behind NATs of their own
 typedef struct ICE_WORLD {
-	NATSIM *Sim;            // The network
-	NATSIM_NAT *NatA;       // A's NAT
-	NATSIM_NAT *NatB;       // B's NAT
-	HOMEGW *Gateway;        // The home gateway of A's NAT, NULL without the port mapping
-	ICE_NODE R, A, B;       // The nodes
-	volatile LONG BlockIce; // The network drops every STUN message while it is set
-	volatile LONG Halt;     // Ends the ticker
-	HANDLE Ticker;          // The thread that ticks the peer layers
-	bool WsaStarted;        // WSAStartup succeeded
+	NATSIM *Sim;                // The network
+	NATSIM_NAT *NatA;           // A's NAT
+	NATSIM_NAT *NatB;           // B's NAT
+	HOMEGW *Gateway;            // The home gateway of A's NAT, NULL without the port mapping
+	ICE_NODE R, A, B;           // The nodes
+	volatile LONG BlockIce;     // The network drops every STUN message while it is set
+	volatile LONG Halt;         // Ends the ticker
+	HANDLE Ticker;              // The thread that ticks the peer layers
+	bool WsaStarted;            // WSAStartup succeeded
+	SRWLOCK CheckLock;          // The last check that B sent, which the tap keeps: ...
+	bool HasCheck;              // ... once B sent one
+	UCHAR CheckId[ICE_ID_SIZE]; // ... its transaction id
 } ICE_WORLD;
 
 // The receive procedure of every node: count the datagram; with Echo, answer "ping ..." with "pong ..."
@@ -82,11 +105,20 @@ static bool ice_is_stun(const UCHAR *data, UINT size) {
 	       (UINT)((data[2] << 8) | data[3]) + 20 == size;
 }
 
-// The tap of the network: it drops every STUN message while BlockIce is set
+// The tap of the network: it keeps the transaction id of the last check that B sends, a binding request, and drops every
+// STUN message while BlockIce is set
 static bool ice_tap(void *param, NATSIM_HOST *from, const PEER_ADDR *dst, const UCHAR *data, UINT size) {
 	ICE_WORLD *w = (ICE_WORLD *)param;
+	bool stun = ice_is_stun(data, size);
 
-	return InterlockedCompareExchange(&w->BlockIce, 0, 0) == 0 || ice_is_stun(data, size) == false;
+	if (stun && from == w->B.Host && data[0] == 0x00 && data[1] == 0x01) {
+		AcquireSRWLockExclusive(&w->CheckLock);
+		CopyMemory(w->CheckId, data + 8, ICE_ID_SIZE);
+		w->HasCheck = true;
+		ReleaseSRWLockExclusive(&w->CheckLock);
+	}
+
+	return InterlockedCompareExchange(&w->BlockIce, 0, 0) == 0 || stun == false;
 }
 
 // The ticker: the timers of the peer layers, which renew the binds and run the sessions, as the receive thread of a UDP
@@ -129,11 +161,12 @@ static void ice_peer(PEER_INFO *p, const char *name, const UCHAR *key, UINT vrf)
 	p->VrfIds[0] = vrf;
 }
 
-// Build the world: R on the public side; A behind a NAT of its home, B behind a NAT of its own. Without symmetric, A's
-// NAT is symmetric and has a home gateway that A asks for a public port, and B's is a port-restricted cone; with it,
-// both are symmetric and no one asks a gateway. ICE runs on the socket of every node but R; the host candidates of A
-// and B are their private addresses. Then the peers and the relays of every node, the binds to R and the ticker.
-static bool ice_world_start(ICE_WORLD *w, bool symmetric) {
+// Build the world of kind (ICE_WORLD_*): R on the public side; A behind a NAT of its home, B behind a NAT of its own.
+// With ICE_WORLD_GATEWAY, A's NAT is symmetric and has a home gateway that A asks for a public port, and B's is a
+// port-restricted cone; with ICE_WORLD_SYMMETRIC both are symmetric, and with ICE_WORLD_CONES both are port-restricted
+// cones, and no one asks a gateway. ICE runs on the socket of every node but R; the host candidates of A and B are their
+// private addresses. Then the peers and the relays of every node, the binds to R and the ticker.
+static bool ice_world_start(ICE_WORLD *w, UINT kind) {
 	PEER_CONFIG rc, ac, bc;
 	PEER_ADDR addr;
 	PEER_INFO p[2];
@@ -148,15 +181,15 @@ static bool ice_world_start(ICE_WORLD *w, bool symmetric) {
 		return false;
 	NatSimSetTap(w->Sim, ice_tap, w);
 
-	w->NatA = NatSimAddNat(w->Sim, 203, 0, 113, 10, NATSIM_MAP_ADDRESS_PORT_DEPENDENT, NATSIM_FILTER_ADDRESS_PORT_DEPENDENT);
-	w->NatB = NatSimAddNat(w->Sim, 203, 0, 113, 20, (symmetric ? NATSIM_MAP_ADDRESS_PORT_DEPENDENT : NATSIM_MAP_ENDPOINT_INDEPENDENT), NATSIM_FILTER_ADDRESS_PORT_DEPENDENT);
+	w->NatA = NatSimAddNat(w->Sim, 203, 0, 113, 10, (kind == ICE_WORLD_CONES ? NATSIM_MAP_ENDPOINT_INDEPENDENT : NATSIM_MAP_ADDRESS_PORT_DEPENDENT), NATSIM_FILTER_ADDRESS_PORT_DEPENDENT);
+	w->NatB = NatSimAddNat(w->Sim, 203, 0, 113, 20, (kind == ICE_WORLD_SYMMETRIC ? NATSIM_MAP_ADDRESS_PORT_DEPENDENT : NATSIM_MAP_ENDPOINT_INDEPENDENT), NATSIM_FILTER_ADDRESS_PORT_DEPENDENT);
 
 	PeerDefaultConfig(&rc);
 	rc.Relay = true;
 
 	PeerDefaultConfig(&ac);
 	ac.Ice = true;
-	ac.PortMap = (symmetric == false);
+	ac.PortMap = (kind == ICE_WORLD_GATEWAY);
 	ac.PortMapTimeout = ICE_MAP_TIMEOUT;
 	ac.BindInterval = ICE_BIND;
 	ac.BindRetry = ICE_BIND_RETRY;
@@ -177,7 +210,7 @@ static bool ice_world_start(ICE_WORLD *w, bool symmetric) {
 		return false;
 
 	// The gateway of A's home answers before A asks it, which A does once its host candidates name its port
-	if (symmetric == false) {
+	if (kind == ICE_WORLD_GATEWAY) {
 		w->Gateway = HomeGwNew(w->Sim, w->NatA);
 		if (w->Gateway == NULL)
 			return false;
@@ -475,7 +508,7 @@ static void ice_upgrade(ICE_WORLD *w) {
 void iceupgrade_test() {
 	ICE_WORLD w;
 
-	bool started = ice_world_start(&w, false);
+	bool started = ice_world_start(&w, ICE_WORLD_GATEWAY);
 	coretest_check(started, "The network starts: R on the public side, A behind the symmetric NAT of its home gateway, B behind a port-restricted cone NAT; the gateway answers SSDP and HTTP on the loopback interfaces");
 	if (started)
 		ice_upgrade(&w);
@@ -492,7 +525,7 @@ void icesymmetric_test() {
 	LONG pings = 0;
 	UINT off_relay = 0;
 
-	bool started = ice_world_start(&w, true);
+	bool started = ice_world_start(&w, ICE_WORLD_SYMMETRIC);
 	coretest_check(started, "The network starts: R on the public side, A and B each behind a symmetric NAT of its own, ICE on the socket of each");
 	if (started == false) {
 		ice_world_stop(&w);
@@ -531,4 +564,265 @@ void icesymmetric_test() {
 	coretest_info("a direct path for such a pair is the port prediction and birthday punching of CORE-S5-4 (#266)");
 
 	ice_world_stop(&w);
+}
+
+// Whether both ends are on the direct path with their sessions completed within timeout ms
+static bool ice_wait_direct(ICE_NODE *x, ICE_NODE *y, PEER_STATUS *ps_x, PEER_STATUS *ps_y, UINT timeout) {
+	ULONGLONG t0 = GetTickCount64();
+
+	while (GetTickCount64() - t0 < timeout) {
+		if (ice_path(x, y, ps_x) == PEER_PATH_DIRECT && ice_path(y, x, ps_y) == PEER_PATH_DIRECT && ps_x->Ice == PEER_ICE_COMPLETED && ps_y->Ice == PEER_ICE_COMPLETED)
+			return true;
+		Sleep(50);
+	}
+
+	return false;
+}
+
+void iceanswer_test() {
+	ICE_WORLD w;
+	PEER_SIGNAL offer_hi, offer_lo, offer, answer;
+	PEER_STATUS ps_lo, ps_hi;
+	PEER_STATS st_lo, st_hi;
+	UCHAR env_hi[PEER_MAX_ENVELOPE];
+	UCHAR env_lo[PEER_MAX_ENVELOPE];
+	UCHAR env[PEER_MAX_ENVELOPE];
+	char text[64];
+	LONG pings = 0;
+	UINT off_relay = 0;
+
+	bool started = ice_world_start(&w, ICE_WORLD_CONES);
+	coretest_check(started, "The network starts: R on the public side, A and B each behind a port-restricted cone NAT of its own, ICE on the socket of each");
+	if (started == false) {
+		ice_world_stop(&w);
+		return;
+	}
+
+	// The end of the lower key and the end of the higher key
+	ICE_NODE *lo = (memcmp(w.A.Key.Public, w.B.Key.Public, PEER_KEY_SIZE) < 0 ? &w.A : &w.B);
+	ICE_NODE *hi = (lo == &w.A ? &w.B : &w.A);
+	coretest_info("%s has the lower key and %s the higher", lo->Name, hi->Name);
+
+	// Both offer at once, as when the dial of the end of the higher key failed, and the session of each is its own offer.
+	// The lower end takes the offer of the higher one in place of its own, and the higher end keeps its own (PeerIceRemote).
+	ULONGLONG t0 = GetTickCount64();
+	UINT size_hi = PeerSealSignal(hi->Agent, lo->Key.Public, PEER_SIGNAL_OFFER, env_hi, sizeof(env_hi));
+	UINT size_lo = PeerSealSignal(lo->Agent, hi->Key.Public, PEER_SIGNAL_OFFER, env_lo, sizeof(env_lo));
+	UINT r_lo = (size_hi != 0 ? PeerOpenSignal(lo->Agent, env_hi, size_hi, &offer_hi) : PEER_DROP_MALFORMED);
+	UINT r_hi = (size_lo != 0 ? PeerOpenSignal(hi->Agent, env_lo, size_lo, &offer_lo) : PEER_DROP_MALFORMED);
+	coretest_check(r_lo == PEER_OK && r_hi == PEER_OK && offer_hi.IceUfrag[0] != 0 && offer_lo.IceUfrag[0] != 0, "Both ends offer at once, each with the credentials of its own session, and each takes the offer of the other");
+
+	// The answer of the lower end to the offer that both keep is lost on the way: sealed, and never carried. The answer of
+	// the higher end carries no credentials, as its session is its own offer, which waits for the lost answer.
+	UINT lost = PeerSealSignal(lo->Agent, hi->Key.Public, PEER_SIGNAL_ANSWER, env, sizeof(env));
+	UINT r = ice_signal(hi, lo, PEER_SIGNAL_ANSWER, &answer);
+	coretest_check(lost != 0 && r == PEER_OK && answer.IceUfrag[0] == 0, "The answer of the lower end to the offer of the higher end is lost on the way; the answer of the higher end carries no credentials, as its session waits for the lost one");
+	NatSimWaitIdle(w.Sim, ICE_WAIT);
+
+	ice_path(lo, hi, &ps_lo);
+	ice_path(hi, lo, &ps_hi);
+	coretest_check(ps_lo.Path == PEER_PATH_RELAY && ps_hi.Path == PEER_PATH_RELAY && ps_lo.Ice == PEER_ICE_CHECKING && ps_hi.Ice == PEER_ICE_CHECKING, "The pair is on the relay at once, and the session of each end checks, the one of the higher end with no answer");
+
+	// Pings through R while the session of the higher end waits for its answer, until it fails
+	InterlockedExchange(&hi->Echo, 1);
+	ULONGLONG failed = 0;
+	while (GetTickCount64() - t0 < PEER_ICE_ANSWER_TIMEOUT + ICE_ANSWER_LATE) {
+		snprintf(text, sizeof(text), "ping %ld", pings);
+		if (ice_send(lo, hi, text))
+			pings++;
+
+		if (ice_path(lo, hi, &ps_lo) != PEER_PATH_RELAY || ice_path(hi, lo, &ps_hi) != PEER_PATH_RELAY)
+			off_relay++;
+		if (ps_hi.Ice == PEER_ICE_FAILED) {
+			failed = GetTickCount64() - t0;
+			break;
+		}
+		Sleep(200);
+	}
+
+	bool all = ice_wait_received(&w, lo, pings, ICE_WAIT);
+	coretest_info("the session of %s, whose answer never came, failed %llu ms after its offer; %s sent %ld pings meanwhile", hi->Name, failed, lo->Name, pings);
+	coretest_check(failed >= PEER_ICE_ANSWER_TIMEOUT && failed < PEER_ICE_ANSWER_TIMEOUT + ICE_ANSWER_LATE, "The session whose answer never came failed about 40 s after its offer (PEER_ICE_ANSWER_TIMEOUT), and not before");
+	coretest_check(pings != 0 && off_relay == 0 && all && lo->Received == pings && hi->ReceivedDirect == 0, "The pair stayed on the relay meanwhile, and every ping had its pong through R");
+
+	// The session of the lower end fails too: the higher end took none of its checks without the answer
+	ULONGLONG end = GetTickCount64() + ICE_WAIT;
+	while (ice_path(lo, hi, &ps_lo) == PEER_PATH_RELAY && ps_lo.Ice != PEER_ICE_FAILED && GetTickCount64() < end)
+		Sleep(100);
+	coretest_check(ps_lo.Path == PEER_PATH_RELAY && ps_lo.Ice == PEER_ICE_FAILED, "The session of the lower end failed too: the higher end took none of its checks without the answer");
+
+	// ICE runs again for the pair: the lower end offers again, as its agent does NODE_AGENT_ICE_RETRY ms after its session
+	// failed, and the higher end takes the offer, as its failed session waits for no answer, and answers it
+	r = ice_signal(lo, hi, PEER_SIGNAL_OFFER, &offer);
+	coretest_check(r == PEER_OK && offer.IceUfrag[0] != 0 && strcmp(offer.IceUfrag, offer_lo.IceUfrag) != 0, "The lower end offers again, with the credentials of a new session");
+	r = ice_signal(hi, lo, PEER_SIGNAL_ANSWER, &answer);
+	coretest_check(r == PEER_OK && answer.IceUfrag[0] != 0 && strcmp(answer.IceUfrag, offer_hi.IceUfrag) != 0, "The higher end takes that offer, as its session that failed waits for no answer any more, and answers it with the credentials of a new session");
+
+	ULONGLONG t1 = GetTickCount64();
+	bool up = ice_wait_direct(lo, hi, &ps_lo, &ps_hi, ICE_UP_WAIT);
+	coretest_info("both ends were on the direct path %llu ms after the new offer", GetTickCount64() - t1);
+	coretest_check(up, "ICE ran again for the pair: the new sessions validated and nominated the direct path, and both ends moved to it");
+
+	LONG received = lo->Received;
+	LONG direct = lo->ReceivedDirect;
+	bool ping = ice_send(lo, hi, "ping direct");
+	ice_wait_received(&w, lo, received + 1, ICE_WAIT);
+	coretest_check(ping && lo->Received == received + 1 && lo->ReceivedDirect == direct + 1, "A ping and its pong go on the direct path");
+
+	PeerGetStats(lo->Agent, &st_lo);
+	PeerGetStats(hi->Agent, &st_hi);
+	coretest_check(st_lo.Upgrades == 1 && st_hi.Upgrades == 1 && st_lo.Fallbacks == 0 && st_hi.Fallbacks == 0, "Each end counts one Upgrade, of its new session, and no Fallback");
+
+	ice_world_stop(&w);
+}
+
+// A STUN message of type (RFC 8489 section 5) with the transaction id, into buf of 256 bytes: a USERNAME of user when it is
+// not NULL, and a MESSAGE-INTEGRITY with integrity, whose value is no HMAC, so the session that takes the message drops it
+// once it checks it. Returns its size.
+static UINT ice_stun(UCHAR *buf, USHORT type, const UCHAR *id, const char *user, bool integrity) {
+	UINT len = 20;
+
+	if (user != NULL) {
+		UINT n = (UINT)strlen(user);
+
+		buf[len] = 0x00;
+		buf[len + 1] = 0x06;
+		buf[len + 2] = (UCHAR)(n >> 8);
+		buf[len + 3] = (UCHAR)n;
+		CopyMemory(buf + len + 4, user, n);
+		len += 4 + n;
+		while (len % 4 != 0)
+			buf[len++] = 0;
+	}
+
+	if (integrity) {
+		buf[len] = 0x00;
+		buf[len + 1] = 0x08;
+		buf[len + 2] = 0x00;
+		buf[len + 3] = 20;
+		ZeroMemory(buf + len + 4, 20);
+		len += 24;
+	}
+
+	buf[0] = (UCHAR)(type >> 8);
+	buf[1] = (UCHAR)type;
+	buf[2] = (UCHAR)((len - 20) >> 8);
+	buf[3] = (UCHAR)(len - 20);
+	buf[4] = 0x21;
+	buf[5] = 0x12;
+	buf[6] = 0xA4;
+	buf[7] = 0x42;
+	CopyMemory(buf + 8, id, ICE_ID_SIZE);
+
+	return len;
+}
+
+// One round of iceinput: five STUN messages from a stranger to B, of which the first two name B's session with A, whose
+// username fragment and A's are user: a check of that session and an answer to its last check; then a check that names no
+// session, an answer to no check, and a message whose USERNAME runs past its end, which libjuice cannot read. Whether B
+// read each once, its session took the first two and B dropped the other three.
+static bool ice_input_round(ICE_WORLD *w, const char *user, UINT sessions) {
+	static const char *what[] = {"a check that names its session with A", "an answer to the last check of that session", "a check that names no session",
+	                             "an answer to no check", "a message that does not read"};
+	static const UCHAR some[ICE_ID_SIZE] = {'r', 'a', 'n', 'z', ' ', 'c', 'h', 'e', 'c', 'k', ' ', '1'};
+	static const UCHAR none[ICE_ID_SIZE] = {'r', 'a', 'n', 'z', ' ', 'n', 'o', ' ', 'o', 'n', 'e', '2'};
+	UCHAR msg[5][256];
+	UINT size[5];
+	UCHAR last[ICE_ID_SIZE];
+	PEER_STATS before, after;
+	PEER_ADDR stranger;
+	bool ok = true;
+
+	AcquireSRWLockShared(&w->CheckLock);
+	CopyMemory(last, w->CheckId, ICE_ID_SIZE);
+	ReleaseSRWLockShared(&w->CheckLock);
+
+	size[0] = ice_stun(msg[0], 0x0001, some, user, true);
+	size[1] = ice_stun(msg[1], 0x0101, last, NULL, false);
+	size[2] = ice_stun(msg[2], 0x0001, some, "zzzzzzzz:RanzPeer", true);
+	size[3] = ice_stun(msg[3], 0x0101, none, NULL, false);
+	size[4] = ice_stun(msg[4], 0x0001, some, "x", false);
+	msg[4][23] = 12;
+
+	PeerAddrSetV4(&stranger, 198, 51, 100, 77, 4000);
+	for (UINT k = 0; k < 5; k++) {
+		PeerGetStats(w->B.Agent, &before);
+		PeerInput(w->B.Agent, &stranger, msg[k], size[k]);
+		PeerGetStats(w->B.Agent, &after);
+
+		UINT64 read = after.StunMessages - before.StunMessages;
+		UINT64 dropped = after.Drops[PEER_DROP_ICE] - before.Drops[PEER_DROP_ICE];
+		coretest_info("with %u ICE sessions B read %s %llu time(s), and %s", sessions, what[k], read, dropped == 0 ? "the session took it" : "dropped it");
+		ok = ok && read == 1 && dropped == (k < 2 ? 0 : 1);
+	}
+
+	return ok;
+}
+
+void iceinput_test() {
+	ICE_WORLD w;
+	PEER_SIGNAL offer, answer;
+	PEER_INFO peers[2 + ICE_MANY];
+	PEER_KEY many[ICE_MANY];
+	PEER_STATS st;
+	UCHAR env[PEER_MAX_ENVELOPE];
+	char user[2 * PEER_ICE_UFRAG_SIZE];
+	UINT offered = 0;
+
+	ZeroMemory(many, sizeof(many));
+	bool started = ice_world_start(&w, ICE_WORLD_CONES);
+	coretest_check(started, "The network starts: R on the public side, A and B each behind a port-restricted cone NAT of its own, ICE on the socket of each");
+	if (started == false) {
+		ice_world_stop(&w);
+		return;
+	}
+
+	// No check and no answer crosses the network, so the only STUN messages that B reads are the ones of the test
+	InterlockedExchange(&w.BlockIce, 1);
+
+	// A offers B its session, and B takes it: B's session with A has A's credentials, and its checks go out
+	UINT r = ice_signal(&w.A, &w.B, PEER_SIGNAL_OFFER, &offer);
+	UINT r2 = ice_signal(&w.B, &w.A, PEER_SIGNAL_ANSWER, &answer);
+	coretest_check(r == PEER_OK && r2 == PEER_OK && offer.IceUfrag[0] != 0 && answer.IceUfrag[0] != 0, "A offers B its ICE session, B takes the offer as the controlled end and answers it with the credentials of its own");
+	snprintf(user, sizeof(user), "%s:%s", answer.IceUfrag, offer.IceUfrag);
+
+	ULONGLONG end = GetTickCount64() + ICE_WAIT;
+	bool checked = false;
+	while (checked == false && GetTickCount64() < end) {
+		AcquireSRWLockShared(&w.CheckLock);
+		checked = w.HasCheck;
+		ReleaseSRWLockShared(&w.CheckLock);
+		if (checked == false)
+			Sleep(20);
+	}
+	coretest_check(checked, "B's session checks the candidate pairs with A, and the tap keeps the transaction id of its last check");
+
+	PeerGetStats(w.B.Agent, &st);
+	bool one = (st.NumIce == 1 && ice_input_round(&w, user, st.NumIce));
+	coretest_check(one, "With one ICE session, B reads each of five STUN messages once: the check and the answer that name its session go to it, and the three others are dropped");
+
+	// ICE_MANY more peers, each with a session of B's offer, which waits for its answer
+	ice_peer(&peers[0], "a", w.A.Key.Public, 10);
+	ice_peer(&peers[1], "r", w.R.Key.Public, 10);
+	for (UINT i = 0; i < ICE_MANY; i++) {
+		char name[16];
+
+		snprintf(name, sizeof(name), "p%u", i);
+		coretest_fixed_key(&many[i], (UCHAR)(65 + i));
+		ice_peer(&peers[2 + i], name, many[i].Public, 10);
+	}
+	PeerSetPeers(w.B.Agent, peers, 2 + ICE_MANY);
+	for (UINT i = 0; i < ICE_MANY; i++)
+		if (PeerSealSignal(w.B.Agent, many[i].Public, PEER_SIGNAL_OFFER, env, sizeof(env)) != 0)
+			offered++;
+
+	PeerGetStats(w.B.Agent, &st);
+	coretest_info("B holds %u ICE sessions", st.NumIce);
+	bool all = (offered == ICE_MANY && st.NumIce == 1 + ICE_MANY && ice_input_round(&w, user, st.NumIce));
+	coretest_check(all, "With 49 ICE sessions, B still reads each of the five STUN messages once: the check and the answer that name its session with A go to it, and the three others are dropped");
+
+	ice_world_stop(&w);
+
+	for (UINT i = 0; i < ICE_MANY; i++)
+		PeerKeyClose(&many[i]);
 }

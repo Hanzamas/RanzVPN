@@ -19,7 +19,9 @@
 #
 # Without -Targets, every fuzz_<name>.c of src/fuzz but fuzz_common.c is a target, built as fuzz_<name>.exe
 # (src/fuzz/CMakeLists.txt): a new target is a new file and needs no line here. Its source gives the largest input,
-# the -max_len of libFuzzer, in a line "// fuzz-max-len: <bytes>"; the target is not run without one.
+# the -max_len of libFuzzer, in a line "// fuzz-max-len: <bytes>"; the target is not run without one. It may name a
+# function that its seeds must reach, in a line "// fuzz-reach: <function>" each: the replay then prints the coverage
+# of the seeds (-print_coverage=1), and fails unless libFuzzer lists each such function as covered (COVERED_FUNC).
 #
 # Usage: pwsh -File src/fuzz/run_fuzzers.ps1 [-BuildDir build] [-Seconds 60] [-Seed 1] [-Targets fuzz_pack,...]
 
@@ -47,6 +49,13 @@ function Get-MaxLen([string] $Target) {
 	$found = @(Select-String -LiteralPath $source -CaseSensitive -Pattern '^//\s*fuzz-max-len:\s*(\d+)\s*$' | Select-Object -First 1)
 	if ($found.Count -eq 0) { throw "$source has no line '// fuzz-max-len: <bytes>'" }
 	return [int] $found[0].Matches[0].Groups[1].Value
+}
+
+# The functions that the seeds of a target must reach: the "// fuzz-reach: <function>" lines of its source
+function Get-Reach([string] $Target) {
+	$source = Join-Path $PSScriptRoot "$Target.c"
+	return @(Select-String -LiteralPath $source -CaseSensitive -Pattern '^//\s*fuzz-reach:\s*(\w+)\s*$' |
+		ForEach-Object { $_.Matches[0].Groups[1].Value })
 }
 
 $BuildDir = (Resolve-Path $BuildDir).Path
@@ -113,11 +122,24 @@ foreach ($target in $Targets) {
 	$common = @("-max_len=$(Get-MaxLen $target)", '-timeout=25', '-rss_limit_mb=2048',
 		('-artifact_prefix=' + (Join-Path $ArtifactDir "$($target)-")))
 
-	# 1. Replay the seed corpus
+	# 1. Replay the seed corpus, with the coverage of the seeds when the target names functions that they must reach
+	$reach = Get-Reach $target
+	$replay = @('-runs=0')
+	if ($reach.Count -gt 0) { $replay += '-print_coverage=1' }
 	$log = Join-Path $LogDir "$target-replay.log"
 	Write-Host "[$target] replay $seeds"
-	$result = Invoke-Fuzzer $exe ($common + @('-runs=0', $seeds)) $log
+	$result = Invoke-Fuzzer $exe ($common + $replay + @($seeds)) $log
 	$problems = Get-Problems $result $true
+	foreach ($function in $reach) {
+		# libFuzzer prints "COVERED_FUNC: hits: <n> edges: <covered>/<all> <function> <file>:<line>" for a function that a
+		# seed reached, and UNCOVERED_FUNC for one that none did
+		$covered = @($result.Text -split "`r?`n" | Where-Object { $_ -match ('^COVERED_FUNC: .*\b' + [regex]::Escape($function) + '\b') })
+		if ($covered.Count -eq 0) {
+			$problems += "no seed reaches $function (fuzz-reach)"
+		} else {
+			Write-Host "  [$target] the seeds reach ${function}: $($covered[0])"
+		}
+	}
 	if ($problems.Count -ne 0) {
 		Write-LogTail $result
 		Write-Host "::error::$target replay: $($problems -join ', ')"
