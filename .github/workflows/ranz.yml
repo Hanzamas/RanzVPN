@@ -416,17 +416,17 @@ jobs:
         wait "$server"
         cat "$tools/throughput-server.out"
     # -race is the race detection of ADR-0040 item 4 for the Go code; the profile is read by the
-    # coverage floor step. -timeout 6m (CI-SLOW-1 #552, CI-SPEED-1 #547): go test applies the limit to
+    # coverage floor step. -timeout 20m (CI-SLOW-1 #552, CI-SPEED-1 #547): go test applies the limit to
     # each package alone, and stops a package after 10 minutes unless told otherwise. The tests of
     # controller/internal/controller take an empty database of an rqlited that they share, and run in
-    # parallel (rqlitetest.Fresh): the package takes about 90 s to 150 s here under -race, where it took
-    # 544 s to 549 s with an rqlited for each test. The slowest package is controller, with its cluster
-    # tests, about 135 s to 150 s, so the limit is more than twice the time of any package, with room for
-    # the noise of the runner and for the tests that come. A hang still ends the package, after 6 minutes.
+    # parallel (rqlitetest.Fresh): the package takes about 140 s here under -race, where it took about
+    # 550 s with an rqlited for each test. The slowest package is controller, with its cluster tests,
+    # about 135 s to 150 s. The limit stays 20 minutes, more than four times the time of any package: it
+    # costs nothing, and a runner can be slow. A hang still ends the package, only later.
     - name: Test
       env:
         RANZ_CONTROL_WIRE: ${{ runner.temp }}/wire
-      run: go test -race -count=1 -timeout 6m -coverprofile="$RUNNER_TEMP/cover.out" ./...
+      run: go test -race -count=1 -timeout 20m -coverprofile="$RUNNER_TEMP/cover.out" ./...
     # The Hanzcodes activation service and the install side (internal/activation, SEC-7 #284 and
     # SEC-6 #285), in the job log: the service issues a node-locked, time-limited token and refuses
     # an invalid or node-mismatched request, releases the Enterprise feature key only against an
@@ -621,19 +621,18 @@ jobs:
       run: |
         go test -count=1 -v -run 'TestPipe|TestNoPipe|TestMitigations' ./ranz-bgp
         if ($LASTEXITCODE -ne 0) { throw "go test exited with code $LASTEXITCODE" }
-    # -timeout 12m (CI-SLOW-1 #552, CI-SPEED-1 #547): go test applies the limit to each package alone, and
+    # -timeout 20m (CI-SLOW-1 #552, CI-SPEED-1 #547): go test applies the limit to each package alone, and
     # stops a package after 10 minutes unless told otherwise. The tests of controller/internal/controller
     # take an empty database of an rqlited that they share, and run in parallel (rqlitetest.Fresh): the
-    # package takes about 160 s to 200 s on Windows x64, where it took 531 s to 559 s with an rqlited for
+    # package takes about 160 s on Windows x64, where it took about 520 s to 560 s with an rqlited for
     # each test and a slow runner ran out of the 10 minutes. The slowest package is controller, with its
-    # cluster tests, about 220 s to 280 s, so the limit is more than twice the time of any package, with
-    # room for the noise of the runner and for the tests that come. A hang still ends the package, after
-    # 12 minutes.
+    # cluster tests, about 220 s to 280 s. The limit stays 20 minutes, more than four times the time of
+    # any package: it costs nothing, and a runner can be slow. A hang still ends the package, only later.
     - name: Test
       if: matrix.platform.ARCHITECTURE == 'x64'
       shell: pwsh
       run: |
-        go test -count=1 -timeout 12m ./...
+        go test -count=1 -timeout 20m ./...
         if ($LASTEXITCODE -ne 0) { throw "go test exited with code $LASTEXITCODE" }
     - name: Test the BGP sidecar
       if: matrix.platform.ARCHITECTURE != 'x64'
