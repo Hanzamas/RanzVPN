@@ -44,6 +44,15 @@
 // more and of the next one without it together, so that a list longer than one line goes in
 // several (SDN-77-R1 #531).
 //
+// A peer that announces what it may not hides no route of another peer (SDN-77-R3 #570,
+// peerfilter.go). The sidecar takes a path of a peer only when its exact prefix is one that the
+// accept lists of that peer hold in some VRF, and a learned message names the first path, in the
+// order of the selection of GoBGP, whose peer may announce that prefix in the VRF of the path. The
+// paths that the node announces have the highest LOCAL_PREF, so no learned path ranks above them. A
+// peer holds at most 64 paths of an address family, the refused ones included: GoBGP closes the
+// session of one that announces more, the sidecar logs it, and the session stays down until a peers
+// message changes that peer.
+//
 // The session ends when the node closes the pipe: the sidecar then stops BGP, which tells the
 // peers with a Cease notification, and exits.
 //

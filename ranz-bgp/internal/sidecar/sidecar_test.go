@@ -164,8 +164,14 @@ func (n *testNode) hasPath(prefix, peer string) bool {
 
 // count is the number of messages seen that match.
 func (n *testNode) count(match func(Message) bool) int {
+	return n.countFrom(0, match)
+}
+
+// countFrom is the number of messages seen from the index from of the messages seen on that match: a test takes len(n.seen) before
+// what it checks and counts only the messages that came after.
+func (n *testNode) countFrom(from int, match func(Message) bool) int {
 	c := 0
-	for _, m := range n.seen {
+	for _, m := range n.seen[from:] {
 		if match(m) {
 			c++
 		}

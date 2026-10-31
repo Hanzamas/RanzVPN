@@ -509,7 +509,9 @@ func TestPeeringHostile(t *testing.T) {
 	}
 
 	// b announces more candidate prefixes than the old limit, for each VRF id: more specific prefixes of its LAN in VRF 101, and
-	// others in VRF 102 and in VRF 103, which no node shares
+	// others in VRF 102 and in VRF 103, which no node shares. The withdrawn messages of the routes of c above were the ones that
+	// the end of its session sent; what a sends from here on is the flood's doing.
+	flood := len(a.seen)
 	const perVRF = 1400
 	for i := 0; i < perVRF; i++ {
 		for k, vrf := range []uint32{101, 102, 103} {
@@ -533,7 +535,7 @@ func TestPeeringHostile(t *testing.T) {
 	}); n != 0 {
 		t.Errorf("a learned %d of the candidate prefixes of b, which b may not announce", n)
 	}
-	if n := a.count(func(m Message) bool { return m.Type == TypeWithdrawn && isOfC(m) }); n != 0 {
+	if n := a.countFrom(flood, func(m Message) bool { return m.Type == TypeWithdrawn && isOfC(m) }); n != 0 {
 		t.Errorf("a withdrew %d routes of c while b flooded it", n)
 	}
 }
