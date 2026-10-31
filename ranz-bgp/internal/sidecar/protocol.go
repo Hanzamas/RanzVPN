@@ -16,6 +16,7 @@
 //	announce  announce prefix to the peers, with next_hop (the address of the session when left
 //	          out); an announced prefix is announced again with the new next hop
 //	withdraw  withdraw an announced prefix
+//	ping      ask whether the sidecar runs: it answers pong once GoBGP answers it too
 //
 // From the sidecar:
 //
@@ -25,6 +26,7 @@
 //	learned    the best route of the peers to prefix is now via next_hop, learned from peer
 //	withdrawn  no peer has a route to prefix any more (it came from peer)
 //	refused    GoBGP refused a session from peer, an address that no peer of the settings has
+//	pong       the answer to ping: the sidecar and its GoBGP run
 //	error      a message of the node could not be applied: error, with its prefix if it had one;
 //	           an error for start ends the session
 //
@@ -34,10 +36,13 @@
 // announces; listen_addresses and accept are not given, and peers may be empty while the node is
 // alone in its VRFs. Each peer has hold_time (the BGP hold time
 // in seconds, 90 when 0) and vrfs: the VRFs that the two nodes share (id) with the prefixes that the
-// peer may announce in each, with their more specific ones (accept). The routes are VPN routes
+// peer may announce in each, exactly (accept). The routes are VPN routes
 // (RFC 4364) whose route distinguisher holds the VRF id, so a route of one VRF never reaches
 // another; announce, withdraw, learned and withdrawn carry the vrf. A peers message from the node
-// holds the peers in place of the ones before: a peer that changes starts its session again.
+// holds the peers in place of the ones before: a peer that changes starts its session again. A
+// peers message with more holds part of them: the sidecar takes the peers of the messages with
+// more and of the next one without it together, so that a list longer than one line goes in
+// several (SDN-77-R1 #531).
 //
 // The session ends when the node closes the pipe: the sidecar then stops BGP, which tells the
 // peers with a Cease notification, and exits.
@@ -64,8 +69,9 @@ import (
 )
 
 // ProtocolVersion is the version of the protocol that ready reports: 2 adds the peering of the
-// standard mode and the refused message, 3 the EVPN of a gateway.
-const ProtocolVersion = 3
+// standard mode and the refused message, 3 the EVPN of a gateway, 4 the more of a peers message,
+// ping and pong.
+const ProtocolVersion = 4
 
 // MaxLine is the size of one message at most, with its newline.
 const MaxLine = 64 * 1024
@@ -82,6 +88,8 @@ const (
 	TypeError     = "error"
 	TypePeers     = "peers"
 	TypeRefused   = "refused"
+	TypePing      = "ping"
+	TypePong      = "pong"
 )
 
 // The session states of a peer message.
@@ -105,6 +113,8 @@ type Message struct {
 	ListenAddresses []string `json:"listen_addresses,omitempty"`
 	Peers           []Peer   `json:"peers,omitempty"` // also of peers
 	Accept          []string `json:"accept,omitempty"`
+	// More says of a peers message that more peers follow in the next one
+	More bool `json:"more,omitempty"`
 	// Address is the node's own address in the peering of the standard mode
 	Address string `json:"address,omitempty"`
 
@@ -147,7 +157,7 @@ type Peer struct {
 }
 
 // PeerVRF is a VRF that a Ranz node shares with the node, and the prefixes that it may announce
-// there, with their more specific ones.
+// there, exactly: a more specific prefix of one is none of them (SDN-77-R1 #531).
 type PeerVRF struct {
 	ID     uint32   `json:"id"`
 	Accept []string `json:"accept,omitempty"`

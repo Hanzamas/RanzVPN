@@ -234,8 +234,11 @@ static stun_message_t *conn_peer_read(juice_peer_message_t *m) {
 }
 
 // Read once for every agent: the agent that takes the message dispatches what was read here, as agent_input dispatches
-// what its own stun_read read, so the work of a message that no agent takes does not grow with the number of agents
-bool juice_peer_read(juice_peer_message_t *m, const char *data, size_t size) {
+// what its own stun_read read, so the work of a message that no agent takes does not grow with the number of agents. The
+// read counts in *reads where it is made, so a message that the peer layer read again, as once for each agent, would
+// count more than once (PEER_STATS.StunMessages; CORE-S5-6-R2, #557). Nothing else of the peer mode reads a message:
+// juice_peer_take dispatches what was read, and agent_conn_recv, which reads in the thread mode, is never called here.
+bool juice_peer_read(juice_peer_message_t *m, const char *data, size_t size, volatile long long *reads) {
 	if (m == NULL)
 		return false;
 
@@ -251,6 +254,8 @@ bool juice_peer_read(juice_peer_message_t *m, const char *data, size_t size) {
 
 	// stun_read writes to the message while it checks its fingerprint, so it reads a copy, which the agent reads too
 	memcpy(m->data, data, size);
+	if (reads != NULL)
+		InterlockedIncrement64(reads);
 	if (stun_read(m->data, size, msg) < 0)
 		return false;
 

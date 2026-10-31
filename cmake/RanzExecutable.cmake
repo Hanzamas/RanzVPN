@@ -1,5 +1,5 @@
 # RanzExecutable.cmake
-# ranz_add_executable(): every executable of the project (vpnserver, vpncmd, vpntest and the fuzz
+# ranz_add_executable(): every executable of the project (ranz-node, vpntest, coretest and the fuzz
 # targets) is created by this one function.
 #
 # ranz_add_executable(<name> [WIN32] [HAMCORE] [CORE]

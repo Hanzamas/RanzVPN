@@ -32,3 +32,7 @@ Maintainer decision in chat. A CI cycle of a pull request took about 25 minutes 
 - Decision 1 holds at merge: a new parser needs its fuzz target in the registry on the pull request, and the Go fuzz tests run there. The libFuzzer targets of the C code run under AddressSanitizer in the full set.
 - For the C code, decisions 2 to 5 (the coverage floor, clang-tidy and MSVC `/analyze`, Application Verifier, the arm64 performance gate) run in the full set. A change that breaks one is found when it reaches `integration`, not before; the label `full-ci` runs them on the pull request.
 - This also amends the arm64 line of the ADR-0002 amendment of 2026-10-21: every pull request still builds arm64 (the Debug configuration), and the arm64 tests run in the full set.
+
+## Amendment 2026-10-30: the fuzz campaign and the nightly run (AUD-3)
+
+Recorded by AUD-3 (#363). `fuzz.yml` runs every target of the registry for 15 minutes every night against a corpus that it stores, and for as long as it is told by hand (an hour for the campaign). A finding fails the run. The full set of `windows.yml` and `ranz.yml` keeps its 60 and 20 seconds for each target.

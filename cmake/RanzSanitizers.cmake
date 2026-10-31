@@ -131,7 +131,7 @@ if(_ranz_asan_dynamic AND _ranz_asan_static_thunk)
 
   # [MS-RT]: "Even when statically linking, the ASan runtime DLL must be present at runtime".
   # Copy the DLL of this compiler next to the executables: the build directory (vpntest,
-  # vpnserver, vpncmd, the fuzz targets).
+  # ranz-node, the fuzz targets).
   get_filename_component(_ranz_cc_dir "${CMAKE_C_COMPILER}" DIRECTORY)
   set(RANZ_ASAN_DLL "")
   foreach(candidate
@@ -195,7 +195,7 @@ if(RANZ_FUZZ)
   # [LIBFUZZER] "Fuzzer Usage": a large project that also compiles executables with their own
   # main() can request just the instrumentation without linking, -fsanitize=fuzzer-no-link.
   # Coverage instrumentation for Mayaqua, Cedar and the rest. Executables that do not link
-  # libFuzzer (vpntest, vpnserver, ...) resolve the coverage callbacks to the default
+  # libFuzzer (vpntest, ranz-node, ...) resolve the coverage callbacks to the default
   # implementations in the ASan runtime (sanitizer coverage interface).
   add_compile_options("$<$<COMPILE_LANGUAGE:C,CXX>:-fsanitize=fuzzer-no-link>")
 
