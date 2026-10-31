@@ -198,21 +198,6 @@ jobs:
         set BUILD_EXIT=%ERRORLEVEL%
         type build\build-log.txt
         if not "%BUILD_EXIT%"=="0" exit /b %BUILD_EXIT%
-
-        rem The linker's report of what /OPT:REF discarded and /OPT:ICF folded (src/CMakeLists.txt) for
-        rem ranz-node, uploaded as link-verbose-<arch>: it is linked again with /VERBOSE,
-        rem passed in _LINK_, which lld-link and link.exe add to their arguments. lld-link has no
-        rem /VERBOSE:REF; its /VERBOSE lists the discarded sections and the folded functions.
-        set "_LINK_=/VERBOSE"
-        for %%t in (ranz-node) do (
-          del build\%%t.exe
-          cmake --build --preset %ARCHITECTURE% --target %%t > build\link-verbose-%%t.txt 2>&1
-          if errorlevel 1 (
-            type build\link-verbose-%%t.txt
-            exit /b 1
-          )
-        )
-        set "_LINK_="
         exit /b 0
       shell: cmd
     # Every Mayaqua and Cedar compile command carries /volatile:ms (cmake/RanzOptions.cmake). ARM64
@@ -253,13 +238,16 @@ jobs:
         path: |
           build/unused-report.txt
           build/build-log.txt
-    - name: Upload linker report (ranz-node)
+    # The linker map of ranz-node (src/ranz-node/CMakeLists.txt): every object and symbol that it links, after
+    # /OPT:REF dropped what nothing reaches, which the step "ranz-node links no SE-VPN code" checks. It replaces
+    # the /VERBOSE report of link-verbose-<arch>, whose output CMake's link wrapper never passed on (CORE-S8-2, #576).
+    - name: Upload linker map (ranz-node)
       if: ${{ !cancelled() }}
       uses: actions/upload-artifact@v4
       with:
         if-no-files-found: warn
-        name: link-verbose-${{ matrix.platform.ARCHITECTURE }}
-        path: build/link-verbose-*.txt
+        name: link-map-${{ matrix.platform.ARCHITECTURE }}
+        path: build/ranz-node.map
     # Source lines per directory and executable sizes, in the job log and the job summary. Never a gate.
     - name: Size metrics
       if: ${{ !cancelled() }}
@@ -359,6 +347,50 @@ jobs:
         $hits | Select-Object -First 20 | ForEach-Object { Write-Host $_ }
         if ($hits.Count -gt 0) { throw "coretest links OpenSSL or liboqs: $($hits.Count) lines of build/coretest.map" }
         Write-Host "build/coretest.map (${{ matrix.platform.ARCHITECTURE }}): corecrypto and corenoise linked, no OpenSSL or liboqs object, library or symbol"
+    # ranz-node links no SE-VPN code of the slim fork (CORE-S8-2, #576): its linker map (src/ranz-node/CMakeLists.txt)
+    # names no object of the files that CORE-S8-3 (#577) deletes, and neither ServerAccept nor ClientConnect. A name
+    # is "gone", which fails the job when the map holds it, or "allowed", which the job only reports: the local bridge
+    # of the slim fork, which the Hub and Session code still starts until CORE-S8-3 deletes it and turns it into
+    # "gone". The map must name Node.c.obj and Hub.c.obj, so that a map of another program or in another format
+    # cannot pass by matching nothing. The shared constants (the string literals ??_C@ and the numbers __real@,
+    # __xmm@ and __ymm@) are left out: the linker keeps one copy of each, from whichever object it read first.
+    - name: ranz-node links no SE-VPN code
+      shell: pwsh
+      run: |
+        $lines = @(Get-Content -LiteralPath build/ranz-node.map | Where-Object { $_ -notmatch '\?\?_C@|__real@|__xmm@|__ymm@' })
+        foreach ($kept in 'Node', 'Hub') {
+          if (-not ($lines | Where-Object { $_ -match "[\s:\\/(]$kept\.c\.obj" })) { throw "build/ranz-node.map names no $kept.c.obj: not the linker map of ranz-node" }
+        }
+        $checks = @(
+          @{ Name = 'Listener.c.obj'; Re = '[\s:\\/(]Listener\.c\.obj'; State = 'gone' },
+          @{ Name = 'ServerListener.c.obj'; Re = '[\s:\\/(]ServerListener\.c\.obj'; State = 'gone' },
+          @{ Name = 'HttpListener.c.obj'; Re = '[\s:\\/(]HttpListener\.c\.obj'; State = 'gone' },
+          @{ Name = 'ServerHttpListener.c.obj'; Re = '[\s:\\/(]ServerHttpListener\.c\.obj'; State = 'gone' },
+          @{ Name = 'Admin*.c.obj'; Re = '[\s:\\/(]Admin[A-Za-z]*\.c\.obj'; State = 'gone' },
+          @{ Name = 'Remote.c.obj'; Re = '[\s:\\/(]Remote\.c\.obj'; State = 'gone' },
+          @{ Name = 'RpcField.c.obj'; Re = '[\s:\\/(]RpcField\.c\.obj'; State = 'gone' },
+          @{ Name = 'Link.c.obj'; Re = '[\s:\\/(]Link\.c\.obj'; State = 'gone' },
+          @{ Name = 'UdpAccel.c.obj'; Re = '[\s:\\/(]UdpAccel\.c\.obj'; State = 'gone' },
+          @{ Name = 'WaterMark.c.obj'; Re = '[\s:\\/(]WaterMark\.c\.obj'; State = 'gone' },
+          @{ Name = 'Server.c.obj'; Re = '[\s:\\/(]Server\.c\.obj'; State = 'gone' },
+          @{ Name = 'ServerCaps.c.obj'; Re = '[\s:\\/(]ServerCaps\.c\.obj'; State = 'gone' },
+          @{ Name = 'Protocol.c.obj'; Re = '[\s:\\/(]Protocol\.c\.obj'; State = 'gone' },
+          @{ Name = 'ProtocolClient.c.obj'; Re = '[\s:\\/(]ProtocolClient\.c\.obj'; State = 'gone' },
+          @{ Name = 'ProtocolServer.c.obj'; Re = '[\s:\\/(]ProtocolServer\.c\.obj'; State = 'gone' },
+          @{ Name = 'ServerAccept'; Re = '\sServerAccept(\s|$)'; State = 'gone' },
+          @{ Name = 'ClientConnect'; Re = '\sClientConnect(\s|$)'; State = 'gone' },
+          @{ Name = 'Bridge.c.obj'; Re = '[\s:\\/(]Bridge\.c\.obj'; State = 'allowed' },
+          @{ Name = 'BridgeWin32.c.obj'; Re = '[\s:\\/(]BridgeWin32\.c\.obj'; State = 'allowed' }
+        )
+        $failed = @()
+        foreach ($c in $checks) {
+          $hits = @($lines | Where-Object { $_ -match $c.Re })
+          Write-Host ('{0,-26} {1,-8} {2} lines of the map' -f $c.Name, $c.State, $hits.Count)
+          $hits | Select-Object -First 5 | ForEach-Object { Write-Host "    $($_.Trim())" }
+          if ($c.State -eq 'gone' -and $hits.Count -gt 0) { $failed += $c.Name }
+        }
+        if ($failed.Count -gt 0) { throw "ranz-node links SE-VPN code that CORE-S8-2 cut off: $($failed -join ', ')" }
+        Write-Host "build/ranz-node.map (${{ matrix.platform.ARCHITECTURE }}): none of the SE-VPN code that CORE-S8-3 deletes is linked, except the local bridge that the list still allows"
     # The default VRF tracer (SDN-3, #179): ranz controller on a test port with rqlited as its sidecar,
     # whose first start creates VRF default and the starter rule, and two nodes of vpntest (sdntrace)
     # that join it over the control stream, get their addresses from its automatic pool and exchange
