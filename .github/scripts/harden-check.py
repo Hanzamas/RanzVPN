@@ -5,7 +5,7 @@
 # Subcommands:
 #   pe      --binary ranzguard.exe   the release variant has an empty import table and no section that
 #                                    is both executable and writable (no RWX page baked into the image)
-#   clean   --binary vpnserver.exe   the clean variant carries no obfuscation: it has an ordinary import
+#   clean   --binary ranz-node.exe   the clean variant carries no obfuscation: it has an ordinary import
 #                                    table and no VMProtect (.vmp*) section
 #   markers --source ranzguard.c     the VMProtect markers wrap only the licence-gate and key-handling
 #                                    routines, never main and never the whole file
