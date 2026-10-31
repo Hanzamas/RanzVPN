@@ -116,6 +116,11 @@
 #define PEER_SESSION_HANDSHAKE 1 // A handshake is on its way and no keys are up yet: datagrams wait in the queue
 #define PEER_SESSION_UP        2 // Records go both ways
 
+// ms before an initiation of a peer session that had no answer is sent again, and how many times it goes before the
+// datagrams that wait for it are dropped (PeerSession.c)
+#define PEER_SESSION_RETRY 1000
+#define PEER_SESSION_TRIES 10
+
 // What PeerOpenSignal returns, and why the peer layer dropped a datagram, an envelope or a signal
 #define PEER_OK             0  // Taken
 #define PEER_DROP_MALFORMED 1  // Too short, too long, of no known kind or with a bad payload
@@ -299,6 +304,10 @@ const char *PeerReasonName(UINT reason);
 // PeerIce.c: the timer of the ICE sessions at a clock that the caller gives (ms, the clock of PeerTick), for a test of a
 // session that started after the clock of a tick
 void PeerIceTickAt(PEER_AGENT *a, UINT64 now);
+
+// Peer.c: the timers of the peer sessions at a clock that the caller gives (ms, the clock of PeerTick), for a test of a
+// tick whose clock is older than an initiation that was sent or keys that were made after the tick read it
+void PeerSessionTickAt(PEER_AGENT *a, UINT64 now);
 
 // PeerSignal.c
 bool PeerKeyFromScalar(PEER_KEY *k, const UCHAR *priv);
