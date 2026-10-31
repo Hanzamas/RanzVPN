@@ -413,7 +413,9 @@ func TestFRRStretch(t *testing.T) {
 		gw.send(ethernet(stretchHostAMAC, stretchOverlayMAC, etherIPv4, echo(ipv4.ICMPTypeEcho, stretchOverlayHost, stretchHostA, 64, seq)))
 	}
 	waitUntil(t, "host a answers the echo requests of the host of the overlay", func() bool {
-		return gw.count(func() int { return gw.replies[fmt.Sprintf("%s 1", stretchHostA)] + gw.replies[fmt.Sprintf("%s 3", stretchHostA)] }) != 0
+		return gw.count(func() int {
+			return gw.replies[fmt.Sprintf("%s 1", stretchHostA)] + gw.replies[fmt.Sprintf("%s 3", stretchHostA)]
+		}) != 0
 	})
 
 	// A broadcast of the overlay reaches each VTEP of the flood list once: each host of the fabric answers it once
