@@ -596,6 +596,12 @@ message Network {
   // delivers it, which it does while the licence in force has EVPN and BGP (ADR-0036). A node of an older release skips the
   // field it does not know.
   Stretch stretch = 8;
+  // TCP splitting of an L3 Network (CORE-P2-3 #94, ADR-0022 amendment of 2026-11-01): in the state of every node of its
+  // VRF while it is on, off by default. A node terminates the TCP connections that its host opens from its address in the
+  // Network on the Windows TCP stack and carries only their byte streams to the peer that the destination routes to,
+  // which opens each connection to its real destination; that peer opens one only for a source in such a Network. A
+  // node of an older release skips the field it does not know.
+  bool tcp_split = 9;
 }
 
 // The security of an L2 Network (SDN-41 #234, ADR-0019 decision 1): the protections of the fork

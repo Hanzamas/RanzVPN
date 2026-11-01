@@ -3301,7 +3301,13 @@ type Network struct {
 	// The Stretch of an L2 Network (SDN-63 #290): only in the state of the gateway of the Stretch, and only while the controller
 	// delivers it, which it does while the licence in force has EVPN and BGP (ADR-0036). A node of an older release skips the
 	// field it does not know.
-	Stretch       *Stretch `protobuf:"bytes,8,opt,name=stretch,proto3" json:"stretch,omitempty"`
+	Stretch *Stretch `protobuf:"bytes,8,opt,name=stretch,proto3" json:"stretch,omitempty"`
+	// TCP splitting of an L3 Network (CORE-P2-3 #94, ADR-0022 amendment of 2026-11-01): in the state of every node of its
+	// VRF while it is on, off by default. A node terminates the TCP connections that its host opens from its address in the
+	// Network on the Windows TCP stack and carries only their byte streams to the peer that the destination routes to,
+	// which opens each connection to its real destination; that peer opens one only for a source in such a Network. A
+	// node of an older release skips the field it does not know.
+	TcpSplit      bool `protobuf:"varint,9,opt,name=tcp_split,json=tcpSplit,proto3" json:"tcp_split,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -3390,6 +3396,13 @@ func (x *Network) GetStretch() *Stretch {
 		return x.Stretch
 	}
 	return nil
+}
+
+func (x *Network) GetTcpSplit() bool {
+	if x != nil {
+		return x.TcpSplit
+	}
+	return false
 }
 
 // The security of an L2 Network (SDN-41 #234, ADR-0019 decision 1): the protections of the fork
@@ -6498,7 +6511,7 @@ const file_ranz_control_v1_control_proto_rawDesc = "" +
 	"\arecords\x18\x02 \x03(\v2\x1a.ranz.control.v1.DnsRecordR\arecords\"=\n" +
 	"\tDnsRecord\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x1c\n" +
-	"\taddresses\x18\x02 \x03(\fR\taddresses\"\xea\x02\n" +
+	"\taddresses\x18\x02 \x03(\fR\taddresses\"\x87\x03\n" +
 	"\aNetwork\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x15\n" +
 	"\x06vrf_id\x18\x02 \x01(\rR\x05vrfId\x120\n" +
@@ -6507,7 +6520,8 @@ const file_ranz_control_v1_control_proto_rawDesc = "" +
 	"\tipv6_pool\x18\x05 \x01(\v2\x17.ranz.control.v1.PrefixR\bipv6Pool\x12)\n" +
 	"\x04dhcp\x18\x06 \x01(\v2\x15.ranz.control.v1.DhcpR\x04dhcp\x127\n" +
 	"\bsecurity\x18\a \x01(\v2\x1b.ranz.control.v1.L2SecurityR\bsecurity\x122\n" +
-	"\astretch\x18\b \x01(\v2\x18.ranz.control.v1.StretchR\astretch\"\xf2\x01\n" +
+	"\astretch\x18\b \x01(\v2\x18.ranz.control.v1.StretchR\astretch\x12\x1b\n" +
+	"\ttcp_split\x18\t \x01(\bR\btcpSplit\"\xf2\x01\n" +
 	"\n" +
 	"L2Security\x12\x1b\n" +
 	"\tcheck_mac\x18\x01 \x01(\bR\bcheckMac\x12\x19\n" +

@@ -95,6 +95,8 @@ func Compile(in intent.Intent) (map[string]State, error) {
 		}
 		// The security of an L2 Network, for every node of its VRF (security.go; SDN-41)
 		nw.Security = security(in, name)
+		// The TCP splitting of an L3 Network, for every node of its VRF (split.go; CORE-P2-3)
+		nw.TcpSplit = tcpSplit(in, name)
 		networks[n.VRF] = append(networks[n.VRF], nw)
 	}
 	keys := map[string][]byte{}
