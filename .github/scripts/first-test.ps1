@@ -214,7 +214,9 @@ function Stop-Background {
 	$script:background = @()
 }
 
-# The text of a file that a process may still write to
+# The text of a file that a process may still write to, always as one string. Get-Content -Raw is no stand-in for it on a
+# log that a service writes: it reads until a read finds nothing and gives each read that found something as a string
+# of its own, so a file that grows while it is read gives an array (step replace-certificate, AUD1-DT-18)
 function Read-Shared([string] $path) {
 	if (-not (Test-Path -LiteralPath $path)) { return '' }
 	$fs = [System.IO.File]::Open($path, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read, [System.IO.FileShare]::ReadWrite)
@@ -533,7 +535,7 @@ try {
 		foreach ($f in 'admin.token', 'controller.log', 'tls.fingerprint', 'payload\rqlited.exe', 'rqlite') {
 			if (-not (Test-Path -LiteralPath (Join-Path $controllerData $f))) { throw "the Controller did not make $f in $controllerData" }
 		}
-		$log = Get-Content -LiteralPath (Join-Path $controllerData 'controller.log') -Raw
+		$log = Read-Shared (Join-Path $controllerData 'controller.log')
 		foreach ($line in 'first start: the intent of a first install', 'msg="TLS port"', 'first start: the admin source allowlist is set', 'first start: the starter rule default-allow-all allows all traffic inside VRF default') {
 			if ($log -notmatch [regex]::Escape($line)) { throw "controller.log does not say '$line'" }
 		}
@@ -580,7 +582,7 @@ try {
 		Write-Host "the allowlist is as it was: $($after -join ', ')"
 		# What the log says at the first start is what the API says
 		# (the log writer quotes a value that holds an equals sign, as a base64 key does)
-		$log = Get-Content -LiteralPath (Join-Path $controllerData 'controller.log') -Raw
+		$log = Read-Shared (Join-Path $controllerData 'controller.log')
 		if ($log -notmatch ('publicKey="?' + [regex]::Escape($status.publicKey) + '"?') -or $log -notmatch ('tlsFingerprint="?' + [regex]::Escape($status.tlsFingerprint) + '"?')) { throw 'controller.log does not name the key and the fingerprint that ranz status prints' }
 		# ranz took the file that the Controller wrote to its data directory to check the certificate of the call above
 		# (AUD1-DT-14, #496). It takes it because SYSTEM, the Administrators or the account of the service own it and no other
@@ -780,7 +782,7 @@ try {
 		$badToken = Join-Path $work 'bad.token'
 		Set-Content -LiteralPath $badToken -Value ('ranz_' + ('0' * 40))
 		Assert-Refused @('-server', 'https://127.0.0.1', '-token-file', $badToken, 'get', 'audit') 401
-		$log = Get-Content -LiteralPath (Join-Path $controllerData 'controller.log') -Raw
+		$log = Read-Shared (Join-Path $controllerData 'controller.log')
 		# One line for each Node: the member that serves it comes before the name of the Node, then the address it came from
 		foreach ($name in $nodeA, $nodeB) {
 			if ($log -notmatch ('msg="node connected"[^\r\n]* node=' + [regex]::Escape($name) + ' remote=\S+ applied=0')) { throw "controller.log does not say that $name connected, from an address, with the Generation 0 applied" }
@@ -887,7 +889,7 @@ try {
 		# How often the Controller log says that a Node connected: a connection that was up stays up, so the count of a Node
 		# that stayed connected does not change
 		function Get-Connections([string] $name) {
-			return @([regex]::Matches((Get-Content -LiteralPath $controllerLog -Raw), 'msg="node connected"[^\r\n]* node=' + [regex]::Escape($name) + ' ')).Count
+			return @([regex]::Matches((Read-Shared $controllerLog), 'msg="node connected"[^\r\n]* node=' + [regex]::Escape($name) + ' ')).Count
 		}
 
 		# The CA, the certificate for the address of this runner that it signs, and the access of the service account
@@ -946,10 +948,22 @@ try {
 		Write-Host "the Controller serves the certificate of the file: fingerprint $new, in place of $old"
 
 		# The log, the events and the audit log have the change, and the status and show name the new fingerprint. The
-		# Controller writes both lines before it answers, yet a read of controller.log right after the answer has missed the
-		# first one on x64 runners while the file held it, so the log is read again until it shows them
+		# Controller writes both lines of the log before it answers, so one read of the file after the answer shows them,
+		# and the read is Read-Shared, which gives one string. It was Get-Content -Raw, and on x64 runners the check twice
+		# threw "controller.log does not say" for a line that the file held (runs 40619177934 and 40619884045 of windows.yml,
+		# 56 ms and 247 ms after the line was written, and the diagnostics of the same run show it). In both runs the
+		# Controller wrote one more line in the milliseconds of the read: the acknowledgement of the new Generation by a
+		# Node, which comes 25 to 42 ms after the Controller logs the change. Get-Content reads until a read finds nothing
+		# and gives each read that found something as a string of its own, so a file that grows while it is read gives two
+		# strings, and -notmatch on an array keeps the strings that do not hold the line, which the if takes for a miss.
+		# Measured on the hosted runners (PowerShell 7.6, x64 and arm64; run 41030541755 of the throwaway workflow
+		# exp-get-content-raw.yml of #503): with a writer that appends a line every 10 ms to a log of 33 KB, 28 of 4831
+		# reads on x64 and 18 of 2817 on arm64 gave more than one string, and the -notmatch check threw for each of them;
+		# -match, which the poll that stood here used, kept the string that held the line each time, and Read-Shared gave
+		# one string each time. The step still fails when the line never comes.
+		$log = Read-Shared $controllerLog
 		foreach ($line in 'msg="TLS certificate"', 'msg="certificate of the controller changed"') {
-			$null = Wait-Until { (Get-Content -LiteralPath $controllerLog -Raw) -match [regex]::Escape($line) } "controller.log to say '$line'" 15
+			if ($log -notmatch [regex]::Escape($line)) { throw "controller.log does not say '$line'" }
 		}
 		# The first start set the admin source allowlist and recorded it (AUD1-DT-6), and step 7 recorded one more when it had to add
 		# the address of the runner, so the events are those and the change

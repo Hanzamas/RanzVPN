@@ -96,7 +96,8 @@ def test_paths():
                  '.github/signing/signing-proof.wxs', '.github/scripts/install.ps1', '.github/msi/ranz.wxs',
                  '.github/msi/standin-ranz.go', '.github/scripts/msi-build.ps1', '.github/scripts/msi-install.ps1',
                  'docs/first-test.md', '.github/scripts/first-test.ps1', 'tests/formal/session-lib.pvl',
-                 'tests/formal/session/tls443.pv', '.github/scripts/formal.py', '.github/workflows/formal.yml']:
+                 'tests/formal/session/tls443.pv', '.github/scripts/formal.py', '.github/workflows/formal.yml',
+                 'compat/CMakeLists.txt']:
         values = expect_set('a pull request that changes ' + path, True, 'pull_request', files=['docs/ports.md', path])
         check('the reason names ' + path, path in values['reason'], values['reason'])
     for path in ['src/Core/Peer.c', 'src/Core/Transport.c', 'src/Core/CMakeLists.txt', 'src/Cedar/Node.c',

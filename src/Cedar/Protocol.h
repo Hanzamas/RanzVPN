@@ -20,9 +20,6 @@
 // characters, up to 3 bytes each in UTF-8) and the notices of ServerAccept: under 90 KB in all.
 #define CLIENT_WELCOME_PACK_MAX_SIZE (256 * 1024)
 
-// Fixed first input of the machine identity hash (ComputeMachineUniqueHash, FIX-5 #101)
-#define MACHINE_ID_LABEL "RanzVPN machine identity v1"
-
 // Fields of the client's "login" PACK that the hub-side login steps and the new session use
 // (ParseLoginRequest). The credentials stay in the PACK for the authentication.
 struct LOGIN_REQ {
@@ -106,6 +103,7 @@ struct SERVER_LOGIN {
 bool ParseLoginRequest(PACK *p, LOGIN_REQ *req);
 bool ServerAccept(CONNECTION *c, SERVER_LOGIN *login);
 void ServerRunSession(CONNECTION *c, SERVER_LOGIN *login);
+void ConnectionAccept(CONNECTION *c);
 bool ClientConnect(CONNECTION *c);
 SOCK *ClientConnectToServer(CONNECTION *c);
 
@@ -120,11 +118,12 @@ bool GetHello(PACK *p, void *random, UINT *ver, UINT *build, char *server_str, U
 
 
 bool ClientAdditionalConnect(CONNECTION *c);
+SESSION *NewClientSession(CEDAR *cedar, CLIENT_OPTION *option, CLIENT_AUTH *auth, PACKET_ADAPTER *pa);
+SESSION *NewRpcSession(CEDAR *cedar, CLIENT_OPTION *option, UINT *err, char *client_str);
+void ClientAdditionalConnectChance(SESSION *s);
+void SessionAdditionalConnect(SESSION *s);
 
 void PackAddClientVersion(PACK *p, CONNECTION *c);
-void GenerateMachineUniqueHash(CEDAR *c, void *data);
-void SetCedarMachineIdSalt(CEDAR *c, void *salt);
-void ComputeMachineUniqueHash(void *data, char *machine_guid, void *salt, UINT salt_size);
 
 bool DownloadAndSaveIntermediateCertificatesIfNecessary(X *x);
 
