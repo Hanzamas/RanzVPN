@@ -44,11 +44,11 @@ func TestApplyReflectors(t *testing.T) {
 	for _, c := range []struct {
 		node, peer, vrf, want string
 	}{
-		{"a", "r", "dc", RoleReflector},
-		{"r", "a", "dc", RoleClient},
-		{"r", "s", "dc", RoleReflector},
-		{"a", "c", "dc", RoleReflected},
-		{"a", "b", "lab", RoleMesh},
+		{"a", "r", "dc", PeeringReflector},
+		{"r", "a", "dc", PeeringClient},
+		{"r", "s", "dc", PeeringReflector},
+		{"a", "c", "dc", PeeringReflected},
+		{"a", "b", "lab", PeeringMesh},
 	} {
 		if got := in.PeeringRole(c.node, c.peer, c.vrf); got != c.want {
 			t.Errorf("the role of %s for %s in %s is %q, want %q", c.peer, c.node, c.vrf, got, c.want)
@@ -85,7 +85,7 @@ func TestApplyReflectors(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := mesh.PeeringRole("a", "c", "dc"); got != RoleMesh || !mesh.PeeringSession("a", "c") {
+	if got := mesh.PeeringRole("a", "c", "dc"); got != PeeringMesh || !mesh.PeeringSession("a", "c") {
 		t.Errorf("without reflectors the role of c for a is %q and their session %v, want a full mesh", got, mesh.PeeringSession("a", "c"))
 	}
 }

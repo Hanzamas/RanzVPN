@@ -20,16 +20,17 @@ import (
 // MaxReflectors is the most route reflectors of a VRF.
 const MaxReflectors = 2
 
-// The roles of a Node for another in a VRF that peers by BGP (PeeringRole).
+// The roles of a Node for another in a VRF that peers by BGP (PeeringRole). They are not the Roles of a
+// Node (ADR-0011, stretch.go), which say what the Node does.
 const (
-	// RoleMesh is the role in a VRF without route reflectors: the two peer directly.
-	RoleMesh = ""
-	// RoleReflector: the Node is a route reflector of the VRF.
-	RoleReflector = "reflector"
-	// RoleClient: the Node is a client of the other, a reflector of the VRF.
-	RoleClient = "client"
-	// RoleReflected: both are clients, and the routes of the Node come to the other through the reflectors.
-	RoleReflected = "reflected"
+	// PeeringMesh is the role in a VRF without route reflectors: the two peer directly.
+	PeeringMesh = ""
+	// PeeringReflector: the Node is a route reflector of the VRF.
+	PeeringReflector = "reflector"
+	// PeeringClient: the Node is a client of the other, a reflector of the VRF.
+	PeeringClient = "client"
+	// PeeringReflected: both are clients, and the routes of the Node come to the other through the reflectors.
+	PeeringReflected = "reflected"
 )
 
 // completeReflectors returns the reflectors of a peering in name order, nil for none.
@@ -43,19 +44,19 @@ func completeReflectors(names []string) []string {
 }
 
 // PeeringRole returns the role of the Node peer for the Node node in the VRF vrf, which peers by BGP and
-// of which both are members: RoleReflector when peer is a reflector of the VRF, RoleClient when node is
-// one and peer is not, RoleReflected when neither is, and RoleMesh in a VRF without reflectors.
+// of which both are members: PeeringReflector when peer is a reflector of the VRF, PeeringClient when node
+// is one and peer is not, PeeringReflected when neither is, and PeeringMesh in a VRF without reflectors.
 func (in Intent) PeeringRole(node, peer, vrf string) string {
 	reflectors := in.VRFs[vrf].Peering.Reflectors
 	switch {
 	case len(reflectors) == 0:
-		return RoleMesh
+		return PeeringMesh
 	case slices.Contains(reflectors, peer):
-		return RoleReflector
+		return PeeringReflector
 	case slices.Contains(reflectors, node):
-		return RoleClient
+		return PeeringClient
 	}
-	return RoleReflected
+	return PeeringReflected
 }
 
 // PeeringSession reports whether the Nodes node and peer have a BGP session: they share a VRF that peers by
@@ -66,7 +67,7 @@ func (in Intent) PeeringSession(node, peer string) bool {
 	}
 	other := in.Nodes[peer]
 	for _, vrf := range in.PeeringVRFs(in.Nodes[node]) {
-		if slices.Contains(other.VRFs, vrf) && in.PeeringRole(node, peer, vrf) != RoleReflected {
+		if slices.Contains(other.VRFs, vrf) && in.PeeringRole(node, peer, vrf) != PeeringReflected {
 			return true
 		}
 	}

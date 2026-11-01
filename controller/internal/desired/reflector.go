@@ -36,11 +36,11 @@ func withReflection(in intent.Intent, node, other string, p *controlpb.PeerPeeri
 			continue
 		}
 		switch in.PeeringRole(node, other, name) {
-		case intent.RoleReflector:
+		case intent.PeeringReflector:
 			p.ReflectorVrfIds = append(p.ReflectorVrfIds, v.GetId())
-		case intent.RoleClient:
+		case intent.PeeringClient:
 			p.ClientVrfIds = append(p.ClientVrfIds, v.GetId())
-		case intent.RoleReflected:
+		case intent.PeeringReflected:
 			p.ReflectedVrfIds = append(p.ReflectedVrfIds, v.GetId())
 		}
 	}
