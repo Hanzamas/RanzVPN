@@ -243,6 +243,8 @@ typedef struct PEERINGTEST_CTX
 	bool Announced[PEERINGTEST_EXTRAS];	// ... whether that node announces it and has it behind it,
 	bool Hostile;						// ... whether node-b announces more specific prefixes of its LAN in red,
 	UINT NumDummies[PEERINGTEST_NODES];	// ... and the peers of a large mesh that each node has
+	CONTROL_PEER_PEERING Took[PEERINGTEST_NODES][PEERINGTEST_NODES];	// The peering of each other node in the state that each node took last (PeeringTestTake), ...
+	bool Restart[PEERINGTEST_NODES][PEERINGTEST_NODES];	// ... and whether that state changed it, so that the sidecar of the node starts their session again
 	UINT Starts[PEERINGTEST_NODES];		// The sidecars that each node started so far
 	UINT NumWindows;					// The windows of an apply whose apply the worker of node-a met (PeeringTestHeld), each with
 	UINT64 WindowFrom[PEERINGTEST_WINDOWS];	// ... the Generation of its rebuild, which went out of force in the window,
@@ -982,6 +984,38 @@ static DWORD WINAPI PeeringTestStopThread(LPVOID param)
 // What the nodes do
 //
 
+// Node i takes the state st: the peering of each other node in it, while it has a peering of node i, goes into ctx->Took, and an
+// other node whose peering there is not the one of the state that node i took before, while both have one, into ctx->Restart. The
+// sidecar of node i takes a peer whose settings changed as a new one: it ends their session and starts it again (setPeers of
+// ranz-bgp/internal/sidecar/peering.go), which PeeringTestWaitRestarts waits for.
+static void PeeringTestTake(PEERINGTEST_CTX *ctx, UINT i, CONTROL_STATE *st)
+{
+	for (UINT j = 0;j < PEERINGTEST_NODES;j++)
+	{
+		CONTROL_PEER_PEERING *took = &ctx->Took[i][j];
+		CONTROL_PEER_PEERING now;
+		UCHAR addr[4];
+
+		Zero(&now, sizeof(now));
+		PeeringTestIp(addr, peeringtest_addrs[j]);
+		for (UINT k = 0;k < st->NumPeers && st->Peering != NULL;k++)
+		{
+			CONTROL_PEER_PEERING *pp = st->Peers[k].Peering;
+
+			if (pp != NULL && pp->AddressSize == 4 && Cmp(pp->Address, addr, 4) == 0)
+			{
+				Copy(&now, pp, sizeof(now));
+			}
+		}
+
+		if (took->NumVrfs != 0 && now.NumVrfs != 0 && Cmp(took, &now, sizeof(now)) != 0)
+		{
+			ctx->Restart[i][j] = true;
+		}
+		Copy(took, &now, sizeof(now));
+	}
+}
+
 // Apply Generation gen to each node that runs, with red peering by BGP or not: whether each took it
 static bool PeeringTestApply(PEERINGTEST_CTX *ctx, UINT64 gen, bool red_peers)
 {
@@ -998,6 +1032,7 @@ static bool PeeringTestApply(PEERINGTEST_CTX *ctx, UINT64 gen, bool red_peers)
 		}
 
 		CONTROL_STATE *st = PeeringTestState(ctx, i);
+		PeeringTestTake(ctx, i, st);
 		ok = NodeOverlayApply(ctx->Nodes[i].Node, st) && ok;
 		PeeringTestFreeState(st);
 	}
@@ -1557,6 +1592,75 @@ static void PeeringTestPackets(PEERINGTEST_CTX *ctx)
 	PeeringTestSend(ctx, PEERINGTEST_C, PEERINGTEST_BLUE, "192.168.2.10", PEERINGTEST_NODES);
 }
 
+// The sessions that the sidecars start again (ctx->Restart) into text, as "node-a with node-b, ...": "" for none
+static void PeeringTestRestartNames(PEERINGTEST_CTX *ctx, char *text, UINT size)
+{
+	StrCpy(text, size, "");
+	for (UINT i = 0;i < PEERINGTEST_NODES;i++)
+	{
+		for (UINT j = 0;j < PEERINGTEST_NODES;j++)
+		{
+			if (ctx->Restart[i][j])
+			{
+				char part[MAX_SIZE];
+
+				Format(part, sizeof(part), "%s%s with %s", IsEmptyStr(text) ? "" : ", ", peeringtest_names[i], peeringtest_names[j]);
+				StrCat(text, size, part);
+			}
+		}
+	}
+}
+
+// Whether the sidecar of each node started its session again with each other node whose peering changed in the state that the
+// node took (ctx->Restart, PeeringTestTake), within PEERINGTEST_BOUND. The node names that session in a state other than established
+// from when its sidecar takes the peers of the state until the session is up again, 1.5 s later at the soonest: the end of the
+// lower address connects (nodePeer, ranz-bgp/internal/sidecar/peering.go), and the first connect of GoBGP after a session ended
+// waits 0.75 to 1 times its least connect retry of 2 s. Until then the reports, the forwarding tables and the adapters of the hosts
+// may still be the ones of the state before, and a Generation that changes only what a peer may announce leaves them as they were
+// (Generation 4), so the mesh of the Generation is looked at once each such session was seen so. A check names them, when there
+// are any.
+static bool PeeringTestWaitRestarts(PEERINGTEST_CTX *ctx)
+{
+	char names[MAX_SIZE];
+	char left[MAX_SIZE];
+	char what[MAX_SIZE * 2];
+	char state[CONTROL_PEERING_STATE_SIZE];
+	UINT64 end = Tick64() + PEERINGTEST_BOUND;
+	bool ok = false;
+
+	PeeringTestRestartNames(ctx, names, sizeof(names));
+	if (IsEmptyStr(names))
+	{
+		return true;
+	}
+
+	while (true)
+	{
+		ok = true;
+		for (UINT i = 0;i < PEERINGTEST_NODES;i++)
+		{
+			for (UINT j = 0;j < PEERINGTEST_NODES;j++)
+			{
+				if (ctx->Restart[i][j])
+				{
+					PeeringTestLearnedFrom(&ctx->Nodes[i], j, state, sizeof(state));
+					ctx->Restart[i][j] = (StrCmp(state, "established") == 0);
+					ok = (ok && ctx->Restart[i][j] == false);
+				}
+			}
+		}
+		if (ok || Tick64() >= end)
+		{
+			break;
+		}
+		SleepThread(PEERINGTEST_POLL);
+	}
+
+	PeeringTestRestartNames(ctx, left, sizeof(left));
+	Format(what, sizeof(what), "The sidecar of each node starts its session again with each node whose peering Generation %I64u changed: %s", ctx->Generation, names);
+	return PeeringTestCheck(ctx, ok, what, "named established all along: %s", left);
+}
+
 // The state of the peering of each node once the mesh converged: a node in a VRF that peers by BGP runs its sidecar, which
 // named GoBGP in its ready, with the strict DACL on its pipe (ADR-0039 decision 3), has a session established with each other
 // node with which it shares such a VRF and holds the peers of a large mesh too, announces its address and its LAN subnet in
@@ -1616,8 +1720,9 @@ static void PeeringTestStatus(PEERINGTEST_CTX *ctx)
 	}
 }
 
-// The mesh of the Generation that the nodes took: the sessions of the overlay, the report of each node, its forwarding tables, the
-// adapter of its host and the state of its peering. Whether the forwarding tables came to what the Generation gives.
+// The mesh of the Generation that the nodes took: the sessions of the overlay, the sessions that the sidecars start again, the
+// report of each node, its forwarding tables, the adapter of its host and the state of its peering. Whether the forwarding tables
+// came to what the Generation gives.
 static bool PeeringTestConverge(PEERINGTEST_CTX *ctx, bool applied)
 {
 	char what[MAX_SIZE];
@@ -1626,7 +1731,10 @@ static bool PeeringTestConverge(PEERINGTEST_CTX *ctx, bool applied)
 	Format(what, sizeof(what), "Generation %I64u goes in at each node, and the sessions of the overlay between the three are up", ctx->Generation);
 	PeeringTestCheck(ctx, applied && overlay, what, "applied %u, the Generation and the sessions at each node %u", (UINT)applied, (UINT)overlay);
 
-	bool converged = (overlay && PeeringTestWaitReports(ctx));
+	bool restarted = (overlay && PeeringTestWaitRestarts(ctx));
+	Zero(ctx->Restart, sizeof(ctx->Restart));
+
+	bool converged = (restarted && PeeringTestWaitReports(ctx));
 	PeeringTestCheck(ctx, converged, "Each node learns from the sidecar of each other node, over an established session, exactly what that node announces in the VRFs that the two share and that peer by BGP, each prefix in its VRF",
 		"%s", "see the reports above");
 
@@ -2239,6 +2347,7 @@ static void PeeringTestHeld(PEERINGTEST_CTX *ctx, UINT64 gen, bool announced)
 	Zero(&apply, sizeof(apply));
 	apply.Node = a->Node;
 	apply.State = PeeringTestState(ctx, PEERINGTEST_A);
+	PeeringTestTake(ctx, PEERINGTEST_A, apply.State);
 	ResetEvent(a->Held);
 	ResetEvent(a->Release);
 	a->Hold = gen;
@@ -2252,6 +2361,7 @@ static void PeeringTestHeld(PEERINGTEST_CTX *ctx, UINT64 gen, bool announced)
 	{
 		CONTROL_STATE *st = PeeringTestState(ctx, i);
 
+		PeeringTestTake(ctx, i, st);
 		others = NodeOverlayApply(ctx->Nodes[i].Node, st) && others;
 		PeeringTestFreeState(st);
 	}
@@ -2378,6 +2488,7 @@ static void PeeringTestNarrowed(PEERINGTEST_CTX *ctx)
 	ctx->Accepted[PEERINGTEST_EXTRA_B] = false;
 
 	CONTROL_STATE *st = PeeringTestState(ctx, PEERINGTEST_A);
+	PeeringTestTake(ctx, PEERINGTEST_A, st);
 	bool applied = NodeOverlayApply(a->Node, st);
 	PeeringTestFreeState(st);
 
@@ -2392,6 +2503,7 @@ static void PeeringTestNarrowed(PEERINGTEST_CTX *ctx)
 	for (UINT i = PEERINGTEST_B;i < PEERINGTEST_NODES;i++)
 	{
 		st = PeeringTestState(ctx, i);
+		PeeringTestTake(ctx, i, st);
 		others = NodeOverlayApply(ctx->Nodes[i].Node, st) && others;
 		PeeringTestFreeState(st);
 	}
@@ -2776,6 +2888,7 @@ static void PeeringTestHalt(PEERINGTEST_CTX *ctx)
 	ctx->Generation = 16;
 	ctx->NumDummies[PEERINGTEST_B] = PEERINGTEST_DUMMIES;
 	CONTROL_STATE *state = PeeringTestState(ctx, PEERINGTEST_B);
+	PeeringTestTake(ctx, PEERINGTEST_B, state);
 	bool applied = NodeOverlayApply(b->Node, state);
 	PeeringTestFreeState(state);
 	SleepThread(PEERINGTEST_GRACE);
