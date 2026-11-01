@@ -231,6 +231,9 @@ _Avoid_: agent, server (the slim fork's `vpnserver`, or the server Role), peer (
 What a Node does: `server` (the Hubs that new-core sessions end in), `client` (client and cascade), `bridge` (an L2 segment joined to a physical NIC or a Hyper-V network) or `relay`, any set of them at once (`NODE_ROLE_*`). The `Roles` setting of the Configuration store selects them (a list of names; no setting means `server`, `none` means no Role) and the control plane switches them at run time (`NodeSetRoles`). The controller is not a Role: it is the `ranz-controller` service (#176).
 _Avoid_: mode, product, the controller role
 
+**Roles (of a Node resource)**:
+The Roles of ADR-0011 as the administrator declares them in the Intent (`roles` of a Node resource: `server`, `client`, `bridge` or `relay`, each at most once), so that the Controller can check the Intent by them: the Hello of a Node carries Capabilities and no Roles. So far only `bridge` matters. A Network that has a **Stretch** has no Node with the Role `bridge` but its **Stretch gateways**, because a bridge to a LAN and a Stretch to the fabric would join the segment twice and loop it (SDN-63). It is a declaration for the checks of the Controller, which does not compare it with the Roles that a Node runs (the `Roles` setting of its Configuration store, see **Role**).
+
 **Worker**:
 One per-core run-to-completion loop of a Node (`NODE_WORKER`): a thread bound to one core that takes work items from its own I/O completion port and runs each to completion (`NodePost`), passing a quiescent point of the Table snapshot after every batch. There is no hub-wide forwarding lock.
 _Avoid_: thread pool, worker thread of the Mayaqua thread pool (`NewThread`)
@@ -297,6 +300,9 @@ A BGP session from an address that no Peer object names, which the sidecar refus
 
 **Peering report**:
 `Telemetry.peering`: the peers of the sidecar of a Node, the state of each session, the prefixes learned from each and the refused sessions, which `ranz explain NODE` shows.
+
+**Hung sidecar**:
+A BGP sidecar of the peering that does not answer `ping` with `pong` within 10 s (`NODE_PEERING_ANSWER`): its Node asks 5 s after the last answer, and the sidecar answers once GoBGP answered it too. The Node ends it through its job, its learned routes go, and another starts (`NODE_PEERING_STATUS.NumHung`, SDN-77-R1).
 
 **ranz.exe**:
 The one signed executable of the product, one per architecture (ADR-0011 amendment of 2026-10-22): a Go multi-call binary (`ranz controller`, `ranz bgp`, `ranz tray` and the CLI verbs) that carries the Node and what it needs as Payloads. `ranz install` unpacks and registers them and `ranz uninstall` reverses it. Decided and ticketed (ONE-1 to ONE-5, #310 to #314). ONE-1 built the Go part: `ranz controller`, `ranz bgp`, `ranz notice`, `ranz version` and the CLI verbs are one executable. The Payloads, `ranz install` and the thin MSI come with ONE-2 to ONE-5; until then `ranz-node` is a separate file.
@@ -448,6 +454,9 @@ The VTEPs of one VNI that each get a copy of a frame the VXLAN module sends on t
 The binding of one Gateway to one L2 Network that extends the Network into a data-centre fabric over EVPN and VXLAN (ADR-0032 amendment of 2026-10-22). It holds the L2 VNI, the route targets, the ESI, the BUM rate limit, the MAC import limit, the stale timer and the `irb` flag. A Network has one Stretch gateway unless an ESI is set.
 _Avoid_: L2 extension, bridge (the Local Bridge and the `bridge` Role are different things), tunnel
 
+**Stretch gateway**:
+The Node that a Stretch names in its `gateway`, which carries the L2 Network into the fabric. It is a member of the VRF of the Network and reports the Capability `evpn`. The Intent has no kind of its own for a gateway: it is a Node (SDN-19, SDN-63). It is not the **Gateway (of an L2 Network)**, which is the Node behind which the real gateway of that Network is.
+
 **VNI**:
 The VXLAN network identifier. An L2 VNI belongs to one stretched Network and is set in its Stretch; an L3 VNI belongs to one VRF and is set in its `EvpnPeer`, where type-5 routes and IRB use it. The administrator of the fabric fixes the values and the Controller only validates them.
 _Avoid_: VLAN id, segment id
@@ -455,6 +464,19 @@ _Avoid_: VLAN id, segment id
 **ESI**:
 The Ethernet segment identifier that two gateways of one Network share for active-active multihoming (EVPN type-1 and type-4). The administrator sets it in the Stretch; the Node elects the designated forwarder.
 _Avoid_: LAG, bond, team
+
+**BUM rate limit**:
+The most broadcast, unknown-unicast and multicast traffic that the gateway of a Stretch sends the fabric, in bits per second (`bumRateLimit`). It is always on: a Stretch that leaves it out gets 10 Mbit/s, which is the default of a **Mirror** too.
+
+**MAC import limit**:
+The most remote MAC addresses that the gateway of a Stretch imports from the fabric (`macImportLimit`). A Stretch that leaves it out gets 10,000, the v1 target of sessions, and the most is 1,048,576, the entries that the MAC table of a **Switch** holds at most (`SWITCH_MAX_MACS`).
+
+**Stale timer**:
+How long the remote MAC addresses of a Stretch stay in use after its BGP session or the **BGP sidecar** went down, in seconds (`staleTimer`), before the gateway flushes them. A Stretch that leaves it out gets 120 s, and the most is 3,600 s.
+
+**Held Stretch**:
+A Stretch that the Controller does not deliver to its gateway, because the licence in force lacks EVPN and BGP (an Enterprise feature) or the gateway is above the node cap of the licence. The Intent keeps it, and `ranz get stretches` lists it with the reason (`held`) until the licence allows it again. An apply that declares a Stretch is refused while the licence lacks EVPN and BGP, so a Stretch is held when the licence runs out or a rollback brings it back.
+_Avoid_: Held back (a Node whose key ended or that waits for approval)
 
 **EVPN VRF**:
 A VRF of a gateway Node that the gateway hands to a data-centre fabric as **IP prefix routes**: its L3 VNI, route distinguisher, import and export route targets and accept list (the `vrfs` of the `evpn` object of the `Bgp` setting).
@@ -464,6 +486,12 @@ An EVPN route of type 5 (RFC 9136): a prefix of one VRF with its route distingui
 
 **Router MAC**:
 The MAC address of a VTEP in an EVPN VRF, carried in the Router's MAC extended community of its IP prefix routes. It is the inner source of the frames that a gateway sends on an L3 VNI and the inner destination of the frames sent to it. The default is `02:52:5a:00:00:05`, the same in the Node and in the sidecar.
+
+**Fabric edge**:
+The boundary between an EVPN gateway and the fabric of a data centre, where VXLAN datagrams and EVPN routes cross. The gateway carries the packets of its VRFs there in plain VXLAN, between its own **VTEP** and the VTEPs of the fabric, so the source address of a datagram is all that names a VTEP of the fabric. Its threats are the row SM-11 of `docs/threat-model.md` (SDN-25-R1).
+
+**Unknown VTEP** (`UnknownVtep`):
+A frame of the fabric whose outer source address is the VTEP of no IP prefix route of the VRF of its VNI. The gateway checks the outer source before anything else in the frame, and drops and counts a frame from an unknown VTEP whatever it holds (`NODE_EVPN_STATUS.UnknownVtep`). The address alone names a VTEP, since a VTEP sends from any source port.
 
 **Front door**:
 The TCP 443 listener of a Node that reads the first bytes of each connection and hands the socket to the process that owns that protocol.
@@ -571,9 +599,25 @@ _Avoid_: switchover, failover
 A Node's attempt at a direct path to a symmetric-NAT peer that ICE leaves on the Relay: it predicts the peer's next mapping port and sends authenticated probes to it on the peer layer's own socket (`PeerPunch.c`, `PEER_MSG_PUNCH`). The Controller triggers it with the Signal exchange, and on a meeting the Path moves off the Relay.
 _Avoid_: ICE restart, STUN check
 
+**Punch offer** and **Punch answer**:
+The two Signals that time a **Punch** (`PEER_SIGNAL_PUNCH_OFFER`, `PEER_SIGNAL_PUNCH_ANSWER`), which the Controller carries sealed as it carries any Signal. Once the ICE session of a pair on the Relay failed, the Node that offers the pair sends the punch offer, with its **NAT of a Node** and its **Predicted candidate**. The peer takes it when one of the two NATs is symmetric and the pair can meet, begins its probes at once and answers with a punch answer of its own, upon which the Node begins its probes. So both ends begin every attempt together.
+
+**NAT of a Node**:
+The kind of NAT that a Node sits behind, as the answers of its binds to its first two Relays show it (`PEER_NAT_*`). `cone`: both Relays saw the same port, one mapping for every destination. `sequential`: a symmetric NAT whose ports are a small step apart in the order of the Node's mappings, so its next port can be predicted. `random`: a symmetric NAT whose ports are far apart, or that shows two public addresses, so its next port cannot. `unknown`: fewer than two answers. A punch Signal carries it, and `ranz node state` names it.
+_Avoid_: NAT network of the Node (the WinNAT network of an Exit), 1:1 NAT rule
+
 **Predicted candidate**:
 The public port that a Node's own NAT will give its next mapping, learned from two reflexive observations and offered in the Node's Signals (`PEER_CANDIDATE_PREDICTED`), so a symmetric-NAT peer knows where to aim its probes.
 _Avoid_: next port, guessed candidate
+
+**Toward candidate** (`PEER_CANDIDATE_TOWARD`):
+A candidate of a punch Signal: the public port of the sender's mapping towards the receiver's reflexive address, the mapping that its ICE checks made. A receiver behind a cone aims its sweep there.
+
+**Punched path**:
+A direct path that a **Punch** met, as against one that ICE validated. Each end sends a keepalive there every quarter of `PunchConsent` (30 s by default), which keeps the mappings of both NATs open. When the peer says nothing there for `PunchConsent`, the pair falls back to the Relay in the same Peer session, a **Fallback**.
+
+**Punch counters**:
+The attempts, the successes and the failures of the prediction of a Node, in `PathCounters` beside the Upgrades and the Fallbacks of the **Path counters** (fields 3 to 5, `punch_attempts`, `punch_successes` and `punch_failures`). A failure of the prediction is an attempt that spent its probes and met nothing. The Controller exports them as `ranz_path_punch_attempts_total`, `ranz_path_punch_successes_total` and `ranz_path_punch_failures_total` and in the JSON of its telemetry API, and `ranz node state` shows them with the **NAT of a Node** (CORE-S5-7).
 
 **Licence key**:
 The vendor-signed key of one installation that names its Tier, its node cap, its expiry and the version of its Perpetual fallback licence (ADR-0036). Only the Controller checks it (`internal/licence`), and it caps the Nodes in name order: a Node above the cap gets no desired state and its control stream is refused. Without a key the Personal Tier of 10 Nodes is in force.
@@ -1032,7 +1076,7 @@ The `.conf` text that a stock client imports, with the `PrivateKey` and the `Pre
 The QR code of the finished configuration, carried as its modules (`DeviceCreated.QR`: a string of 1 and 0 for each row, without the quiet zone), drawn by the web UI on a canvas, by `ranz device create -qr` on a terminal and by `-qr-file` into a PNG. Shown once.
 
 **Key file (of a Device)**:
-A file that `ranz device create` makes for `-o` or `-qr-file`: a new file that only its owner reads, and on Windows SYSTEM and the Administrators too, from the moment it exists (`certgen.CreateKeyFile`, SDN-82-R1).
+A file that `ranz device create` makes for `-o` or `-qr-file`: a new file that only its owner reads, and on Windows SYSTEM and the Administrators too, from the moment it exists (`certgen.CreateKeyFile`, SDN-82-R1). `ranz` makes none on a volume that keeps no access lists (`-o` prints the configuration instead, and `-qr-file` is an error), and none under a name with a colon in its last element on Windows, because that names a stream of a file, which has the access list of that file and not the protected one of a Key file (`certgen.CheckKeyFileName`, SDN-82-R2).
 
 **Standalone Device**:
 A Device with no owner, a router for one. It takes the tags set on it and no others.
@@ -1207,7 +1251,7 @@ The control record that a Node sends each gateway of a **Gateway group** every 1
 - "Bundle" is a Diagnostics bundle, always with "diagnostics" before it. `ranz.exe` is not called a bundle.
 - "Heartbeat" is the licence re-validation of an Activation token. The integrator heartbeat is the comments on the heartbeat issue, and has nothing to do with it.
 - "Software KSP" is the in-memory signer of CI in this glossary. ADR-0022 uses "software KSP" for the Microsoft Software Key Storage Provider. Say which one.
-- "Gateway" is the Node that terminates the WireGuard of Devices (Gateway of a Device), and also the Node behind which the real gateway of an L2 Network is (Gateway of an L2 Network, SDN-41), and a Node that advertises a LAN subnet in a VRF (a member of a Gateway group, SDN-19). Say which one.
+- "Gateway" is the Node that terminates the WireGuard of Devices (Gateway of a Device), and also the Node behind which the real gateway of an L2 Network is (Gateway of an L2 Network, SDN-41), and a Node that advertises a LAN subnet in a VRF (a member of a Gateway group, SDN-19), and the Node that a Stretch binds to an L2 Network (a Stretch gateway, SDN-63). Say which one.
 - "Hub" in the SDN language is the slim fork's Virtual Hub, which the Network replaced. The Node of a hub-and-spoke VRF is the Hub node (SDN-19).
 - "Device" is a stock WireGuard client or router behind a gateway Node (spec #374). A Node that a User owns also counts against the maximum devices of that User, but it is not a Device.
 - "Scope" is the Network that a resource is in or that an API role is held for (the Scope of a resource and the Scoped role, SDN-38), and also the Self scope of a login (SDN-58), a token that holds no role. They share the word and nothing else.

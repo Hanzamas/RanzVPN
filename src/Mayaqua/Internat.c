@@ -1047,38 +1047,6 @@ void UniToStru(wchar_t *str, UINT i) {
 	UniFormat(str, 0, L"%u", i);
 }
 
-UINT UniToInt(const wchar_t *str) {
-	char tmp[128];
-	if (str == NULL)
-		return 0;
-
-	// A longer string is read up to its first sizeof(tmp) - 1 characters
-	UniToStrForSingleChars(tmp, sizeof(tmp), str);
-
-	return ToInti(tmp);
-}
-
-void UniToStrForSingleChars(char *dst, UINT dst_size, const wchar_t *src) {
-	if (dst == NULL || src == NULL || dst_size == 0)
-		return;
-
-	// At most dst_size - 1 characters and the terminator
-	UINT len = UniStrLen(src);
-	if (len > dst_size - 1)
-		len = dst_size - 1;
-
-	for (UINT i = 0; i < len; i++) {
-		wchar_t s = src[i];
-
-		if (s <= 0xff)
-			dst[i] = (char)s;
-		else
-			dst[i] = ' ';
-	}
-
-	dst[len] = 0;
-}
-
 UNI_TOKEN_LIST *UniGetLines(const wchar_t *str) {
 	BUF *b = NULL;
 	wchar_t zero = 0;
