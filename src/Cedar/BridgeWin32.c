@@ -300,24 +300,6 @@ static UINT Win32EthGenIdFromGuid(const char *guid) {
 	return i;
 }
 
-TOKEN_LIST *GetEthList(void) {
-	RPC_ENUM_ETH t;
-
-	if (EnumEthWin32(&t) == false)
-		return NULL;
-
-	TOKEN_LIST *ret = ZeroMalloc(sizeof(TOKEN_LIST));
-	ret->NumTokens = t.NumItem;
-	ret->Token = ZeroMalloc(sizeof(char *) * ret->NumTokens);
-
-	for (UINT i = 0; i < t.NumItem; i++)
-		ret->Token[i] = CopyStr(t.Items[i].DeviceName);
-
-	FreeRpcEnumEth(&t);
-
-	return ret;
-}
-
 // The devices for a Local Bridge and their network connection names (the EnumEthernet RPC): one
 // SeLow probe, one net-class pass, one adapter-list build and one IP Helper interface table. The
 // connection name is the interface alias that IP Helper reports. False when SeLow is not usable

@@ -14,6 +14,8 @@
 #include "RpcField.h"
 #include "Sam.h"
 #include "Tunables.h"
+#include "UdpAccel.h"
+#include "WaterMark.h"
 
 #include "Mayaqua/Cfg.h"
 #include "Mayaqua/DNS.h"
@@ -126,42 +128,6 @@ static void SiFreeDeadLockCheck(SERVER *s) {
 	s->HaltDeadLockThread = false;
 }
 
-UINT SiGetSysLogSaveStatus(SERVER *s) {
-	SYSLOG_SETTING set;
-	if (s == NULL)
-		return SYSLOG_NONE;
-
-	SiGetSysLogSetting(s, &set);
-
-	return set.SaveType;
-}
-
-void SiWriteSysLog(SERVER *s, char *typestr, char *hubname, wchar_t *message) {
-	wchar_t tmp[1024];
-	char machinename[MAX_HOST_NAME_LEN + 1];
-	char datetime[MAX_PATH];
-	SYSTEMTIME st;
-	if (s == NULL || typestr == NULL || message == NULL)
-		return;
-
-	GetMachineName(machinename, sizeof(machinename));
-
-	LocalTime(&st);
-	if (s->StrictSyslogDatetimeFormat)
-		GetDateTimeStrRFC3339(datetime, sizeof(datetime), &st, GetCurrentTimezone());
-	else
-		GetDateTimeStrMilli(datetime, sizeof(datetime), &st);
-
-	if (IsEmptyStr(hubname) == false)
-		UniFormat(tmp, sizeof(tmp), L"[%S/VPN/%S] (%S) <%S>: %s",
-		          machinename, hubname, datetime, typestr, message);
-	else
-		UniFormat(tmp, sizeof(tmp), L"[%S/VPN] (%S) <%S>: %s",
-		          machinename, datetime, typestr, message);
-
-	SendSysLog(s->Syslog, tmp);
-}
-
 // The syslog save types: SYSLOG_NONE, SYSLOG_SERVER_AND_HUB_SECURITY_LOG and SYSLOG_SERVER_AND_HUB_ALL_LOG. Type 1
 // (the server log only) is gone
 bool SiIsSysLogSaveType(UINT save_type) {
@@ -187,21 +153,6 @@ void SiSetSysLogSetting(SERVER *s, SYSLOG_SETTING *setting) {
 		SetSysLog(s->Syslog, set.Hostname, set.Port);
 	}
 	Unlock(s->SyslogLock);
-}
-
-void SiGetSysLogSetting(SERVER *s, SYSLOG_SETTING *setting) {
-	if (s == NULL || setting == NULL)
-		return;
-
-	Copy(setting, &s->SyslogSetting, sizeof(SYSLOG_SETTING));
-}
-
-
-void GetServerProductName(SERVER *s, char *name, UINT size) {
-	if (s == NULL || name == NULL)
-		return;
-
-	StrCpy(name, size, CEDAR_SERVER_STR " (64 bit)");
 }
 
 static const RPC_FIELD rpc_syslog_setting_fields[] =
@@ -354,21 +305,6 @@ static int CompareServerListener(void *p1, void *p2) {
 		return -1;
 	else
 		return 0;
-}
-
-void SiSetDefaultHubOption(HUB_OPTION *o) {
-	if (o == NULL)
-		return;
-
-	for (UINT i = 0; i < num_hub_option_fields; i++) {
-		HUB_OPTION_FIELD *f = &hub_option_fields[i];
-
-		if (f->Default != 0)
-			SetHubOptionField(o, f, f->Default);
-	}
-
-	// A zero default is not applied (the caller may have set NoEnum), except MaxSession which is always reset
-	o->MaxSession = 0;
 }
 
 static void SiInitDefaultHubList(SERVER *s) {
@@ -2343,6 +2279,34 @@ void StFree() {
 	server_lock = NULL;
 }
 
+// The SE-VPN code of the slim fork in a program that runs it: vpntest, whose in-process oracle starts its server, its
+// cascades and its client sessions. It loads the watermark that the signature of a client and a server carries, and
+// fills the hooks through which the Hub and Session code of Cedar calls the cascades, the client sessions and the
+// UDP Acceleration of that code (SEVPN_HOOKS, Cedar.h). ranz-node calls neither, so it links none of that code
+// (CORE-S8-2, #576). Called once, before the program starts any of that code
+void InitSeVpn() {
+	InitWaterMark();
+
+	SeVpnHooks.StartAllLink = StartAllLink;
+	SeVpnHooks.StopAllLink = StopAllLink;
+	SeVpnHooks.ReleaseAllLink = ReleaseAllLink;
+	SeVpnHooks.ClientAdditionalConnectChance = ClientAdditionalConnectChance;
+	SeVpnHooks.UdpAccelSetTick = UdpAccelSetTick;
+	SeVpnHooks.UdpAccelPoll = UdpAccelPoll;
+	SeVpnHooks.UdpAccelCalcMss = UdpAccelCalcMss;
+	SeVpnHooks.UdpAccelIsSendReady = UdpAccelIsSendReady;
+	SeVpnHooks.UdpAccelSendBlock = UdpAccelSendBlock;
+	SeVpnHooks.UdpAccelIsRecvBudgetSpent = UdpAccelIsRecvBudgetSpent;
+	SeVpnHooks.UdpAccelLogDrops = UdpAccelLogDrops;
+}
+
+// The end of InitSeVpn, once the program runs none of that code any more
+void FreeSeVpn() {
+	Zero(&SeVpnHooks, sizeof(SeVpnHooks));
+
+	FreeWaterMark();
+}
+
 void StStartServer(void) {
 	Lock(server_lock);
 	{
@@ -2469,6 +2433,7 @@ void SiReleaseServer(SERVER *s) {
 	SiFreeConfiguration(s);
 
 	SLog(c, "LS_STOP_CEDAR");
+	StopAllListener(s->Cedar);
 	StopCedar(s->Cedar);
 	SLog(c, "LS_STOP_CEDAR_2");
 
