@@ -22,6 +22,7 @@
 #include "Mayaqua/Object.h"
 #include "Mayaqua/Str.h"
 
+#include "Core/Control.h"
 #include "Core/Noise.h"
 
 #include "NodeCaps.h"
@@ -363,6 +364,8 @@ NODE *NewNode(wchar_t *data_dir) {
 	n->QueueList = NewListFast(NULL);
 	n->HubList = NewListFast(NULL);
 	n->LoginThrottle = NewNodeThrottle();
+	// The counters of the EVPN of a gateway, which the control stream reports while an EVPN runs (NodeEvpn.c; SDN-25-R3, #571)
+	n->EvpnReport = ControlNewEvpn();
 
 	// An online reader never publishes epoch 0, which means offline
 	n->Epoch = 1;
@@ -416,6 +419,7 @@ void FreeNode(NODE *n) {
 	ReleaseList(n->ReaderList);
 	Free(n->Peers);
 	FreeNodeThrottle(n->LoginThrottle);
+	ControlFreeEvpn(n->EvpnReport);
 
 	DeleteLock(n->TableLock);
 	DeleteLock(n->Lock);

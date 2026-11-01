@@ -896,6 +896,10 @@ message Telemetry {
   // of their own after each Hello, whenever they change and again every 15 s while they stay the
   // same, as the controller drops a counter that its node stopped listing.
   PathCounters paths = 9;
+  // The counters of the EVPN of a gateway (SDN-25-R3), absent while no EVPN runs at the node. The
+  // node lists them in a summary of their own as it lists its Paths: after each Hello, whenever
+  // they change, and again every 15 s while they stay the same.
+  EvpnCounters evpn = 10;
 }
 
 // The BGP peering of the standard mode at a node (SDN-77 #357): each peer of its sidecar, in the
@@ -928,6 +932,28 @@ message PathCounters {
   uint64 punch_attempts = 3;
   uint64 punch_successes = 4;
   uint64 punch_failures = 5;
+}
+
+// The EVPN of a gateway with the fabric since its sidecar started (SDN-25-R3 #571, NODE_EVPN_STATUS
+// of src/Cedar/NodeEvpn.h): the packets of the overlay that went to a VTEP of the fabric (sent) and
+// the ones that could not go (failed), the packets of the fabric that the overlay took (delivered)
+// and the ones that it did not take (undelivered), and what the gateway dropped of the fabric: the
+// frames of an L3 VNI from an address that is no VTEP that it knows for their VRF (unknown_vtep),
+// whatever they hold; the packets of a known VTEP from a source that no route of their VRF holds
+// (strangers); the frames of a known VTEP to another MAC address than its router MAC (not_ours);
+// the datagrams on a VNI of no EVPN VRF (unknown_vni); and the datagrams of no VXLAN frame and the
+// frames of a known VTEP without an IP packet (malformed). The VXLAN module counts unknown_vni and
+// the datagrams of malformed before the outer source is checked, from any address.
+message EvpnCounters {
+  uint64 sent = 1;
+  uint64 failed = 2;
+  uint64 delivered = 3;
+  uint64 undelivered = 4;
+  uint64 unknown_vtep = 5;
+  uint64 strangers = 6;
+  uint64 not_ours = 7;
+  uint64 unknown_vni = 8;
+  uint64 malformed = 9;
 }
 
 // The WireGuard end of one Device at its gateway (SDN-80): the last handshake, in Unix time in

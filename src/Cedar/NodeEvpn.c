@@ -54,10 +54,13 @@
 #include "NodeEvpn.h"
 
 #include "Mayaqua/Internat.h"
+#include "Mayaqua/IpAddr.h"
 #include "Mayaqua/Memory.h"
 #include "Mayaqua/Object.h"
 #include "Mayaqua/Str.h"
 #include "Mayaqua/TcpIp.h"
+
+#include "Core/Control.h"
 
 #include "NodeInternal.h"
 #include "NodeProfile.h"
@@ -104,6 +107,8 @@ struct NODE_EVPN {
 	NODE_READER Reader;              // The receive thread of the socket as a reader of the tables, online while it delivers
 	bool Registered;                 // ... once it registered
 	UCHAR *NatBuf;                   // A packet of the fabric as the host sees it, when a 1:1 NAT rule translates it
+	UINT64 UnknownVtepLogged;        // When the node log named a frame of an unknown VTEP last, 0 for never (the receive thread)
+	PTP_TIMER Report;                // Puts the counters into the report of the control stream (NodeEvpnTick), NULL before
 	volatile LONG64 Sent;            // The counters of NODE_EVPN_STATUS
 	volatile LONG64 Failed;
 	volatile LONG64 Delivered;
@@ -543,6 +548,27 @@ bool NodeEvpnHasVtep(const NODE_EVPN_VTEP *vteps, UINT num, UINT vrf_id, const U
 	return (bsearch(&key, vteps, num, sizeof(NODE_EVPN_VTEP), NodeEvpnCompareVtep) != NULL);
 }
 
+// A frame of the L3 VNI of the VRF vrf_id from the address from, which is no VTEP that the gateway knows for the VRF, on the
+// receive thread of the socket: counted, and named in the node log with the number of such frames so far, once every
+// NODE_EVPN_LOG_WAIT ms at most, so that an operator sees a leaf that the gateway does not know, whose frames it drops, without
+// a line for each of them (SDN-25-R3, #571)
+static void NodeEvpnUnknownVtep(NODE_EVPN *e, UINT vrf_id, const VXLAN_ADDR *from) {
+	UINT64 num = (UINT64)InterlockedIncrement64(&e->UnknownVtep);
+	UINT64 now = GetTickCount64();
+	char addr[64];
+	IP ip;
+
+	if (e->UnknownVtepLogged != 0 && now - e->UnknownVtepLogged < NODE_EVPN_LOG_WAIT)
+		return;
+
+	e->UnknownVtepLogged = now;
+	Zero(&ip, sizeof(ip));
+	Copy(ip.address, from->Ip, sizeof(ip.address));
+	IPToStr(addr, sizeof(addr), &ip);
+	NodeLog(e->Node, "EVPN: a frame of VRF %u from %s dropped, the address of no VTEP that the gateway knows for the VRF: %I64u such frames since the EVPN started, one line every %u s at most",
+	        vrf_id, addr, num, (UINT)(NODE_EVPN_LOG_WAIT / 1000));
+}
+
 // The receiver of the module: a frame of the L3 VNI vni from the address from, on the receive thread of the socket, which
 // registers itself as a reader of the tables of the node with its first frame. The module hands it the frames of the VNIs that
 // it carries alone, which are the L3 VNIs of the EVPN VRFs (NodeEvpnStart), so vni names a VRF; a datagram on any other VNI and
@@ -569,7 +595,7 @@ static void NodeEvpnReceive(VXLAN *x, void *param, UINT vni, const VXLAN_ADDR *f
 
 		// The address alone names the VTEP: a VTEP sends from any source port (RFC 7348 section 5)
 		if (et == NULL || NodeEvpnHasVtep(et->Vteps, et->NumVteps, vrf_id, from->Ip) == false)
-			InterlockedIncrement64(&e->UnknownVtep);
+			NodeEvpnUnknownVtep(e, vrf_id, from);
 		else if (parsed == NODE_EVPN_FRAME_MALFORMED)
 			InterlockedIncrement64(&e->Malformed);
 		else if (parsed == NODE_EVPN_FRAME_NOT_OURS)
@@ -803,15 +829,79 @@ UINT NodeEvpnFlush(NODE *n) {
 }
 
 //
+// The report of the counters (SDN-25-R3, #571)
+//
+
+// The counters of the EVPN e, as NODE_EVPN_STATUS has them, into c. The reads of the counters of e and of its module take no
+// lock of the node, so the timer of the report reads them too, which NodeEvpnFree stops before they go.
+static void NodeEvpnCounters(NODE_EVPN *e, CONTROL_EVPN_COUNTERS *c) {
+	VXLAN_STATS vs;
+
+	VxlanGetStats(e->Vxlan, &vs);
+	Zero(c, sizeof(CONTROL_EVPN_COUNTERS));
+	c->Sent = (UINT64)ReadAcquire64(&e->Sent);
+	c->Failed = (UINT64)ReadAcquire64(&e->Failed);
+	c->Delivered = (UINT64)ReadAcquire64(&e->Delivered);
+	c->Undelivered = (UINT64)ReadAcquire64(&e->Undelivered);
+	c->UnknownVtep = (UINT64)ReadAcquire64(&e->UnknownVtep);
+	c->Strangers = (UINT64)ReadAcquire64(&e->Strangers);
+	c->NotOurs = (UINT64)ReadAcquire64(&e->NotOurs);
+	c->UnknownVni = vs.Drops[VXLAN_DROP_VNI];
+	c->Malformed = (UINT64)ReadAcquire64(&e->Malformed) + vs.Drops[VXLAN_DROP_MALFORMED];
+}
+
+// The timer of the report: every NODE_EVPN_REPORT ms the counters of the EVPN go into the report of the control stream of the
+// node (Core/ControlEvpn.c), which sends them to the Controller when they changed, and the Controller exports them as metrics
+static VOID CALLBACK NodeEvpnTick(PTP_CALLBACK_INSTANCE instance, PVOID param, PTP_TIMER timer) {
+	NODE_EVPN *e = (NODE_EVPN *)param;
+	CONTROL_EVPN_COUNTERS c;
+
+	NodeEvpnCounters(e, &c);
+	ControlSetEvpn(e->Node->EvpnReport, &c);
+}
+
+// Start the report of the counters of the EVPN e of a gateway that started, all 0 at first
+static void NodeEvpnReportStart(NODE_EVPN *e) {
+	ULARGE_INTEGER due;
+	FILETIME ft;
+
+	NodeEvpnTick(NULL, e, NULL);
+	e->Report = CreateThreadpoolTimer(NodeEvpnTick, e, NULL);
+	if (e->Report == NULL) {
+		NodeLog(e->Node, "EVPN: the timer of the report of its counters could not start, so the Controller has them as they started");
+		return;
+	}
+
+	due.QuadPart = (ULONGLONG)(-(LONGLONG)NODE_EVPN_REPORT * 10000);
+	ft.dwLowDateTime = due.LowPart;
+	ft.dwHighDateTime = due.HighPart;
+	SetThreadpoolTimer(e->Report, &ft, NODE_EVPN_REPORT, 0);
+}
+
+// Stop the report of the counters of the EVPN e: no tick runs once it returns, and the report of the control stream holds the
+// counters of no EVPN any more
+static void NodeEvpnReportStop(NODE_EVPN *e) {
+	if (e->Report != NULL) {
+		SetThreadpoolTimer(e->Report, NULL, 0, 0);
+		WaitForThreadpoolTimerCallbacks(e->Report, TRUE);
+		CloseThreadpoolTimer(e->Report);
+		e->Report = NULL;
+	}
+
+	ControlSetEvpn(e->Node->EvpnReport, NULL);
+}
+
+//
 // The EVPN of the gateway
 //
 
-// Free the EVPN of a gateway that no table snapshot holds: its socket first, which joins its receive thread, then the reader of
-// that thread, then the module
+// Free the EVPN of a gateway that no table snapshot holds: the timer of its report first, which reads its counters and its
+// module, then its socket, which joins its receive thread, then the reader of that thread, then the module
 static void NodeEvpnFree(NODE_EVPN *e) {
 	if (e == NULL)
 		return;
 
+	NodeEvpnReportStop(e);
 	VxlanUdpFree(e->Udp);
 	if (e->Registered)
 		NodeReaderUnregister(e->Node, &e->Reader);
@@ -917,6 +1007,8 @@ void NodeEvpnStart(NODE *n, struct cJSON *cfg) {
 	}
 
 	n->Evpn = e;
+	// The counters go to the Controller with the report of the control stream (SDN-25-R3, #571)
+	NodeEvpnReportStart(e);
 	NodeEvpnMacText(mac_text, sizeof(mac_text), e->RouterMac);
 	NodeLog(n, "EVPN started: the VTEP %s on UDP port %u, router MAC %s, %u VRFs, the VTEPs of the fabric on UDP port %u", e->Vtep, (UINT)VxlanUdpPort(e->Udp), mac_text, e->NumVrfs, (UINT)e->FabricPort);
 }
@@ -940,7 +1032,7 @@ void NodeEvpnStop(NODE *n) {
 
 // The state of the EVPN of the node
 void NodeEvpnGetStatus(NODE *n, NODE_EVPN_STATUS *st) {
-	VXLAN_STATS vs;
+	CONTROL_EVPN_COUNTERS c;
 
 	if (st == NULL)
 		return;
@@ -954,7 +1046,7 @@ void NodeEvpnGetStatus(NODE *n, NODE_EVPN_STATUS *st) {
 		NODE_EVPN *e = n->Evpn;
 
 		if (e != NULL) {
-			VxlanGetStats(e->Vxlan, &vs);
+			NodeEvpnCounters(e, &c);
 			st->Running = true;
 			st->Port = VxlanUdpPort(e->Udp);
 			st->FabricPort = e->FabricPort;
@@ -966,15 +1058,15 @@ void NodeEvpnGetStatus(NODE *n, NODE_EVPN_STATUS *st) {
 			}
 			Unlock(e->Lock);
 
-			st->Sent = (UINT64)ReadAcquire64(&e->Sent);
-			st->Failed = (UINT64)ReadAcquire64(&e->Failed);
-			st->Delivered = (UINT64)ReadAcquire64(&e->Delivered);
-			st->Undelivered = (UINT64)ReadAcquire64(&e->Undelivered);
-			st->UnknownVtep = (UINT64)ReadAcquire64(&e->UnknownVtep);
-			st->Strangers = (UINT64)ReadAcquire64(&e->Strangers);
-			st->NotOurs = (UINT64)ReadAcquire64(&e->NotOurs);
-			st->UnknownVni = vs.Drops[VXLAN_DROP_VNI];
-			st->Malformed = (UINT64)ReadAcquire64(&e->Malformed) + vs.Drops[VXLAN_DROP_MALFORMED];
+			st->Sent = c.Sent;
+			st->Failed = c.Failed;
+			st->Delivered = c.Delivered;
+			st->Undelivered = c.Undelivered;
+			st->UnknownVtep = c.UnknownVtep;
+			st->Strangers = c.Strangers;
+			st->NotOurs = c.NotOurs;
+			st->UnknownVni = c.UnknownVni;
+			st->Malformed = c.Malformed;
 		}
 	}
 	Unlock(n->Lock);

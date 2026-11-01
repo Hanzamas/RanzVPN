@@ -13,6 +13,8 @@
 #define NODE_EVPN_MAX_ROUTES 65536               // The IP prefix routes of the fabric that a gateway holds at most (NODE_VRF_MAX_HOPS)
 #define NODE_EVPN_MAX_OFFERS 16                  // The vteps of a learned message at most (maxEVPNVTEPs of ranz-bgp/internal/sidecar)
 #define NODE_EVPN_TEXT       64                  // A prefix, an address or a MAC address as text, with its NUL
+#define NODE_EVPN_LOG_WAIT   10000               // ms between two lines of the node log that name a frame of an unknown VTEP, at least
+#define NODE_EVPN_REPORT     1000                // ms between two reads of the counters for the report of the control stream (CONTROL_EVPN_REPORT)
 
 // What NodeEvpnParseRoute finds in a message of the sidecar
 #define NODE_EVPN_NO_ROUTE  0 // No message of an IP prefix route of an EVPN VRF: one without a vni
@@ -108,5 +110,8 @@ bool NodeSwapEvpn(NODE *n, NODE_EVPN_TABLE *e);
 
 // NodeOverlay.c
 bool NodeOverlayFabricInput(NODE *n, UINT vrf_id, const UCHAR *packet, UINT size, UCHAR *nat_buf);
+
+// NodeState.c: the EVPN of the gateway in the answer of the admin pipe to state, which ranz node state prints (SDN-25-R3, #571)
+void NodeEvpnState(NODE *n, struct cJSON *o);
 
 #endif // NODE_EVPN_H
