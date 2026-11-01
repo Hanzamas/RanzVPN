@@ -25,6 +25,10 @@
 // - The resync: the sidecar of gw restarts (NodeBgpRestart), so the pipe to ranz bgp reconnects. gw holds no route of the fabric
 //   until its new sidecar learns them again, and sends a full resync; the routes of the fabric that gw learns again, and the
 //   routes of gw that the leaves learn again, are the ones from before. A frame of host 1 to host a goes to leaf-a again.
+// - Many routes: host 2 sends from 600 more MAC addresses, so gw has 604 routes, more than one stretch message holds, and its
+//   sidecar refuses a message of more. Each leaf learns every route of gw; once the pipe of gw reconnects again, its full resync
+//   goes in two stretch messages and each leaf learns the same routes again; and once the addresses leave the switch of gw, the
+//   leaves hold the routes of host 1 and host 2 alone again.
 // Print "STRETCH TEST OK" only when every check passes. .github/scripts/bgp-spike.ps1 runs it, with ranz.exe next to vpntest.
 
 #include "harness_int.h"
@@ -61,7 +65,9 @@
 #define	STRETCHTEST_VLAN		1			// The VLAN of lan on each switch
 #define	STRETCHTEST_FRAME		78			// A test frame: the Ethernet header and an IPv4 packet of UDP of 64 bytes
 #define	STRETCHTEST_DATAGRAM	(VXLAN_HEADER_SIZE + STRETCHTEST_FRAME)
-#define	STRETCHTEST_ROUTES		16			// The routes of the fabric that a node of the test holds at most
+#define	STRETCHTEST_ROUTES		16			// The routes of the fabric that a node of the test holds at most, but in the case of many routes
+#define	STRETCHTEST_MANY		600			// The MAC addresses that host 2 sends from in the case of many routes: with the 4 routes of host 1 and host 2, more than a stretch message holds
+#define	STRETCHTEST_ETHER_LOCAL	0x88B5		// The EtherType of their frames, the first local experimental one of IEEE 802: no IP table learns from them
 
 // The nodes
 #define	STRETCHTEST_GW			0
@@ -741,15 +747,10 @@ static bool StretchTestWaitRoutes(STRETCHTEST_CTX *ctx, UINT node, bool none)
 // Whether node t holds the num routes of list, in their order: the routes of the fabric from before the resync
 static bool StretchTestSameRoutes(STRETCHTEST_NODE *t, const NODE_STRETCH_ROUTE *list, UINT num)
 {
-	NODE_STRETCH_ROUTE now[STRETCHTEST_ROUTES];
-	UINT got = NodeStretchGetRoutes(t->Node, now, STRETCHTEST_ROUTES);
+	NODE_STRETCH_ROUTE *now = ZeroMalloc(sizeof(NODE_STRETCH_ROUTE) * MAX(num, 1));
+	bool same = (NodeStretchGetRoutes(t->Node, now, num) == num);
 
-	if (got != num || num > STRETCHTEST_ROUTES)
-	{
-		return false;
-	}
-
-	for (UINT i = 0;i < num;i++)
+	for (UINT i = 0;same && i < num;i++)
 	{
 		const NODE_STRETCH_ROUTE *a = &list[i];
 		const NODE_STRETCH_ROUTE *b = &now[i];
@@ -757,8 +758,27 @@ static bool StretchTestSameRoutes(STRETCHTEST_NODE *t, const NODE_STRETCH_ROUTE 
 		if (a->Vni != b->Vni || a->Imet != b->Imet || Cmp(a->Mac, b->Mac, 6) != 0 || a->IpSize != b->IpSize || Cmp(a->Ip, b->Ip, 16) != 0 ||
 			Cmp(a->Vtep, b->Vtep, 16) != 0)
 		{
+			same = false;
+		}
+	}
+
+	Free(now);
+
+	return same;
+}
+
+// Whether node t holds num routes of the fabric, within STRETCHTEST_BOUND
+static bool StretchTestWaitCount(STRETCHTEST_CTX *ctx, UINT node, UINT num)
+{
+	UINT64 end = Tick64() + STRETCHTEST_BOUND;
+
+	while (NodeStretchGetRoutes(ctx->Nodes[node].Node, NULL, 0) != num)
+	{
+		if (Tick64() >= end)
+		{
 			return false;
 		}
+		SleepThread(STRETCHTEST_POLL * 5);
 	}
 
 	return true;
@@ -1068,6 +1088,99 @@ static void StretchTestResync(STRETCHTEST_CTX *ctx)
 		"resyncs %I64u to %I64u, %u announced", resyncs, st.Resyncs, st.NumAnnounced);
 }
 
+// The MAC address i of the many addresses that host 2 sends from in the case of many routes, 02:52:5a:65:..
+static void StretchTestManyMac(UCHAR *mac, UINT i)
+{
+	static const UCHAR prefix[4] = {0x02, 0x52, 0x5A, 0x65};
+
+	Copy(mac, prefix, sizeof(prefix));
+	mac[4] = (UCHAR)(i >> 8);
+	mac[5] = (UCHAR)i;
+}
+
+// Many routes: host 2 sends a frame from each of STRETCHTEST_MANY more MAC addresses, so gw has more routes than one stretch message
+// holds, and its sidecar refuses a message of more. Each leaf learns every route of gw; once the pipe of gw reconnects again, its full
+// resync goes in two stretch messages and each leaf learns the same routes again; and once the addresses leave the switch of gw, the
+// leaves hold the routes of host 1 and host 2 alone again.
+static void StretchTestMany(STRETCHTEST_CTX *ctx)
+{
+	STRETCHTEST_HOST *h1 = &ctx->Hosts[STRETCHTEST_HOST_1];
+	STRETCHTEST_HOST *h2 = &ctx->Hosts[STRETCHTEST_HOST_2];
+	STRETCHTEST_NODE *gw = &ctx->Nodes[STRETCHTEST_GW];
+	NODE_STRETCH_ROUTE *before[2] = {NULL, NULL};
+	NODE_STRETCH_STATUS st;
+	UCHAR frame[STRETCHTEST_FRAME];
+	char what[MAX_SIZE];
+	UINT local = 4 + STRETCHTEST_MANY;	// The type-2 routes of gw: host 1 and host 2, MAC only and MAC plus IP, and the many addresses ...
+	UINT routes = 1 + local;			// ... and the routes of the fabric at a leaf: those and the type-3 route of gw
+	UINT delivered = 0;
+
+	Print("[many routes: more routes of gw than one stretch message holds]\n");
+
+	// A frame of no IP from each address to host 1: the switch of gw learns the address at the port of host 2, and host 1 takes it
+	for (UINT i = 0;i < STRETCHTEST_MANY;i++)
+	{
+		Zero(frame, sizeof(frame));
+		Copy(frame, h1->Mac, 6);
+		StretchTestManyMac(frame + 6, i);
+		WRITE_USHORT(frame + 12, STRETCHTEST_ETHER_LOCAL);
+		delivered += StretchTestSend(ctx, h2, frame, 60);
+	}
+
+	bool learned = (delivered == STRETCHTEST_MANY);
+	for (UINT i = STRETCHTEST_LEAF_A;learned && i <= STRETCHTEST_LEAF_B;i++)
+	{
+		learned = StretchTestWaitCount(ctx, i, routes);
+	}
+	NodeStretchGetStatus(gw->Node, &st);
+	Format(what, sizeof(what), "host 2 sends from %u more MAC addresses: gw announces its %u type-2 routes, more than one stretch message holds, and each leaf learns every one",
+		(UINT)STRETCHTEST_MANY, local);
+	StretchTestCheck(ctx, learned && st.NumAnnounced == local, what, "%u of %u frames delivered, leaf-a %u routes, leaf-b %u routes, %u announced", delivered,
+		(UINT)STRETCHTEST_MANY, NodeStretchGetRoutes(ctx->Nodes[STRETCHTEST_LEAF_A].Node, NULL, 0), NodeStretchGetRoutes(ctx->Nodes[STRETCHTEST_LEAF_B].Node, NULL, 0),
+		st.NumAnnounced);
+
+	// The pipe of gw reconnects again: the leaves lose its routes with its old session, and its full resync of every route goes in two
+	// stretch messages
+	UINT64 resyncs = st.Resyncs;
+	for (UINT i = 0;i < 2;i++)
+	{
+		before[i] = ZeroMalloc(sizeof(NODE_STRETCH_ROUTE) * routes);
+		NodeStretchGetRoutes(ctx->Nodes[STRETCHTEST_LEAF_A + i].Node, before[i], routes);
+	}
+
+	bool restarted = NodeBgpRestart(gw->Node) && StretchTestWaitCount(ctx, STRETCHTEST_LEAF_A, 0) && StretchTestWaitCount(ctx, STRETCHTEST_LEAF_B, 0) &&
+		StretchTestWaitBgp(gw, 2);
+	bool again = restarted;
+	for (UINT i = 0;again && i < 2;i++)
+	{
+		again = StretchTestWaitCount(ctx, STRETCHTEST_LEAF_A + i, routes) && StretchTestSameRoutes(&ctx->Nodes[STRETCHTEST_LEAF_A + i], before[i], routes);
+	}
+	NodeStretchGetStatus(gw->Node, &st);
+	Format(what, sizeof(what), "The pipe of gw reconnects again: its full resync of %u routes goes in two stretch messages, and each leaf learns the same routes again", local);
+	StretchTestCheck(ctx, again && st.Resyncs == resyncs + 1 && st.NumAnnounced == local, what,
+		"restarted %u, the same routes again %u, resyncs %I64u to %I64u, %u announced", (UINT)restarted, (UINT)again, resyncs, st.Resyncs, st.NumAnnounced);
+
+	// The addresses leave the switch of gw: their routes leave the leaves, and the routes of host 1 and host 2 stay
+	for (UINT i = 0;i < STRETCHTEST_MANY;i++)
+	{
+		UCHAR mac[6];
+
+		StretchTestManyMac(mac, i);
+		SwitchClearMac(gw->Switch, mac);
+	}
+	bool gone = StretchTestWaitRoutes(ctx, STRETCHTEST_LEAF_A, false) && StretchTestWaitRoutes(ctx, STRETCHTEST_LEAF_B, false);
+	NodeStretchGetStatus(gw->Node, &st);
+	Format(what, sizeof(what), "The %u addresses leave the switch of gw: gw withdraws their routes, and each leaf holds the routes of host 1 and host 2 alone again",
+		(UINT)STRETCHTEST_MANY);
+	StretchTestCheck(ctx, gone && st.NumAnnounced == 4, what, "leaf-a %u routes, leaf-b %u routes, %u announced", NodeStretchGetRoutes(ctx->Nodes[STRETCHTEST_LEAF_A].Node, NULL, 0),
+		NodeStretchGetRoutes(ctx->Nodes[STRETCHTEST_LEAF_B].Node, NULL, 0), st.NumAnnounced);
+
+	for (UINT i = 0;i < 2;i++)
+	{
+		Free(before[i]);
+	}
+}
+
 // The switches leave the stretches, the nodes stop and their sidecars with them, and the node log of gw tells the story; the logs of
 // the sidecars go into the job log when a check failed
 static void StretchTestClose(STRETCHTEST_CTX *ctx)
@@ -1112,12 +1225,17 @@ static void StretchTestClose(STRETCHTEST_CTX *ctx)
 	if (gw_ran)
 	{
 		char *log = StretchTestReadLog(gw->Dir, NULL);
+		char many[MAX_SIZE];
+
+		Format(many, sizeof(many), "EVPN stretch: a full resync of %u routes of the gateway went to the sidecar", 4 + (UINT)STRETCHTEST_MANY);
+
 		char *lines[] =
 		{
 			"EVPN started: the VTEP 127.0.0.1 on UDP port",
 			"EVPN stretch: 1 L2 Networks stretched into the fabric",
 			"EVPN stretch: the fabric is port",
 			"EVPN stretch: a full resync of 4 routes of the gateway went to the sidecar",
+			many,
 			"EVPN stretch: the fabric left the switch of the L2 Network lan",
 			"EVPN stretch stopped:",
 		};
@@ -1135,7 +1253,7 @@ static void StretchTestClose(STRETCHTEST_CTX *ctx)
 				StrCat(missing, sizeof(missing), "\"");
 			}
 		}
-		StretchTestCheck(ctx, all, "The node log of gw names its stretch, the port of the fabric on the switch of lan, the full resync after the restart and the stop",
+		StretchTestCheck(ctx, all, "The node log of gw names its stretch, the port of the fabric on the switch of lan, the full resyncs after the restarts and the stop",
 			"missing:%s", missing);
 		Free(log);
 
@@ -1204,7 +1322,7 @@ static void StretchTestHosts(STRETCHTEST_CTX *ctx)
 }
 
 // stretch: the L2 stretch of a gateway into a fabric
-RANZ_TEST("stretch", stretch_test, "EVPN L2 stretch: a gateway node stretches an L2 Network of the overlay into a fabric of two leaves with EVPN type-2 and type-3 routes through ranz bgp (ranz.exe next to vpntest): the type-2 routes both ways, MAC only and MAC plus IP, a frame to a host of the other side by its route, a broadcast of the overlay to each VTEP of the flood list once and one of the fabric only to the subscribers of the overlay, and a full resync once the pipe of the gateway to ranz bgp reconnects.");
+RANZ_TEST("stretch", stretch_test, "EVPN L2 stretch: a gateway node stretches an L2 Network of the overlay into a fabric of two leaves with EVPN type-2 and type-3 routes through ranz bgp (ranz.exe next to vpntest): the type-2 routes both ways, MAC only and MAC plus IP, a frame to a host of the other side by its route, a broadcast of the overlay to each VTEP of the flood list once and one of the fabric only to the subscribers of the overlay, and a full resync once the pipe of the gateway to ranz bgp reconnects, also of more routes than one stretch message holds.");
 void stretch_test(UINT num, char **arg)
 {
 	STRETCHTEST_CTX *ctx = ZeroMalloc(sizeof(STRETCHTEST_CTX));
@@ -1225,6 +1343,7 @@ void stretch_test(UINT num, char **arg)
 		StretchTestFromFabric(ctx);
 		StretchTestResync(ctx);
 		StretchTestIntoFabric(ctx, true);
+		StretchTestMany(ctx);
 	}
 
 	StretchTestClose(ctx);
