@@ -140,7 +140,7 @@ func startOnce(r *sidecar.Rqlited) error {
 	began := time.Now()
 	ctx, cancel := context.WithTimeout(context.Background(), startTimeout)
 	defer cancel()
-	w := watchReadiness(ctx, r.URL()+"/readyz")
+	w := watchReadiness(ctx, r.URL()+"/readyz", watchPause)
 	err := r.Start(ctx)
 	cancel()
 	<-w.done
@@ -158,27 +158,40 @@ func startFailure(r *sidecar.Rqlited, err error, began time.Time, last string) e
 		err, time.Since(began).Round(time.Millisecond), len(starting), startBound, runPorts.held(), r.URL(), last, tail(r))
 }
 
-// readiness polls the /readyz of an rqlited, as Start does, and keeps the last answer that it got while the start ran.
+// watchPause is the pause of the watch of readiness between a poll that ended and the next one. The watch only keeps the
+// answer for the error of a failed start, Start polls for the start itself, and a poll of /readyz is a round trip to the
+// leader and a query, so the watch asks a few times less often than Start.
+const watchPause = time.Second
+
+// readiness polls the /readyz of an rqlited, as Start does, and keeps what it got while the start ran.
 type readiness struct {
-	done chan struct{} // closed once ctx ended and the last poll is over
-	mu   sync.Mutex
-	last string
+	done  chan struct{} // closed once ctx ended and the last poll is over
+	mu    sync.Mutex
+	polls int           // the polls that got an answer, or failed, before ctx ended
+	last  string        // the answer of the last of them
+	took  time.Duration // how long it took
+	sent  time.Time     // when the poll that ctx cut short was sent, zero when no poll was cut short
 }
 
-// watchReadiness starts polling url, until ctx ends.
-func watchReadiness(ctx context.Context, url string) *readiness {
-	w := &readiness{done: make(chan struct{}), last: "none yet"}
+// watchReadiness starts polling url, with pause between a poll that ended and the next, until ctx ends.
+func watchReadiness(ctx context.Context, url string, pause time.Duration) *readiness {
+	w := &readiness{done: make(chan struct{})}
 	go func() {
 		defer close(w.done)
-		tick := time.NewTicker(250 * time.Millisecond)
+		tick := time.NewTicker(pause)
 		defer tick.Stop()
 		for {
-			// A poll that ctx cut short says nothing about the node
-			if s := answerOf(ctx, url); ctx.Err() == nil {
-				w.mu.Lock()
-				w.last = s
-				w.mu.Unlock()
+			sent := time.Now()
+			s := answerOf(ctx, url)
+			w.mu.Lock()
+			if ctx.Err() == nil {
+				w.polls++
+				w.last, w.took = s, time.Since(sent)
+			} else {
+				// A poll that ctx cut short says nothing about the node, but that it was waiting does
+				w.sent = sent
 			}
+			w.mu.Unlock()
 			select {
 			case <-ctx.Done():
 				return
@@ -189,16 +202,25 @@ func watchReadiness(ctx context.Context, url string) *readiness {
 	return w
 }
 
-// answer returns the last answer that the poll got.
+// answer returns the last answer that the poll got, with how many polls there were and how long the last took, and says
+// when a poll was still waiting for its answer at the end.
 func (w *readiness) answer() string {
 	w.mu.Lock()
 	defer w.mu.Unlock()
-	return w.last
+	s := "none yet"
+	if w.polls > 0 {
+		s = fmt.Sprintf("%s (poll %d, which took %v)", w.last, w.polls, w.took.Round(time.Millisecond))
+	}
+	if !w.sent.IsZero() {
+		s += fmt.Sprintf("; a poll that was sent %v before the end of the start had no answer yet", time.Since(w.sent).Round(time.Millisecond))
+	}
+	return s
 }
 
-// answerOf returns what a GET of url answers, the status and the start of the body, or why it got no answer.
+// answerOf returns what a GET of url answers, the status and the start of the body, or why it got no answer. It waits as
+// long as the poll of Start does for one.
 func answerOf(ctx context.Context, url string) string {
-	ctx, cancel := context.WithTimeout(ctx, time.Second)
+	ctx, cancel := context.WithTimeout(ctx, sidecar.ReadyTimeout)
 	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {

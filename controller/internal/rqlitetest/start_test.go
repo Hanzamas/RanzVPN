@@ -4,11 +4,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -47,6 +50,57 @@ func TestAStartFailureSaysWhatTheNodeWasDoing(t *testing.T) {
 	}
 	if old := "[store] line " + strconv.Itoa(29-tailLines); strings.Contains(msg, old) {
 		t.Errorf("the error of a start that failed shows %q, which is before the last %d lines:\n%s", old, tailLines, msg)
+	}
+}
+
+// The watch of readiness keeps the last answer that the node gave, says how many polls there were and how long the last took,
+// and says that a poll was still waiting for its answer when the start ended: the error of a start that failed on a busy host
+// then shows a node that answered slowly or not at all, which the last answer alone does not.
+func TestTheWatchOfReadinessSaysWhatTheNodeAnswered(t *testing.T) {
+	var polls atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if polls.Add(1) <= 2 {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			w.Write([]byte("[+]node ok\n[+]leader does not exist"))
+			return
+		}
+		<-r.Context().Done() // the third poll gets no answer
+	}))
+	defer srv.Close()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	w := watchReadiness(ctx, srv.URL, 10*time.Millisecond)
+	for deadline := time.Now().Add(10 * time.Second); polls.Load() < 3; time.Sleep(5 * time.Millisecond) {
+		if time.Now().After(deadline) {
+			t.Fatal("the watch did not send a third poll")
+		}
+	}
+	time.Sleep(50 * time.Millisecond)
+	cancel()
+	<-w.done
+	got := w.answer()
+	for _, want := range []string{"503 Service Unavailable: [+]node ok; [+]leader does not exist", "(poll 2, which took", "a poll that was sent", "had no answer yet"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("the watch says %q, want it to say %q", got, want)
+		}
+	}
+}
+
+// A node that never answers leaves the watch with no answer, and with the poll that was waiting.
+func TestTheWatchOfReadinessSaysThatTheNodeNeverAnswered(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		<-r.Context().Done()
+	}))
+	defer srv.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+	defer cancel()
+	w := watchReadiness(ctx, srv.URL, 10*time.Millisecond)
+	<-w.done
+	got := w.answer()
+	for _, want := range []string{"none yet", "a poll that was sent", "had no answer yet"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("the watch of a node that never answered says %q, want it to say %q", got, want)
+		}
 	}
 }
 

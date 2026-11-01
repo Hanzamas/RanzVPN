@@ -502,7 +502,7 @@ jobs:
     # minutes of the call are over, and the step fails at the first test that fails.
     - name: 'Stress, temporary (CI-FLAKE-4, #581)'
       if: ${{ !cancelled() }}
-      timeout-minutes: 60
+      timeout-minutes: 75
       run: |
         mkdir -p "$RUNNER_TEMP/churn"
         cat > "$RUNNER_TEMP/churn/main.go" <<'EOF'
@@ -568,9 +568,9 @@ jobs:
             echo "$name: $runs runs in a row passed with the connections open, after $SECONDS s"
           done
         }
-        stress 22 100 5 TestRunServesTheCertificateOfItsSetting -run '^TestRunServesTheCertificateOfItsSetting$' ./controller
-        stress 12 100 1 TestRollingUpgrade -run '^TestRollingUpgrade$' ./controller
-        stress 8 100 1 controller/internal/controller ./controller/internal/controller
+        stress 15 100 5 TestRunServesTheCertificateOfItsSetting -run '^TestRunServesTheCertificateOfItsSetting$' ./controller
+        stress 28 100 1 TestRollingUpgrade -run '^TestRollingUpgrade$' ./controller
+        stress 25 100 1 controller/internal/controller ./controller/internal/controller
     - uses: actions/upload-artifact@v4
       if: failure()
       with:
@@ -815,14 +815,16 @@ jobs:
       timeout-minutes: 10
       run: |
         . .github/scripts/controller-service.ps1 -BinDir build\ranz
-    # TEMPORARY, removed in the last commit of this pull request (CI-FLAKE-5, #592): the three tests of the sightings again
-    # and again while a program keeps every core of the runner busy. go test runs 5 times at a time, until the 20 runs or the
-    # minutes of the test are over, and the step fails at the first test that fails. The three packages then run once with
-    # the load.
+    # TEMPORARY, removed in the last commit of this pull request (CI-FLAKE-5, #592): the three packages that start rqlited
+    # run together, as the step Test runs them, again and again for 25 minutes (once at least), and then the three tests
+    # of the sightings again and again, while a program keeps every core of the runner busy. For the tests go test runs 5
+    # times at a time, until the 20 runs or the minutes of the test are over. The step fails at the first test that fails.
+    # A second program says what the host did while the tests ran: whenever its sleep, its connection to itself over the
+    # loopback or the sync of a file in the temporary directory took half a second or more, and the longest of each minute.
     - name: 'Stress, temporary (CI-FLAKE-5, #592)'
       if: ${{ !cancelled() && matrix.platform.ARCHITECTURE == 'x64' }}
       shell: pwsh
-      timeout-minutes: 60
+      timeout-minutes: 75
       run: |
         $dir = Join-Path $env:RUNNER_TEMP 'burn'
         New-Item -ItemType Directory -Force -Path $dir | Out-Null
@@ -841,12 +843,101 @@ jobs:
             select {}
         }
         '@ | Set-Content -Path (Join-Path $dir 'main.go')
-        Push-Location $dir
-        go build -o burn.exe main.go
-        if ($LASTEXITCODE -ne 0) { throw "go build of burn exited with code $LASTEXITCODE" }
-        Pop-Location
+        $pdir = Join-Path $env:RUNNER_TEMP 'probe'
+        New-Item -ItemType Directory -Force -Path $pdir | Out-Null
+        @'
+        package main
+
+        import (
+            "fmt"
+            "net"
+            "os"
+            "path/filepath"
+            "time"
+        )
+
+        func main() {
+            ln, err := net.Listen("tcp", "127.0.0.1:0")
+            if err != nil {
+                panic(err)
+            }
+            go func() {
+                for {
+                    c, err := ln.Accept()
+                    if err != nil {
+                        return
+                    }
+                    go func() {
+                        defer c.Close()
+                        b := make([]byte, 1)
+                        for {
+                            if _, err := c.Read(b); err != nil {
+                                return
+                            }
+                            c.Write(b)
+                        }
+                    }()
+                }
+            }()
+            f, err := os.Create(filepath.Join(os.TempDir(), "probe.dat"))
+            if err != nil {
+                panic(err)
+            }
+            block := make([]byte, 4096)
+            var worstLate, worstConnect, worstSync time.Duration
+            minute := time.Now()
+            for {
+                start := time.Now()
+                time.Sleep(10 * time.Millisecond)
+                late := time.Since(start) - 10*time.Millisecond
+
+                start = time.Now()
+                c, err := net.DialTimeout("tcp", ln.Addr().String(), time.Minute)
+                if err == nil {
+                    c.Write([]byte{1})
+                    c.Read(make([]byte, 1))
+                    c.Close()
+                }
+                connect := time.Since(start)
+
+                start = time.Now()
+                f.WriteAt(block, 0)
+                f.Sync()
+                synced := time.Since(start)
+
+                worstLate, worstConnect, worstSync = max(worstLate, late), max(worstConnect, connect), max(worstSync, synced)
+                if late >= 500*time.Millisecond || connect >= 500*time.Millisecond || synced >= 500*time.Millisecond {
+                    fmt.Printf("%s the host stalled: sleep late by %v, connect and echo %v (error %v), write and sync %v\n",
+                        time.Now().Format("15:04:05.000"), late, connect, err, synced)
+                }
+                if time.Since(minute) >= time.Minute {
+                    fmt.Printf("%s longest of the last minute: sleep late by %v, connect and echo %v, write and sync %v\n",
+                        time.Now().Format("15:04:05.000"), worstLate, worstConnect, worstSync)
+                    worstLate, worstConnect, worstSync = 0, 0, 0
+                    minute = time.Now()
+                }
+                time.Sleep(200 * time.Millisecond)
+            }
+        }
+        '@ | Set-Content -Path (Join-Path $pdir 'main.go')
+        foreach ($d in @($dir, $pdir)) {
+          Push-Location $d
+          go build -o "$(Split-Path -Leaf $d).exe" main.go
+          if ($LASTEXITCODE -ne 0) { throw "go build in $d exited with code $LASTEXITCODE" }
+          Pop-Location
+        }
         $burn = Start-Process -FilePath (Join-Path $dir 'burn.exe') -PassThru -WindowStyle Hidden
+        $probe = Start-Process -FilePath (Join-Path $pdir 'probe.exe') -RedirectStandardOutput (Join-Path $pdir 'probe.log') -PassThru -WindowStyle Hidden
         try {
+          $packages = @('./controller/internal/webui', './controller', './controller/internal/controller')
+          $end = (Get-Date).AddMinutes(25)
+          $passes = 0
+          while ($passes -eq 0 -or (Get-Date) -lt $end) {
+            go test -count=1 -timeout 20m @packages
+            if ($LASTEXITCODE -ne 0) { throw "the three packages failed after $passes passes in a row with every core busy" }
+            $passes++
+            Write-Host "the three packages: $passes passes in a row passed with every core busy"
+          }
           $tests = @(
             @{ Name = 'TestTheUIWorksThroughTheAPI'; Package = './controller/internal/webui'; Minutes = 10 },
             @{ Name = 'TestRqliteNeedsTheCredential'; Package = './controller'; Minutes = 12 },
@@ -865,10 +956,11 @@ jobs:
               Write-Host "$name : $runs runs in a row passed with every core busy"
             }
           }
-          go test -count=1 -timeout 20m ./controller/internal/webui ./controller ./controller/internal/controller
-          if ($LASTEXITCODE -ne 0) { throw "the packages failed with every core busy" }
         } finally {
           Stop-Process -Id $burn.Id -Force
+          Stop-Process -Id $probe.Id -Force
+          Write-Host '--- what the host did while the tests ran'
+          Get-Content -Path (Join-Path $pdir 'probe.log')
         }
 
   # The EVPN of a gateway against FRR, the reference BGP speaker of a data-centre fabric (SDN-25 #201; ADR-0032). FRR runs

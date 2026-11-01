@@ -153,8 +153,11 @@ func TestPeeringNeedsTheCapability(t *testing.T) {
 	h.waitNode("gw-1", 1, true)
 	h.waitNode("db", 1, true)
 
-	// gw-1 reports the Capability in its next Hello: the peering is one Generation of gw-1 and db, and not of lab-1
+	// gw-1 reports the Capability in its next Hello: the peering is one Generation of gw-1 and db, and not of lab-1. The
+	// Controller shows the stream that just ended as connected until it reads its end, so the node is waited for to be gone
+	// first, and the wait for it to be back is the one for the stream with the new Hello
 	gw.halt()
+	h.waitNode("gw-1", 1, false)
 	gw.Capabilities = capsPeering
 	gw.start(h)
 	h.waitNode("gw-1", 1, true)

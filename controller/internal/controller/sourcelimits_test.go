@@ -10,6 +10,7 @@ import (
 	"crypto/elliptic"
 	"crypto/rand"
 	"fmt"
+	mrand "math/rand/v2"
 	"net"
 	"sync"
 	"testing"
@@ -97,15 +98,21 @@ func TestStatusReportsWhatTheLimitsRefused(t *testing.T) {
 // reaches opens a control stream as the Node with key, as a Node does, and says Hello; it returns when the controller
 // answers with a Refuse for an unknown Node, which a Hello that the controller read gets. The controller may close a
 // stream before the Hello is read, because the streams of one source that wait for one are capped (CS-4), and then
-// the Node asks again, as it does after a close.
+// the Node asks again, as it does after a close. It asks again after a pause that doubles each time, up to two seconds,
+// and that is not the same for all Nodes: a thousand Nodes that asked again every 50 ms made the listener refuse most of
+// the connections for as long as the machine was busy (the refused ones of Windows, with every core taken by another
+// program), because each place that the controller made free in the queue of the listener was taken at once by one of the
+// retries, and the retries kept the machine busy.
 func (h *harness) reaches(key keys.Static) error {
 	deadline := time.Now().Add(2 * time.Minute)
+	pause := 50 * time.Millisecond
 	for {
 		err := h.hello(key)
 		if err == nil || time.Now().After(deadline) {
 			return err
 		}
-		time.Sleep(50 * time.Millisecond)
+		time.Sleep(pause/2 + mrand.N(pause))
+		pause = min(2*pause, 2*time.Second)
 	}
 }
 
