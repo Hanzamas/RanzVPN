@@ -710,15 +710,12 @@ func serveHTTP(srv *http.Server, l net.Listener) error {
 }
 
 // makeDataDir creates the data directory if it does not exist, readable by its owner and the
-// administrators only. One that exists must belong to SYSTEM, the Administrators or the account that
-// runs the controller (checkDataDirOwner): a directory that a local user made before the install, or
-// put in its place, is not used (ST-3).
+// administrators only, from the moment it exists (createDataDir). One that exists must belong to
+// SYSTEM, the Administrators or the account that runs the controller (checkDataDirOwner): a directory
+// that a local user made before the install, or put in its place, is not used (ST-3).
 func makeDataDir(dir string) error {
 	if _, err := os.Stat(dir); err == nil {
 		return checkDataDirOwner(dir)
 	}
-	if err := os.MkdirAll(dir, 0o700); err != nil {
-		return err
-	}
-	return protectDir(dir)
+	return createDataDir(dir)
 }

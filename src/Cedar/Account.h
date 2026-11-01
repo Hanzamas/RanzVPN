@@ -228,17 +228,5 @@ void CiFreeClientGetConnectionStatus(RPC_CLIENT_GET_CONNECTION_STATUS *st);
 void ClientAuthFree(CLIENT_AUTH *auth);
 CLIENT_AUTH *ClientAuthClone(CLIENT_AUTH *a);
 CLIENT_OPTION *ClientOptionClone(CLIENT_OPTION *o);
-void InRpcClientOption(CLIENT_OPTION *c, PACK *p);
-void OutRpcClientOption(PACK *p, CLIENT_OPTION *c);
-void InRpcClientAuth(CLIENT_AUTH *c, PACK *p);
-void OutRpcClientAuth(PACK *p, CLIENT_AUTH *c);
-void InRpcPolicy(POLICY *o, PACK *p);
-void OutRpcPolicy(PACK *p, POLICY *o);
-void InRpcClientGetConnectionStatus(RPC_CLIENT_GET_CONNECTION_STATUS *s, PACK *p);
-void OutRpcClientGetConnectionStatus(PACK *p, RPC_CLIENT_GET_CONNECTION_STATUS *c);
-void InRpcTraffic(TRAFFIC *t, PACK *p);
-void OutRpcTraffic(PACK *p, TRAFFIC *t);
-void InRpcTrafficEx(TRAFFIC *t, PACK *p, UINT i);
-void OutRpcTrafficEx(TRAFFIC *t, PACK *p, UINT i, UINT num);
 
 #endif
