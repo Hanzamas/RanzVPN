@@ -136,6 +136,48 @@ jobs:
         Get-CimInstance Win32_Process | Where-Object { $_.Name -in 'msiexec.exe', 'cmd.exe', 'PING.EXE' } | Sort-Object ProcessId | ForEach-Object { Write-Host "process $($_.ProcessId) $($_.Name), parent $($_.ParentProcessId): $($_.CommandLine)" }
         Get-Content -LiteralPath (Join-Path $env:RUNNER_TEMP 'hang.log') -Tail 20 -ErrorAction SilentlyContinue | ForEach-Object { Write-Host "  $_" }
 
+  # The new bounded call of msi-install.ps1 (its functions, taken from the file by the comments that start and end them) on the
+  # same package: the real msiexec.exe, the real Windows Installer service and a deferred action that never ends.
+  realbound:
+    needs: build
+    strategy:
+      fail-fast: false
+      matrix:
+        platform: [
+          { ARCHITECTURE: x64, RUNNER: "windows-latest" },
+          { ARCHITECTURE: arm64, RUNNER: "windows-11-arm" }
+        ]
+    name: real bound (${{ matrix.platform.ARCHITECTURE }})
+    runs-on: ${{ matrix.platform.RUNNER }}
+    timeout-minutes: 6
+    steps:
+    - uses: actions/checkout@v4
+    - uses: actions/download-artifact@v4
+      with:
+        name: hang-msi
+        path: hang
+    - name: The bounded call, with a bound of 30 s, on a package whose deferred action never ends
+      shell: pwsh
+      timeout-minutes: 3
+      run: |
+        $text = Get-Content -LiteralPath .github/scripts/msi-install.ps1 -Raw
+        $start = $text.IndexOf('# The bound of a msiexec call, in seconds.')
+        $end = $text.IndexOf('# The bound on a planted hang.')
+        if ($start -lt 0 -or $end -le $start) { throw 'the functions of the bound are not where this experiment looks' }
+        $LogDir = Join-Path $env:RUNNER_TEMP 'bound-logs'
+        New-Item -ItemType Directory -Force -Path $LogDir | Out-Null
+        Invoke-Expression $text.Substring($start, $end - $start)
+        $msiexecSeconds = 30
+        $msi = (Resolve-Path 'hang\hang.msi').Path
+        $watch = [System.Diagnostics.Stopwatch]::StartNew()
+        try {
+          [void](Invoke-Msiexec '/i' $msi 'real-hang')
+        } catch {
+          Write-Host "failed after $([int] $watch.Elapsed.TotalSeconds) s: $($_.Exception.Message)"
+        }
+        Write-Host 'the processes of the call and of its action after the failure:'
+        Get-CimInstance Win32_Process | Where-Object { $_.Name -in 'msiexec.exe', 'cmd.exe', 'PING.EXE' } | Sort-Object ProcessId | ForEach-Object { Write-Host "  process $($_.ProcessId) $($_.Name), parent $($_.ParentProcessId): $($_.CommandLine)" }
+
   selftest:
     strategy:
       fail-fast: false
