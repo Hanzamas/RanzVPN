@@ -4,7 +4,8 @@
 // (.github/scripts/first-test.ps1) reads the state of the Node service of its runner joined to a real Controller; this
 // test checks what needs none:
 // - The state of a running node names its Roles, its control stream (not connected, and why: no Controller settings),
-//   its adapters, its Noise sessions, the number of its peers and its listeners.
+//   its adapters, its Noise sessions, the number of its peers, its EVPN, which does not run, with the counters of its frames
+//   at 0 (SDN-25-R3 #571), and its listeners.
 // - The admin pipe refuses a caller that is neither SYSTEM nor an administrator: the test asks it as an ordinary user, a
 //   token of its own account in which the Administrators and SYSTEM are deny-only, and the open fails with access
 //   denied. The same caller as an administrator is answered after that.
@@ -237,6 +238,10 @@ void nodestate_test(UINT num, char **arg)
 		"state: no adapter and no session without an overlay", "the answer is %s", reply);
 	NodeStateCheck(ctx, InStr(reply, "\"listeners\":{") && InStr(reply, "\"frontDoor\":{") && InStr(reply, "\"relayUdpPort\":0"),
 		"state: the listeners, none of them running", "the answer is %s", reply);
+	// The EVPN of a gateway (SDN-25-R3, #571): none runs, and each counter of its frames, the frames of unknown VTEPs among them, is 0
+	NodeStateCheck(ctx, InStr(reply, "\"evpn\":{\"running\":false,\"udpPort\":0,\"fabricPort\":0,\"vrfs\":0,\"routes\":0,\"sent\":0,\"failed\":0,\"delivered\":0,"
+		"\"undelivered\":0,\"unknownVtep\":0,\"strangers\":0,\"notOurs\":0,\"unknownVni\":0,\"malformed\":0}"),
+		"state: no EVPN runs, and the counters of its frames are 0", "the answer is %s", reply);
 	// What the limits for a source of the front door and of QUIC refused (AUD1-DT-3, #451): none yet
 	NodeStateCheck(ctx, InStr(reply, "\"refused\":{\"tcp\":{\"pending\":0,\"sources\":0,\"admitted\":0,\"refusedFull\":0,\"refusedSource\":0,\"refusedRate\":0,\"refusedHandshake\":0}") &&
 		InStr(reply, "\"quic\":{\"pending\":0") && InStr(reply, "\"retryMemoryLimit\":0,\"retrying\":false,\"retries\":0"),

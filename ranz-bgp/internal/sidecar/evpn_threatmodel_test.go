@@ -47,6 +47,11 @@ func TestThreatModelFabricEdge(t *testing.T) {
 		"those count the frames of known VTEPs alone",
 		"What is left: a host that sends with the address of a VTEP that the fabric owns, spoofed at the underlay, is that VTEP to the gateway",
 		"the operator's source-address validation",
+		// The second criterion of SDN-25-R3: a leaf whose route lost is known, and the third: an operator sees the frames of unknown VTEPs
+		"A leaf whose route of a shared prefix lost to the route of another leaf in the sidecar, which reports one route for each prefix of a VRF, is known all the same: the learned message names the next hops of every route that the peers offer for the prefix",
+		"the node log names one once every 10 s at most",
+		"`ranz node state` counts them",
+		"`ranz_evpn_dropped_frames_total{reason=\"unknown-vtep\"}`",
 	} {
 		if !strings.Contains(row, want) {
 			t.Errorf("the row SM-11 of the threat model does not say %q", want)
@@ -85,7 +90,10 @@ func TestThreatModelFabricEdge(t *testing.T) {
 		{"Malformed", header, "UINT64 Malformed;"},
 		{"NotOurs", header, "UINT64 NotOurs;"},
 		{"Strangers", header, "UINT64 Strangers;"},
+		{"vteps", repoText(t, "ranz-bgp", "internal", "sidecar", "protocol.go"), "`json:\"vteps,omitempty\"`"},
+		{"unknownVtep", repoText(t, "src", "Cedar", "NodeState.c"), `"unknownVtep"`},
 		{"vpntest evpn", repoText(t, "src", "vpntest", "evpntest.c"), `RANZ_TEST("evpn",`},
+		{"TestEVPN", repoText(t, "ranz-bgp", "internal", "sidecar", "evpn_test.go"), "func TestEVPN("},
 		{"TestFRREVPN", repoText(t, "ranz-bgp", "internal", "sidecar", "frr_test.go"), "func TestFRREVPN("},
 		{"fuzz_evpn", repoText(t, "src", "fuzz", "fuzz_evpn.c"), "NodeEvpnHasVtep("},
 	} {
