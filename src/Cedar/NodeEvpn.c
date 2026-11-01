@@ -26,17 +26,21 @@
 // port of the VTEPs of the fabric (fabric_port, VXLAN_PORT without one): the interface-less model of RFC 9136 section 4.4.1,
 // as RFC 8365 section 5.1.3 carries it.
 //
-// Out of the fabric: the module carries the L3 VNI of each EVPN VRF and drops a datagram on any other VNI. A frame of an L3 VNI
-// goes into its VRF when it comes from a VTEP that the gateway knows for the VRF, the VTEP of an IP prefix route of the VRF that
-// it learned (NodeEvpnHasVtep; SDN-25-R1, #549): the address alone names a VTEP, which sends from any source port (RFC 7348
-// section 5), and a frame from any other address has no honest reason to exist, so whoever can send to the UDP port of the VTEP
-// of the gateway cannot forge one. A host that sends with the address of a VTEP of the fabric is that VTEP to the gateway: the
-// source-address validation of the underlay answers it, which the operator provides (docs/threat-model.md, SM-11). The frame
-// must then be addressed to the router MAC of the gateway, untagged, and hold an IP packet of the version of its EtherType
-// (NodeEvpnParseFrame), and an IP prefix route of the fabric in the VRF must hold the source of the packet: the fabric speaks
-// only for the prefixes that it announced there. Any VTEP that the gateway knows for the VRF may send it, as any leaf of a
-// fabric routes the subnets of its VRFs. The overlay takes it to the host or on to a peer, as the table of the VRF routes its
-// destination (NodeOverlayFabricInput). Any other frame is dropped and counted.
+// Out of the fabric: the module reads the VXLAN header of every datagram first, whatever address it comes from (VxlanInput).
+// It carries the L3 VNI of each EVPN VRF, and drops and counts a datagram that holds no frame (Malformed) and one on any other
+// VNI (UnknownVni), so a host that is no VTEP of the fabric raises those two counters too, though nothing of its datagram is
+// delivered or learned. A frame of an L3 VNI goes into its VRF when it comes from a VTEP that the gateway knows for the VRF,
+// the VTEP of an IP prefix route of the VRF that it learned (NodeEvpnHasVtep; SDN-25-R1, #549): the address alone names a
+// VTEP, which sends from any source port (RFC 7348 section 5), and a frame from any other address has no honest reason to
+// exist, so whoever can send to the UDP port of the VTEP of the gateway cannot forge one. A host that sends with the address
+// of a VTEP of the fabric is that VTEP to the gateway: the source-address validation of the underlay answers it, which the
+// operator provides (docs/threat-model.md, SM-11). The frame must then be addressed to the router MAC of the gateway,
+// untagged, and hold an IP packet of the version of its EtherType (NodeEvpnParseFrame), and an IP prefix route of the fabric
+// in the VRF must hold the source of the packet: the fabric speaks only for the prefixes that it announced there. Any VTEP
+// that the gateway knows for the VRF may send it, as any leaf of a fabric routes the subnets of its VRFs. The overlay takes it
+// to the host or on to a peer, as the table of the VRF routes its destination (NodeOverlayFabricInput). Any other frame is
+// dropped and counted: one from another address as UnknownVtep, whatever it holds, and one of a known VTEP by what is wrong
+// with it (NotOurs, Malformed, Strangers), so those count the frames of known VTEPs alone.
 //
 // At the gateway the fabric stands where the LAN of a gateway stands: the session profile of the peer and the policy of the VRF
 // judge a packet between a peer and the fabric as one between the peer and the host of the gateway, and a Mirror of the VRF
@@ -509,20 +513,17 @@ bool NodeEvpnHasVtep(const NODE_EVPN_VTEP *vteps, UINT num, UINT vrf_id, const U
 }
 
 // The receiver of the module: a frame of the L3 VNI vni from the address from, on the receive thread of the socket, which
-// registers itself as a reader of the tables of the node with its first frame. It goes into the VRF of the VNI when from is a
-// VTEP that the gateway knows for the VRF, the VTEP of an IP prefix route of the VRF (NodeEvpnHasVtep), NodeEvpnParseFrame takes
-// it and an IP prefix route of the fabric in the VRF holds the source of its packet. Any other frame is dropped and counted, one
-// from another address as such, whatever it holds.
+// registers itself as a reader of the tables of the node with its first frame. The module hands it the frames of the VNIs that
+// it carries alone, which are the L3 VNIs of the EVPN VRFs (NodeEvpnStart), so vni names a VRF; a datagram on any other VNI and
+// one that holds no frame it dropped before, whatever their source (VxlanInput). The frame goes into the VRF of the VNI when
+// from is a VTEP that the gateway knows for the VRF, the VTEP of an IP prefix route of the VRF (NodeEvpnHasVtep),
+// NodeEvpnParseFrame takes it and an IP prefix route of the fabric in the VRF holds the source of its packet. Any other frame is
+// dropped and counted, one from another address as UnknownVtep, whatever it holds.
 static void NodeEvpnReceive(VXLAN *x, void *param, UINT vni, const VXLAN_ADDR *from, const UCHAR *frame, UINT size) {
 	NODE_EVPN *e = (NODE_EVPN *)param;
 	NODE_EVPN_FRAME f;
 	UINT vrf_id = NodeEvpnVrfOf(e, vni);
 	UINT parsed = NodeEvpnParseFrame(frame, size, e->RouterMac, &f);
-
-	if (vrf_id == 0) {
-		InterlockedIncrement64(&e->Malformed);
-		return;
-	}
 
 	if (e->Registered == false) {
 		NodeReaderRegister(e->Node, &e->Reader);

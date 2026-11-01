@@ -60,7 +60,10 @@ typedef struct NODE_EVPN_FRAME {
 	UINT AddrSize;       // ... their number
 } NODE_EVPN_FRAME;
 
-// What NodeEvpnGetStatus reports: the frames of the EVPN of the gateway since its sidecar started, all 0 without one
+// What NodeEvpnGetStatus reports: the frames of the EVPN of the gateway since its sidecar started, all 0 without one. The
+// module reads the VXLAN header of every datagram first, whatever its source (VxlanInput), so UnknownVni and the datagrams of
+// Malformed come from any address; then the gateway checks the outer source of a frame of an L3 VNI (UnknownVtep), and
+// Strangers, NotOurs, Delivered, Undelivered and the frames of Malformed count the frames of known VTEPs alone.
 typedef struct NODE_EVPN_STATUS {
 	bool Running;       // The EVPN of the gateway runs: the Bgp setting has an evpn object, and the socket of its VTEP is open
 	USHORT Port;        // The UDP port of the VTEP of the gateway
@@ -71,11 +74,11 @@ typedef struct NODE_EVPN_STATUS {
 	UINT64 Failed;      // Packets for the fabric that could not go: a frame too large, or a failed send
 	UINT64 Delivered;   // Packets of the fabric that the overlay took, for the host or a peer
 	UINT64 Undelivered; // ... that it did not take: no route of the VRF to their destination, the policy, or a failed send
-	UINT64 UnknownVtep; // Frames of the fabric from an address that is the VTEP of no IP prefix route of their VRF: dropped
-	UINT64 Strangers;   // Packets of the fabric from a source that no IP prefix route of their VRF holds: dropped
-	UINT64 NotOurs;     // Frames of the fabric to another MAC address than the router MAC of the gateway: dropped
-	UINT64 UnknownVni;  // Datagrams on a VNI of no EVPN VRF: dropped
-	UINT64 Malformed;   // Datagrams of no VXLAN, or frames without an IP packet: dropped
+	UINT64 UnknownVtep; // Frames of an L3 VNI from an address that is no VTEP that the gateway knows for their VRF (NodeEvpnHasVtep): dropped, whatever they hold
+	UINT64 Strangers;   // Packets of a known VTEP from a source that no IP prefix route of their VRF holds: dropped
+	UINT64 NotOurs;     // Frames of a known VTEP to another MAC address than the router MAC of the gateway: dropped
+	UINT64 UnknownVni;  // Datagrams on a VNI of no EVPN VRF, from any address: dropped by the module, before the source check
+	UINT64 Malformed;   // Datagrams of no VXLAN frame, from any address (the module, before the source check), and frames of a known VTEP without an IP packet: dropped
 } NODE_EVPN_STATUS;
 
 // NodeEvpn.c

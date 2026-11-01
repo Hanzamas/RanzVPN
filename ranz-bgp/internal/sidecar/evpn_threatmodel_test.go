@@ -25,7 +25,9 @@ func repoText(t *testing.T, elem ...string) string {
 
 // TestThreatModelFabricEdge is the fourth criterion of SDN-25-R1: the row of the threat model for the fabric edge of an EVPN
 // gateway says what the gateway checks of a frame of the fabric, its outer source among it, and what is left, a VTEP that the
-// fabric owns and that is spoofed at the underlay; and the code, the counter and the tests that it names exist.
+// fabric owns and that is spoofed at the underlay; and the code, the counter and the tests that it names exist. Since SDN-25-R3
+// (#571, its first criterion) the row and the comments of the counters in NodeEvpn.h say what each counter counts, as the code
+// does: the module counts UnknownVni and the datagrams of Malformed from any address, before the outer source is checked.
 func TestThreatModelFabricEdge(t *testing.T) {
 	row := ""
 	for _, l := range strings.Split(repoText(t, "docs", "threat-model.md"), "\n") {
@@ -40,7 +42,9 @@ func TestThreatModelFabricEdge(t *testing.T) {
 	for _, want := range []string{
 		"Forges a frame of the fabric to an EVPN gateway, at the fabric edge",
 		"The gateway takes a frame of the fabric only from a VTEP that it knows for the VRF of its VNI: the next hop of an IP prefix route of the VRF that it learned",
-		"so a frame from any other address is dropped and counted, whatever it holds",
+		"so a frame of an L3 VNI from any other address is dropped and counted as `UnknownVtep`, whatever it holds",
+		"The module reads the VXLAN header of each datagram before that check, whatever its source: it drops a datagram that holds no frame, counted as `Malformed`, and one on a VNI of no EVPN VRF, counted as `UnknownVni` (`VxlanInput`), so a host that is no VTEP raises those two counters too",
+		"those count the frames of known VTEPs alone",
 		"What is left: a host that sends with the address of a VTEP that the fabric owns, spoofed at the underlay, is that VTEP to the gateway",
 		"the operator's source-address validation",
 	} {
@@ -49,12 +53,38 @@ func TestThreatModelFabricEdge(t *testing.T) {
 		}
 	}
 
+	// The comment of each counter in NodeEvpn.h says where it is counted: the module before the outer source is checked, from
+	// any address, or the gateway, for an unknown VTEP whatever its frame holds and for a known one by what is wrong with it
+	header := repoText(t, "src", "Cedar", "NodeEvpn.h")
+	for _, c := range []struct{ field, says string }{
+		{"UINT64 UnknownVtep;", "dropped, whatever they hold"},
+		{"UINT64 UnknownVni;", "from any address: dropped by the module, before the source check"},
+		{"UINT64 Malformed;", "from any address (the module, before the source check), and frames of a known VTEP"},
+		{"UINT64 NotOurs;", "Frames of a known VTEP"},
+		{"UINT64 Strangers;", "Packets of a known VTEP"},
+	} {
+		line := ""
+		for _, l := range strings.Split(header, "\n") {
+			if strings.Contains(l, c.field) {
+				line = l
+			}
+		}
+		if !strings.Contains(line, c.says) {
+			t.Errorf("the comment of %s in NodeEvpn.h does not say %q: %q", c.field, c.says, strings.TrimSpace(line))
+		}
+	}
+
 	// What the row names in backquotes, and where the code or the test that it names is defined
 	evpn := repoText(t, "src", "Cedar", "NodeEvpn.c")
 	for _, ref := range []struct{ name, text, def string }{
 		{"NodeEvpnReceive", evpn, "static void NodeEvpnReceive("},
 		{"NodeEvpnHasVtep", evpn, "bool NodeEvpnHasVtep("},
-		{"UnknownVtep", repoText(t, "src", "Cedar", "NodeEvpn.h"), "UINT64 UnknownVtep;"},
+		{"VxlanInput", repoText(t, "src", "Core", "Vxlan.c"), "void VxlanInput("},
+		{"UnknownVtep", header, "UINT64 UnknownVtep;"},
+		{"UnknownVni", header, "UINT64 UnknownVni;"},
+		{"Malformed", header, "UINT64 Malformed;"},
+		{"NotOurs", header, "UINT64 NotOurs;"},
+		{"Strangers", header, "UINT64 Strangers;"},
 		{"vpntest evpn", repoText(t, "src", "vpntest", "evpntest.c"), `RANZ_TEST("evpn",`},
 		{"TestFRREVPN", repoText(t, "ranz-bgp", "internal", "sidecar", "frr_test.go"), "func TestFRREVPN("},
 		{"fuzz_evpn", repoText(t, "src", "fuzz", "fuzz_evpn.c"), "NodeEvpnHasVtep("},
