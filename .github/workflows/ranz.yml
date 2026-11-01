@@ -589,8 +589,9 @@ jobs:
         platform: ${{ fromJSON(needs.plan.outputs.ranz_windows_matrix) }}
     name: ranz (Windows ${{ matrix.platform.ARCHITECTURE }})
     runs-on: ${{ matrix.platform.RUNNER }}
-    # TEMPORARY (CI-FLAKE-5, #592): 100 minutes for the stress step at the end, 40 again in the last commit of this pull request
-    timeout-minutes: 100
+    # TEMPORARY (CI-FLAKE-5, #592): 120 minutes for the experiment and the stress at the end, 40 again in the last commit of
+    # this pull request
+    timeout-minutes: 120
     env:
       # The Go code builds without cgo; the gcc of the arm64 runner builds x64 code only
       CGO_ENABLED: '0'
@@ -705,9 +706,18 @@ jobs:
     # each test and a slow runner ran out of the 10 minutes. The slowest package is controller, with its
     # cluster tests, about 220 s to 280 s. The limit stays 20 minutes, more than four times the time of
     # any package: it costs nothing, and a runner can be slow. A hang still ends the package, only later.
+    #
+    # TEMP and TMP name the temporary disk of the runner (CI-FLAKE-5, #592): the tests make the data of their rqlited and
+    # of the members of their clusters, and the profile of the browser, in the temporary directory, and every rqlited syncs
+    # its Raft log and its database at each change. The temporary directory of a Windows runner is on its system disk by
+    # default. The experiment step at the end of this job measures what that disk and the temporary disk do (TEMPORARY, it
+    # is removed in the last commit of this pull request, and this comment then says what it measured).
     - name: Test
       if: matrix.platform.ARCHITECTURE == 'x64'
       shell: pwsh
+      env:
+        TEMP: ${{ runner.temp }}
+        TMP: ${{ runner.temp }}
       run: |
         go test -count=1 -timeout 20m ./...
         if ($LASTEXITCODE -ne 0) { throw "go test exited with code $LASTEXITCODE" }
@@ -815,16 +825,20 @@ jobs:
       timeout-minutes: 10
       run: |
         . .github/scripts/controller-service.ps1 -BinDir build\ranz
-    # TEMPORARY, removed in the last commit of this pull request (CI-FLAKE-5, #592): the three packages that start rqlited
-    # run together, as the step Test runs them, again and again for 25 minutes (once at least), and then the three tests
-    # of the sightings again and again, while a program keeps every core of the runner busy. For the tests go test runs 5
-    # times at a time, until the 20 runs or the minutes of the test are over. The step fails at the first test that fails.
-    # A second program says what the host did while the tests ran: whenever its sleep, its connection to itself over the
-    # loopback or the sync of a file in the temporary directory took half a second or more, and the longest of each minute.
-    - name: 'Stress, temporary (CI-FLAKE-5, #592)'
+    # TEMPORARY, removed in the last commit of this pull request (CI-FLAKE-5, #592): the experiment that says what the
+    # tests of the sightings suffer from, and the stress that the ticket asks for. A program writes a block to a file on
+    # each of the two disks of the runner, syncs it and times that, every tenth of a second, and says whenever a sync took
+    # a quarter of a second or more and what the syncs of each minute took, and beside it the same for a sleep and for a
+    # connection to itself over the loopback. First the step runs ./... twice, with the temporary directory (TEMP) on the
+    # system disk, as the step Test did before this pull request, and on the temporary disk, as it does now, and prints
+    # what the program saw during each run. Then it runs the stress: the three packages that start rqlited together, again
+    # and again for 25 minutes (once at least), and then the three tests of the sightings again and again, with TEMP on the
+    # temporary disk, while a program keeps every core of the runner busy. For the tests go test runs 5 times at a time,
+    # until the 20 runs or the minutes of the test are over. The stress fails the step at its first failure.
+    - name: 'Experiment and stress, temporary (CI-FLAKE-5, #592)'
       if: ${{ !cancelled() && matrix.platform.ARCHITECTURE == 'x64' }}
       shell: pwsh
-      timeout-minutes: 75
+      timeout-minutes: 85
       run: |
         $dir = Join-Path $env:RUNNER_TEMP 'burn'
         New-Item -ItemType Directory -Force -Path $dir | Out-Null
@@ -853,10 +867,52 @@ jobs:
             "net"
             "os"
             "path/filepath"
+            "slices"
+            "sync"
             "time"
         )
 
-        func main() {
+        var mu sync.Mutex
+
+        // say prints a line with the time of day
+        func say(format string, args ...any) {
+            mu.Lock()
+            defer mu.Unlock()
+            fmt.Printf("%s %s\n", time.Now().Format("15:04:05.000"), fmt.Sprintf(format, args...))
+        }
+
+        // watchDisk writes a block to a file in dir and syncs it, again and again, says whenever that took a quarter of a
+        // second or more, and says what the syncs of each minute took
+        func watchDisk(dir string) {
+            f, err := os.Create(filepath.Join(dir, "probe.dat"))
+            if err != nil {
+                panic(err)
+            }
+            block := make([]byte, 4096)
+            var took []time.Duration
+            minute := time.Now()
+            for {
+                start := time.Now()
+                f.WriteAt(block, 0)
+                f.Sync()
+                d := time.Since(start)
+                took = append(took, d)
+                if d >= 250*time.Millisecond {
+                    say("%s: write and sync took %v", dir, d)
+                }
+                if time.Since(minute) >= time.Minute {
+                    slices.Sort(took)
+                    say("%s: %d syncs in the last minute, median %v, 99th percentile %v, longest %v",
+                        dir, len(took), took[len(took)/2], took[len(took)*99/100], took[len(took)-1])
+                    took, minute = took[:0], time.Now()
+                }
+                time.Sleep(100 * time.Millisecond)
+            }
+        }
+
+        // watchHost says whenever a sleep of 10 ms, or a connection to itself over the loopback with a byte back, took half
+        // a second or more longer than it should, and the longest of each minute
+        func watchHost() {
             ln, err := net.Listen("tcp", "127.0.0.1:0")
             if err != nil {
                 panic(err)
@@ -879,12 +935,7 @@ jobs:
                     }()
                 }
             }()
-            f, err := os.Create(filepath.Join(os.TempDir(), "probe.dat"))
-            if err != nil {
-                panic(err)
-            }
-            block := make([]byte, 4096)
-            var worstLate, worstConnect, worstSync time.Duration
+            var worstLate, worstConnect time.Duration
             minute := time.Now()
             for {
                 start := time.Now()
@@ -900,24 +951,26 @@ jobs:
                 }
                 connect := time.Since(start)
 
-                start = time.Now()
-                f.WriteAt(block, 0)
-                f.Sync()
-                synced := time.Since(start)
-
-                worstLate, worstConnect, worstSync = max(worstLate, late), max(worstConnect, connect), max(worstSync, synced)
-                if late >= 500*time.Millisecond || connect >= 500*time.Millisecond || synced >= 500*time.Millisecond {
-                    fmt.Printf("%s the host stalled: sleep late by %v, connect and echo %v (error %v), write and sync %v\n",
-                        time.Now().Format("15:04:05.000"), late, connect, err, synced)
+                worstLate, worstConnect = max(worstLate, late), max(worstConnect, connect)
+                if late >= 500*time.Millisecond || connect >= 500*time.Millisecond {
+                    say("the host stalled: sleep late by %v, connect and echo %v (error %v)", late, connect, err)
                 }
                 if time.Since(minute) >= time.Minute {
-                    fmt.Printf("%s longest of the last minute: sleep late by %v, connect and echo %v, write and sync %v\n",
-                        time.Now().Format("15:04:05.000"), worstLate, worstConnect, worstSync)
-                    worstLate, worstConnect, worstSync = 0, 0, 0
+                    say("longest of the last minute: sleep late by %v, connect and echo %v", worstLate, worstConnect)
+                    worstLate, worstConnect = 0, 0
                     minute = time.Now()
                 }
                 time.Sleep(200 * time.Millisecond)
             }
+        }
+
+        // The directories to watch are the arguments
+        func main() {
+            go watchHost()
+            for _, dir := range os.Args[1:] {
+                go watchDisk(dir)
+            }
+            select {}
         }
         '@ | Set-Content -Path (Join-Path $pdir 'main.go')
         foreach ($d in @($dir, $pdir)) {
@@ -926,9 +979,49 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "go build in $d exited with code $LASTEXITCODE" }
           Pop-Location
         }
-        $burn = Start-Process -FilePath (Join-Path $dir 'burn.exe') -PassThru -WindowStyle Hidden
-        $probe = Start-Process -FilePath (Join-Path $pdir 'probe.exe') -RedirectStandardOutput (Join-Path $pdir 'probe.log') -PassThru -WindowStyle Hidden
+        # The two disks: the system disk, which TEMP names, and the temporary disk, which RUNNER_TEMP names
+        $system = $env:TEMP
+        $systemTmp = $env:TMP
+        $temporary = $env:RUNNER_TEMP
         try {
+          Get-Volume | Where-Object DriveLetter | Format-Table DriveLetter, FileSystemType, DriveType, Size, SizeRemaining
+          Get-PhysicalDisk | Format-Table DeviceId, FriendlyName, BusType, MediaType, Size
+        } catch {
+          Write-Host "no list of the disks: $_"
+        }
+        $log = Join-Path $pdir 'probe.log'
+        $probe = Start-Process -FilePath (Join-Path $pdir 'probe.exe') -ArgumentList "`"$system`"", "`"$temporary`"" -RedirectStandardOutput $log -PassThru -WindowStyle Hidden
+        $shown = 0
+        $burn = $null
+        # Show-Probe prints what the probe said since its last call
+        function Show-Probe {
+          # The probe still has the file open, so it is read with the sharing that lets the probe go on writing
+          $stream = [System.IO.File]::Open($log, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read, [System.IO.FileShare]::ReadWrite)
+          $reader = New-Object System.IO.StreamReader($stream)
+          $text = $reader.ReadToEnd()
+          $reader.Close()
+          $lines = @($text -split "`r?`n" | Where-Object { $_ -ne '' })
+          foreach ($line in ($lines | Select-Object -Skip $script:shown)) { Write-Host $line }
+          $script:shown = $lines.Count
+        }
+        # Test-All runs the tests of the step Test with the temporary directory in temp, and says what the probe saw meanwhile
+        function Test-All($label, $temp) {
+          Write-Host "=== $label : TEMP is $temp, from $(Get-Date -Format 'HH:mm:ss')"
+          $env:TEMP = $temp
+          $env:TMP = $temp
+          go test -count=1 -timeout 20m ./...
+          $code = $LASTEXITCODE
+          $env:TEMP = $system
+          $env:TMP = $systemTmp
+          Write-Host "=== $label : go test exited with code $code at $(Get-Date -Format 'HH:mm:ss'); the probe said:"
+          Show-Probe
+        }
+        try {
+          Test-All 'the system disk' $system
+          Test-All 'the temporary disk' $temporary
+          $env:TEMP = $temporary
+          $env:TMP = $temporary
+          $burn = Start-Process -FilePath (Join-Path $dir 'burn.exe') -PassThru -WindowStyle Hidden
           $packages = @('./controller/internal/webui', './controller', './controller/internal/controller')
           $end = (Get-Date).AddMinutes(25)
           $passes = 0
@@ -957,10 +1050,10 @@ jobs:
             }
           }
         } finally {
-          Stop-Process -Id $burn.Id -Force
+          if ($burn) { Stop-Process -Id $burn.Id -Force }
           Stop-Process -Id $probe.Id -Force
-          Write-Host '--- what the host did while the tests ran'
-          Get-Content -Path (Join-Path $pdir 'probe.log')
+          Write-Host '--- what the host did during the stress'
+          Show-Probe
         }
 
   # The EVPN of a gateway against FRR, the reference BGP speaker of a data-centre fabric (SDN-25 #201; ADR-0032). FRR runs
