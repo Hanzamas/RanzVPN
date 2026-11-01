@@ -513,9 +513,13 @@ jobs:
     # withdrawn, a learned route installed through IP Helper and removed again, no sidecar on a node
     # without BGP peers, and the sidecar of a node with them started as ranz bgp; then vpntest evpn, the
     # EVPN of a gateway (SDN-25 #201): two VRFs with the same prefixes handed to a fabric as EVPN type-5
-    # routes between the sidecars of two nodes, and VXLAN both ways between the overlay and a harness VTEP
+    # routes between the sidecars of two nodes, and VXLAN both ways between the overlay and a harness VTEP;
+    # then vpntest stretch, the L2 stretch of a gateway (SDN-64 #291): an L2 Network stretched to two
+    # leaves with EVPN type-2 and type-3 routes between the sidecars of three nodes, VXLAN both ways between
+    # the switch of the Network and a harness VTEP of each leaf, ingress replication to the flood list, and a
+    # full resync once the pipe of the gateway to ranz bgp reconnects
     - name: BGP sidecar spike
-      timeout-minutes: 15
+      timeout-minutes: 25
       shell: pwsh
       run: |
         . .github/scripts/bgp-spike.ps1 -BuildDir build

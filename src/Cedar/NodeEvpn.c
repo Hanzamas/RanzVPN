@@ -88,9 +88,6 @@ struct NODE_EVPN {
 	UINT NumVrfs;                    // The EVPN VRFs ...
 	UINT VrfIds[NODE_EVPN_MAX_VRFS]; // ... their ids
 	UINT Vnis[NODE_EVPN_MAX_VRFS];   // ... and their L3 VNIs
-	// The stretches of the evpn object, each an L2 Network and its L2 VNI (NodeStretch.c; SDN-64, #291)
-	UINT NumStretches;
-	NODE_STRETCH_SETTING Stretches[NODE_STRETCH_MAX];
 	VXLAN_UDP *Udp;                  // The UDP socket of the VTEP of the gateway
 	VXLAN *Vxlan;                    // The VXLAN module, which carries the L3 VNIs
 	LIST *Routes;                    // The IP prefix routes of the fabric (NODE_EVPN_ROUTE)
@@ -106,6 +103,9 @@ struct NODE_EVPN {
 	volatile LONG64 Strangers;
 	volatile LONG64 NotOurs;
 	volatile LONG64 Malformed;
+	// The stretches of the evpn object, each an L2 Network and its L2 VNI (NodeStretch.c; SDN-64, #291)
+	UINT NumStretches;
+	NODE_STRETCH_SETTING Stretches[NODE_STRETCH_MAX];
 };
 
 //
