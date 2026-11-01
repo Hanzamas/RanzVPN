@@ -22,6 +22,11 @@ func TestNoticeHasTheLicencesOfTheMimicryLibraries(t *testing.T) {
 		{"github.com/xtls/reality", "LICENSE"},
 		{"github.com/xtls/reality", "LICENSE-Go"},
 		{"github.com/juju/ratelimit", "LICENSE"},
+		// The Hysteria mode (CORE-P2-4, #95): Hysteria 2, its fork of quic-go and QPACK
+		{"github.com/apernet/hysteria/core/v2", "LICENSE.md"},
+		{"github.com/apernet/hysteria/extras/v2", "LICENSE.md"},
+		{"github.com/apernet/quic-go", "LICENSE"},
+		{"github.com/quic-go/qpack", "LICENSE.md"},
 	} {
 		t.Run(c.module+" "+c.file, func(t *testing.T) {
 			out, err := exec.Command("go", "list", "-m", "-f", "{{.Dir}}", c.module).Output()
@@ -63,6 +68,15 @@ func TestThirdPartyNamesThePinsOfTheMimicryLibraries(t *testing.T) {
 		"github.com/andybalholm/brotli",
 		"github.com/klauspost/compress",
 		"github.com/pires/go-proxyproto",
+		// The Hysteria mode (CORE-P2-4, #95), and what its library brings with it
+		"github.com/apernet/hysteria/core/v2",
+		"github.com/apernet/hysteria/extras/v2",
+		"github.com/apernet/quic-go",
+		"github.com/quic-go/qpack",
+		"github.com/stretchr/testify",
+		"github.com/stretchr/objx",
+		"go.yaml.in/yaml/v3",
+		"golang.org/x/exp",
 	} {
 		m := regexp.MustCompile(`(?m)^\s*` + regexp.QuoteMeta(module) + ` (\S+)`).FindSubmatch(gomod)
 		if m == nil {
