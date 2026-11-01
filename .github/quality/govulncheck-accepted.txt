@@ -15,7 +15,7 @@ GO-2026-4736 github.com/osrg/gobgp/v4@v4.10.0 the fix (commit 583080a) is in v4.
 # function of core/v2 counts as reaching it; the reviewed GHSA records 2.8.1 as the last affected
 # version, and the sniff of v2.13.0 assembles only the CRYPTO bytes that the packets hold. The Hysteria
 # part of ranz mimic gives the library no RequestHook and DisableUDP, and no setting changes either
-# (controller/internal/mimic/hysteriaserver.go:115-124, TestTheHysteriaListenerNeverTurnsOnTheSniff);
+# (controller/internal/mimic/hysteriaserver.go:124-133, TestTheHysteriaListenerNeverTurnsOnTheSniff);
 # the library reads the UDP of a client, the only way to the hook of UDP, only without DisableUDP
 # (server/server.go:219 of core/v2 v2.13.0).
-GO-2026-5288 github.com/apernet/hysteria/core/v2@v2.13.0 ranz mimic never sets the RequestHook of the sniff and carries no UDP (hysteriaserver.go:115-124); the reviewed GHSA records 2.8.1 as the last affected version
+GO-2026-5288 github.com/apernet/hysteria/core/v2@v2.13.0 ranz mimic never sets the RequestHook of the sniff and carries no UDP (hysteriaserver.go:124-133); the reviewed GHSA records 2.8.1 as the last affected version

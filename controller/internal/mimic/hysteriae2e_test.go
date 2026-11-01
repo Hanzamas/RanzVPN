@@ -606,8 +606,10 @@ func TestAHysteriaLinkGivesUpWhenItsDialEnds(t *testing.T) {
 }
 
 // The hooks of the server part on their own: a client that authenticates gets the binding that the
-// handshake at its address remembered, once; the memory of the handshakes stays in its bound; a stream
-// whose node is gone gets nothing of the node; UDP is refused.
+// handshake at its address remembered, and a client whose handshake the memory does not hold gets the
+// binding of the latest handshake, so strangers that fill the memory take no client its binding; the
+// memory of the handshakes stays in its bound; a stream whose node is gone gets nothing of the node; UDP
+// is refused.
 func TestTheHooksOfTheHysteriaServer(t *testing.T) {
 	var events []Message
 	h := &hyServer{ctx: context.Background(), cfg: &hysteriaServerConfig{secrets: []string{testSecret}}, pipe: pipeName(t, "gone"),
@@ -618,12 +620,20 @@ func TestTheHooksOfTheHysteriaServer(t *testing.T) {
 	if ok, _ := h.Authenticate(addr, "not the secret", 0); ok {
 		t.Error("a wrong secret authenticates")
 	}
+	if ok, id := h.Authenticate(addr, testSecret, 0); !ok || id != noBinding {
+		t.Errorf("a client before the first handshake: %v with the id %q, want no binding", ok, id)
+	}
 	h.remember(addr.String(), "aa")
 	if ok, id := h.Authenticate(addr, testSecret, 0); !ok || id != "aa" {
 		t.Errorf("the client at the address of the handshake: %v with the id %q, want the binding aa", ok, id)
 	}
-	if ok, id := h.Authenticate(addr, testSecret, 0); !ok || id != noBinding {
-		t.Errorf("a second authentication: %v with the id %q, want no binding", ok, id)
+	if len(h.handshakes) != 0 {
+		t.Errorf("the memory keeps %d handshakes after their client authenticated", len(h.handshakes))
+	}
+	// The client authenticates again, or from another address than that of its handshake
+	moved := &net.UDPAddr{IP: net.IPv4(192, 0, 2, 2), Port: 4433}
+	if ok, id := h.Authenticate(moved, testSecret, 0); !ok || id != "aa" {
+		t.Errorf("a client whose handshake the memory does not hold: %v with the id %q, want the binding of the latest handshake aa", ok, id)
 	}
 
 	old := time.Now().Add(-2 * handshakeAge)
@@ -637,9 +647,14 @@ func TestTheHooksOfTheHysteriaServer(t *testing.T) {
 	for i := range maxHandshakes {
 		h.handshakes[fmt.Sprint(i)] = handshake{binding: "young", at: time.Now()}
 	}
-	h.remember("newer", "cc")
-	if _, found := h.handshakes["newer"]; found {
+	late := &net.UDPAddr{IP: net.IPv4(192, 0, 2, 3), Port: 4433}
+	h.remember(late.String(), "cc")
+	if _, found := h.handshakes[late.String()]; found {
 		t.Error("a handshake beyond the bound was remembered")
+	}
+	// Strangers that fill the memory with handshakes that never authenticate take no client its binding
+	if ok, id := h.Authenticate(late, testSecret, 0); !ok || id != "cc" {
+		t.Errorf("a client whose handshake found the memory full: %v with the id %q, want the binding of the latest handshake cc", ok, id)
 	}
 
 	h.TCPRequest(addr, "dd", "stream")

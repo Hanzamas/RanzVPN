@@ -28,10 +28,18 @@ import (
 // (Authenticate), and gives it to each stream of the client: the library tells the id with the request
 // of a stream (TCPRequest) and then asks for the connection of that stream (TCP) on the same goroutine,
 // and the client gives each stream a name of its own (streamName, hysteriaclient.go).
+//
+// A client whose handshake the part does not remember, because strangers filled the memory with
+// handshakes that never authenticate or because the address of the client changed since, gets the
+// binding of the latest handshake: the part presents the one certificate of the own decoy to every
+// handshake that gets a certificate (crypto/tls refuses a ClientHello without the ALPN h3 before it asks
+// for one), so that is the binding of the client too, unless the certificate was renewed between its
+// handshake and its authentication. A stranger that fills the memory thus takes no client its binding.
 
 const (
 	// maxHandshakes is the handshakes whose certificate the part remembers until their client
-	// authenticates. Beyond it a handshake goes unremembered, and its client gets no binding.
+	// authenticates. Beyond it a handshake goes unremembered, and its client gets the binding of the
+	// latest handshake.
 	maxHandshakes = 4096
 	// handshakeAge is how long the part remembers a handshake whose client did not authenticate.
 	handshakeAge = time.Minute
@@ -64,6 +72,7 @@ type hyServer struct {
 
 	mu         sync.Mutex
 	handshakes map[string]handshake // by the remote address of the connection
+	latest     string               // the binding of the latest handshake, "" before the first
 	requests   map[string]string    // the binding of each stream, by its name, from TCPRequest to TCP
 	pipes      map[*hyPipe]struct{} // the connections of the data pipe that the streams hold
 }
@@ -156,11 +165,13 @@ func (h *hyServer) certificate(info *tls.ClientHelloInfo) (*tls.Certificate, err
 	return cert, nil
 }
 
-// remember keeps the binding of a handshake. At maxHandshakes it first forgets the handshakes older than
-// handshakeAge, whose clients never authenticated, and it keeps nothing when that leaves no room.
+// remember keeps the binding of a handshake, which is the binding of the latest handshake from then on.
+// At maxHandshakes it first forgets the handshakes older than handshakeAge, whose clients never
+// authenticated, and it keeps nothing when that leaves no room.
 func (h *hyServer) remember(addr, binding string) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
+	h.latest = binding
 	now := time.Now()
 	if len(h.handshakes) >= maxHandshakes {
 		for a, hs := range h.handshakes {
@@ -176,7 +187,8 @@ func (h *hyServer) remember(addr, binding string) {
 }
 
 // Authenticate takes a client that presents one of the secrets. Its id is the binding of the certificate
-// that its connection got, which the library hands to the hooks of the streams of the connection.
+// that its connection got, which the library hands to the hooks of the streams of the connection: the
+// binding that the handshake at its address left, or without one the binding of the latest handshake.
 func (h *hyServer) Authenticate(addr net.Addr, auth string, _ uint64) (bool, string) {
 	ok := false
 	for _, s := range h.cfg.secrets {
@@ -191,10 +203,13 @@ func (h *hyServer) Authenticate(addr net.Addr, auth string, _ uint64) (bool, str
 	defer h.mu.Unlock()
 	hs, found := h.handshakes[addr.String()]
 	delete(h.handshakes, addr.String())
-	if !found {
-		return true, noBinding
+	switch {
+	case found:
+		return true, hs.binding
+	case h.latest != "":
+		return true, h.latest
 	}
-	return true, hs.binding
+	return true, noBinding
 }
 
 // Connect counts a client that authenticated and tells the node, as the REALITY listener does.
