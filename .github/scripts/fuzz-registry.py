@@ -56,8 +56,11 @@ FUZZ_DIR = 'src/fuzz'
 
 # The functions that the seeds of a C target must reach, each named in a line "// fuzz-reach: <function>" of the target,
 # which run_fuzzers.ps1 checks in the coverage of the replay of the seeds. fuzz_peer reaches the dispatch of a STUN
-# message by libjuice and the processing of a check whose MESSAGE-INTEGRITY holds (CORE-S5-6-R1 #537, CORE-S5-6-R2 #557).
-REACH = {'fuzz_peer': ('agent_dispatch_stun', 'agent_process_stun_binding')}
+# message by libjuice and the processing of a check whose MESSAGE-INTEGRITY holds (CORE-S5-6-R1 #537, CORE-S5-6-R2 #557);
+# fuzz_evpn reaches the sort of the VTEPs that an EVPN gateway knows and the check of the outer source of a frame against
+# them (SDN-25-R1 #549, SDN-25-R3 #571).
+REACH = {'fuzz_peer': ('agent_dispatch_stun', 'agent_process_stun_binding'),
+         'fuzz_evpn': ('NodeEvpnSortVteps', 'NodeEvpnHasVtep')}
 # A line that names fuzz-reach, in any case and with a hyphen, an underscore or nothing between the two words, and the
 # one form of such a line that run_fuzzers.ps1 takes (Get-Reach)
 _REACH_NAMED_RE = re.compile(r'fuzz[-_]?reach', re.I)

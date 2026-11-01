@@ -1,5 +1,5 @@
 // ControlInternal.h
-// Module-internal declarations of the control module (Control.c, ControlDhcp.c, ControlDns.c, ControlListener.c, ControlDevice.c, ControlEgress.c, ControlEndpoint.c, ControlEvent.c, ControlGateway.c, ControlLink.c, ControlPath.c, ControlPeering.c, ControlPins.c, ControlProfile.c, ControlSecurity.c, ControlSignal.c): only its own
+// Module-internal declarations of the control module (Control.c, ControlDhcp.c, ControlDns.c, ControlListener.c, ControlDevice.c, ControlEgress.c, ControlEndpoint.c, ControlEvent.c, ControlEvpn.c, ControlGateway.c, ControlLink.c, ControlPath.c, ControlPeering.c, ControlPins.c, ControlProfile.c, ControlSecurity.c, ControlSignal.c): only its own
 // files include this
 // header, after the messages that nanopb generates from the schema
 
@@ -69,6 +69,9 @@ void ControlCopyEgress(CONTROL_STATE *st, const ranz_control_v1_Object *objects,
 
 // ControlPath.c
 void ControlPathsResend(CONTROL_PATHS *p);
+
+// ControlEvpn.c (SDN-25-R3, #571)
+void ControlEvpnResend(CONTROL_EVPN *e);
 
 // ControlOperation.c: an Operation that ControlInput took, the body of m, which the answer replaces, and the write of the answer
 bool ControlTakeOperation(const CONTROL_CONFIG *cfg, const ranz_control_v1_Object *objects, UINT num, ranz_control_v1_ControlMessage *m);

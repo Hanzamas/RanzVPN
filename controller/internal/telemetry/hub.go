@@ -79,8 +79,27 @@ type PathCounters struct {
 	PunchFailures  uint64 `json:"punchFailures"`
 }
 
+// EvpnCounters is what the EVPN of a gateway did with the fabric since its sidecar started (SDN-25-R3,
+// #571): the packets of the overlay that went to a VTEP of the fabric and the ones that could not go,
+// the packets of the fabric that the overlay took and the ones that it did not take, and what the
+// gateway dropped of the fabric. UnknownVtep is the frames of an L3 VNI from an address that is no
+// VTEP that the gateway knows for their VRF, whatever they hold; UnknownVni and the datagrams of
+// Malformed come from any address, as the VXLAN module counts them before the outer source is checked.
+type EvpnCounters struct {
+	Sent        uint64 `json:"sent"`
+	Failed      uint64 `json:"failed"`
+	Delivered   uint64 `json:"delivered"`
+	Undelivered uint64 `json:"undelivered"`
+	UnknownVtep uint64 `json:"unknownVtep"`
+	Strangers   uint64 `json:"strangers"`
+	NotOurs     uint64 `json:"notOurs"`
+	UnknownVni  uint64 `json:"unknownVni"`
+	Malformed   uint64 `json:"malformed"`
+}
+
 // NodeSnapshot is what the Hub holds of one node. Paths is nil for a node that reported none: one
-// whose peer agent does not run, or a node of a release before the counters.
+// whose peer agent does not run, or a node of a release before the counters. EVPN is nil for a node
+// that reported none: one that runs no EVPN, or a node of a release before the counters.
 type NodeSnapshot struct {
 	Node       string         `json:"node"`
 	ReportedAt time.Time      `json:"reportedAt"`
@@ -88,6 +107,7 @@ type NodeSnapshot struct {
 	VRFs       []VrfCounters  `json:"vrfs"`
 	Rules      []RuleCounters `json:"rules"`
 	Paths      *PathCounters  `json:"paths,omitempty"`
+	EVPN       *EvpnCounters  `json:"evpn,omitempty"`
 	// The packets of the peers by the tag mode of their source group (sourcegroup.go; SDN-87)
 	SourceGroups []SourceGroupCounters `json:"sourceGroups,omitempty"`
 }
@@ -117,12 +137,18 @@ type pathEntry struct {
 	seen time.Time
 }
 
+type evpnEntry struct {
+	EvpnCounters
+	seen time.Time
+}
+
 type nodeData struct {
 	seen  time.Time
 	peers map[string]*peerEntry
 	vrfs  map[uint32]*vrfEntry
 	rules map[ruleKey]*ruleEntry
 	paths *pathEntry
+	evpn  *evpnEntry
 	// The counters of the source groups by tag mode (sourcegroup.go; SDN-87)
 	groups map[string]*groupEntry
 }
@@ -215,6 +241,19 @@ func (h *Hub) Report(node string, t *controlpb.Telemetry) {
 			PunchFailures:  p.GetPunchFailures(),
 		}, seen: now}
 	}
+	if v := t.GetEvpn(); v != nil {
+		d.evpn = &evpnEntry{EvpnCounters: EvpnCounters{
+			Sent:        v.GetSent(),
+			Failed:      v.GetFailed(),
+			Delivered:   v.GetDelivered(),
+			Undelivered: v.GetUndelivered(),
+			UnknownVtep: v.GetUnknownVtep(),
+			Strangers:   v.GetStrangers(),
+			NotOurs:     v.GetNotOurs(),
+			UnknownVni:  v.GetUnknownVni(),
+			Malformed:   v.GetMalformed(),
+		}, seen: now}
+	}
 	d.reportGroups(t, now)
 	h.prune(now)
 }
@@ -240,8 +279,11 @@ func (h *Hub) prune(now time.Time) {
 		if d.paths != nil && now.Sub(d.paths.seen) > h.stale {
 			d.paths = nil
 		}
+		if d.evpn != nil && now.Sub(d.evpn.seen) > h.stale {
+			d.evpn = nil
+		}
 		d.pruneGroups(now, h.stale)
-		if len(d.peers)+len(d.vrfs)+len(d.rules)+len(d.groups) == 0 && d.paths == nil && now.Sub(d.seen) > h.stale {
+		if len(d.peers)+len(d.vrfs)+len(d.rules)+len(d.groups) == 0 && d.paths == nil && d.evpn == nil && now.Sub(d.seen) > h.stale {
 			delete(h.nodes, name)
 		}
 	}
@@ -289,6 +331,10 @@ func (h *Hub) Snapshot(vrfName func(uint32) string) []NodeSnapshot {
 			p := d.paths.PathCounters
 			s.Paths = &p
 		}
+		if d.evpn != nil {
+			v := d.evpn.EvpnCounters
+			s.EVPN = &v
+		}
 		slices.SortFunc(s.Peers, func(a, b PeerCounters) int { return cmp.Compare(a.Peer, b.Peer) })
 		slices.SortFunc(s.VRFs, func(a, b VrfCounters) int { return cmp.Compare(a.VRFID, b.VRFID) })
 		slices.SortFunc(s.Rules, func(a, b RuleCounters) int {
@@ -332,6 +378,18 @@ func (h *Hub) Samples(vrfName func(uint32) string) []Sample {
 				Sample{Metric: "path_punch_attempts", Labels: []string{n.Node}, Value: n.Paths.PunchAttempts},
 				Sample{Metric: "path_punch_successes", Labels: []string{n.Node}, Value: n.Paths.PunchSuccesses},
 				Sample{Metric: "path_punch_failures", Labels: []string{n.Node}, Value: n.Paths.PunchFailures})
+		}
+		if v := n.EVPN; v != nil {
+			out = append(out,
+				Sample{Metric: "evpn_packets", Labels: []string{n.Node, "tx"}, Value: v.Sent},
+				Sample{Metric: "evpn_packets", Labels: []string{n.Node, "rx"}, Value: v.Delivered},
+				Sample{Metric: "evpn_dropped_frames", Labels: []string{n.Node, "unknown-vtep"}, Value: v.UnknownVtep},
+				Sample{Metric: "evpn_dropped_frames", Labels: []string{n.Node, "stranger"}, Value: v.Strangers},
+				Sample{Metric: "evpn_dropped_frames", Labels: []string{n.Node, "not-ours"}, Value: v.NotOurs},
+				Sample{Metric: "evpn_dropped_frames", Labels: []string{n.Node, "unknown-vni"}, Value: v.UnknownVni},
+				Sample{Metric: "evpn_dropped_frames", Labels: []string{n.Node, "malformed"}, Value: v.Malformed},
+				Sample{Metric: "evpn_dropped_frames", Labels: []string{n.Node, "undelivered"}, Value: v.Undelivered},
+				Sample{Metric: "evpn_dropped_frames", Labels: []string{n.Node, "failed"}, Value: v.Failed})
 		}
 		out = append(out, groupSamples(n)...)
 	}

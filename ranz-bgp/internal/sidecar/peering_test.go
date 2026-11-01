@@ -3,16 +3,22 @@ package sidecar
 import (
 	"context"
 	"fmt"
+	"io"
+	"log/slog"
+	"maps"
 	"net"
 	"net/netip"
+	"os"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/osrg/gobgp/v4/api"
 	"github.com/osrg/gobgp/v4/pkg/apiutil"
 	"github.com/osrg/gobgp/v4/pkg/packet/bgp"
+	"github.com/osrg/gobgp/v4/pkg/server"
 )
 
 // peeringASN is the AS of the Ranz nodes in the tests of the peering of the standard mode.
@@ -59,6 +65,125 @@ func (n *testNode) vpnPaths(peer string) int {
 		n.t.Fatalf("sidecar RIB: %v", err)
 	}
 	return count
+}
+
+// vpnKeys is the VPN paths from peer in the global RIB of the sidecar, by VRF and prefix: the best paths and the others,
+// IPv4 and IPv6. It is for after ready.
+func (n *testNode) vpnKeys(peer string) map[routeKey]bool {
+	n.t.Helper()
+	if n.bgp == nil {
+		n.bgp = <-n.started
+	}
+	keys := make(map[routeKey]bool)
+	for _, family := range []bgp.Family{bgp.RF_IPv4_VPN, bgp.RF_IPv6_VPN} {
+		err := n.bgp.ListPath(apiutil.ListPathRequest{TableType: api.TableType_TABLE_TYPE_GLOBAL, Family: family}, func(_ bgp.NLRI, paths []*apiutil.Path) {
+			for _, p := range paths {
+				if key, ok := pathKey(p); ok && p.PeerAddress.String() == peer {
+					keys[key] = true
+				}
+			}
+		})
+		if err != nil {
+			n.t.Fatalf("sidecar RIB: %v", err)
+		}
+	}
+	return keys
+}
+
+// logText is the log of a sidecar that a test reads: the sidecar writes it from goroutines of its own.
+type logText struct {
+	mu   sync.Mutex
+	text strings.Builder
+}
+
+func (l *logText) Write(p []byte) (int, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.text.Write(p)
+}
+
+func (l *logText) String() string {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.text.String()
+}
+
+// logger is a log that writes to l and to the output of the test.
+func (l *logText) logger() *slog.Logger {
+	return slog.New(slog.NewTextHandler(io.MultiWriter(os.Stderr, l), &slog.HandlerOptions{Level: slog.LevelInfo}))
+}
+
+func vpnFamily(afi api.Family_Afi) *api.AfiSafi {
+	return &api.AfiSafi{Config: &api.AfiSafiConfig{
+		Family:  &api.Family{Afi: afi, Safi: api.Family_SAFI_MPLS_VPN},
+		Enabled: true,
+	}}
+}
+
+// hostileNode is a member of the peering that abuses it: GoBGP, which speaks the VPN families as a Ranz node does and announces
+// any path that the test names, in any VRF, with any route target and any LOCAL_PREF, which a sidecar never announces.
+type hostileNode struct {
+	t    *testing.T
+	bgp  *server.BgpServer
+	addr netip.Addr
+}
+
+// startHostile starts the hostile node at addr, with the router id id, which listens on port and waits for the sidecar at toward
+// to connect: the sidecar of the lower address connects.
+func startHostile(t *testing.T, addr, id string, port int, toward string) *hostileNode {
+	t.Helper()
+	b := server.NewBgpServer(server.LoggerOption(testLogger(), nil))
+	go b.Serve()
+	ctx := context.Background()
+	err := b.StartBgp(ctx, &api.StartBgpRequest{Global: &api.Global{
+		Asn:             peeringASN,
+		RouterId:        id,
+		ListenPort:      int32(port),
+		ListenAddresses: []string{addr},
+	}})
+	if err != nil {
+		t.Fatalf("hostile node %s: %v", addr, err)
+	}
+	t.Cleanup(b.Stop)
+	err = b.AddPeer(ctx, &api.AddPeerRequest{Peer: &api.Peer{
+		Conf:      &api.PeerConf{NeighborAddress: toward, PeerAsn: peeringASN},
+		Transport: &api.Transport{LocalAddress: addr, PassiveMode: true},
+		Timers:    &api.Timers{Config: &api.TimersConfig{HoldTime: peeringHoldTime, KeepaliveInterval: peeringHoldTime / 3}},
+		AfiSafis:  []*api.AfiSafi{vpnFamily(api.Family_AFI_IP), vpnFamily(api.Family_AFI_IP6)},
+	}})
+	if err != nil {
+		t.Fatalf("hostile node %s: peer %s: %v", addr, toward, err)
+	}
+	return &hostileNode{t: t, bgp: b, addr: netip.MustParseAddr(addr)}
+}
+
+// announce announces prefix to the sidecar as a VPN path with the route distinguisher of VRF rd, the route target of VRF rt and
+// the LOCAL_PREF local.
+func (h *hostileNode) announce(rd, rt uint32, prefix string, local uint32) {
+	h.t.Helper()
+	p := netip.MustParsePrefix(prefix)
+	family := bgp.RF_IPv4_VPN
+	if p.Addr().Is6() {
+		family = bgp.RF_IPv6_VPN
+	}
+	nlri, err := bgp.NewLabeledVPNIPAddrPrefix(p, *bgp.NewMPLSLabelStack(), bgp.NewRouteDistinguisherTwoOctetAS(rdAdmin, rd))
+	if err != nil {
+		h.t.Fatal(err)
+	}
+	reach, err := bgp.NewPathAttributeMpReachNLRI(family, []bgp.PathNLRI{{NLRI: nlri}}, h.addr)
+	if err != nil {
+		h.t.Fatal(err)
+	}
+	attrs := []bgp.PathAttributeInterface{
+		bgp.NewPathAttributeOrigin(bgp.BGP_ORIGIN_ATTR_TYPE_IGP),
+		reach,
+		bgp.NewPathAttributeExtendedCommunities([]bgp.ExtendedCommunityInterface{bgp.NewTwoOctetAsSpecificExtended(bgp.EC_SUBTYPE_ROUTE_TARGET, rdAdmin, rt, true)}),
+		bgp.NewPathAttributeLocalPref(local),
+	}
+	_, err = h.bgp.AddPath(apiutil.AddPathRequest{Paths: []*apiutil.Path{{Family: family, Nlri: nlri, Attrs: attrs, Age: time.Now().Unix()}}})
+	if err != nil {
+		h.t.Fatalf("hostile node announces %s of VRF %d: %v", prefix, rd, err)
+	}
 }
 
 // Two Ranz nodes, a at 127.0.0.2 and b at 127.0.0.3, share the VRFs 101 and 102 and peer on one
@@ -292,20 +417,22 @@ func TestPeeringMore(t *testing.T) {
 	}
 }
 
-// A hostile node announces more specific prefixes of its LAN, more than the 4096 learned routes that a
-// node held at most for all its peers before SDN-77-R1 (#531). The sidecar reports none of them, as its
-// accept list holds its LAN and not those, so they take no room from another node or another VRF: the
-// routes of another node, in two VRFs, are learned, also when their session starts again while the
-// paths of the hostile node are there.
+// A hostile node announces what its accept list does not hold: the exact prefixes of another node, with the route
+// distinguisher of a VRF where it is no member too, and then more candidate prefixes than the 4096 learned routes that a node
+// held at most for all its peers before SDN-77-R1 (#531), for each VRF id (SDN-77-R3, #570). The paths of the hostile node
+// never reach the table of the sidecar, so they hide the route of no other node: the routes of another node, in two VRFs, stay
+// learned and are learned again when their session starts again while those paths are there. The session of the hostile node
+// ends once it holds more paths than its maximum, which the sidecar logs, and its paths go with it.
 func TestPeeringHostile(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	port := freePort(t)
+	text := &logText{}
 
 	// What a takes from b, the hostile node, and from c; what b and c take from a
 	fromB := []PeerVRF{{ID: 101, Accept: []string{"10.0.0.3/32", "10.20.0.0/16"}}}
 	fromC := []PeerVRF{{ID: 101, Accept: []string{"10.0.0.4/32", "192.168.30.0/24"}}, {ID: 102, Accept: []string{"192.168.40.0/24"}}}
-	a := startNode(t, ctx)
+	a := startNodeLog(t, ctx, text.logger())
 	b := startNode(t, ctx)
 	c := startNode(t, ctx)
 	a.send(peeringStart("192.0.2.2", "127.0.0.2", port, peeringPeer("127.0.0.3", port, fromB...), peeringPeer("127.0.0.4", port, fromC...)))
@@ -330,14 +457,40 @@ func TestPeeringHostile(t *testing.T) {
 		a.wait("a learns "+m.Prefix+" of c", true, isVRFRoute(TypeLearned, m.VRF, m.Prefix))
 	}
 
-	// b announces its LAN and 4100 more specific prefixes of it
-	const hostile = 4100
-	b.send(Message{Type: TypeAnnounce, VRF: 101, Prefix: "10.20.0.0/16"})
-	for i := 0; i < hostile; i++ {
-		b.send(Message{Type: TypeAnnounce, VRF: 101, Prefix: fmt.Sprintf("10.20.%d.%d/32", i/256, i%256)})
+	// b announces the exact prefixes of c, in VRF 101 and in VRF 102, where it is no member, then its LAN and, last, its address:
+	// a legit path, which a learns after it took or refused the paths before it
+	for _, m := range cRoutes {
+		b.send(m)
 	}
+	b.send(Message{Type: TypeAnnounce, VRF: 101, Prefix: "10.20.0.0/16"})
+	b.send(Message{Type: TypeAnnounce, VRF: 101, Prefix: "10.0.0.3/32"})
+	a.wait("a learns the address of b", true, isVRFRoute(TypeLearned, 101, "10.0.0.3/32"))
 	a.wait("a learns the LAN of b", true, isVRFRoute(TypeLearned, 101, "10.20.0.0/16"))
-	waitUntil(t, "the sidecar of a has every path of b", func() bool { return a.vpnPaths("127.0.0.3") >= hostile+1 })
+	time.Sleep(settleTime)
+	a.drain()
+	isOfC := func(m Message) bool {
+		for _, r := range cRoutes {
+			if m.VRF == r.VRF && m.Prefix == r.Prefix {
+				return true
+			}
+		}
+		return false
+	}
+	if n := a.count(func(m Message) bool { return m.Type == TypeWithdrawn && isOfC(m) }); n != 0 {
+		t.Errorf("a withdrew %d routes of c, which b announced as its own: the paths of b hid them", n)
+	}
+	if n := a.count(func(m Message) bool { return m.Type == TypeLearned && m.Peer == "127.0.0.3" && isOfC(m) }); n != 0 {
+		t.Errorf("a learned %d routes of c from b, which may not announce them", n)
+	}
+	// The paths of b that its accept list does not hold never reach the table of the sidecar, where they would take part in
+	// the choice of the best path
+	wantB := map[routeKey]bool{
+		{vrf: 101, prefix: netip.MustParsePrefix("10.20.0.0/16")}: true,
+		{vrf: 101, prefix: netip.MustParsePrefix("10.0.0.3/32")}:  true,
+	}
+	if got := a.vpnKeys("127.0.0.3"); !maps.Equal(got, wantB) {
+		t.Errorf("the table of the sidecar of a holds the paths %v of b, want %v", got, wantB)
+	}
 
 	// The session with c starts again while the paths of b are there: a takes its routes again, in both VRFs
 	a.send(Message{Type: TypePeers, Peers: []Peer{peeringPeer("127.0.0.3", port, fromB...)}})
@@ -355,14 +508,140 @@ func TestPeeringHostile(t *testing.T) {
 		delete(again, fmt.Sprintf("%d %s", l.VRF, l.Prefix))
 	}
 
+	// b announces more candidate prefixes than the old limit, for each VRF id: more specific prefixes of its LAN in VRF 101, and
+	// others in VRF 102 and in VRF 103, which no node shares. The withdrawn messages of the routes of c above were the ones that
+	// the end of its session sent; what a sends from here on is the flood's doing.
+	flood := len(a.seen)
+	const perVRF = 1400
+	for i := 0; i < perVRF; i++ {
+		for k, vrf := range []uint32{101, 102, 103} {
+			b.send(Message{Type: TypeAnnounce, VRF: vrf, Prefix: fmt.Sprintf("10.%d.%d.%d/32", 20+10*k, i/256, i%256)})
+		}
+	}
+
+	// a ends the session with b once it holds more paths of it than its maximum, says so in its log, and the paths of b go with it
+	a.wait("a ends the session with b", false, func(m Message) bool {
+		return m.Type == TypePeer && m.Peer == "127.0.0.3" && m.State != StateEstablished
+	})
+	if !strings.Contains(text.String(), "announced more paths than the maximum") {
+		t.Errorf("the log of the sidecar of a does not say that b announced more paths than its maximum:\n%s", text.String())
+	}
+	waitUntil(t, "the paths of b leave the table of the sidecar of a", func() bool { return a.vpnPaths("127.0.0.3") == 0 })
+
 	time.Sleep(settleTime)
 	a.drain()
-	lan := netip.MustParsePrefix("10.20.0.0/16")
 	if n := a.count(func(m Message) bool {
-		p, err := netip.ParsePrefix(m.Prefix)
-		return m.Type == TypeLearned && err == nil && p != lan && lan.Contains(p.Addr())
+		return m.Type == TypeLearned && m.Peer == "127.0.0.3" && m.Prefix != "10.20.0.0/16" && m.Prefix != "10.0.0.3/32"
 	}); n != 0 {
-		t.Errorf("a learned %d of the more specific prefixes of b, which b may not announce", n)
+		t.Errorf("a learned %d of the candidate prefixes of b, which b may not announce", n)
+	}
+	if n := a.countFrom(flood, func(m Message) bool { return m.Type == TypeWithdrawn && isOfC(m) }); n != 0 {
+		t.Errorf("a withdrew %d routes of c while b flooded it", n)
+	}
+}
+
+// A hostile member of the peering announces, with a higher LOCAL_PREF than the paths of the others have, what it may not
+// announce where it announces it (SDN-77-R3, #570): the exact prefixes of another node in the VRF of that node, an address
+// among them and an IPv6 prefix, with the route distinguisher of a VRF that no node shares too; a prefix that it may announce in
+// VRF 101 with the route distinguisher of VRF 102, where another node has the same prefix; and a prefix of a that it may announce
+// in VRF 102, with the route distinguisher of VRF 101. None of them takes the route of v from a, none takes the route of a from
+// v, and the routes that h may announce are learned all the while: a path that its peer may not announce does not take part in the
+// choice of the best path, so a higher LOCAL_PREF does not make it the best.
+func TestPeeringHostileRoutes(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	port := freePort(t)
+
+	// What a takes from v, the victim, and from h, the hostile node: h may announce 192.168.40.0/24, the LAN of v in VRF 102, in VRF
+	// 101, and 192.168.20.0/24, the LAN of a in VRF 101, in VRF 102. What v takes from a.
+	fromV := []PeerVRF{{ID: 101, Accept: []string{"10.0.0.3/32", "192.168.30.0/24", "fd00:30::/64"}}, {ID: 102, Accept: []string{"192.168.40.0/24"}}}
+	fromH := []PeerVRF{{ID: 101, Accept: []string{"10.0.0.4/32", "10.0.0.5/32", "192.168.40.0/24"}}, {ID: 102, Accept: []string{"192.168.20.0/24"}}}
+	fromA := []PeerVRF{{ID: 101, Accept: []string{"10.0.0.2/32", "10.0.0.12/32", "192.168.20.0/24"}}}
+	a := startNode(t, ctx)
+	v := startNode(t, ctx)
+	a.send(peeringStart("192.0.2.2", "127.0.0.2", port, peeringPeer("127.0.0.3", port, fromV...), peeringPeer("127.0.0.4", port, fromH...)))
+	v.send(peeringStart("192.0.2.3", "127.0.0.3", port, peeringPeer("127.0.0.2", port, fromA...)))
+	h := startHostile(t, "127.0.0.4", "192.0.2.4", port, "127.0.0.2")
+	a.wait("a ready", false, isType(TypeReady))
+	v.wait("v ready", false, isType(TypeReady))
+	a.wait("a established with v", true, isPeer("127.0.0.3", StateEstablished))
+	a.wait("a established with h", true, isPeer("127.0.0.4", StateEstablished))
+	v.wait("v established with a", true, isPeer("127.0.0.2", StateEstablished))
+
+	// v, a and h announce what they may
+	vRoutes := []Message{
+		{Type: TypeAnnounce, VRF: 101, Prefix: "10.0.0.3/32"},
+		{Type: TypeAnnounce, VRF: 101, Prefix: "192.168.30.0/24"},
+		{Type: TypeAnnounce, VRF: 101, Prefix: "fd00:30::/64"},
+		{Type: TypeAnnounce, VRF: 102, Prefix: "192.168.40.0/24"},
+	}
+	for _, m := range vRoutes {
+		v.send(m)
+	}
+	a.send(Message{Type: TypeAnnounce, VRF: 101, Prefix: "10.0.0.2/32"})
+	a.send(Message{Type: TypeAnnounce, VRF: 101, Prefix: "192.168.20.0/24"})
+	h.announce(101, 101, "10.0.0.4/32", 100)
+	h.announce(101, 101, "192.168.40.0/24", 100)
+	for _, m := range vRoutes {
+		if l := a.wait("a learns "+m.Prefix+" of v", true, isVRFRoute(TypeLearned, m.VRF, m.Prefix)); l.Peer != "127.0.0.3" {
+			t.Errorf("a learns %s of VRF %d from %q, want from 127.0.0.3", m.Prefix, m.VRF, l.Peer)
+		}
+	}
+	for _, prefix := range []string{"10.0.0.4/32", "192.168.40.0/24"} {
+		if l := a.wait("a learns "+prefix+" of h in VRF 101", true, isVRFRoute(TypeLearned, 101, prefix)); l.Peer != "127.0.0.4" {
+			t.Errorf("a learns %s of VRF 101 from %q, want from 127.0.0.4", prefix, l.Peer)
+		}
+	}
+	for _, prefix := range []string{"10.0.0.2/32", "192.168.20.0/24"} {
+		v.wait("v learns "+prefix+" of a", true, isVRFRoute(TypeLearned, 101, prefix))
+	}
+
+	// h announces, with a LOCAL_PREF of 200 where a path has 100 by default, what it may not announce there
+	const high = 200
+	h.announce(101, 101, "192.168.30.0/24", high) // the LAN of v, as if it were its own in VRF 101
+	h.announce(101, 101, "10.0.0.3/32", high)     // the address of v
+	h.announce(101, 101, "fd00:30::/64", high)    // an IPv6 prefix of v
+	h.announce(103, 103, "192.168.30.0/24", high) // the LAN of v in VRF 103, which no node shares
+	h.announce(102, 101, "192.168.40.0/24", high) // the LAN of v in VRF 102, a prefix that h may announce in VRF 101
+	h.announce(101, 102, "192.168.20.0/24", high) // the LAN of a in VRF 101, a prefix that h may announce in VRF 102
+	// ... and last an address that it may announce: a learns it after it took or refused the paths before it, and a announces
+	// another address after that, which v learns after what a sent to it before
+	h.announce(101, 101, "10.0.0.5/32", 100)
+	a.wait("a learns 10.0.0.5/32 of h", true, isVRFRoute(TypeLearned, 101, "10.0.0.5/32"))
+	a.send(Message{Type: TypeAnnounce, VRF: 101, Prefix: "10.0.0.12/32"})
+	v.wait("v learns 10.0.0.12/32 of a", true, isVRFRoute(TypeLearned, 101, "10.0.0.12/32"))
+	time.Sleep(settleTime)
+	a.drain()
+	v.drain()
+
+	if n := a.count(isType(TypeWithdrawn)); n != 0 {
+		t.Errorf("a withdrew %d routes, though no peer withdrew one: the paths of h hid them", n)
+	}
+	if n := v.count(isType(TypeWithdrawn)); n != 0 {
+		t.Errorf("v withdrew %d routes of a, which a never withdrew: the path of h hid the route of a at a", n)
+	}
+	for _, m := range vRoutes {
+		if n := a.count(func(l Message) bool {
+			return l.Type == TypeLearned && l.VRF == m.VRF && l.Prefix == m.Prefix && l.Peer != "127.0.0.3"
+		}); n != 0 {
+			t.Errorf("a learned %s of VRF %d %d times from a peer other than v, which is the only one that may announce it", m.Prefix, m.VRF, n)
+		}
+	}
+	if n := a.count(isVRFRoute(TypeLearned, 101, "192.168.20.0/24")); n != 0 {
+		t.Errorf("a learned its own LAN 192.168.20.0/24 of VRF 101 %d times from h", n)
+	}
+
+	// The paths of h in VRF 101 and in VRF 103 that its accept list holds in no VRF never reach the table of the sidecar
+	keys := a.vpnKeys("127.0.0.4")
+	for _, key := range []routeKey{
+		{vrf: 101, prefix: netip.MustParsePrefix("192.168.30.0/24")},
+		{vrf: 101, prefix: netip.MustParsePrefix("10.0.0.3/32")},
+		{vrf: 101, prefix: netip.MustParsePrefix("fd00:30::/64")},
+		{vrf: 103, prefix: netip.MustParsePrefix("192.168.30.0/24")},
+	} {
+		if keys[key] {
+			t.Errorf("the table of the sidecar of a holds the path of h to %s of VRF %d, which its accept list holds in no VRF", key.prefix, key.vrf)
+		}
 	}
 }
 

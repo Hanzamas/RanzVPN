@@ -48,8 +48,12 @@
 //   the forwarding tables of the Generation with it.
 // - A narrower accept list: a Generation that takes the extra LAN of node-b from the accept lists while node-b still announces it
 //   has no route to it in the tables that node-a builds with it, though its sidecar has not withdrawn the route yet.
-// - A hostile peer: node-b announces more specific prefixes of its LAN in red, which no accept list holds; no node learns any of
-//   them, and every other route of every peer and VRF is learned.
+// - A hostile peer: node-b announces more specific prefixes of its LAN in red, which no accept list holds, and the exact LAN of
+//   node-c in red, which node-c announces and no accept list of node-b holds; no node learns any of them, and every other route of
+//   every peer and VRF is learned, the LAN of node-c at node-a too, where the router id of node-b is lower than that of node-c, so
+//   that the best path of GoBGP for that LAN would be the path of node-b (SDN-77-R3, #570); node-a keeps that route all through a
+//   watch longer than the paths of node-b take to reach it. The flood that goes past the old limit of 4096 learned routes is a case
+//   of its own below.
 // - A failed send and a large mesh: the sidecar of node-a stops answering, and a Generation gives node-a 200 more peers, whose
 //   peers messages fill its pipe, a new extra LAN to announce and an extra LAN to withdraw. The send fails, node-a ends the sidecar
 //   and starts another, which has the peers, the announced prefixes and not the withdrawn one of the Generation in force; node-a
@@ -57,6 +61,19 @@
 // - A hung sidecar: node-c notices that its sidecar does not answer, ends it, and its learned routes go; another starts.
 // - The halt: the sidecar of node-b stops answering while its worker sends peers, and NodeOverlayStop of node-b under the lock of
 //   the node returns at once; the sidecar exits after the time that the node gives it.
+// The findings of the review of SDN-77-R1 that SDN-77-R3 (#570) closes in the node:
+// - A failed copy for a settle: node-a announces its extra LAN 192.168.6.0/24 (Generation 13) while the next copy of the state that its
+//   worker takes to settle its sidecar on a Generation fails (NodePeeringFailNext). Node-a logs and counts it, keeps the change and
+//   tries again, so that its sidecar announces the LAN and the mesh converges, and not only at the next Generation.
+// - A sidecar of protocol 3: a stand-in of such a sidecar sends node-c its ready (NodePeeringFeed). Node-c needs protocol 4: it ends
+//   the sidecar and says so with the version in its log, and the sidecar that starts after it brings the mesh back.
+// - The refusal line: the node log of node-a names the router of the operator that dials the tunnel endpoint among the sessions
+//   that the sidecar refuses, with the session from 127.0.0.9.
+// - A flood: node-b has its sidecar announce 4200 host routes, 1400 in each of red, blue and VRF 103, which no node is a member of:
+//   more than the 4096 learned routes that a node held at most before SDN-77-R1, and none that an accept list holds (NodePeeringSay).
+//   The sidecars of node-a and node-c take 64 paths of a family from a peer at most: each ends its session with node-b, keeps it down
+//   and logs it, and node-a and node-c keep the routes of each other. Once the sidecar of node-b died with its flood, Generation 15
+//   changes node-b in their peers, and the mesh converges again.
 // Print "PEERING TEST OK" only when every check passes. .github/scripts/bgp-peering.ps1 builds ranz.exe and runs it.
 
 #include "testlist.h"
@@ -97,6 +114,7 @@
 #define	PEERINGTEST_ASN			4200000000U	// The AS of the overlay, one for every node (intent.PeeringASN)
 #define	PEERINGTEST_HOLD		9			// The BGP hold time of the sessions in s, as the VRFs of the Intent name it
 #define	PEERINGTEST_GRACE		1000		// What the sidecar and the node take past the hold time to remove the routes (ms)
+#define	PEERINGTEST_WATCH		3000		// A route that has to stay is watched this long: longer than a path of one sidecar takes to reach another node (ms)
 #define	PEERINGTEST_PORT		179			// The BGP port of the sidecars
 #define	PEERINGTEST_STRANGER	"127.0.0.9"	// An address that the Controller did not name
 #define	PEERINGTEST_RED			101			// The id of VRF red ...
@@ -107,7 +125,12 @@
 #define	PEERINGTEST_DUMMIES		200			// The peers that a large mesh adds to a node: no node, and their sidecars never answer
 #define	PEERINGTEST_ACCEPTS		31			// ... each with as many prefixes to accept from it, so that its peers fill a pipe
 #define	PEERINGTEST_HOSTILE		12			// The more specific prefixes of its LAN that a hostile node-b announces
+#define	PEERINGTEST_VICTIMS		1			// ... and the exact prefixes of node-c besides, which node-c announces too: its LAN in red
+#define	PEERINGTEST_FLOOD		1400		// The host routes that a flooding node-b announces in each of red, blue and PEERINGTEST_FLOOD_VRF ...
+#define	PEERINGTEST_FLOOD_VRF	103			// ... a VRF that no node is a member of
+#define	PEERINGTEST_OLD_LIMIT	4096		// ... more than the learned routes that a node held at most for all its peers before SDN-77-R1 (#531)
 #define	PEERINGTEST_WINDOWS		2			// The windows of an apply at node-a (PeeringTestWindow)
+#define	PEERINGTEST_OLD_READY	"{\"type\":\"ready\",\"version\":\"ranz bgp, GoBGP v3 (stand-in)\",\"protocol\":3}"	// The ready of the stand-in of a sidecar of protocol 3
 
 // The nodes
 #define	PEERINGTEST_A			0
@@ -227,6 +250,9 @@ typedef struct PEERINGTEST_CTX
 	UINT64 WindowFrom[PEERINGTEST_WINDOWS];	// ... the Generation of its rebuild, which went out of force in the window,
 	UINT64 WindowTo[PEERINGTEST_WINDOWS];	// ... and the one that the apply put in force
 	UINT64 Failed;						// The Generation whose first copy and rebuild at node-a failed (PeeringTestFailed), 0 for none
+	UINT64 SettleFailed;				// The Generation whose first copy for a settle at node-a failed (PeeringTestSettle), 0 for none
+	bool Refused;						// Node-a refused the session from the address that the Controller did not name (PeeringTestRefused)
+	bool Old;							// Node-c ended the stand-in of a sidecar of protocol 3 (PeeringTestOld)
 	bool Ran;							// The nodes started their sidecars
 	UINT Seq;							// The data of the next test packet
 } PEERINGTEST_CTX;
@@ -489,6 +515,14 @@ static CONTROL_STATE *PeeringTestState(PEERINGTEST_CTX *ctx, UINT i)
 				Format(addr, sizeof(addr), "192.168.2.%u", h * 16);
 				PeeringTestRoute(&own->Announce[own->NumAnnounce++], PEERINGTEST_RED, addr, 28);
 			}
+			// ... and the exact LAN of node-c in red, which node-c announces too and no accept list of node-b holds: the router id of
+			// node-b is lower than that of node-c, so GoBGP of node-a ranks the path of node-b first (SDN-77-R3, #570)
+			if (i == PEERINGTEST_B && ctx->Hostile)
+			{
+				PEERINGTEST_MEMBER *victim = PeeringTestMember(PEERINGTEST_C, PEERINGTEST_RED);
+
+				PeeringTestRoute(&own->Announce[own->NumAnnounce++], PEERINGTEST_RED, victim->Lan, PEERINGTEST_LENGTH);
+			}
 			for (UINT e = 0;e < PEERINGTEST_EXTRAS;e++)
 			{
 				if (peeringtest_extras[e].Node == i && PeeringTestExtra(ctx, e, true))
@@ -663,8 +697,8 @@ static void PeeringTestDeleteFiles(wchar_t *dir)
 	DeleteDirW(dir);
 }
 
-// The text of a file of the node log directory of dir, or of every file there for NULL; NULL when there is none. The caller
-// frees it.
+// The text of a file of the node log directory of dir, or of every file there for NULL; NULL when there is none. A file is read
+// as it is, also while its sidecar appends to it (PeeringTestFlood). The caller frees it.
 static char *PeeringTestReadLog(wchar_t *dir, wchar_t *name)
 {
 	wchar_t log_dir[MAX_PATH];
@@ -685,7 +719,8 @@ static char *PeeringTestReadLog(wchar_t *dir, wchar_t *name)
 
 		ConbinePathW(path, sizeof(path), log_dir, e->FileNameW);
 
-		BUF *b = ReadDumpW(path);
+		// Shared with a writer: the sidecar of a node that runs keeps its log open
+		BUF *b = ReadDumpExW(path, false, 0);
 		if (b != NULL)
 		{
 			WriteBuf(all, b->Buf, b->Size);
@@ -844,6 +879,20 @@ static bool PeeringTestWaitExited(UINT pid)
 	}
 
 	return true;
+}
+
+// End the process pid at once, as a sidecar that dies: whether it ended within PEERINGTEST_EXIT (SDN-77-R3, #570)
+static bool PeeringTestEnd(UINT pid)
+{
+	HANDLE p = (pid != 0 ? OpenProcess(PROCESS_TERMINATE, FALSE, pid) : NULL);
+	bool ended = (p != NULL && TerminateProcess(p, 1));
+
+	if (p != NULL)
+	{
+		CloseHandle(p);
+	}
+
+	return ended && PeeringTestWaitExited(pid);
 }
 
 // Suspend every thread of the process pid, as a host that loses power stops it without a word: each pass over the threads of
@@ -1641,7 +1690,7 @@ static void PeeringTestStatus(PEERINGTEST_CTX *ctx)
 				vrfs++;
 			}
 		}
-		announced = 2 * vrfs + (i == PEERINGTEST_B && ctx->Hostile && ctx->RedPeers ? PEERINGTEST_HOSTILE : 0);
+		announced = 2 * vrfs + (i == PEERINGTEST_B && ctx->Hostile && ctx->RedPeers ? PEERINGTEST_HOSTILE + PEERINGTEST_VICTIMS : 0);
 		for (UINT e = 0;e < PEERINGTEST_EXTRAS;e++)
 		{
 			if (peeringtest_extras[e].Node == i && PeeringTestExtra(ctx, e, true))
@@ -1761,7 +1810,8 @@ static void PeeringTestRefused(PEERINGTEST_CTX *ctx)
 		closesocket(s);
 	}
 
-	PeeringTestCheck(ctx, connected && after.Refused == before.Refused + 1, "The sidecar of node-a refuses a session from 127.0.0.9, an address that the Controller did not name, and node-a counts it",
+	ctx->Refused = (connected && after.Refused == before.Refused + 1);
+	PeeringTestCheck(ctx, ctx->Refused, "The sidecar of node-a refuses a session from 127.0.0.9, an address that the Controller did not name, and node-a counts it",
 		"connected %u (error %u), %I64u sessions refused before and %I64u after", (UINT)connected, err, before.Refused, after.Refused);
 	PeeringTestCheck(ctx, after.NumEstablished == PEERINGTEST_NODES - 1, "The sessions of node-a with node-b and node-c stay established", "%u established", after.NumEstablished);
 }
@@ -2404,7 +2454,7 @@ static void PeeringTestFailed(PEERINGTEST_CTX *ctx)
 
 	Print("[Generation 7: node-b announces its extra LAN, which the accept lists hold, while the next copy of the state and then the next rebuild at node-a fail]\n");
 	NodePeeringGetStatus(a->Node, &before);
-	NodePeeringFailNext(a->Node, 1, 1);
+	NodePeeringFailNext(a->Node, 1, 1, 0);
 	ctx->Accepted[PEERINGTEST_EXTRA_B] = true;
 	ctx->Announced[PEERINGTEST_EXTRA_B] = true;
 	bool tables = PeeringTestConverge(ctx, PeeringTestApply(ctx, 7, true));
@@ -2487,18 +2537,42 @@ static UINT PeeringTestNumLearned(PEERINGTEST_CTX *ctx, UINT i)
 	return num;
 }
 
-// A hostile peer: node-b announces more specific prefixes of its LAN in red, which no accept list holds (Generation 9). No node learns
-// any of them, and every other route of every peer in red and in blue is learned: the reports, the forwarding tables and the adapters
-// of the hosts are the ones of the mesh, and each node holds exactly the routes that its peers may announce.
+// A hostile peer: node-b announces more specific prefixes of its LAN in red, which no accept list holds, and the exact LAN of node-c in
+// red, which no accept list of node-b holds (Generation 9). No node learns any of them, and every other route of every peer in red and
+// in blue is learned, the LAN of node-c at node-a among them, whose best path in GoBGP would be the one of node-b without the filters
+// of the sidecar (SDN-77-R3, #570): the reports, the forwarding tables and the adapters of the hosts are the ones of the mesh, and each
+// node holds exactly the routes that its peers may announce. The paths of node-b may reach node-a only after the mesh of the Generation
+// looks converged, so node-a has to keep the LAN of node-c, learned from node-c, all through PEERINGTEST_WATCH: a path of node-b that
+// took its place as the best path would have done it by then, as on the sidecar before SDN-77-R3, which then withdrew the route.
 static void PeeringTestHostile(PEERINGTEST_CTX *ctx)
 {
+	PEERINGTEST_NODE *a = &ctx->Nodes[PEERINGTEST_A];
+	PEERINGTEST_MEMBER *victim = PeeringTestMember(PEERINGTEST_C, PEERINGTEST_RED);
 	char what[MAX_SIZE * 2];
 
-	Print("[Generation 9: node-b announces %u more specific prefixes of its LAN in red, which no accept list holds]\n", (UINT)PEERINGTEST_HOSTILE);
+	Print("[Generation 9: node-b announces %u more specific prefixes of its LAN in red and the exact LAN of node-c, which no accept list of node-b holds]\n", (UINT)PEERINGTEST_HOSTILE);
 	ctx->Accepted[PEERINGTEST_EXTRA_B] = false;
 	ctx->Announced[PEERINGTEST_EXTRA_B] = false;
 	ctx->Hostile = true;
 	PeeringTestConverge(ctx, PeeringTestApply(ctx, 9, true));
+
+	UINT64 end = Tick64() + PEERINGTEST_WATCH;
+	UINT hop = PeeringTestHop(PEERINGTEST_A, PEERINGTEST_C);
+	bool learned = true;
+	while (Tick64() < end)
+	{
+		hop = PeeringTestLookup(a, PEERINGTEST_RED, victim->LanHost);
+		learned = PeeringTestHasLearned(a, PEERINGTEST_C, victim->Lan);
+		if (hop != PeeringTestHop(PEERINGTEST_A, PEERINGTEST_C) || learned == false)
+		{
+			break;
+		}
+		SleepThread(PEERINGTEST_POLL);
+	}
+	Format(what, sizeof(what), "  Node-a keeps the LAN %s/%u of node-c, learned from node-c, all through %u ms while node-b announces it too", victim->Lan, (UINT)PEERINGTEST_LENGTH,
+		(UINT)PEERINGTEST_WATCH);
+	PeeringTestCheck(ctx, hop == PeeringTestHop(PEERINGTEST_A, PEERINGTEST_C) && learned, what, "the table of red at node-a leads %s to %s, learned from node-c %u", victim->LanHost,
+		PeeringTestHopName(PEERINGTEST_A, hop), (UINT)learned);
 
 	for (UINT i = 0;i < PEERINGTEST_NODES;i++)
 	{
@@ -2511,7 +2585,7 @@ static void PeeringTestHostile(PEERINGTEST_CTX *ctx)
 		}
 
 		NodePeeringGetStatus(ctx->Nodes[i].Node, &st);
-		Format(what, sizeof(what), "  %s holds the %u routes that its peers may announce, and none of the more specific prefixes of node-b", peeringtest_names[i], want);
+		Format(what, sizeof(what), "  %s holds the %u routes that its peers may announce, and none of the prefixes that node-b announces and may not", peeringtest_names[i], want);
 		PeeringTestCheck(ctx, st.NumLearned == want, what, "%u learned routes", st.NumLearned);
 	}
 
@@ -2603,6 +2677,171 @@ static void PeeringTestLarge(PEERINGTEST_CTX *ctx)
 	PeeringTestConverge(ctx, PeeringTestApply(ctx, 12, true));
 }
 
+// A failed copy for a settle: node-a announces its extra LAN 192.168.6.0/24, which the accept lists hold (Generation 13), while the next
+// copy of the Generation in force that its worker takes to settle its sidecar on a Generation fails, as when there is no memory for it
+// (NodePeeringFailNext). Node-a counts it and logs it, which PeeringTestClose reads once the node is freed, and keeps the change: its
+// worker tries again after NODE_PEERING_RETRY, the sidecar announces the LAN, and the mesh converges. Before SDN-77-R3 (#570) the worker
+// cleared the change before the copy, and the LAN stayed unannounced until the next Generation. Generation 14 takes the LAN away again.
+static void PeeringTestSettle(PEERINGTEST_CTX *ctx)
+{
+	PEERINGTEST_NODE *a = &ctx->Nodes[PEERINGTEST_A];
+	PEERINGTEST_EXTRA *x = &peeringtest_extras[PEERINGTEST_EXTRA_A6];
+	NODE_PEERING_STATUS before, after;
+	char what[MAX_SIZE * 2];
+
+	Print("[Generation 13: node-a announces its extra LAN %s/%u while the next copy of the state for the settle of its sidecar fails]\n", x->Lan, (UINT)PEERINGTEST_LENGTH);
+	NodePeeringGetStatus(a->Node, &before);
+	NodePeeringFailNext(a->Node, 0, 0, 1);
+	ctx->Accepted[PEERINGTEST_EXTRA_A6] = true;
+	ctx->Announced[PEERINGTEST_EXTRA_A6] = true;
+	bool tables = PeeringTestConverge(ctx, PeeringTestApply(ctx, 13, true));
+
+	// Only a settle that came after the failed one brings the LAN in: the mesh of Generation 13 has it at node-b and node-c
+	NodePeeringGetStatus(a->Node, &after);
+	UINT hop = PeeringTestLookup(&ctx->Nodes[PEERINGTEST_B], PEERINGTEST_RED, x->LanHost);
+	bool failed = (after.NumSettleFailed == before.NumSettleFailed + 1);
+	Format(what, sizeof(what), "  Node-a counts the failed copy for the settle of its sidecar, keeps the change, and a later settle announces %s/%u: node-b has the route to it", x->Lan,
+		(UINT)PEERINGTEST_LENGTH);
+	PeeringTestCheck(ctx, tables && failed && hop == PeeringTestHop(PEERINGTEST_B, PEERINGTEST_A), what,
+		"%u failed settles before and %u after, the table of red at node-b leads %s to %s", before.NumSettleFailed, after.NumSettleFailed, x->LanHost, PeeringTestHopName(PEERINGTEST_B, hop));
+	if (failed)
+	{
+		ctx->SettleFailed = 13;
+	}
+
+	Print("[Generation 14: node-a without its extra LAN again]\n");
+	ctx->Accepted[PEERINGTEST_EXTRA_A6] = false;
+	ctx->Announced[PEERINGTEST_EXTRA_A6] = false;
+	PeeringTestConverge(ctx, PeeringTestApply(ctx, 14, true));
+}
+
+// A sidecar of an older protocol: the stand-in of a sidecar of protocol 3 sends node-c its ready (NodePeeringFeed), as the sidecar that
+// node-c started would if ranz.exe next to it were older than the node. A protocol 3 sidecar drops the more of a peers message, so that a
+// list of several lines would collapse to its last, and answers a ping with an error. Node-c needs protocol 4: it ends the sidecar,
+// and its node log, which PeeringTestClose reads, names the version of the sidecar; the sidecar that starts after NODE_PEERING_RESTART
+// is the real one, and the mesh converges again (SDN-77-R3, #570).
+static void PeeringTestOld(PEERINGTEST_CTX *ctx)
+{
+	PEERINGTEST_NODE *c = &ctx->Nodes[PEERINGTEST_C];
+	NODE_PEERING_STATUS before, after;
+
+	Print("[the sidecar of node-c says that it is of protocol 3]\n");
+	NodePeeringGetStatus(c->Node, &before);
+	NodePeeringFeed(c->Node, PEERINGTEST_OLD_READY);
+
+	UINT64 end = Tick64() + NODE_PEERING_RESTART + PEERINGTEST_BOUND;
+	bool replaced = false;
+	Zero(&after, sizeof(after));
+	while (true)
+	{
+		NodePeeringGetStatus(c->Node, &after);
+		replaced = (after.NumOld == before.NumOld + 1 && after.NumStarts == before.NumStarts + 1 && after.Running && after.ProcessId != before.ProcessId);
+		if (replaced || Tick64() >= end)
+		{
+			break;
+		}
+		SleepThread(PEERINGTEST_POLL);
+	}
+	PeeringTestCheck(ctx, replaced, "  Node-c ends a sidecar whose ready names protocol 3, older than the protocol 4 that it needs, and starts another",
+		"%u old sidecars before and %u after, %u sidecars started before and %u after, running %u, process %u before and %u after", before.NumOld, after.NumOld, before.NumStarts,
+		after.NumStarts, (UINT)after.Running, before.ProcessId, after.ProcessId);
+	if (replaced)
+	{
+		ctx->Starts[PEERINGTEST_C]++;
+		ctx->Old = true;
+	}
+
+	PeeringTestConverge(ctx, replaced);
+}
+
+// A flood: the sidecar of node-b announces PEERINGTEST_FLOOD host routes in each of red, blue and VRF 103, which no node is a member of,
+// more than the PEERINGTEST_OLD_LIMIT learned routes that a node held at most for all its peers before SDN-77-R1 (#531), and none that an
+// accept list holds: the lines that node-b would send its sidecar if it were hostile (NodePeeringSay). The sidecars of node-a and node-c
+// take 64 paths of a family from a peer at most (peerMaxPaths of ranz-bgp/internal/sidecar): each ends its session with node-b once node-b
+// announced more, keeps it down and logs it (SDN-77-R3, #570). So node-b is gone from node-a and node-c, which keep the routes of each other
+// in their forwarding tables and on the adapters of their hosts, and the packets between their hosts arrive. Then the sidecar of node-b dies
+// with its flood and node-b starts another, and Generation 15 names the extra LAN of node-b in its accept lists, which changes node-b in the
+// peers of node-a and node-c: their sidecars take a session with node-b again, and the mesh converges.
+static void PeeringTestFlood(PEERINGTEST_CTX *ctx)
+{
+	static const UINT vrfs[] = {PEERINGTEST_RED, PEERINGTEST_BLUE, PEERINGTEST_FLOOD_VRF};
+	PEERINGTEST_NODE *b = &ctx->Nodes[PEERINGTEST_B];
+	NODE_PEERING_STATUS st;
+	UINT64 took = 0;
+	char line[MAX_SIZE];
+	char capped[MAX_SIZE];
+	char what[MAX_SIZE * 2];
+
+	Print("[node-b floods: its sidecar announces %u host routes in each of red, blue and VRF %u, %u in all, more than the %u learned routes that a node held at most before SDN-77-R1]\n",
+		(UINT)PEERINGTEST_FLOOD, (UINT)PEERINGTEST_FLOOD_VRF, (UINT)(PEERINGTEST_FLOOD * (sizeof(vrfs) / sizeof(vrfs[0]))), (UINT)PEERINGTEST_OLD_LIMIT);
+	NodePeeringGetStatus(b->Node, &st);
+
+	UINT64 start = Tick64();
+	for (UINT i = 0;i < PEERINGTEST_FLOOD;i++)
+	{
+		for (UINT k = 0;k < sizeof(vrfs) / sizeof(vrfs[0]);k++)
+		{
+			Format(line, sizeof(line), "{\"type\":\"announce\",\"vrf\":%u,\"prefix\":\"10.%u.%u.%u/32\"}", vrfs[k], 20 + 10 * k, i / 256, i % 256);
+			NodePeeringSay(b->Node, line);
+		}
+	}
+
+	// Node-a and node-c end their session with node-b and drop its routes, and keep each other's
+	b->Gone = true;
+	bool gone = PeeringTestWaitGone(ctx, PEERINGTEST_B, start, &took);
+	Print("  [INFO] node-a and node-c removed the routes of node-b %I64u ms after its flood began\n", took);
+	PeeringTestCheck(ctx, gone && PeeringTestWaitHost(ctx), "  Node-a and node-c remove the routes of node-b, from their forwarding tables and from the adapters of their hosts, and keep each other's",
+		"removed %u, after %I64u ms; see the line above", (UINT)gone, took);
+
+	// ... because their sidecars ended the session for the flood, which each logs
+	Format(capped, sizeof(capped), "msg=\"peer announced more paths than the maximum: its session ends and stays down until the peers of the node change it\" peer=%s",
+		peeringtest_addrs[PEERINGTEST_B]);
+	for (UINT i = 0;i < PEERINGTEST_NODES;i++)
+	{
+		NODE_PEERING_STATUS s;
+		char state[CONTROL_PEERING_STATE_SIZE];
+		UINT want = PeeringTestNumLearned(ctx, i);
+
+		if (i == PEERINGTEST_B)
+		{
+			continue;
+		}
+
+		UINT learned = PeeringTestLearnedFrom(&ctx->Nodes[i], PEERINGTEST_B, state, sizeof(state));
+		char *log = PeeringTestReadLog(ctx->Nodes[i].Dir, NODE_PEERING_LOG_NAME);
+		bool said = (log != NULL && SearchStrEx(log, capped, 0, true) != INFINITE);
+
+		NodePeeringGetStatus(ctx->Nodes[i].Node, &s);
+		Format(what, sizeof(what), "  The sidecar of %s ends its session with node-b, which announced more paths than a sidecar takes from a peer, and logs it; %s holds the %u routes of its other peer",
+			peeringtest_names[i], peeringtest_names[i], want);
+		PeeringTestCheck(ctx, StrCmp(state, "established") != 0 && learned == 0 && said && s.NumLearned == want, what,
+			"the session with node-b is %s, %u routes learned from node-b, the sidecar log %s, %u learned routes", state, learned,
+			log == NULL ? "is missing" : (said ? "says it" : "does not say it"), s.NumLearned);
+		Free(log);
+	}
+
+	if (gone)
+	{
+		PeeringTestSend(ctx, PEERINGTEST_A, PEERINGTEST_RED, "192.168.3.10", PEERINGTEST_C);
+		PeeringTestSend(ctx, PEERINGTEST_C, PEERINGTEST_RED, "192.168.1.10", PEERINGTEST_A);
+		PeeringTestSend(ctx, PEERINGTEST_A, PEERINGTEST_RED, "192.168.2.10", PEERINGTEST_NODES);
+	}
+
+	// The sidecar of node-b dies with its flood, and node-b starts another after NODE_PEERING_RESTART, which announces what the Generation gives
+	bool ended = PeeringTestEnd(st.ProcessId);
+	PeeringTestCheck(ctx, ended, "  The sidecar of node-b, which flooded, ends", "process %u", st.ProcessId);
+	if (ended)
+	{
+		ctx->Starts[PEERINGTEST_B]++;
+	}
+
+	Print("[Generation 15: the accept lists of node-b name its extra LAN, which changes node-b in the peers of node-a and node-c]\n");
+	b->Gone = false;
+	ctx->Accepted[PEERINGTEST_EXTRA_B] = true;
+	ctx->Announced[PEERINGTEST_EXTRA_B] = false;
+	PeeringTestConverge(ctx, PeeringTestApply(ctx, 15, true));
+}
+
 // NodeOverlayStop of a node under the lock of the node, as NodeClientFree calls it, on a thread of its own
 typedef struct PEERINGTEST_STOP
 {
@@ -2646,7 +2885,7 @@ static void PeeringTestHalt(PEERINGTEST_CTX *ctx)
 		LIST_NUM(threads));
 
 	// A Generation of node-b alone with a large mesh: its worker sends the peers into the pipe that the sidecar does not read
-	ctx->Generation = 13;
+	ctx->Generation = 16;
 	ctx->NumDummies[PEERINGTEST_B] = PEERINGTEST_DUMMIES;
 	CONTROL_STATE *state = PeeringTestState(ctx, PEERINGTEST_B);
 	PeeringTestTake(ctx, PEERINGTEST_B, state);
@@ -2763,7 +3002,7 @@ static void PeeringTestClose(PEERINGTEST_CTX *ctx)
 
 	// The node log of node-a, whole once the node is freed: the rebuild that met the apply of each window (PeeringTestHeld) found the
 	// Generation that the apply put in force and said so, and a later pass built the tables of that Generation (SDN-77-R1, #531)
-	char *node_log = (ctx->NumWindows != 0 || ctx->Failed != 0 ? PeeringTestReadLog(ctx->Nodes[PEERINGTEST_A].Dir, NULL) : NULL);
+	char *node_log = (ctx->NumWindows != 0 || ctx->Failed != 0 || ctx->SettleFailed != 0 || ctx->Refused ? PeeringTestReadLog(ctx->Nodes[PEERINGTEST_A].Dir, NULL) : NULL);
 	for (UINT k = 0;k < ctx->NumWindows;k++)
 	{
 		char stale[MAX_SIZE], built[MAX_SIZE], what[MAX_SIZE];
@@ -2794,7 +3033,37 @@ static void PeeringTestClose(PEERINGTEST_CTX *ctx)
 		PeeringTestCheck(ctx, said, "The node log of node-a says that a copy of the state for a rebuild failed, then a rebuild, and that a later pass built the tables of the Generation",
 			"%s", node_log == NULL ? "there is no log" : (at == INFINITE ? "no line of the failed copy" : (again == INFINITE ? "no line of the failed rebuild after it" : "no rebuild after them")));
 	}
+
+	// ... that the copy of the state for the settle of its sidecar failed, and that the node tries again (PeeringTestSettle; SDN-77-R3, #570)
+	if (ctx->SettleFailed != 0)
+	{
+		bool said = (node_log != NULL && SearchStrEx(node_log, "BGP peering: the sidecar is not settled on the Generation in force: no memory for a copy of it; the node tries again in", 0, true) != INFINITE);
+
+		PeeringTestCheck(ctx, said, "The node log of node-a says that the copy of the state for the settle of its sidecar failed, and that the node tries again", "%s",
+			node_log == NULL ? "there is no log" : "no such line");
+	}
+
+	// ... and that the sessions that its sidecar refuses include the one of a router of the operator that dials the tunnel endpoint of the node
+	// (PeeringTestRefused; SDN-77-R3, #570)
+	if (ctx->Refused)
+	{
+		bool said = (node_log != NULL && SearchStrEx(node_log, "BGP peering: a session from 127.0.0.9 refused: the Controller named no peer of that address", 0, true) != INFINITE &&
+			SearchStrEx(node_log, "a router of the operator that dials TCP 179 of the tunnel endpoint of this node is refused too", 0, true) != INFINITE);
+
+		PeeringTestCheck(ctx, said, "The node log of node-a says of the session that its sidecar refused that a router of the operator that dials the tunnel endpoint of the node is refused too", "%s",
+			node_log == NULL ? "there is no log" : "no such line");
+	}
 	Free(node_log);
+
+	// The node log of node-c, whole once the node is freed: it names the version of the stand-in of a sidecar of protocol 3 that it ended (PeeringTestOld)
+	if (ctx->Old)
+	{
+		char *old_log = PeeringTestReadLog(ctx->Nodes[PEERINGTEST_C].Dir, NULL);
+		bool said = (old_log != NULL && SearchStrEx(old_log, "GoBGP v3 (stand-in)\" speaks protocol 3 of its pipe, and the node needs protocol 4 or later, so the node ends it", 0, true) != INFINITE);
+
+		PeeringTestCheck(ctx, said, "The node log of node-c names the version of the sidecar that it ended, and says that the node needs protocol 4", "%s", old_log == NULL ? "there is no log" : "no such line");
+		Free(old_log);
+	}
 
 	for (UINT i = 0;i < PEERINGTEST_NODES;i++)
 	{
@@ -2829,7 +3098,8 @@ static void PeeringTestClose(PEERINGTEST_CTX *ctx)
 }
 
 // The full mesh, the refused session, the report on the control stream, red without the peering and back, the findings of the
-// review of SDN-77 (SDN-77-R1, #531), the sidecar of node-c that stops answering, node-c that stops, and the halt of node-b
+// review of SDN-77 (SDN-77-R1, #531) and of its review (SDN-77-R3, #570), the sidecar of node-c that stops answering, node-c that
+// stops, and the halt of node-b
 static void PeeringTestRun(PEERINGTEST_CTX *ctx)
 {
 	NODE_PEERING_STATUS a;
@@ -2864,6 +3134,9 @@ static void PeeringTestRun(PEERINGTEST_CTX *ctx)
 	PeeringTestNarrowed(ctx);
 	PeeringTestHostile(ctx);
 	PeeringTestLarge(ctx);
+	PeeringTestSettle(ctx);
+	PeeringTestOld(ctx);
+	PeeringTestFlood(ctx);
 
 	PeeringTestSilent(ctx);
 	PeeringTestStop(ctx);
@@ -2871,7 +3144,7 @@ static void PeeringTestRun(PEERINGTEST_CTX *ctx)
 }
 
 // peering: the BGP peering of the standard mode between three nodes
-RANZ_TEST("peering", peering_test, "BGP peering of the standard mode: three nodes, each with its sidecar ranz bgp (ranz.exe next to vpntest) on TCP 179 of a loopback address of its own, in a full mesh of two VRFs; what each learns and installs in its forwarding tables and on the adapter of its host, a session from an address that the Controller did not name refused and counted, the report on the control stream, the peering of a VRF removed and back, a route change during an apply, a failed copy of the state and a failed rebuild, a narrower accept list, a hostile peer, a failed send in a large mesh, the routes of a node whose sidecar stops answering, or that stops, gone from the other two within the hold time, and a halt that waits for no sidecar.");
+RANZ_TEST("peering", peering_test, "BGP peering of the standard mode: three nodes, each with its sidecar ranz bgp (ranz.exe next to vpntest) on TCP 179 of a loopback address of its own, in a full mesh of two VRFs; what each learns and installs in its forwarding tables and on the adapter of its host, a session from an address that the Controller did not name refused and counted, the report on the control stream, the peering of a VRF removed and back, a route change during an apply, a failed copy of the state and a failed rebuild, a narrower accept list, a hostile peer that announces the exact LAN of another peer, a failed send in a large mesh, a failed copy of the state for the settle of the sidecar, a sidecar of protocol 3 that the node ends, the refusal line for a router that dials the tunnel endpoint, a peer that floods more than 4096 prefixes and loses its session, the routes of a node whose sidecar stops answering, or that stops, gone from the other two within the hold time, and a halt that waits for no sidecar.");
 void peering_test(UINT num, char **arg)
 {
 	PEERINGTEST_CTX *ctx = ZeroMalloc(sizeof(PEERINGTEST_CTX));

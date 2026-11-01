@@ -206,6 +206,8 @@ add_library(corecontrol STATIC
   ControlEgress.c
   # The Upgrades and the Fallbacks of the Paths of the peer agent that the client reports (CORE-S5-6, #412)
   ControlPath.c
+  # The counters of the EVPN of a gateway that the client reports (SDN-25-R3, #571)
+  ControlEvpn.c
   # The live operations of the Controller on the tables of the L2 Networks (SDN-50-N, #492)
   ControlOperation.c
 )

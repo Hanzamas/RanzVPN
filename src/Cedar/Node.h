@@ -465,6 +465,9 @@ struct NODE {
 	char *ConfigBgp;              // The BGP settings of the configuration (NODE_SETTING_BGP), NULL for none
 	wchar_t BgpSidecar[MAX_PATH]; // The executable that holds the sidecar: NODE_BGP_EXE_NAME next to the executable; a test may name another before NodeStart
 	NODE_BGP *Bgp;                // The running BGP sidecar (NodeBgp.c), NULL when none runs
+	// The counters of the EVPN of a gateway that the control stream reports (Core/ControlEvpn.c; SDN-25-R3, #571): set while
+	// an EVPN runs (NodeEvpn.c), from NewNode to FreeNode
+	struct CONTROL_EVPN *EvpnReport;
 	// The EVPN of a gateway (NodeEvpn.c; SDN-25, #201): the VTEP and the routes of the fabric of a sidecar whose Bgp setting
 	// has an evpn object, from the start of the sidecar to its stop; NULL without one
 	struct NODE_EVPN *Evpn;
