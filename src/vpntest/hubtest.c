@@ -1631,3 +1631,100 @@ static void HarnessBenchIpTableExpire(UINT num)
 		Print("BENCH WARNING %s: the pass did not delete exactly the expired entries\n", name);
 	}
 }
+
+// One fifo_cycle operation: write HARNESS_FIFO_CYCLE bytes behind the backlog, then read as many from its front
+static bool HarnessOpFifoCycle(void *param)
+{
+	HARNESS_FIFO_BENCH *b = (HARNESS_FIFO_BENCH *)param;
+
+	WriteFifo(b->Fifo, b->Buf, HARNESS_FIFO_CYCLE);
+	b->PeakMemSize = MAX(b->PeakMemSize, b->Fifo->memsize);
+
+	if (ReadFifo(b->Fifo, b->Buf, HARNESS_FIFO_CYCLE) != HARNESS_FIFO_CYCLE)
+	{
+		return false;
+	}
+
+	return FifoSize(b->Fifo) == HARNESS_FIFO_BACKLOG;
+}
+
+// One queue_cycle operation: insert one item behind the backlog, then take the oldest one
+static bool HarnessOpQueueCycle(void *param)
+{
+	HARNESS_FIFO_BENCH *b = (HARNESS_FIFO_BENCH *)param;
+
+	InsertQueue(b->Queue, (void *)(UINT_PTR)b->NextInsert);
+	b->NextInsert++;
+
+	if (GetNext(b->Queue) != (void *)(UINT_PTR)b->NextGet)
+	{
+		return false;
+	}
+	b->NextGet++;
+
+	return true;
+}
+
+// One queue_burst operation: insert HARNESS_QUEUE_BURST items into the empty queue, then take them all
+static bool HarnessOpQueueBurst(void *param)
+{
+	HARNESS_FIFO_BENCH *b = (HARNESS_FIFO_BENCH *)param;
+	bool ok = true;
+
+	for (UINT i = 0;i < HARNESS_QUEUE_BURST;i++)
+	{
+		InsertQueue(b->Queue, (void *)(UINT_PTR)(i + 1));
+	}
+
+	for (UINT i = 0;i < HARNESS_QUEUE_BURST;i++)
+	{
+		if (GetNext(b->Queue) != (void *)(UINT_PTR)(i + 1))
+		{
+			ok = false;
+		}
+	}
+
+	return ok && GetQueueNum(b->Queue) == 0;
+}
+
+// fifo_cycle: operations per second of write HARNESS_FIFO_CYCLE / read HARNESS_FIFO_CYCLE bytes over a standing
+// backlog of HARNESS_FIFO_BACKLOG bytes, in one FIFO kept across the runs: a producer and a consumer that never
+// fully drain it. fifo_cycle_peak_memsize is the largest buffer the FIFO reached. queue_cycle: insert one / take
+// one item over a standing backlog of HARNESS_QUEUE_BACKLOG items; queue_burst_<n>: n items into an empty queue,
+// then all of them out (FND-215)
+static void HarnessBenchFifo()
+{
+	HARNESS_FIFO_BENCH *b = ZeroMalloc(sizeof(HARNESS_FIFO_BENCH));
+	char name[MAX_SIZE];
+
+	b->Fifo = NewFifo();
+	WriteFifo(b->Fifo, b->Buf, HARNESS_FIFO_BACKLOG);
+	b->PeakMemSize = b->Fifo->memsize;
+
+	HarnessBenchOps("fifo_cycle", HarnessOpFifoCycle, b, HARNESS_BENCH_MICRO_SPAN, 16);
+	Print("BENCH fifo_cycle_peak_memsize %u bytes\n", b->PeakMemSize);
+
+	ReleaseFifo(b->Fifo);
+
+	b->Queue = NewQueueFast();
+	b->NextInsert = 1;
+	b->NextGet = 1;
+	for (UINT i = 0;i < HARNESS_QUEUE_BACKLOG;i++)
+	{
+		InsertQueue(b->Queue, (void *)(UINT_PTR)b->NextInsert);
+		b->NextInsert++;
+	}
+
+	HarnessBenchOps("queue_cycle", HarnessOpQueueCycle, b, HARNESS_BENCH_MICRO_SPAN, 16);
+
+	while (GetQueueNum(b->Queue) != 0)
+	{
+		GetNext(b->Queue);
+	}
+
+	Format(name, sizeof(name), "queue_burst_%u", HARNESS_QUEUE_BURST);
+	HarnessBenchOps(name, HarnessOpQueueBurst, b, HARNESS_BENCH_MICRO_SPAN, 1);
+
+	ReleaseQueue(b->Queue);
+	Free(b);
+}
