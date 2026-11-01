@@ -117,8 +117,10 @@ func checkScaleReport(t *testing.T, s nodesim.Scale, rep *nodesim.ScaleReport) {
 // TestScaleSmall runs the scale scenario on a small fleet: the VRFs are declared in two applies, the nodes enrol, the MTU of
 // every VRF changes, and a route changes, and at the end each node is at the generation that it acknowledged, with the state of
 // the intent and the updates that its changes called for and no others. It runs with the other tests, so every pull request
-// that changes the controller shows it.
+// that changes the controller shows it, but not beside them: the streams of its fleet and the applies that compile its intent
+// would slow the tests that run in parallel, some of which wait for a stream to end or to begin again.
 func TestScaleSmall(t *testing.T) {
+	rqlitetest.Alone(t)
 	s := nodesim.SmallScale
 	h := newScaleHarness(t, s)
 	ctx, cancel := context.WithTimeout(context.Background(), 4*time.Minute)
