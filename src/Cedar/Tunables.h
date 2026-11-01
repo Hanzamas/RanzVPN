@@ -37,5 +37,11 @@ static inline UINT VPN_GP(UINT id) {
 void TunablesLoad(FOLDER *f);
 void TunablesSave(FOLDER *f);
 
+#define NUM_GLOBAL_SERVER_FLAGS       128
+#define GSF_DISABLE_SESSION_RECONNECT 9
+
+void SetGlobalServerFlag(UINT index, UINT value);
+UINT GetGlobalServerFlag(UINT index);
+
 #endif // TUNABLES_H
 

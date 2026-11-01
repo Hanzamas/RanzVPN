@@ -1592,3 +1592,71 @@ bool GetMethodFromPack(PACK *p, char *method, UINT size) {
 
 	return PackGetStr(p, "method", method, size);
 }
+
+static UINT GetMachineRand() {
+	char pcname[MAX_SIZE];
+	UCHAR hash[SHA1_SIZE];
+
+	Zero(pcname, sizeof(pcname));
+	GetMachineName(pcname, sizeof(pcname));
+
+	Sha1(hash, pcname, StrLen(pcname));
+
+	return READ_UINT(hash);
+}
+
+void ConnectionAccept(CONNECTION *c) {
+	SOCK *s;
+	struct ssl_ctx_st *ssl_ctx;
+	char tmp[128];
+	UINT initial_timeout = CONNECTING_TIMEOUT;
+	SERVER_LOGIN login;
+
+	if (c == NULL)
+		return;
+
+	s = c->FirstSock;
+	AddRef(s->ref);
+
+	Dec(c->Cedar->AcceptingSockets);
+
+	IPToStr(tmp, sizeof(tmp), &s->RemoteIP);
+
+	SLog(c->Cedar, "LS_CONNECTION_START_1", tmp, s->RemoteHostname, s->RemotePort, c->Name);
+
+	initial_timeout += GetMachineRand() % (CONNECTING_TIMEOUT / 2);
+	SetTimeout(s, initial_timeout);
+
+	// One server context for every connection: certificate, key, chain, cipher list and settings are in it
+	ssl_ctx = GetCedarServerSslCtx(c->Cedar);
+
+	UINT ssl_err = TLS_ERR_NONE;
+	if (StartSSLServer(s, ssl_ctx, &ssl_err) == false) {
+		UINT err = TlsErrToCedarErr(ssl_err);
+
+		FreeSSLCtx(ssl_ctx);
+
+		AddNoSsl(c->Cedar, &s->RemoteIP);
+		if (err != ERR_NO_ERROR)
+			SLog(c->Cedar, "LS_SSL_START_ERROR", c->Name, GetUniErrorStr(err), err);
+
+		goto FINAL;
+	}
+
+	FreeSSLCtx(ssl_ctx);
+
+	SLog(c->Cedar, "LS_SSL_START", c->Name, s->SslVersion, s->CipherName);
+
+	Zero(&login, sizeof(login));
+	if (ServerAccept(c, &login)) {
+		// A logged-in session: run it until it ends, then give its hub slot back
+		ServerRunSession(c, &login);
+	}
+
+FINAL:
+	if (c->flag1 == false)
+		Disconnect(s);
+
+	DelConnection(c->Cedar, c);
+	ReleaseSock(s);
+}

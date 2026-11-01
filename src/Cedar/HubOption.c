@@ -382,3 +382,18 @@ void SetHubLogSettingEx(HUB *h, HUB_LOG *setting, bool no_change_switch_type) {
 	SetLogSwitchType(h->PacketLogger, setting->PacketLogSwitchType);
 	SetLogSwitchType(h->SecurityLogger, setting->SecurityLogSwitchType);
 }
+
+void SiSetDefaultHubOption(HUB_OPTION *o) {
+	if (o == NULL)
+		return;
+
+	for (UINT i = 0; i < num_hub_option_fields; i++) {
+		HUB_OPTION_FIELD *f = &hub_option_fields[i];
+
+		if (f->Default != 0)
+			SetHubOptionField(o, f, f->Default);
+	}
+
+	// A zero default is not applied (the caller may have set NoEnum), except MaxSession which is always reset
+	o->MaxSession = 0;
+}
