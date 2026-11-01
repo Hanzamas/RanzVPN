@@ -2,6 +2,7 @@ package intent
 
 import (
 	"errors"
+	"fmt"
 	"reflect"
 	"strings"
 	"testing"
@@ -251,6 +252,9 @@ func TestEndpointOverlaps(t *testing.T) {
 			[]string{`NAT "a.nat": the inside 10.0.0.1/32 overlaps the inside 10.0.0.1/32 of NAT "b.nat"`}},
 		{"the name of an Endpoint is the name of a Node", "10.1.0", []Resource{res(KindEndpoint, "guest", plainSpec)},
 			[]string{`DnsRecord "guest.dns": "guest" is the name of Node "guest"`}},
+		{"the name of an Endpoint is the name of a DnsRecord", "10.1.0", []Resource{res(KindDNSRecord, "billing-record", `{"vrf": "vendor", "name": "e", "addresses": ["10.9.0.1"]}`),
+			res(KindEndpoint, "e", plainSpec)},
+			[]string{`DnsRecord "e.dns": the name "e" is already the name of DnsRecord "billing-record" in VRF "vendor"`}},
 	} {
 		_, err := publishApply(publishNet(c.vendor), c.more...)
 		if !errors.Is(err, ErrInvalid) {
@@ -261,6 +265,37 @@ func TestEndpointOverlaps(t *testing.T) {
 			if !strings.Contains(err.Error(), want) {
 				t.Errorf("%s: the error\n%v\nlacks %q", c.name, err, want)
 			}
+		}
+	}
+}
+
+// What the Endpoints compile to counts against the limits of the control protocol as the resources of their kinds do: 16 services
+// of one Node, each at an address of its own and with a name of its own, fill the 16 records of the zone of the consumer VRF, the 16
+// 1:1 NAT rules of the Node and the 16 routes that lead to it, and the 17th is refused for each of the three.
+func TestEndpointsFitTheControlProtocol(t *testing.T) {
+	services := func(n int) []Resource {
+		var out []Resource
+		for i := 1; i <= n; i++ {
+			out = append(out, res(KindEndpoint, fmt.Sprintf("s%d", i),
+				fmt.Sprintf(`{"vrf": "corp", "node": "app", "address": "10.0.0.%d", "port": 443, "consumer": "vendor", "as": "172.16.1.%d"}`, 100+i, i)))
+		}
+		return out
+	}
+	if _, err := publishApply(publishNet("10.1.0"), services(MaxDNSRecords)...); err != nil {
+		t.Fatalf("%d Endpoints, as many as the control protocol carries: %v", MaxDNSRecords, err)
+	}
+	_, err := publishApply(publishNet("10.1.0"), services(MaxDNSRecords+1)...)
+	if !errors.Is(err, ErrInvalid) {
+		t.Fatalf("%d Endpoints: the error is %v, want ErrInvalid", MaxDNSRecords+1, err)
+	}
+	for _, want := range []string{
+		`VRF "vendor": 17 DnsRecord resources, and the control protocol carries at most 16`,
+		`Node "app": 17 1:1 NAT rules with the 4via6 of its VRFs, and the control protocol carries at most 16`,
+		`Node "buyer": 17 routes lead to its peer "app"`,
+		`Node "db": 17 routes lead to its peer "app"`,
+	} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("the error\n%v\nlacks %q", err, want)
 		}
 	}
 }
