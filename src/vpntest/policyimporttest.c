@@ -2,7 +2,7 @@
 // Named fork policy import test of vpntest ("policyimport" command, CORE-S4-3 #76)
 //
 // The import of the fork's access list and VLAN policy into the policy schema of the configuration store
-// (Cedar/ConfigStoreImport.c), against the fork itself. The fixture tests/golden/policyimport/fork_policy.config has two
+// (Cedar/ConfigStoreImport.c), against what the fork did. The fixture tests/golden/policyimport/fork_policy.config has two
 // hubs: LAB, whose users have the VLanId of their own policy or of their group's, with an access list that holds an entry
 // of each kind that the import carries (a user, a group, a name that is both, prefixes and a mask that is no prefix,
 // IPv4 and IPv6, protocols, a port range without a protocol, a source port, a MAC address, the TCP state, a redirect URL,
@@ -14,17 +14,19 @@
 // - policyimport_tables.txt: the golden rule table, the tables that the document of the store (CsPolicyDocument)
 //   compiles to (PolicyTableText): the rules of each network in the order that the policy engine evaluates them.
 // - policyimport_matches.txt: the tables of a document with every kind of match, and of a document without a network.
-// - policyimport_frames.txt: the same frames through the fork and through the new core. The fork's server runs on the
-//   fixture, and each user is an in-process session of its hub with the VLAN and the group that the fork gives it at its
-//   login. The new core has, for each network, a switch (Core/Switch.h) with a port for each user as the store gives it
-//   (CsGetPort: an access port of the user's VLAN, or a trunk port of every VLAN whose native VLAN is the untagged VLAN
-//   of the network), and the policy engine with the document of the store, which judges what the switch delivers. ARP
-//   requests of each member, untagged and tagged, show the VLANs; unicast frames show the access list and the default
-//   action of each network. For each frame the report names the members that got it, with the VLAN of its tag, and the
-//   verdict of the engine. The new core gets each frame to the same members as the fork, byte for byte, but where a case
-//   says otherwise: to fewer members where an entry has a match that the policy engine lacks, which the import carries
-//   so that it denies more than the fork did and never lets more through; and without its tag a frame that a member
-//   without a VLAN tags with the untagged VLAN of the network, which is the native VLAN of the trunk ports.
+// - policyimport_frames.txt: the frames through the new core, next to what the fork did with them. The new core has, for
+//   each network, a switch (Core/Switch.h) with a port for each user as the store gives it (CsGetPort: an access port of
+//   the user's VLAN, or a trunk port of every VLAN whose native VLAN is the untagged VLAN of the network), and the
+//   policy engine with the document of the store, which judges what the switch delivers. ARP requests of each member,
+//   untagged and tagged, show the VLANs; unicast frames show the access list and the default action of each network.
+//   For each frame the report names the members that got it, with the VLAN of its tag, and the verdict of the engine.
+//   The new core gets each frame to the same members as the fork, but where a case says otherwise: to fewer members
+//   where an entry has a match that the policy engine lacks, which the import carries so that it denies more than the
+//   fork did and never lets more through; and without its tag a frame that a member without a VLAN tags with the
+//   untagged VLAN of the network, which is the native VLAN of the trunk ports. The fork was the oracle that CORE-S8-3
+//   (#577) retired: until then its server ran on the fixture, with an in-process session of each user, and the test
+//   compared the two byte for byte. The golden file holds what the fork did at the last run against it, and a case that
+//   does otherwise holds the members that the fork got its frame to (PITEST_CASE.Fork).
 // Print "POLICYIMPORT TEST OK" only when every check passes.
 
 #include "harness_int.h"
@@ -33,10 +35,6 @@
 #include "Cedar/Account.h"
 #include "Cedar/Cedar.h"
 #include "Cedar/ConfigStore.h"
-#include "Cedar/Connection.h"
-#include "Cedar/Hub.h"
-#include "Cedar/Server.h"
-#include "Cedar/Session.h"
 
 #include "Mayaqua/Cfg.h"
 #include "Mayaqua/Encrypt.h"
@@ -57,9 +55,6 @@
 #define	PITEST_TABLES			"policyimport_tables.txt"
 #define	PITEST_MATCHES			"policyimport_matches.txt"
 #define	PITEST_FRAMES			"policyimport_frames.txt"
-#define	PITEST_SERVER_CONFIG	"$policyimport_server.config"			// The copy of the fixture that the fork's server runs on, next to vpntest
-#define	PITEST_SERVER_CONFIG_W	L"$policyimport_server.config"
-#define	PITEST_SERVER_BACKUP_W	L"$backup.policyimport_server.config"	// ... and the backup directory of that file, if the server makes one
 #define	PITEST_FRAME_MAX		128			// Bytes of a frame of a case at most
 #define	PITEST_SPORT			40000		// The source port of the frame of case n is this plus n
 #define	PITEST_STEP				1000		// ms of the clock of the switch and of the policy engine from one case to the next
@@ -150,8 +145,11 @@ typedef struct PITEST_CASE
 	UINT Port;								// The destination port of TCP or UDP
 	UCHAR Flags;							// The TCP flags
 	UINT Expect;							// PITEST_SAME, PITEST_NARROWER or PITEST_NATIVE
+	char *Fork;								// Not PITEST_SAME: the members that the fork got the frame to, as PiDescribe writes them
 } PITEST_CASE;
 
+// The cases. What the fork did with each frame is what it did at the last run against it (head 1819f09d, CI run
+// 41302403531, x64 and arm64; CORE-S8-3 #577), which the golden file PITEST_FRAMES holds
 static PITEST_CASE pitest_cases[] =
 {
 	// The VLANs of LAB: an ARP request of each member, then tagged ones of the members without a VLAN, which also tell
@@ -169,7 +167,7 @@ static PITEST_CASE pitest_cases[] =
 	{"srv hello in vlan 10", PIU_SRV, PITEST_BROADCAST, 10, PITEST_ARP, {0}, 0, 0, PITEST_SAME},
 	{"srv hello in vlan 20", PIU_SRV, PITEST_BROADCAST, 20, PITEST_ARP, {0}, 0, 0, PITEST_SAME},
 	{"carol hello in vlan 99", PIU_CAROL, PITEST_BROADCAST, 99, PITEST_ARP, {0}, 0, 0, PITEST_SAME},
-	{"carol hello in the untagged vlan 2", PIU_CAROL, PITEST_BROADCAST, 2, PITEST_ARP, {0}, 0, 0, PITEST_NATIVE},
+	{"carol hello in the untagged vlan 2", PIU_CAROL, PITEST_BROADCAST, 2, PITEST_ARP, {0}, 0, 0, PITEST_NATIVE, "bob/2 ops/2 srv/2"},
 	// The access list of LAB, and what no entry matches
 	{"alice tcp 22 to srv", PIU_ALICE, PIU_SRV, 0, PITEST_TCP, {0}, 22, PITEST_SYN, PITEST_SAME},
 	{"bob tcp 22 to srv", PIU_BOB, PIU_SRV, 0, PITEST_TCP, {0}, 22, PITEST_SYN, PITEST_SAME},
@@ -178,17 +176,17 @@ static PITEST_CASE pitest_cases[] =
 	{"ops tcp 3389 to carol", PIU_OPS, PIU_CAROL, 0, PITEST_TCP, {0}, 3389, PITEST_SYN, PITEST_SAME},
 	{"dave tcp 443 to srv", PIU_DAVE, PIU_SRV, 0, PITEST_TCP, {0}, 443, PITEST_SYN, PITEST_SAME},
 	{"bob udp 8080 to srv", PIU_BOB, PIU_SRV, 0, PITEST_UDP, {0}, 8080, 0, PITEST_SAME},
-	{"bob udp 9999 to srv", PIU_BOB, PIU_SRV, 0, PITEST_UDP, {0}, 9999, 0, PITEST_NARROWER},
-	{"carol tcp 80 to srv", PIU_CAROL, PIU_SRV, 0, PITEST_TCP, {0}, 80, PITEST_SYN, PITEST_NARROWER},
-	{"bob tcp 80 to srv", PIU_BOB, PIU_SRV, 0, PITEST_TCP, {0}, 80, PITEST_SYN, PITEST_NARROWER},
-	{"bob tcp ack 5000 to srv", PIU_BOB, PIU_SRV, 0, PITEST_TCP, {0}, 5000, PITEST_ACK, PITEST_NARROWER},
+	{"bob udp 9999 to srv", PIU_BOB, PIU_SRV, 0, PITEST_UDP, {0}, 9999, 0, PITEST_NARROWER, "srv"},
+	{"carol tcp 80 to srv", PIU_CAROL, PIU_SRV, 0, PITEST_TCP, {0}, 80, PITEST_SYN, PITEST_NARROWER, "srv"},
+	{"bob tcp 80 to srv", PIU_BOB, PIU_SRV, 0, PITEST_TCP, {0}, 80, PITEST_SYN, PITEST_NARROWER, "srv"},
+	{"bob tcp ack 5000 to srv", PIU_BOB, PIU_SRV, 0, PITEST_TCP, {0}, 5000, PITEST_ACK, PITEST_NARROWER, "srv"},
 	{"bob tcp syn 5000 to srv", PIU_BOB, PIU_SRV, 0, PITEST_TCP, {0}, 5000, PITEST_SYN, PITEST_SAME},
 	{"bob ping to carol", PIU_BOB, PIU_CAROL, 0, PITEST_PING, {0}, 0, 0, PITEST_SAME},
 	{"carol ping to bob", PIU_CAROL, PIU_BOB, 0, PITEST_PING, {0}, 0, 0, PITEST_SAME},
 	{"bob ping6 to srv", PIU_BOB, PIU_SRV, 0, PITEST_PING6, {0}, 0, 0, PITEST_SAME},
 	{"bob tcp6 22 to srv", PIU_BOB, PIU_SRV, 0, PITEST_TCP6, {0}, 22, PITEST_SYN, PITEST_SAME},
 	{"carol udp 7 to 172.16.5.1 through srv", PIU_CAROL, PIU_SRV, 0, PITEST_UDP, {172, 16, 5, 1}, 7, 0, PITEST_SAME},
-	{"carol ping to 172.16.5.2 through srv", PIU_CAROL, PIU_SRV, 0, PITEST_PING, {172, 16, 5, 2}, 0, 0, PITEST_NARROWER},
+	{"carol ping to 172.16.5.2 through srv", PIU_CAROL, PIU_SRV, 0, PITEST_PING, {172, 16, 5, 2}, 0, 0, PITEST_NARROWER, "srv"},
 	// OFFICE: the TPID 0x88A8, and the default action of a network without an access list
 	{"kim hello", PIU_KIM, PITEST_BROADCAST, 0, PITEST_ARP, {0}, 0, 0, PITEST_SAME},
 	{"lee hello", PIU_LEE, PITEST_BROADCAST, 0, PITEST_ARP, {0}, 0, 0, PITEST_SAME},
@@ -227,55 +225,43 @@ typedef struct PITEST_CTX
 	wchar_t Fixture[MAX_PATH];				// The fork configuration of the fixture
 } PITEST_CTX;
 
-// A network of the fixture, in the fork and in the new core
+// A network of the fixture in the new core
 typedef struct PITEST_NET
 {
 	char *Name;								// The hub, which is the network of the store
 	char PolicyName[MAX_SIZE];				// Its name in the document of the policy engine (CsPolicyNetworkName)
-	HUB *Hub;								// The fork: the hub of the server
 	SWITCH *Switch;							// The new core: the switch of the network
 	UINT Tpid;								// The TPID of its tags (CsGetPort)
 	UINT Untagged;							// Its untagged VLAN, the native VLAN of its trunk ports
 } PITEST_NET;
 
-// A user of the fixture, in the fork and in the new core
+// A user of the fixture in the new core
 typedef struct PITEST_MEMBER
 {
 	PITEST_USER *User;						// The user
 	PITEST_NET *Net;						// Its network
-	SESSION *Session;						// The fork: its in-process session on the hub
-	UINT ForkVlan;							// ... the VLAN of the session (the VLanId of the policy of the user or of its group)
-	char ForkGroup[MAX_SIZE];				// ... and its group
 	CS_PORT Port;							// The new core: its port, as the store gives it (CsGetPort)
 	char Group[MAX_SIZE];					// ... its group in the store (CsGetUser)
 	UINT SwitchPort;						// ... its port on the switch
 	UINT Member;							// ... and its number in the policy engine
-	UINT ForkNum;							// The frames of the current case that the hub queued for the session
-	UINT ForkSize;							// ... the size of the first
-	UCHAR ForkFrame[PITEST_FRAME_MAX];		// ... and its bytes
 	UINT CoreNum;							// The frames of the current case that the switch delivered to the port
 	UINT CoreSize;							// ... the size of the first
 	UCHAR CoreFrame[PITEST_FRAME_MAX];		// ... and its bytes
 	bool CoreKept;							// ... which the policy engine let through
 } PITEST_MEMBER;
 
-// The store of the fixture, and the fork and the new core on the same frames
+// The store of the fixture, and the new core on the frames
 typedef struct PITEST_RUN
 {
 	wchar_t Dir[MAX_PATH];					// The directory of the store
 	CONFIG_STORE *Store;					// The store that the fixture imports into
 	char *Document;							// The document of rules of the store (CsPolicyDocument)
-	char *OldConfigName;					// SERVER_CONFIG_FILE_NAME before the fork's server started
-	SERVER *Server;							// The fork's server on the fixture
-	THREAD *Thread;							// The owner of the connections of the sessions; it has nothing to run
 	POLICY_ENGINE *Engine;					// The policy engine of the new core, with the document of the store
 	USHORT EveryVlan[SWITCH_MAX_VLAN];		// The allowed list of a trunk port: every VLAN
 	PITEST_NET Nets[PITEST_NUM_NETS];
 	PITEST_MEMBER Members[PIU_NUM];
 	BUF *Report;							// The report of the frames (PITEST_FRAMES)
 	UINT Counts[PITEST_NUM_RELATIONS];		// The cases by what the new core did next to the fork
-	UINT NumWrong;							// The cases that did not do what they expect
-	char Wrong[MAX_SIZE];					// ... their numbers
 } PITEST_RUN;
 
 // Record one check: print [PASS] with what, or [FAIL] with what and the formatted detail
@@ -339,19 +325,6 @@ static void PiDeleteDir(wchar_t *dir)
 		FreeDir(d);
 	}
 	DeleteDirW(dir);
-}
-
-// Delete the copy of the fixture that the fork's server ran on, and its backup directory
-static void PiDeleteServerFiles()
-{
-	wchar_t path[MAX_PATH];
-	wchar_t dir[MAX_PATH];
-
-	InnerFilePathW(path, sizeof(path), PITEST_SERVER_CONFIG_W);
-	FileDeleteW(path);
-
-	InnerFilePathW(dir, sizeof(dir), PITEST_SERVER_BACKUP_W);
-	PiDeleteDir(dir);
 }
 
 //
@@ -616,165 +589,6 @@ static void PiMatches(PITEST_CTX *ctx)
 }
 
 //
-// The fork: its server on the fixture, with a session of each user
-//
-
-// The connections of the sessions have nothing to run
-static void PiIdleThread(THREAD *thread, void *param)
-{
-}
-
-// The policy that the fork gives a session of the user name of the hub h at its login, as HubResolveSessionPolicy of
-// ProtocolServer.c chooses it: the user's own, else its group's, else the default policy; the name of the group of the
-// user to group
-static POLICY *PiForkPolicy(HUB *h, char *name, char *group, UINT group_size)
-{
-	POLICY *policy = NULL;
-
-	StrCpy(group, group_size, "");
-
-	AcLock(h);
-	{
-		USER *u = AcGetUser(h, name);
-
-		if (u != NULL)
-		{
-			Lock(u->lock);
-			{
-				USERGROUP *g = u->Group;
-
-				if (g != NULL)
-				{
-					Lock(g->lock);
-					{
-						StrCpy(group, group_size, g->Name);
-						if (u->Policy == NULL && g->Policy != NULL)
-						{
-							policy = ClonePolicy(g->Policy);
-						}
-					}
-					Unlock(g->lock);
-				}
-
-				if (u->Policy != NULL)
-				{
-					policy = ClonePolicy(u->Policy);
-				}
-			}
-			Unlock(u->lock);
-
-			ReleaseUser(u);
-		}
-	}
-	AcUnlock(h);
-
-	if (policy == NULL)
-	{
-		policy = ClonePolicy(GetDefaultPolicy());
-	}
-
-	return policy;
-}
-
-// The in-process session of the member m on the hub of its network, made as the flood bench of harness.c makes one, with
-// the policy, the VLAN and the group that the fork gives the user: false when it could not be made
-static bool PiForkSession(PITEST_RUN *run, PITEST_MEMBER *m)
-{
-	CEDAR *cedar = run->Server->Cedar;
-	POLICY *policy = PiForkPolicy(m->Net->Hub, m->User->Name, m->ForkGroup, sizeof(m->ForkGroup));
-	UINT vlan = policy->VLanId;
-	CONNECTION *c = NewServerConnection(cedar, NULL, run->Thread);
-	SESSION *s = NewServerSession(cedar, c, m->Net->Hub, m->User->Name, policy);
-
-	c->Session = s;
-	ReleaseConnection(c);
-	if (s == NULL)
-	{
-		Free(policy);
-		return false;
-	}
-
-	s->Username = CopyStr(m->User->Name);
-	StrCpy(s->GroupName, sizeof(s->GroupName), m->ForkGroup);
-	s->VLanId = vlan;
-	s->NormalClient = true;
-	s->PacketAdapter->Init(s);
-
-	m->Session = s;
-	m->ForkVlan = vlan;
-
-	return true;
-}
-
-// The fork's server on a copy of the fixture, the hubs of the fixture and a session of each user: false when it is not
-// all there
-static bool PiFork(PITEST_CTX *ctx, PITEST_RUN *run)
-{
-	wchar_t path[MAX_PATH];
-	bool ok = true;
-
-	Print("[the fork: its server on the fixture, a session of each user]\n");
-
-	PiDeleteServerFiles();
-	InnerFilePathW(path, sizeof(path), PITEST_SERVER_CONFIG_W);
-	if (PiCheck(ctx, FileCopyW(ctx->Fixture, path), "The fork's server gets a copy of the fixture as its configuration", "FileCopyW to %S failed",
-		path) == false)
-	{
-		return false;
-	}
-
-	run->OldConfigName = SERVER_CONFIG_FILE_NAME;
-	SERVER_CONFIG_FILE_NAME = PITEST_SERVER_CONFIG;
-	run->Server = SiNewServer();
-	run->Thread = NewThread(PiIdleThread, NULL);
-
-	for (UINT i = 0;i < PITEST_NUM_NETS;i++)
-	{
-		PITEST_NET *net = &run->Nets[i];
-
-		net->Hub = (run->Server != NULL ? GetHub(run->Server->Cedar, net->Name) : NULL);
-		ok = (net->Hub != NULL && ok);
-	}
-
-	for (UINT i = 0;ok && i < PIU_NUM;i++)
-	{
-		ok = PiForkSession(run, &run->Members[i]);
-	}
-
-	return PiCheck(ctx, ok, "The fork's server runs the hubs LAB and OFFICE of the fixture, with an in-process session of each user",
-		"server %p, a hub or a session is missing", run->Server);
-}
-
-// Take the frames that the hub queued for the session of the member m: their number, with the first one
-static void PiForkTake(PITEST_MEMBER *m)
-{
-	void *data;
-	UINT size;
-
-	m->ForkNum = 0;
-	while ((size = m->Session->PacketAdapter->GetNextPacket(m->Session, &data)) != 0)
-	{
-		if (m->ForkNum == 0)
-		{
-			m->ForkSize = MIN(size, PITEST_FRAME_MAX);
-			Copy(m->ForkFrame, data, m->ForkSize);
-		}
-		m->ForkNum++;
-		Free(data);
-	}
-}
-
-// The member m sends the frame of size bytes into the hub, as the SessionMain of its session would: the hub takes a copy
-static void PiForkSend(PITEST_MEMBER *m, UCHAR *frame, UINT size)
-{
-	void *data = Malloc(size);
-
-	Copy(data, frame, size);
-	m->Session->PacketAdapter->PutPacket(m->Session, data, size);
-	m->Session->PacketAdapter->PutPacket(m->Session, NULL, 0);
-}
-
-//
 // The new core: a switch for each network, with the ports that the store gives its users, and the policy engine
 //
 
@@ -957,9 +771,9 @@ static UINT PiTagOf(PITEST_NET *net, UCHAR *f, UINT size)
 	return (((UINT)f[14] << 8) | f[15]) & 0xFFF;
 }
 
-// The members of the network net that got the frame of the current case, from the new core (core) or from the fork:
-// "nobody", or their names, each with /<VLAN> when its frame carries a tag
-static void PiDescribe(char *dst, UINT size, PITEST_RUN *run, PITEST_NET *net, bool core)
+// The members of the network net that the new core got the frame of the current case to: "nobody", or their names,
+// each with /<VLAN> when its frame carries a tag
+static void PiDescribe(char *dst, UINT size, PITEST_RUN *run, PITEST_NET *net)
 {
 	char tmp[MAX_SIZE];
 
@@ -967,10 +781,9 @@ static void PiDescribe(char *dst, UINT size, PITEST_RUN *run, PITEST_NET *net, b
 	for (UINT i = 0;i < PIU_NUM;i++)
 	{
 		PITEST_MEMBER *m = &run->Members[i];
-		bool got = (core ? m->CoreKept : m->ForkNum != 0);
-		UINT vlan = (core ? PiTagOf(net, m->CoreFrame, m->CoreSize) : PiTagOf(net, m->ForkFrame, m->ForkSize));
+		UINT vlan = PiTagOf(net, m->CoreFrame, m->CoreSize);
 
-		if (m->Net != net || got == false)
+		if (m->Net != net || m->CoreKept == false)
 		{
 			continue;
 		}
@@ -997,115 +810,23 @@ static void PiDescribe(char *dst, UINT size, PITEST_RUN *run, PITEST_NET *net, b
 	}
 }
 
-// Whether frame a of a_size bytes is frame b of b_size bytes without its tag of the untagged VLAN of the network net
-static bool PiUntagged(PITEST_NET *net, UCHAR *a, UINT a_size, UCHAR *b, UINT b_size)
-{
-	return (b_size == a_size + 4 && PiTagOf(net, b, b_size) == net->Untagged && Cmp(a, b, 12) == 0 && Cmp(a + 12, b + 16, a_size - 12) == 0);
-}
-
-// What the new core did with the frame of the current case in the network net next to the fork: PITEST_SAME,
-// PITEST_NARROWER, PITEST_NATIVE or PITEST_OTHER
-static UINT PiRelation(PITEST_RUN *run, PITEST_NET *net)
-{
-	bool same = true;
-	bool narrower = true;
-	bool native = true;
-	bool fewer = false;
-	bool any = false;
-
-	for (UINT i = 0;i < PIU_NUM;i++)
-	{
-		PITEST_MEMBER *m = &run->Members[i];
-		bool fork = (m->ForkNum != 0);
-
-		if (m->Net != net)
-		{
-			continue;
-		}
-
-		// A member that got the frame more than once
-		if (m->ForkNum > 1 || m->CoreNum > 1)
-		{
-			return PITEST_OTHER;
-		}
-
-		if (fork != m->CoreKept)
-		{
-			same = false;
-			native = false;
-			if (fork)
-			{
-				fewer = true;
-			}
-			else
-			{
-				narrower = false;
-			}
-			continue;
-		}
-
-		if (fork == false)
-		{
-			continue;
-		}
-
-		any = true;
-		if (m->ForkSize != m->CoreSize || Cmp(m->ForkFrame, m->CoreFrame, m->ForkSize) != 0)
-		{
-			same = false;
-			narrower = false;
-		}
-		if (PiUntagged(net, m->CoreFrame, m->CoreSize, m->ForkFrame, m->ForkSize) == false)
-		{
-			native = false;
-		}
-	}
-
-	if (same)
-	{
-		return PITEST_SAME;
-	}
-	if (narrower && fewer)
-	{
-		return PITEST_NARROWER;
-	}
-	if (native && any)
-	{
-		return PITEST_NATIVE;
-	}
-
-	return PITEST_OTHER;
-}
-
-// Case n: the member c->From sends its frame into the fork's hub and into the switch of its network, and the policy
-// engine judges what the switch delivers. The report gets "<n> <case>: both <members> (<verdict>)" when the new core did
-// what the fork did, else "<n> <case>: fork <members>; new core <members> (<verdict>): <what it did>".
+// Case n: the member c->From sends its frame into the switch of its network, and the policy engine judges what the
+// switch delivers. The report gets "<n> <case>: both <members> (<verdict>)" for a case that does what the fork did,
+// else "<n> <case>: fork <members>; new core <members> (<verdict>): <what it did>", with the members of c->Fork. A
+// member that got the frame more than once makes the case PITEST_OTHER, which no case expects.
 static void PiCase(PITEST_RUN *run, UINT n, PITEST_CASE *c)
 {
 	UCHAR frame[PITEST_FRAME_MAX];
-	char fork[MAX_SIZE];
 	char core[MAX_SIZE];
 	char verdict[MAX_SIZE];
 	char line[MAX_SIZE * 4];
-	char num[16];
 	POLICY_RESULT r;
 	PITEST_MEMBER *from = &run->Members[c->From];
 	PITEST_NET *net = from->Net;
 	UINT64 now = (UINT64)n * PITEST_STEP;
 	UINT size = PiFrame(frame, from, c, n);
+	UINT relation = c->Expect;
 
-	// The fork, after what the hub queued before the case
-	for (UINT i = 0;i < PIU_NUM;i++)
-	{
-		PiForkTake(&run->Members[i]);
-	}
-	PiForkSend(from, frame, size);
-	for (UINT i = 0;i < PIU_NUM;i++)
-	{
-		PiForkTake(&run->Members[i]);
-	}
-
-	// The new core
 	for (UINT i = 0;i < PIU_NUM;i++)
 	{
 		run->Members[i].CoreNum = 0;
@@ -1114,41 +835,40 @@ static void PiCase(PITEST_RUN *run, UINT n, PITEST_CASE *c)
 	Zero(&r, sizeof(r));
 	PiJudge(run, from, PiFrameVlan(from, c), frame, size, now, &r);
 
-	UINT relation = PiRelation(run, net);
+	for (UINT i = 0;i < PIU_NUM;i++)
+	{
+		if (run->Members[i].Net == net && run->Members[i].CoreNum > 1)
+		{
+			relation = PITEST_OTHER;
+		}
+	}
 	run->Counts[relation]++;
 
-	PiDescribe(fork, sizeof(fork), run, net, false);
-	PiDescribe(core, sizeof(core), run, net, true);
+	PiDescribe(core, sizeof(core), run, net);
 	Format(verdict, sizeof(verdict), "%s%s%s", PiReason(r.Reason), r.Rule[0] != 0 ? " " : "", r.Rule);
 	if (relation == PITEST_SAME)
 	{
-		Format(line, sizeof(line), "%u %s: both %s (%s)\n", n, c->Name, fork, verdict);
+		Format(line, sizeof(line), "%u %s: both %s (%s)\n", n, c->Name, core, verdict);
 	}
 	else
 	{
-		Format(line, sizeof(line), "%u %s: fork %s; new core %s (%s): %s\n", n, c->Name, fork, core, verdict, pitest_relations[relation]);
+		Format(line, sizeof(line), "%u %s: fork %s; new core %s (%s): %s\n", n, c->Name, c->Fork != NULL ? c->Fork : "-", core,
+			verdict, pitest_relations[relation]);
 	}
 	WriteBuf(run->Report, line, StrLen(line));
-
-	if (relation != c->Expect)
-	{
-		Format(num, sizeof(num), " %u", n);
-		StrCat(run->Wrong, sizeof(run->Wrong), num);
-		run->NumWrong++;
-	}
 }
 
-// The frames of the cases through the fork and through the new core, and the report of what each did
+// The frames of the cases through the new core, and the report of what it did next to what the fork did
 static void PiCases(PITEST_CTX *ctx, PITEST_RUN *run)
 {
 	char line[MAX_SIZE * 2];
-	UINT num_agree = 0;
 
-	Print("[the same frames through the fork's hub and through the new core]\n");
+	Print("[the frames through the new core, next to what the fork did with them]\n");
 
 	run->Report = NewBuf();
 
-	// The port of each member as the store gives it, which must carry the VLAN and the group that the fork gives the user
+	// The port of each member as the store gives it, which must carry the VLAN and the group that the fork gave the user
+	// (an access port of the VLanId of its policy or its group's, else a trunk port), as the golden file holds them
 	for (UINT i = 0;i < PITEST_NUM_NETS;i++)
 	{
 		PITEST_NET *net = &run->Nets[i];
@@ -1181,22 +901,8 @@ static void PiCases(PITEST_CTX *ctx, PITEST_RUN *run)
 			}
 			StrCat(line, sizeof(line), "\n");
 			WriteBuf(run->Report, line, StrLen(line));
-
-			if (m->ForkVlan == (access ? m->Port.Vlan : 0) && StrCmpi(m->ForkGroup, m->Group) == 0 && m->Port.Tpid == net->Hub->Option->VlanTypeId)
-			{
-				num_agree++;
-			}
-			else
-			{
-				Print("  %s: the fork gives it the VLAN %u, the group \"%s\" and the TPID 0x%04x\n", m->User->Name, m->ForkVlan, m->ForkGroup,
-					net->Hub->Option->VlanTypeId);
-			}
 		}
 	}
-
-	PiCheck(ctx, num_agree == PIU_NUM,
-		"The port of each user carries the VLAN that the fork gives its sessions: an access port of the VLanId of its policy or its group's, else a trunk port",
-		"%u of %u users agree (the report is below)", num_agree, PIU_NUM);
 
 	for (UINT n = 1;n <= PITEST_NUM_CASES;n++)
 	{
@@ -1209,59 +915,24 @@ static void PiCases(PITEST_CTX *ctx, PITEST_RUN *run)
 
 	char *report = HarnessBufToStr(run->Report);
 
-	PiCheck(ctx, run->Counts[PITEST_OTHER] == 0,
-		"The new core never gets a frame to a member that the fork kept it from, nor gives a member other bytes than the fork, but the tag of the untagged VLAN",
-		"%u cases differ otherwise (the report is below)", run->Counts[PITEST_OTHER]);
-	PiCheck(ctx, run->NumWrong == 0,
-		"Each frame reaches the members that the fork gets it to, but where an entry has a match that the engine lacks, and the default action of each network carries over",
-		"cases%s did not do what they expect (the report is below)", run->Wrong);
-	if (run->NumWrong != 0 || num_agree != PIU_NUM)
+	PiCheck(ctx, run->Counts[PITEST_OTHER] == 0, "No member gets the frame of a case more than once",
+		"%u cases (the report is below)", run->Counts[PITEST_OTHER]);
+	if (run->Counts[PITEST_OTHER] != 0)
 	{
 		Print("--- the report of %s:\n%s", PITEST_FRAMES, report);
 	}
 
-	PiGolden(ctx, PITEST_FRAMES, report, "The report of the frames matches the golden file " PITEST_FRAMES);
+	PiGolden(ctx, PITEST_FRAMES, report, "Each frame reaches the members that the fork got it to, but where an entry has a match that the engine lacks, "
+		"and the default action of each network carries over: the report of the frames matches the golden file " PITEST_FRAMES);
 	Free(report);
 }
 
-// Stop and free what a run made, and delete its files
+// Free what a run made, and delete its files
 static void PiFree(PITEST_RUN *run)
 {
-	for (UINT i = 0;i < PIU_NUM;i++)
-	{
-		PITEST_MEMBER *m = &run->Members[i];
-
-		if (m->Session != NULL)
-		{
-			DelSession(m->Net->Hub, m->Session);
-			m->Session->PacketAdapter->Free(m->Session);
-			ReleaseSession(m->Session);
-		}
-	}
-
 	for (UINT i = 0;i < PITEST_NUM_NETS;i++)
 	{
-		PITEST_NET *net = &run->Nets[i];
-
-		if (net->Hub != NULL)
-		{
-			ReleaseHub(net->Hub);
-		}
-		SwitchFree(net->Switch);
-	}
-
-	if (run->Server != NULL)
-	{
-		SiReleaseServer(run->Server);
-	}
-	if (run->Thread != NULL)
-	{
-		ReleaseThread(run->Thread);
-	}
-	if (run->OldConfigName != NULL)
-	{
-		SERVER_CONFIG_FILE_NAME = run->OldConfigName;
-		PiDeleteServerFiles();
+		SwitchFree(run->Nets[i].Switch);
 	}
 
 	PolicyFree(run->Engine);
@@ -1275,8 +946,8 @@ static void PiFree(PITEST_RUN *run)
 	Free(run);
 }
 
-// policyimport: the import of the fork's access list and VLAN policy, against a golden rule table and the fork itself
-RANZ_TEST_TAGS("policyimport", policyimport_test, "core", "Fork policy import: the access list and VLANs of a fork configuration in the store, a golden rule table, and the same frames through the fork and the new core.");
+// policyimport: the import of the fork's access list and VLAN policy, against a golden rule table and what the fork did
+RANZ_TEST_TAGS("policyimport", policyimport_test, "core", "Fork policy import: the access list and VLANs of a fork configuration in the store, a golden rule table, and frames through the new core against what the fork did with them.");
 void policyimport_test(UINT num, char **arg)
 {
 	PITEST_CTX ctx;
@@ -1284,7 +955,7 @@ void policyimport_test(UINT num, char **arg)
 
 	Zero(&ctx, sizeof(ctx));
 
-	Print("Fork policy import test: the access list and the VLANs of a fork configuration, against the fork's hub\n");
+	Print("Fork policy import test: the access list and the VLANs of a fork configuration, against what the fork's hub did\n");
 
 	HarnessGetFamilyDirs("policyimport", ctx.OutDir, sizeof(ctx.OutDir), ctx.GoldenDir, sizeof(ctx.GoldenDir), &ctx.Update);
 	MakeDirEx(ctx.OutDir);
@@ -1308,7 +979,7 @@ void policyimport_test(UINT num, char **arg)
 		}
 
 		PiMatches(&ctx);
-		if (PiImport(&ctx, run) && PiFork(&ctx, run) && PiCore(&ctx, run))
+		if (PiImport(&ctx, run) && PiCore(&ctx, run))
 		{
 			PiCases(&ctx, run);
 		}

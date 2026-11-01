@@ -2,29 +2,25 @@
 // Named node Login test of vpntest ("nodelogin" command, CORE-F2 #62)
 //
 // The Login of a Noise session of the new core (src/Core/Noise.h) against the login of the slim fork's SE-VPN
-// protocol, the oracle. The same users are set up on a hub of the harness server (HarnessOpenServer, TCP 39555) and
-// on the hub of the server role of a node (Cedar/Node.c): a password user, a user with his own certificate, a user
-// whose certificate a trusted root signs, and a user of the Windows domain. The domain user is a local account that
-// the test creates, which LogonUser checks the way it checks a domain account; that needs administrator rights,
-// which CI has, and the test deletes the account again. For each credential, right and wrong, the oracle logs in
-// through the SE-VPN login (raw Packs as ClientUploadAuth sends them, ServerAccept and Sam on the server); the new
-// core runs a Noise_IK session bound to a TLS exporter between a client node and the server node, the client sends
-// its Login as the first control message, and the node checks it with NodeLogin. Both must give the same result, the
-// right credentials must log in and the wrong ones must not; a session whose Login passed carries data, one whose
-// Login failed is closed. Print "NODELOGIN TEST OK" only when every check passes.
+// protocol, the oracle that CORE-S8-3 (#577) retired. The users are set up on the hub of the server role of a node
+// (Cedar/Node.c): a password user, a user with his own certificate, a user whose certificate a trusted root signs, and a
+// user of the Windows domain. The domain user is a local account that the test creates, which LogonUser checks the way
+// it checks a domain account; that needs administrator rights, which CI has, and the test deletes the account again.
+// For each credential, right and wrong, the new core runs a Noise_IK session bound to a TLS exporter between a client
+// node and the server node, the client sends its Login as the first control message, and the node checks it with
+// NodeLogin. Its error must be the one that the SE-VPN login (raw Packs as ClientUploadAuth sent them, ServerAccept and
+// Sam on the server) gave for the case at the last run against the oracle, which the table of the cases holds; the
+// right credentials must log in and the wrong ones must not; a session whose Login passed carries data, one whose Login
+// failed is closed. Print "NODELOGIN TEST OK" only when every check passes.
 
-#include "harness_int.h"
 #include "testlist.h"
 
 #include "Cedar/Account.h"
-#include "Cedar/Admin.h"
 #include "Cedar/Cedar.h"
 #include "Cedar/ConfigStore.h"
 #include "Cedar/Hub.h"
 #include "Cedar/Node.h"
-#include "Cedar/Protocol.h"
 #include "Cedar/Sam.h"
-#include "Cedar/Server.h"
 
 #include "Mayaqua/Encrypt.h"
 #include "Mayaqua/FileIO.h"
@@ -32,8 +28,6 @@
 #include "Mayaqua/Kernel.h"
 #include "Mayaqua/Memory.h"
 #include "Mayaqua/Microsoft.h"
-#include "Mayaqua/Network.h"
-#include "Mayaqua/Pack.h"
 #include "Mayaqua/Str.h"
 #include "Mayaqua/Tick64.h"
 
@@ -43,19 +37,17 @@
 #include <lmaccess.h>
 #include <lmerr.h>
 
-#define	NODELOGIN_HUB			"NODELOGIN"			// Hub of the harness server and of the node
-#define	NODELOGIN_WATCHDOG		240000				// The test process is aborted after this (ms)
-#define	NODELOGIN_SESSION_WAIT	10000				// The session of an oracle login ends this soon after its client left (ms)
-#define	NODELOGIN_POLL			50					// Poll interval of the session count (ms)
-#define	NODELOGIN_PASSWORD_USER	"nl_password"		// Password user, password HARNESS_PASSWORD
+#define	NODELOGIN_HUB			"NODELOGIN"			// Hub of the node
+#define	NODELOGIN_PASSWORD_USER	"nl_password"		// Password user, password NODELOGIN_PASSWORD
+#define	NODELOGIN_PASSWORD		"NodeLogin-Pass-1"	// The password of the password user
 #define	NODELOGIN_CERT_USER		"nl_usercert"		// User with his own certificate
 #define	NODELOGIN_ROOT_USER		"nl_rootcert"		// User whose certificate a trusted root signs
 #define	NODELOGIN_DOMAIN_USER	"nl_domain"			// User of the Windows domain: the local account of the test
 #define	NODELOGIN_WRONG			"NodeLogin-Wrong-1"	// No user's password
 
 // How a case gives its credential
-#define	NODELOGIN_SECRET_PASSWORD	0	// A password user's password: the SE-VPN client sends it hashed with the random
-#define	NODELOGIN_SECRET_DOMAIN		1	// A domain user's password: the SE-VPN client sends it in clear
+#define	NODELOGIN_SECRET_PASSWORD	0	// A password user's password
+#define	NODELOGIN_SECRET_DOMAIN		1	// A domain user's password
 #define	NODELOGIN_SECRET_CERT		2	// A certificate and the signature of the challenge by a key
 
 // The certificates and keys of the test
@@ -68,7 +60,7 @@ typedef struct NODELOGIN_CERTS
 	X *Stranger;						// Self-signed, unknown to both hubs
 } NODELOGIN_CERTS;
 
-// One case: a credential of a user, and whether it must log in
+// One case: a credential of a user, whether it must log in, and the error of the SE-VPN login
 typedef struct NODELOGIN_CASE
 {
 	char *What;
@@ -78,6 +70,7 @@ typedef struct NODELOGIN_CASE
 	X **Cert;							// Certificate cases: the certificate ...
 	K **Key;							// ... and the key that signs
 	bool Expect;						// The credential logs the user in
+	UINT SeVpnError;					// The error that the SE-VPN login gave at the last run against the oracle
 } NODELOGIN_CASE;
 
 // The state of the test
@@ -193,20 +186,17 @@ static void NodeLoginDeleteAccount(NODELOGIN_CTX *ctx)
 	}
 }
 
-// The users of the test on a hub, beside the password user: the certificate user, the root certificate user with
-// the trusted root, and the domain user
-static void NodeLoginAddUsers(NODELOGIN_CTX *ctx, HUB *h, bool password_user)
+// The users of the test on a hub: the password user, the certificate user, the root certificate user with the trusted
+// root, and the domain user
+static void NodeLoginAddUsers(NODELOGIN_CTX *ctx, HUB *h)
 {
 	USER *u;
 
 	AcLock(h);
 	{
-		if (password_user)
-		{
-			u = NewUser(NODELOGIN_PASSWORD_USER, L"", L"", AUTHTYPE_PASSWORD, NewPasswordAuthData(NODELOGIN_PASSWORD_USER, HARNESS_PASSWORD));
-			AcAddUser(h, u);
-			ReleaseUser(u);
-		}
+		u = NewUser(NODELOGIN_PASSWORD_USER, L"", L"", AUTHTYPE_PASSWORD, NewPasswordAuthData(NODELOGIN_PASSWORD_USER, NODELOGIN_PASSWORD));
+		AcAddUser(h, u);
+		ReleaseUser(u);
 
 		u = NewUser(NODELOGIN_CERT_USER, L"", L"", AUTHTYPE_USERCERT, NewUserCertAuthData(ctx->Certs.User));
 		AcAddUser(h, u);
@@ -233,89 +223,7 @@ static char *NodeLoginPassword(NODELOGIN_CTX *ctx, NODELOGIN_CASE *c)
 		return NODELOGIN_WRONG;
 	}
 
-	return (c->Secret == NODELOGIN_SECRET_DOMAIN ? ctx->AccountPassword : HARNESS_PASSWORD);
-}
-
-//
-// The oracle: the SE-VPN login of the slim fork
-//
-
-// Number of sessions of the hub through EnumSession, or INFINITE when the call fails
-static UINT NodeLoginNumSessions(HARNESS *h)
-{
-	RPC_ENUM_SESSION t;
-
-	Zero(&t, sizeof(t));
-	StrCpy(t.HubName, sizeof(t.HubName), NODELOGIN_HUB);
-
-	if (ScEnumSession(h->Rpc, &t) != ERR_NO_ERROR)
-	{
-		return INFINITE;
-	}
-
-	UINT num = t.NumSession;
-	FreeRpcEnumSession(&t);
-
-	return num;
-}
-
-// One SE-VPN login of the case on a raw connection, as ClientUploadAuth sends it: the error of the answer
-static UINT NodeLoginOracle(NODELOGIN_CTX *ctx, HARNESS *h, NODELOGIN_CASE *c)
-{
-	UCHAR random[SHA1_SIZE];
-	UCHAR hashed_password[SHA1_SIZE];
-	UCHAR secure_password[SHA1_SIZE];
-	UCHAR sign[4096 / 8];
-	SOCK *s = HarnessRawConnect(random);
-	PACK *p = NULL;
-
-	if (s == NULL)
-	{
-		NodeLoginCheck(ctx, false, "raw connection to the harness listener", "TLS, signature or hello failed");
-		return ERR_DISCONNECTED;
-	}
-
-	switch (c->Secret)
-	{
-	case NODELOGIN_SECRET_PASSWORD:
-		p = HarnessRawLoginPack(NODELOGIN_HUB, c->User, CLIENT_AUTHTYPE_PASSWORD);
-		HashPassword(hashed_password, c->User, NodeLoginPassword(ctx, c));
-		SecurePassword(secure_password, hashed_password, random);
-		PackAddData(p, "secure_password", secure_password, SHA1_SIZE);
-		break;
-
-	case NODELOGIN_SECRET_DOMAIN:
-		p = HarnessRawLoginPack(NODELOGIN_HUB, c->User, CLIENT_AUTHTYPE_PLAIN_PASSWORD);
-		PackAddStr(p, "plain_password", NodeLoginPassword(ctx, c));
-		break;
-
-	default:
-	{
-		X *x = *c->Cert;
-		BUF *b = XToBuf(x, false);
-
-		p = HarnessRawLoginPack(NODELOGIN_HUB, c->User, CLIENT_AUTHTYPE_CERT);
-		PackAddData(p, "cert", b->Buf, b->Size);
-		FreeBuf(b);
-		Zero(sign, sizeof(sign));
-		RsaSignEx(sign, sizeof(sign), random, SHA1_SIZE, *c->Key);
-		PackAddData(p, "sign", sign, x->bits / 8);
-		break;
-	}
-	}
-
-	UINT err = HarnessRawRequest(s, p);
-	FreePack(p);
-	HarnessRawClose(s);
-
-	// The session of a login that passed ends with its connection (HarnessOpenServer turned session reconnect off)
-	UINT64 end = Tick64() + NODELOGIN_SESSION_WAIT;
-	while (NodeLoginNumSessions(h) != 0 && Tick64() < end)
-	{
-		SleepThread(NODELOGIN_POLL);
-	}
-
-	return err;
+	return (c->Secret == NODELOGIN_SECRET_DOMAIN ? ctx->AccountPassword : NODELOGIN_PASSWORD);
 }
 
 //
@@ -485,61 +393,35 @@ static void NodeLoginDeleteFiles(wchar_t *dir)
 	DeleteDirW(dir);
 }
 
-RANZ_TEST("nodelogin", nodelogin_test, "Node Login: password, certificate and domain credentials through a Noise session and NodeLogin give the SE-VPN login's result (administrator rights).");
+RANZ_TEST("nodelogin", nodelogin_test, "Node Login: password, certificate and domain credentials through a Noise session and NodeLogin give the SE-VPN login's result of the table of the cases (administrator rights).");
 void nodelogin_test(UINT num, char **arg)
 {
 	NODELOGIN_CTX *ctx = ZeroMalloc(sizeof(NODELOGIN_CTX));
 	wchar_t dir[MAX_PATH], log_dir[MAX_PATH];
-	bool ok = false;
 
-	Print("Node Login test: the Login of a Noise session against the SE-VPN login of the slim fork\n");
+	Print("Node Login test: the Login of a Noise session against the results of the SE-VPN login of the slim fork\n");
 
+	// The cases, with the error that the SE-VPN login of the slim fork gave for each at the last run against the oracle
+	// (head 1819f09d, CI run 41302403531, x64 and arm64; CORE-S8-3 #577)
 	NODELOGIN_CASE cases[] =
 	{
-		{"password user, right password", NODELOGIN_PASSWORD_USER, NODELOGIN_SECRET_PASSWORD, true, NULL, NULL, true},
-		{"password user, wrong password", NODELOGIN_PASSWORD_USER, NODELOGIN_SECRET_PASSWORD, false, NULL, NULL, false},
-		{"unknown user", "nl_nobody", NODELOGIN_SECRET_PASSWORD, true, NULL, NULL, false},
-		{"certificate user, his certificate and key", NODELOGIN_CERT_USER, NODELOGIN_SECRET_CERT, false, &ctx->Certs.User, &ctx->Certs.UserKey, true},
-		{"certificate user, another certificate", NODELOGIN_CERT_USER, NODELOGIN_SECRET_CERT, false, &ctx->Certs.Stranger, &ctx->Certs.StrangerKey, false},
-		{"certificate user, his certificate signed by another key", NODELOGIN_CERT_USER, NODELOGIN_SECRET_CERT, false, &ctx->Certs.User, &ctx->Certs.StrangerKey, false},
-		{"root certificate user, a certificate of the trusted root", NODELOGIN_ROOT_USER, NODELOGIN_SECRET_CERT, false, &ctx->Certs.Rooted, &ctx->Certs.RootedKey, true},
-		{"root certificate user, a certificate of no trusted root", NODELOGIN_ROOT_USER, NODELOGIN_SECRET_CERT, false, &ctx->Certs.Stranger, &ctx->Certs.StrangerKey, false},
-		{"domain user, right password", NODELOGIN_DOMAIN_USER, NODELOGIN_SECRET_DOMAIN, true, NULL, NULL, true},
-		{"domain user, wrong password", NODELOGIN_DOMAIN_USER, NODELOGIN_SECRET_DOMAIN, false, NULL, NULL, false},
+		{"password user, right password", NODELOGIN_PASSWORD_USER, NODELOGIN_SECRET_PASSWORD, true, NULL, NULL, true, ERR_NO_ERROR},
+		{"password user, wrong password", NODELOGIN_PASSWORD_USER, NODELOGIN_SECRET_PASSWORD, false, NULL, NULL, false, ERR_AUTH_FAILED},
+		{"unknown user", "nl_nobody", NODELOGIN_SECRET_PASSWORD, true, NULL, NULL, false, ERR_AUTH_FAILED},
+		{"certificate user, his certificate and key", NODELOGIN_CERT_USER, NODELOGIN_SECRET_CERT, false, &ctx->Certs.User, &ctx->Certs.UserKey, true, ERR_NO_ERROR},
+		{"certificate user, another certificate", NODELOGIN_CERT_USER, NODELOGIN_SECRET_CERT, false, &ctx->Certs.Stranger, &ctx->Certs.StrangerKey, false, ERR_AUTH_FAILED},
+		{"certificate user, his certificate signed by another key", NODELOGIN_CERT_USER, NODELOGIN_SECRET_CERT, false, &ctx->Certs.User, &ctx->Certs.StrangerKey, false, ERR_AUTH_FAILED},
+		{"root certificate user, a certificate of the trusted root", NODELOGIN_ROOT_USER, NODELOGIN_SECRET_CERT, false, &ctx->Certs.Rooted, &ctx->Certs.RootedKey, true, ERR_NO_ERROR},
+		{"root certificate user, a certificate of no trusted root", NODELOGIN_ROOT_USER, NODELOGIN_SECRET_CERT, false, &ctx->Certs.Stranger, &ctx->Certs.StrangerKey, false, ERR_AUTH_FAILED},
+		{"domain user, right password", NODELOGIN_DOMAIN_USER, NODELOGIN_SECRET_DOMAIN, true, NULL, NULL, true, ERR_NO_ERROR},
+		{"domain user, wrong password", NODELOGIN_DOMAIN_USER, NODELOGIN_SECRET_DOMAIN, false, NULL, NULL, false, ERR_AUTH_FAILED},
 	};
 	UINT num_cases = sizeof(cases) / sizeof(cases[0]);
-	UINT oracle[sizeof(cases) / sizeof(cases[0])];
 
 	NodeLoginAddAccount(ctx);
 	NodeLoginCheck(ctx, NodeLoginNewCerts(&ctx->Certs), "the RSA-2048 certificates: a user's, a root, one it signed, a stranger's", "RsaGen, NewRootX or NewX failed");
 
-	// The oracle: the SE-VPN login on the harness server
-	Print("[oracle: the SE-VPN login of the slim fork]\n");
-	HARNESS *h = HarnessOpenServer("NODELOGIN", NODELOGIN_WATCHDOG, NODELOGIN_HUB, NODELOGIN_PASSWORD_USER, &ok);
-	NodeLoginCheck(ctx, ok, "the harness server runs the hub with the password user", "HarnessOpenServer failed");
-	for (UINT i = 0;i < num_cases;i++)
-	{
-		oracle[i] = ERR_INTERNAL_ERROR;
-	}
-	if (ok)
-	{
-		HUB *hub = GetHub(h->Server->Cedar, NODELOGIN_HUB);
-		if (NodeLoginCheck(ctx, hub != NULL, "the hub of the harness server", "GetHub failed"))
-		{
-			NodeLoginAddUsers(ctx, hub, false);
-			ReleaseHub(hub);
-
-			for (UINT i = 0;i < num_cases;i++)
-			{
-				oracle[i] = NodeLoginOracle(ctx, h, &cases[i]);
-				Print("  [INFO] SE-VPN login, %s: error %u\n", cases[i].What, oracle[i]);
-			}
-		}
-	}
-	UINT harness_fail = HarnessCloseServer(h);
-	NodeLoginCheck(ctx, harness_fail == 0, "the harness server stops cleanly", "%u failed harness checks", harness_fail);
-
-	// The new core: the node's server role, the same users, Noise sessions
+	// The new core: the node's server role, the users, Noise sessions
 	Print("[new core: the Login of a Noise session, checked by NodeLogin]\n");
 	NodeLoginNewDir(dir, sizeof(dir));
 	NODE *n = NewNode(dir);
@@ -547,7 +429,7 @@ void nodelogin_test(UINT num, char **arg)
 	HUB *hub = NodeGetHub(n, NODELOGIN_HUB);
 	if (NodeLoginCheck(ctx, hub != NULL, "the server role of the node runs the hub", "NodeGetHub failed"))
 	{
-		NodeLoginAddUsers(ctx, hub, true);
+		NodeLoginAddUsers(ctx, hub);
 		ReleaseHub(hub);
 
 		for (UINT i = 0;i < num_cases;i++)
@@ -558,8 +440,8 @@ void nodelogin_test(UINT num, char **arg)
 			char what[MAX_SIZE];
 
 			Format(what, sizeof(what), "%s: %s, as the SE-VPN login", c->What, c->Expect ? "logs in" : "refused");
-			NodeLoginCheck(ctx, err == oracle[i] && (err == ERR_NO_ERROR) == c->Expect, what,
-				"NodeLogin error %u, SE-VPN login error %u", err, oracle[i]);
+			NodeLoginCheck(ctx, err == c->SeVpnError && (err == ERR_NO_ERROR) == c->Expect, what,
+				"NodeLogin error %u, SE-VPN login error %u", err, c->SeVpnError);
 			NodeLoginCheck(ctx, carried, c->Expect ? "  the session carries data" : "  the session is closed",
 				"the session did not %s", c->Expect ? "carry the data record" : "close");
 		}
