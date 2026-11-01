@@ -59,6 +59,7 @@ func FuzzParseDocument(f *testing.F) {
 	f.Add([]byte(policyJSON))
 	f.Add([]byte(dnsJSON))
 	f.Add([]byte(mimicJSON))
+	f.Add([]byte(endpointJSON))
 	f.Add([]byte(`{"resources": [{"kind": "Controller", "name": "c1", "spec": {}}]}`))
 
 	f.Fuzz(func(t *testing.T, b []byte) {
@@ -81,6 +82,18 @@ func FuzzParseDocument(f *testing.F) {
 			for vrf := range in.VRFs {
 				if _, records, _ := in.Zone(vrf); len(records) > MaxDNSRecords || slices.ContainsFunc(records, func(r ZoneRecord) bool { return len(r.Addresses) > MaxDNSAddresses }) {
 					t.Fatalf("the zone of VRF %q has %d records, or a record with more than %d addresses", vrf, len(records), MaxDNSAddresses)
+				}
+			}
+			// What the Endpoints compile to fits the control protocol too (publish.go; SDN-24)
+			compiled := in.WithPublished()
+			for node, rules := range compiled.NATRules() {
+				if len(rules) > MaxNATRules {
+					t.Fatalf("Node %q applies %d 1:1 NAT rules with its Endpoints, more than %d", node, len(rules), MaxNATRules)
+				}
+			}
+			for vrf := range compiled.VRFs {
+				if _, records, _ := compiled.Zone(vrf); len(records) > MaxDNSRecords {
+					t.Fatalf("the zone of VRF %q has %d records with its Endpoints, more than %d", vrf, len(records), MaxDNSRecords)
 				}
 			}
 			// A mimic section that is applied fits the control protocol (listener_mimic.go; SDN-94)
@@ -114,11 +127,12 @@ func FuzzParseDocument(f *testing.F) {
 // subnet of a Node (parseLAN), a prefix of a 1:1 NAT rule (parseNATPrefix), and the DNS suffix of a
 // VRF, the name of a DnsRecord (checkDNSName) and its addresses (parseDNSAddress), the address of an
 // endpoint of a Node (ParseEndpointAddress, SDN-93), whose host and port write back as the same address,
-// and the decoy of a Listener in its one form (canonicalDecoy, checkDecoy; AUD1-DT-4 #452).
+// the decoy of a Listener in its one form (canonicalDecoy, checkDecoy; AUD1-DT-4 #452), and the address that
+// an Endpoint publishes a service at (publishedAddress, SDN-24), which a host of the overlay can hold.
 func FuzzParseValues(f *testing.F) {
 	for _, s := range []string{"fd12:3456:789a::/48", "10.0.0.0/24", "2001:db8::/64", key1, "192.0.2.1:4000", "[2001:db8::1]:4000", "[::ffff:192.0.2.1]:1",
 		"10.0.0.1", "192.168.1.0/24", "0.0.0.0/0", "::ffff:10.0.0.0/120", "65000:100", "064512:007", "4200000000:65535",
-		"fileserver.default.ranz.internal", "a-b.c1", "fe80::1%eth0", "::",
+		"fileserver.default.ranz.internal", "a-b.c1", "fe80::1%eth0", "::", "172.16.1.1", "224.0.0.9", "169.254.1.1", "fd00:101:0:9::10", "::ffff:10.0.0.1",
 		"hub.example.com:443", "HUB.Example.com:0443", "hub.example.com", "hub:443:80", "[hub]:443", "300.1.1.1:443", "[::ffff:0.0.0.0]:1", "[fe80::1%eth0]:443",
 		"127.0.0.1:8080", "[::1]:8080", "[::ffff:127.0.0.2]:80", "[::1%lo]:80"} {
 		f.Add(s)
@@ -158,6 +172,13 @@ func FuzzParseValues(f *testing.F) {
 		}
 		if checkDNSName(s) == nil && (len(s) > MaxDNSName || strings.ToLower(s) != s || strings.HasPrefix(s, ".") || strings.HasSuffix(s, ".")) {
 			t.Errorf("checkDNSName(%q) takes it", s)
+		}
+		// The address of an Endpoint is one that a host of the overlay holds, and it reads back as itself
+		if a, err := publishedAddress(s); err == nil {
+			if again, err := publishedAddress(a.String()); err != nil || again != a || a.Zone() != "" || a.Is4In6() || a.IsUnspecified() || a.IsLoopback() || a.IsMulticast() ||
+				a.IsLinkLocalUnicast() {
+				t.Errorf("publishedAddress(%q) = %s, which reads back as %s, %v", s, a, again, err)
+			}
 		}
 		if host, port, err := ParseEndpointAddress(s); err == nil {
 			back := net.JoinHostPort(host, strconv.Itoa(int(port)))
