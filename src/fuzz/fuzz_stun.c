@@ -75,6 +75,22 @@ static void FuzzStunServerStr(const uint8_t *data, size_t size)
 // One input: a datagram and server text
 static void FuzzStun(const uint8_t *data, size_t size)
 {
+	// TEMPORARY, taken out again (CI-FLAKE-7, #605): the 1000th input of a process writes one byte past a block of 4 bytes. The seed
+	// replay runs fewer inputs and passes; the step "Fuzz (60 s per target)" of the job fuzz-asan must fail on the AddressSanitizer
+	// report, name this target, and keep its crash file and log
+	static UINT planted_inputs = 0;
+
+	if (++planted_inputs == 1000)
+	{
+		volatile char *block = malloc(4);
+
+		if (block != NULL)
+		{
+			block[4] = 1;
+			free((void *)block);
+		}
+	}
+
 	if (size == 0 || size > FUZZ_MAX_INPUT_SIZE)
 	{
 		return;

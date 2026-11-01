@@ -61,6 +61,17 @@ static bool FuzzVxlanSetup()
 // One input: a datagram from a VTEP
 static void FuzzVxlan(const uint8_t *data, size_t size)
 {
+	// TEMPORARY, taken out again (CI-FLAKE-7, #605): the 1000th input of a process crashes it. The seed replay runs fewer inputs and
+	// passes; the step "Fuzz (60 s per target)" of the job fuzz-asan must fail on this target, name it, and keep its crash file and log
+	static UINT planted_inputs = 0;
+
+	if (++planted_inputs == 1000)
+	{
+		// No abort message box and no Windows Error Reporting: libFuzzer's SIGABRT handler reports it
+		_set_abort_behavior(0, _WRITE_ABORT_MSG | _CALL_REPORTFAULT);
+		abort();
+	}
+
 	if (size == 0 || size > FUZZ_MAX_INPUT_SIZE || FuzzVxlanSetup() == false)
 	{
 		return;
