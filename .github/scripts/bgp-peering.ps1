@@ -15,6 +15,12 @@ $PSNativeCommandUseErrorActionPreference = $false
 #     sidecar of the peering, which listens on TCP 179 of 127.0.0.2, and then of ::1, on this host in either order of start
 #     (src/vpntest/bgpbothtest.c), and must print "BGPBOTH TEST OK" and "NO MEMORY LEAKS". It shows whether the two sidecars
 #     of one node bind without a clash, for IPv4 and for IPv6 tunnel endpoints.
+#   - vpntest reflector runs a route reflector and three clients whose sidecars listen on TCP 179 of 127.0.0.2 to 127.0.0.5,
+#     and a second reflector on 127.0.0.6 (SDN-79 #359, src/vpntest/reflectortest.c), and must print "REFLECTOR TEST OK" and
+#     "NO MEMORY LEAKS": each client learns the routes of the others through the reflector, no client peers with another, no
+#     route crosses into another VRF, a session from an address that the Controller did not name is refused, and the routes
+#     of the clients go within the hold time when the only reflector stops and stay through the second one when one of two
+#     stops.
 
 $build = (Resolve-Path -LiteralPath $BuildDir).Path
 
@@ -26,7 +32,7 @@ if ($LASTEXITCODE -ne 0) { throw "go build of ranz exited with $LASTEXITCODE" }
 & (Join-Path $build 'ranz.exe') version
 
 $failed = @()
-foreach ($test in @(@{ Name = 'peering'; Ok = 'PEERING TEST OK' }, @{ Name = 'bgpboth'; Ok = 'BGPBOTH TEST OK' })) {
+foreach ($test in @(@{ Name = 'peering'; Ok = 'PEERING TEST OK' }, @{ Name = 'bgpboth'; Ok = 'BGPBOTH TEST OK' }, @{ Name = 'reflector'; Ok = 'REFLECTOR TEST OK' })) {
 	$full = (Write-Output "q\n" | & (Join-Path $build 'vpntest.exe') $test.Name | Out-String)
 	$code = $LASTEXITCODE
 	Write-Host $full
@@ -40,4 +46,4 @@ foreach ($test in @(@{ Name = 'peering'; Ok = 'PEERING TEST OK' }, @{ Name = 'bg
 if ($failed.Count -ne 0) {
 	throw ('failed: ' + ($failed -join '; '))
 }
-Write-Host 'BGP peering of the standard mode and the two sidecars of one host: ok'
+Write-Host 'BGP peering of the standard mode, the two sidecars of one host and the route reflectors: ok'

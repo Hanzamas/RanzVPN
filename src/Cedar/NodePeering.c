@@ -23,6 +23,15 @@
 // refused, on its control stream (ControlSetPeeringReport), which ranz explain shows. A sidecar that ends by itself, or does
 // not start, starts again after NODE_PEERING_RESTART; the routes that it learned go with it.
 //
+// The route reflectors of the standard mode (SDN-79, #359): in a VRF whose Intent names route reflectors, the Peer object of each
+// peer gives its role there (CONTROL_PEER_PEERING.ReflectorVrfIds, ClientVrfIds and ReflectedVrfIds), which the node passes on to
+// its sidecar with the peer (protocol 5). A client has a session with each reflector of the VRF and with no other client: its
+// sidecar knows another client only for what that client may announce, refuses a session from it, and the node does not count it
+// among the peers of its sidecar. A reflector passes on the routes of each client to the other clients of the VRF, each with the
+// client as its next hop, and never into another VRF. The node takes such a route, while the peer that passed it on is a reflector
+// of its VRF, as a route of the node of its next hop, whose accept list it checks: the links of the VRF stay a full mesh, so a route
+// that a reflector passed on never leads through the reflector.
+//
 // What the review of SDN-77 asked of the node (SDN-77-R1, #531):
 // - No change of the learned routes is lost: the worker never waits for an apply of the overlay, whose lock it only tries. A
 //   rebuild that meets an apply tries again once the apply is done, and one that finds another Generation in force then leaves
@@ -83,7 +92,7 @@
 #define NODE_PEERING_FULL    2 // The routes of its peer are full
 #define NODE_PEERING_OUTSIDE 3 // Its peer may not announce it in the state: the accept list of the peer there does not hold it
 
-// A route that the sidecar learned: a prefix of a VRF, from the peer of an address
+// A route that the sidecar learned: a prefix of a VRF, from the peer of an address, via the node of its next hop
 typedef struct NODE_PEERING_ROUTE {
 	UINT VrfId;        // The VRF
 	UCHAR Address[16]; // The prefix: 4 bytes for IPv4, 16 for IPv6
@@ -91,6 +100,8 @@ typedef struct NODE_PEERING_ROUTE {
 	UINT Length;       // ... and its length
 	UCHAR Peer[16];    // The address of the sidecar of the peer that announced it
 	UINT PeerSize;     // ... the number of its bytes
+	UCHAR NextHop[16]; // The address of the sidecar of the node that it leads to: the peer, but for a route that a route reflector
+	UINT NextHopSize;  // ... passed on (SDN-79, #359); the number of its bytes
 } NODE_PEERING_ROUTE;
 
 // A peer of the sidecar, with the state of its session that the sidecar named last
@@ -259,6 +270,39 @@ static bool NodePeeringVrfPeers(const CONTROL_STATE *st, UINT vrf_id) {
 static bool NodePeeringHasVrf(const CONTROL_PEER_PEERING *c, UINT vrf_id) {
 	for (UINT i = 0; i < c->NumVrfs && i < CONTROL_MAX_VRFS; i++)
 		if (c->VrfIds[i] == vrf_id)
+			return true;
+
+	return false;
+}
+
+// Whether vrf_id is one of the num VRFs of the list ids of a role of a peer (CONTROL_PEER_PEERING)
+static bool NodePeeringHasRole(const UINT *ids, UINT num, UINT vrf_id) {
+	for (UINT i = 0; i < num && i < CONTROL_MAX_VRFS; i++)
+		if (ids[i] == vrf_id)
+			return true;
+
+	return false;
+}
+
+// The role of the peer of the peering c in the VRF vrf_id, as the sidecar names it (PeerVRF.Role of
+// ranz-bgp/internal/sidecar/protocol.go; SDN-79, #359): reflector, client or reflected in a VRF whose Intent names route
+// reflectors, NULL in a VRF of a full mesh
+static const char *NodePeeringRole(const CONTROL_PEER_PEERING *c, UINT vrf_id) {
+	if (NodePeeringHasRole(c->ReflectorVrfIds, c->NumReflectorVrfs, vrf_id))
+		return "reflector";
+	if (NodePeeringHasRole(c->ClientVrfIds, c->NumClientVrfs, vrf_id))
+		return "client";
+	if (NodePeeringHasRole(c->ReflectedVrfIds, c->NumReflectedVrfs, vrf_id))
+		return "reflected";
+
+	return NULL;
+}
+
+// Whether the sidecar of the node has a session with the peer of the peering c: a VRF of the session that is not 0 and in which
+// the two are not both clients of the route reflectors (session of ranz-bgp/internal/sidecar/reflector.go; SDN-79, #359)
+static bool NodePeeringSession(const CONTROL_PEER_PEERING *c) {
+	for (UINT i = 0; i < c->NumVrfs && i < CONTROL_MAX_VRFS; i++)
+		if (c->VrfIds[i] != 0 && NodePeeringHasRole(c->ReflectedVrfIds, c->NumReflectedVrfs, c->VrfIds[i]) == false)
 			return true;
 
 	return false;
@@ -445,11 +489,13 @@ static UINT NodePeeringJsonUint(const cJSON *o, const char *name) {
 	return (UINT)item->valuedouble;
 }
 
-// A learned message: the route of the prefix of a VRF comes from the peer of an address now. Whether the routes changed. The node
-// takes every route that the sidecar reports: the sidecar reports one only when it is exactly a prefix of the accept list of its
-// peer in its VRF, so a peer holds what it may announce, CONTROL_MAX_ACCEPT routes at most, and no peer takes the room of another
-// peer or VRF (SDN-77-R1, #531).
-static bool NodePeeringLearned(NODE_PEERING *p, UINT vrf_id, const UCHAR *addr, UINT size, UINT length, const UCHAR *peer, UINT peer_size) {
+// A learned message: the route of the prefix of a VRF comes from the peer of an address now, via the node of the next hop
+// next_hop, which is the peer but for a route that a route reflector passed on (SDN-79, #359). Whether the routes changed. The
+// node takes every route that the sidecar reports: the sidecar reports one only when it is exactly a prefix of the accept list of
+// its peer in its VRF, or of a node of the VRF for a route of a reflector, so a peer holds what it may announce,
+// CONTROL_MAX_ACCEPT routes at most, and no peer takes the room of another peer or VRF (SDN-77-R1, #531).
+static bool NodePeeringLearned(NODE_PEERING *p, UINT vrf_id, const UCHAR *addr, UINT size, UINT length, const UCHAR *peer, UINT peer_size, const UCHAR *next_hop,
+                               UINT next_hop_size) {
 	bool changed = false;
 
 	Lock(p->Lock);
@@ -466,10 +512,12 @@ static bool NodePeeringLearned(NODE_PEERING *p, UINT vrf_id, const UCHAR *addr, 
 			Add(p->Routes, r);
 		}
 
-		// A new route, or one whose best path moved to another peer
-		if (fresh || r->PeerSize != peer_size || Cmp(r->Peer, peer, peer_size) != 0) {
+		// A new route, or one whose best path moved to another peer or to another next hop
+		if (fresh || r->PeerSize != peer_size || Cmp(r->Peer, peer, peer_size) != 0 || r->NextHopSize != next_hop_size || Cmp(r->NextHop, next_hop, next_hop_size) != 0) {
 			Copy(r->Peer, peer, peer_size);
 			r->PeerSize = peer_size;
+			Copy(r->NextHop, next_hop, next_hop_size);
+			r->NextHopSize = next_hop_size;
 			p->Dirty = true;
 			p->Reported = true;
 			changed = true;
@@ -550,7 +598,17 @@ static void NodePeeringOnMessage(NODE_PEERING *p, const char *line) {
 		if (vrf_id == 0 || NodePeeringParse(text, NET_STRING_IP_NETWORK, prefix, &prefix_size, &length) == false || (learned && has_peer == false)) {
 			NodeLog(p->Node, "BGP peering: a %s message of the sidecar without a VRF, a prefix or a peer: VRF %u, prefix \"%s\", peer \"%s\"", type, vrf_id, text, peer_text);
 		} else if (learned) {
-			wake = NodePeeringLearned(p, vrf_id, prefix, prefix_size, length, peer, peer_size);
+			// The node that the route leads to: the peer, but for a route that a route reflector passed on, which names the client
+			// that announced it (SDN-79, #359); a message without a next hop names the peer
+			UCHAR next_hop[16];
+			UINT next_hop_size = 0;
+
+			if (NodePeeringParse(NodePeeringJsonStr(m, "next_hop"), NET_STRING_IP_ADDRESS_NO_SCOPE, next_hop, &next_hop_size, NULL) == false) {
+				Copy(next_hop, peer, sizeof(next_hop));
+				next_hop_size = peer_size;
+			}
+
+			wake = NodePeeringLearned(p, vrf_id, prefix, prefix_size, length, peer, peer_size, next_hop, next_hop_size);
 			NodeLog(p->Node, "BGP peering: route %s of VRF %u learned from %s, via %s", text, vrf_id, peer_text, NodePeeringJsonStr(m, "next_hop"));
 		} else {
 			wake = NodePeeringWithdrawn(p, vrf_id, prefix, prefix_size, length);
@@ -988,7 +1046,9 @@ static bool NodePeeringLaunch(NODE *n, NODE_PEERING_SIDECAR *s, HANDLE halt) {
 
 // The peers of the state for the sidecar, as the JSON array of the protocol: each peer that the sidecar takes
 // (NodePeeringTakes), in the AS of the node, with the hold time of the session and its VRFs, each with what the peer may
-// announce there
+// announce there and, in a VRF whose Intent names route reflectors, the role of the peer there (protocol 5; SDN-79, #359). A
+// peer whose routes come through the reflectors goes too: the sidecar has no session with it, and checks with what it may
+// announce the routes of the reflectors that lead to it.
 static cJSON *NodePeeringPeersJson(const CONTROL_STATE *st) {
 	char text[MAX_SIZE];
 	cJSON *peers = cJSON_CreateArray();
@@ -1014,8 +1074,11 @@ static cJSON *NodePeeringPeersJson(const CONTROL_STATE *st) {
 
 			cJSON *vrf = cJSON_CreateObject();
 			cJSON *accept = cJSON_CreateArray();
+			const char *role = NodePeeringRole(c, c->VrfIds[j]);
 
 			cJSON_AddNumberToObject(vrf, "id", c->VrfIds[j]);
+			if (role != NULL)
+				cJSON_AddStringToObject(vrf, "role", role);
 			for (UINT k = 0; k < c->NumAccept && k < CONTROL_MAX_ACCEPT; k++) {
 				const CONTROL_ROUTE *a = &c->Accept[k];
 
@@ -1097,8 +1160,10 @@ static bool NodePeeringSendPeers(NODE_PEERING *p, NODE_PEERING_SIDECAR *s, const
 	return ok;
 }
 
-// The peers of the sidecar from the state, every one that it takes: a peer that stays keeps the state of its session, a new one is
-// idle. The node holds and counts each of them, beyond the CONTROL_MAX_PEERING_PEERS that a report holds (SDN-77-R1, #531).
+// The peers of the sidecar from the state, every one that it takes and has a session with: a peer that stays keeps the state of its
+// session, a new one is idle. The node holds and counts each of them, beyond the CONTROL_MAX_PEERING_PEERS that a report holds
+// (SDN-77-R1, #531). A peer whose routes come through the route reflectors is none of them: the sidecar has no session with it, so
+// it names no state of one (SDN-79, #359).
 static void NodePeeringSetPeers(NODE_PEERING *p, const CONTROL_STATE *st) {
 	LIST *next = NewListFast(NULL);
 
@@ -1107,7 +1172,7 @@ static void NodePeeringSetPeers(NODE_PEERING *p, const CONTROL_STATE *st) {
 		for (UINT i = 0; i < st->NumPeers; i++) {
 			const CONTROL_PEER_PEERING *c = st->Peers[i].Peering;
 
-			if (NodePeeringTakes(st, c) == false)
+			if (NodePeeringTakes(st, c) == false || NodePeeringSession(c) == false)
 				continue;
 
 			NODE_PEERING_PEER *q = ZeroMalloc(sizeof(NODE_PEERING_PEER));
@@ -1786,47 +1851,72 @@ void NodePeeringFree(NODE *n) {
 	Free(p);
 }
 
-// Put the learned route r into the routes of its peer in st: the peer whose Peer object names the address of the sidecar that
-// announced it, while the VRF of the route peers by BGP and is one of their session, and the accept list of the peer there holds
-// the route (NODE_PEERING_IN, NODE_PEERING_SKIP, NODE_PEERING_FULL or NODE_PEERING_OUTSIDE)
-static UINT NodePeeringInject(CONTROL_STATE *st, const NODE_PEERING_ROUTE *r) {
-	if (NodePeeringVrfPeers(st, r->VrfId) == false)
-		return NODE_PEERING_SKIP;
-
+// The peer of st whose Peer object names the address addr of size bytes as the one of its sidecar, with the VRF vrf_id among the
+// VRFs of their session; NULL for none
+static CONTROL_PEER *NodePeeringPeerOf(CONTROL_STATE *st, const UCHAR *addr, UINT size, UINT vrf_id) {
 	for (UINT i = 0; i < st->NumPeers; i++) {
 		CONTROL_PEER *cp = &st->Peers[i];
 		const CONTROL_PEER_PEERING *c = cp->Peering;
 
-		if (c == NULL || c->AddressSize != r->PeerSize || Cmp(c->Address, r->Peer, r->PeerSize) != 0 || NodePeeringHasVrf(c, r->VrfId) == false)
-			continue;
-
-		// What the peer may announce in this Generation, which may be less than what the sidecar took the route with, until the
-		// sidecar starts the session again with the peers of this Generation (SDN-77-R1, #531)
-		if (NodePeeringAccepts(c, r->VrfId, r->Address, r->AddressSize, r->Length) == false)
-			return NODE_PEERING_OUTSIDE;
-
-		// A host route of an address of the peer: the forwarding tables lead that address to the peer already
-		for (UINT j = 0; j < cp->NumAddresses && j < CONTROL_MAX_ADDRESSES; j++) {
-			const CONTROL_ADDRESS *a = &cp->Addresses[j];
-
-			if (a->VrfId == r->VrfId && a->AddressSize == r->AddressSize && r->Length == r->AddressSize * 8 && Cmp(a->Address, r->Address, r->AddressSize) == 0)
-				return NODE_PEERING_SKIP;
-		}
-
-		if (cp->NumRoutes >= CONTROL_MAX_ROUTES)
-			return NODE_PEERING_FULL;
-
-		CONTROL_ROUTE *route = &cp->Routes[cp->NumRoutes++];
-		Zero(route, sizeof(CONTROL_ROUTE));
-		route->VrfId = r->VrfId;
-		Copy(route->Address, r->Address, sizeof(route->Address));
-		route->AddressSize = r->AddressSize;
-		route->Length = r->Length;
-
-		return NODE_PEERING_IN;
+		if (c != NULL && c->AddressSize == size && Cmp(c->Address, addr, size) == 0 && NodePeeringHasVrf(c, vrf_id))
+			return cp;
 	}
 
-	return NODE_PEERING_SKIP;
+	return NULL;
+}
+
+// Put the learned route r into the routes of the node that it leads to in st: the peer whose Peer object names the address of the
+// sidecar that announced it, or for a route whose next hop is another node, the peer whose Peer object names that next hop, while
+// the peer that announced it is a route reflector of the VRF of the route (SDN-79, #359); while the VRF of the route peers by BGP
+// and is one of the session of that peer, and the accept list of that peer there holds the route (NODE_PEERING_IN,
+// NODE_PEERING_SKIP, NODE_PEERING_FULL or NODE_PEERING_OUTSIDE). A route that a reflector passed on leads to the client that
+// announced it, never through the reflector: the links of the VRF are a full mesh. A peer that is no reflector of the VRF passes
+// on no route of another node.
+static UINT NodePeeringInject(CONTROL_STATE *st, const NODE_PEERING_ROUTE *r) {
+	if (NodePeeringVrfPeers(st, r->VrfId) == false)
+		return NODE_PEERING_SKIP;
+
+	CONTROL_PEER *cp = NodePeeringPeerOf(st, r->Peer, r->PeerSize, r->VrfId);
+	if (cp == NULL)
+		return NODE_PEERING_SKIP;
+
+	if (r->NextHopSize != r->PeerSize || Cmp(r->NextHop, r->Peer, r->PeerSize) != 0) {
+		const CONTROL_PEER_PEERING *from = cp->Peering;
+
+		if (NodePeeringHasRole(from->ReflectorVrfIds, from->NumReflectorVrfs, r->VrfId) == false)
+			return NODE_PEERING_OUTSIDE;
+
+		cp = NodePeeringPeerOf(st, r->NextHop, r->NextHopSize, r->VrfId);
+		if (cp == NULL)
+			return NODE_PEERING_OUTSIDE;
+	}
+
+	const CONTROL_PEER_PEERING *c = cp->Peering;
+
+	// What the peer may announce in this Generation, which may be less than what the sidecar took the route with, until the
+	// sidecar starts the session again with the peers of this Generation (SDN-77-R1, #531)
+	if (NodePeeringAccepts(c, r->VrfId, r->Address, r->AddressSize, r->Length) == false)
+		return NODE_PEERING_OUTSIDE;
+
+	// A host route of an address of the peer: the forwarding tables lead that address to the peer already
+	for (UINT j = 0; j < cp->NumAddresses && j < CONTROL_MAX_ADDRESSES; j++) {
+		const CONTROL_ADDRESS *a = &cp->Addresses[j];
+
+		if (a->VrfId == r->VrfId && a->AddressSize == r->AddressSize && r->Length == r->AddressSize * 8 && Cmp(a->Address, r->Address, r->AddressSize) == 0)
+			return NODE_PEERING_SKIP;
+	}
+
+	if (cp->NumRoutes >= CONTROL_MAX_ROUTES)
+		return NODE_PEERING_FULL;
+
+	CONTROL_ROUTE *route = &cp->Routes[cp->NumRoutes++];
+	Zero(route, sizeof(CONTROL_ROUTE));
+	route->VrfId = r->VrfId;
+	Copy(route->Address, r->Address, sizeof(route->Address));
+	route->AddressSize = r->AddressSize;
+	route->Length = r->Length;
+
+	return NODE_PEERING_IN;
 }
 
 // The state st with the routes that the sidecar learned among the routes of their peers, for the forwarding tables and the

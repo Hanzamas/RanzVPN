@@ -9,6 +9,7 @@ bgp            needs ranz and gobgpd next to vpntest and administrator rights: .
 evpn           needs ranz next to vpntest, whose sidecars of two nodes peer with each other: .github/scripts/bgp-spike.ps1 runs it
 peering        needs ranz next to vpntest and TCP 179 free on 127.0.0.2 to 127.0.0.4: .github/scripts/bgp-peering.ps1 runs it
 bgpboth        needs ranz next to vpntest and TCP 179 free on every address: .github/scripts/bgp-peering.ps1 runs it
+reflector      needs ranz next to vpntest and TCP 179 free on 127.0.0.2 to 127.0.0.6: .github/scripts/bgp-peering.ps1 runs it
 mimic          needs ranz next to vpntest: .github/scripts/mimic-sidecar.ps1 runs it
 selfintegrity  needs a signed binary: .github/scripts/self-integrity.ps1 runs it
 sdntrace       needs the address and key of a running controller: .github/scripts/sdn-tracer.ps1 runs it

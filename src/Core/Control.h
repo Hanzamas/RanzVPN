@@ -251,6 +251,17 @@ typedef struct CONTROL_PEER_PEERING {
 	UINT VrfIds[CONTROL_MAX_VRFS];            // ... ascending
 	UINT NumAccept;                           // What the peer may announce in them: its addresses and its LAN subnets
 	CONTROL_ROUTE Accept[CONTROL_MAX_ACCEPT]; // ... ordered by VRF id, then prefix
+
+	// The roles of the peer in the VRFs of the session whose Intent names route reflectors (SDN-79, #359), each list ascending:
+	// the VRFs in which the peer is a route reflector, those in which it is a client of the node, a reflector there, and those
+	// in which both are clients, whose routes come through the reflectors. A VRF of a full mesh is in none of them, and a peer
+	// all of whose VRFs are reflected has no session with the node (NodePeering.c).
+	UINT NumReflectorVrfs;
+	UINT ReflectorVrfIds[CONTROL_MAX_VRFS];
+	UINT NumClientVrfs;
+	UINT ClientVrfIds[CONTROL_MAX_VRFS];
+	UINT NumReflectedVrfs;
+	UINT ReflectedVrfIds[CONTROL_MAX_VRFS];
 } CONTROL_PEER_PEERING;
 
 // One peer of the sidecar of a node, as the node reports it (PeeringPeer of the control protocol; SDN-77, #357)
@@ -612,6 +623,9 @@ typedef struct CONTROL_CAPS {
 	// The node can be the gateway of a Stretch of an L2 Network (SDN-63, #290): its host is a Windows Server, and its VXLAN
 	// module runs
 	bool Evpn;
+	// The node runs the route reflectors of the BGP peering of the standard mode, as a reflector and as a client: its release
+	// has them, and ranz.exe, which holds its sidecar, is next to it (SDN-79, #359)
+	bool BgpReflection;
 } CONTROL_CAPS;
 
 // Fills caps, which is zeroed, with the Capabilities of the node. The client calls it for each Hello, so a node
