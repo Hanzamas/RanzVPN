@@ -1,5 +1,22 @@
 # The recorded medians of the scale test at the scale target of ADR-0026 decision 7 (ADR-0040 item 5, SDN-18 #194): the scenario
 # of controller/internal/nodesim/scale.go with 10,000 nodes, 1,000 VRFs and 100,000 routes, as .github/scripts/bench-gate.py reads
 # them: <case> <median> <unit> <margin %>.
-# The step Performance regression gate of the job scale in ranz.yml compares the BENCH lines of each run of the full set with them.
+# The step Performance regression gate at the target of the job scale in ranz.yml compares the BENCH lines of each run of the full
+# set with them.
 # bench-gate.py record makes this file from the scale-bench*.txt files of the artifact ranz-scale-full of several CI runs.
+# Recorded by bench-gate.py record from 2 runs of the job scale (ubuntu-24.04, 4 CPUs) on pull request 603, 41302590647 and
+# 41322803714, the margin twice the slowest run's distance from the median, rounded up to 5 %, and at least 75 %: the apply of the
+# slower run took 32 % longer than that of the faster, so a run 75 % slower than its median is a regression and not a noisy
+# runner. Record them again from more runs of the full set (each night makes one) to narrow the margins.
+scale_change_ack_max 67654.1 ms 75
+scale_change_ack_p50 64962.4 ms 75
+scale_change_ack_p90 66429.2 ms 75
+scale_change_ack_p99 66524 ms 75
+scale_change_apply 63310.6 ms 75
+scale_enrol_ack_p50 9290.9 ms 75
+scale_enrol_ack_p99 13534.5 ms 75
+scale_enrol_converge 40043.8 ms 75
+scale_enrol_rate 250.35 ops/s 75
+scale_route_ack_max 67146.9 ms 75
+scale_route_apply 65841.7 ms 75
+scale_setup_apply 140350 ms 75

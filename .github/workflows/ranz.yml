@@ -523,8 +523,8 @@ jobs:
   # applies each), after the tenth, so that the runs that record the medians of the target record those of the tenth too. The
   # test writes scale.json, scale-summary.md and the BENCH lines to RANZ_SCALE_OUT, a directory for each size; the gate compares
   # them with the recorded medians of the size, the summary goes to the job summary, and the artifact ranz-scale-<size> holds all
-  # of it for 90 days. The time of a run is the time of the applies, which compile the whole intent: minutes at the tenth, about
-  # ten at the target.
+  # of it for 90 days. The time of a run is the time of the applies, which compile the whole intent: 15 seconds at the tenth,
+  # 9 to 12 minutes at the target.
   scale:
     name: scale (Linux)
     needs: plan
