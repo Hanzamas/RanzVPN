@@ -11,6 +11,7 @@
 #define NODE_EVPN_ETHER      14                  // Bytes of the Ethernet header in front of the IP packet of a frame of the fabric
 #define NODE_EVPN_MAX_VRFS   16                  // The VRFs of an evpn object at most (CONTROL_MAX_VRFS)
 #define NODE_EVPN_MAX_ROUTES 65536               // The IP prefix routes of the fabric that a gateway holds at most (NODE_VRF_MAX_HOPS)
+#define NODE_EVPN_MAX_OFFERS 16                  // The vteps of a learned message at most (maxEVPNVTEPs of ranz-bgp/internal/sidecar)
 #define NODE_EVPN_TEXT       64                  // A prefix, an address or a MAC address as text, with its NUL
 
 // What NodeEvpnParseRoute finds in a message of the sidecar
@@ -28,23 +29,26 @@ typedef struct NODE_EVPN NODE_EVPN;
 typedef struct NODE_EVPN_TABLE NODE_EVPN_TABLE;
 
 // An IP prefix route of the fabric in an EVPN VRF, as a learned or withdrawn message of the sidecar names it
-// (NodeEvpnParseRoute) and as the gateway holds it (NodeEvpnGetRoutes). A withdrawn message names no next hop and no
-// router MAC.
+// (NodeEvpnParseRoute) and as the gateway holds it (NodeEvpnGetRoutes). A withdrawn message names no next hop, no router
+// MAC and no vteps.
 typedef struct NODE_EVPN_ROUTE {
-	UINT VrfId;                   // The EVPN VRF
-	char Prefix[NODE_EVPN_TEXT];  // The prefix, as the sidecar names it
-	UCHAR Address[16];            // ... 4 bytes for IPv4, 16 for IPv6, in network byte order
-	UINT AddressSize;             // ... their number
-	UINT Length;                  // ... and its length
-	char NextHop[NODE_EVPN_TEXT]; // The VTEP of the fabric, the next hop of the route
-	UCHAR Vtep[16];               // ... as an IPv4-mapped or an IPv6 address
-	UINT Vni;                     // The VNI of the route: its label, the L3 VNI of the VRF of the fabric
-	UCHAR RouterMac[6];           // The router MAC of the fabric: the inner destination of the frames of the route
-	char Peer[NODE_EVPN_TEXT];    // The BGP peer that the route came from
+	UINT VrfId;                            // The EVPN VRF
+	char Prefix[NODE_EVPN_TEXT];           // The prefix, as the sidecar names it
+	UCHAR Address[16];                     // ... 4 bytes for IPv4, 16 for IPv6, in network byte order
+	UINT AddressSize;                      // ... their number
+	UINT Length;                           // ... and its length
+	char NextHop[NODE_EVPN_TEXT];          // The VTEP of the fabric, the next hop of the route
+	UCHAR Vtep[16];                        // ... as an IPv4-mapped or an IPv6 address
+	UINT NumVteps;                         // The vteps of the message: the next hops of every route that the peers offer for the prefix ...
+	UCHAR Vteps[NODE_EVPN_MAX_OFFERS][16]; // ... each as an IPv4-mapped or an IPv6 address (SDN-25-R3, #571)
+	UINT Vni;                              // The VNI of the route: its label, the L3 VNI of the VRF of the fabric
+	UCHAR RouterMac[6];                    // The router MAC of the fabric: the inner destination of the frames of the route
+	char Peer[NODE_EVPN_TEXT];             // The BGP peer that the route came from
 } NODE_EVPN_ROUTE;
 
 // A VTEP of the fabric that a gateway knows for one of its EVPN VRFs: the VTEP of an IP prefix route of the VRF that it learned,
-// as the table snapshot holds it (NodeEvpnSortVteps), the only address that the gateway takes a frame of the VRF from
+// or the next hop of another route that a peer offers for the prefix of one (the vteps of its learned message; SDN-25-R3,
+// #571), as the table snapshot holds it (NodeEvpnSortVteps), the only address that the gateway takes a frame of the VRF from
 // (NodeEvpnHasVtep; SDN-25-R1, #549)
 typedef struct NODE_EVPN_VTEP {
 	UINT VrfId;   // The EVPN VRF

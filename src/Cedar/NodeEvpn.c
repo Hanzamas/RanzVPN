@@ -10,10 +10,11 @@
 // single Windows routing table, so two VRFs hand over the same prefixes, each on its own L3 VNI.
 //
 // The routes of the fabric: a learned message of the sidecar with a vni is the route of a prefix in an EVPN VRF, via a VTEP of
-// the fabric (next_hop), with the VNI and the router MAC of the fabric, and a withdrawn message with a vni takes it away
-// (NodeEvpnParseRoute). The node holds them in a list and builds them into one longest-prefix-match table per EVPN VRF
-// (NodeVrf.c), which goes into the table snapshot of the node by pointer (NodeSwapEvpn) once for each read of the pipe that
-// changed a route (NodeEvpnCommit), so the data path reads them without a lock, as it reads the forwarding tables of the VRFs.
+// the fabric (next_hop), with the VNI and the router MAC of the fabric and the next hops of every route that the peers offer
+// for the prefix (vteps), and a withdrawn message with a vni takes it away (NodeEvpnParseRoute). The node holds them in a list
+// and builds them into one longest-prefix-match table per EVPN VRF (NodeVrf.c), which goes into the table snapshot of the node
+// by pointer (NodeSwapEvpn) once for each read of the pipe that changed a route (NodeEvpnCommit), so the data path reads them
+// without a lock, as it reads the forwarding tables of the VRFs.
 //
 // Into the fabric: the routes of the overlay come first, so a packet goes to the fabric only to a destination that no route of
 // its VRF holds and an IP prefix route of the fabric does. The default route of the VRF is the one exception (SDN-25-R2, #550):
@@ -30,17 +31,20 @@
 // It carries the L3 VNI of each EVPN VRF, and drops and counts a datagram that holds no frame (Malformed) and one on any other
 // VNI (UnknownVni), so a host that is no VTEP of the fabric raises those two counters too, though nothing of its datagram is
 // delivered or learned. A frame of an L3 VNI goes into its VRF when it comes from a VTEP that the gateway knows for the VRF,
-// the VTEP of an IP prefix route of the VRF that it learned (NodeEvpnHasVtep; SDN-25-R1, #549): the address alone names a
-// VTEP, which sends from any source port (RFC 7348 section 5), and a frame from any other address has no honest reason to
-// exist, so whoever can send to the UDP port of the VTEP of the gateway cannot forge one. A host that sends with the address
-// of a VTEP of the fabric is that VTEP to the gateway: the source-address validation of the underlay answers it, which the
-// operator provides (docs/threat-model.md, SM-11). The frame must then be addressed to the router MAC of the gateway,
-// untagged, and hold an IP packet of the version of its EtherType (NodeEvpnParseFrame), and an IP prefix route of the fabric
-// in the VRF must hold the source of the packet: the fabric speaks only for the prefixes that it announced there. Any VTEP
-// that the gateway knows for the VRF may send it, as any leaf of a fabric routes the subnets of its VRFs. The overlay takes it
-// to the host or on to a peer, as the table of the VRF routes its destination (NodeOverlayFabricInput). Any other frame is
-// dropped and counted: one from another address as UnknownVtep, whatever it holds, and one of a known VTEP by what is wrong
-// with it (NotOurs, Malformed, Strangers), so those count the frames of known VTEPs alone.
+// the VTEP of an IP prefix route of the VRF that it learned (NodeEvpnHasVtep; SDN-25-R1, #549), or the next hop of another
+// route that a peer offers for the prefix of one, so that a leaf whose route of a shared prefix lost to the route of another
+// leaf is known too (the vteps of the learned message; SDN-25-R3, #571): the address alone names a VTEP, which sends from any
+// source port (RFC 7348 section 5), and a frame from any other address has no honest reason to exist, so whoever can send to
+// the UDP port of the VTEP of the gateway cannot forge one. A host that sends with the address of a VTEP of the fabric is that
+// VTEP to the gateway: the source-address validation of the underlay answers it, which the operator provides
+// (docs/threat-model.md, SM-11). The frame must then be addressed to the router MAC of the gateway, untagged, and hold an IP
+// packet of the version of its EtherType (NodeEvpnParseFrame), and an IP prefix route of the fabric in the VRF must hold the
+// source of the packet: the fabric speaks only for the prefixes that it announced there. Any VTEP that the gateway knows for
+// the VRF may send it, as any leaf of a fabric routes the subnets of its VRFs. The overlay takes it to the host or on to a
+// peer, as the table of the VRF routes its destination (NodeOverlayFabricInput). Any other frame is dropped and counted: one
+// from another address as UnknownVtep, whatever it holds, which the node log also says once every 10 s at most (SDN-25-R3,
+// #571), and one of a known VTEP by what is wrong with it (NotOurs, Malformed, Strangers), so those count the frames of known
+// VTEPs alone.
 //
 // At the gateway the fabric stands where the LAN of a gateway stands: the session profile of the peer and the policy of the VRF
 // judge a packet between a peer and the fabric as one between the peer and the host of the gateway, and a Mirror of the VRF
@@ -72,14 +76,15 @@ typedef struct NODE_EVPN_HOP {
 } NODE_EVPN_HOP;
 
 // The IP prefix routes of the fabric as the table snapshot of the node holds them (NodeSwapEvpn): one longest-prefix-match
-// table per EVPN VRF, whose next hop i is Hops[i], and the VTEPs of the routes, which are the VTEPs that the gateway knows
+// table per EVPN VRF, whose next hop i is Hops[i], and the VTEPs that the gateway knows: the VTEP of each route and the next
+// hops of the routes that the peers offer for its prefix (NodeEvpnKnownVteps)
 struct NODE_EVPN_TABLE {
 	NODE_EVPN *Evpn;         // The EVPN of the gateway, whose module sends the packets of the routes
 	NODE_VRF_TABLES *Routes; // The tables
 	UINT NumHops;            // The routes ...
 	NODE_EVPN_HOP *Hops;     // ... and their next hops
-	UINT NumVteps;           // The VTEP of each route with its VRF, once for each VRF ...
-	NODE_EVPN_VTEP *Vteps;   // ... sorted (NodeEvpnSortVteps), in room for one per route
+	UINT NumVteps;           // The VTEPs that the gateway knows, each with its VRF, once for each VRF ...
+	NODE_EVPN_VTEP *Vteps;   // ... sorted (NodeEvpnSortVteps), in room for the VTEP and the vteps of each route
 };
 
 // The EVPN of a gateway, from the start of its BGP sidecar to its stop (NodeBgp.c)
@@ -198,6 +203,40 @@ static bool NodeEvpnJsonUint(cJSON *o, const char *name, UINT max, UINT *value) 
 	return true;
 }
 
+// The address of a VTEP of the fabric that the sidecar names, text, into ip as an IPv4-mapped or an IPv6 address, as
+// VXLAN_ADDR holds the source of a datagram: false when it is no address
+static bool NodeEvpnVtepOf(const char *text, UCHAR *ip) {
+	UCHAR addr[16];
+	UINT size = NodeEvpnParseAddr(text, NET_STRING_IP_ADDRESS_NO_SCOPE, addr, NULL);
+
+	Zero(ip, 16);
+	if (size == 4) {
+		ip[10] = 0xFF;
+		ip[11] = 0xFF;
+		Copy(ip + 12, addr, 4);
+	} else if (size == 16) {
+		Copy(ip, addr, 16);
+	}
+
+	return (size != 0);
+}
+
+// The vteps of a learned message into r: the next hops of every route that the peers offer for the prefix
+// (ranz-bgp/internal/sidecar/evpn_vteps.go; SDN-25-R3, #571), an array of NODE_EVPN_MAX_OFFERS addresses at most. True and
+// none for no such member, as of a sidecar from before it; false for one that is no such array.
+static bool NodeEvpnVtepsOf(cJSON *vteps, NODE_EVPN_ROUTE *r) {
+	if (vteps == NULL)
+		return true;
+	if (cJSON_IsArray(vteps) == false || cJSON_GetArraySize(vteps) > NODE_EVPN_MAX_OFFERS)
+		return false;
+
+	for (cJSON *v = vteps->child; v != NULL && r->NumVteps < NODE_EVPN_MAX_OFFERS; v = v->next)
+		if (NodeEvpnVtepOf(cJSON_GetStringValue(v), r->Vteps[r->NumVteps++]) == false)
+			return false;
+
+	return true;
+}
+
 // The members of a learned (learned) or withdrawn message m of an IP prefix route into r: false when one of them is missing
 // or is none
 static bool NodeEvpnRouteOf(cJSON *m, bool learned, NODE_EVPN_ROUTE *r) {
@@ -205,7 +244,6 @@ static bool NodeEvpnRouteOf(cJSON *m, bool learned, NODE_EVPN_ROUTE *r) {
 	const char *next_hop = NodeEvpnJsonStr(m, "next_hop");
 	const char *mac = NodeEvpnJsonStr(m, "router_mac");
 	const char *peer = NodeEvpnJsonStr(m, "peer");
-	UCHAR vtep[16];
 
 	if (NodeEvpnJsonUint(m, "vrf", 0xFFFFFFFF, &r->VrfId) == false || r->VrfId == 0)
 		return false;
@@ -225,26 +263,19 @@ static bool NodeEvpnRouteOf(cJSON *m, bool learned, NODE_EVPN_ROUTE *r) {
 		return true;
 
 	// The VTEP of the fabric, an IPv4 address as an IPv4-mapped one, and the router MAC of the fabric
-	UINT size = NodeEvpnParseAddr(next_hop, NET_STRING_IP_ADDRESS_NO_SCOPE, vtep, NULL);
-	if (size == 0 || NodeEvpnParseMac(mac, r->RouterMac) == false)
+	if (NodeEvpnVtepOf(next_hop, r->Vtep) == false || NodeEvpnParseMac(mac, r->RouterMac) == false)
 		return false;
-
-	if (size == 4) {
-		r->Vtep[10] = 0xFF;
-		r->Vtep[11] = 0xFF;
-		Copy(r->Vtep + 12, vtep, 4);
-	} else {
-		Copy(r->Vtep, vtep, 16);
-	}
 	StrCpy(r->NextHop, sizeof(r->NextHop), next_hop);
 
-	return true;
+	// ... and the next hops of every route that the peers offer for the prefix, which are VTEPs that the gateway knows too
+	return NodeEvpnVtepsOf(cJSON_GetObjectItemCaseSensitive(m, "vteps"), r);
 }
 
 // Read one message of the sidecar, a JSON object on one line, as an IP prefix route of an EVPN VRF: a learned or withdrawn
 // message with a vni (ranz-bgp/internal/sidecar/evpn.go). NODE_EVPN_NO_ROUTE for any other message; NODE_EVPN_LEARNED or
 // NODE_EVPN_WITHDRAWN with r filled in; NODE_EVPN_BAD, with r empty, for one with a vni that the node cannot take: a vrf of 0,
-// a VNI of 0 or of more than 24 bits, or a prefix, a next hop or a router MAC that is none.
+// a VNI of 0 or of more than 24 bits, a prefix, a next hop or a router MAC that is none, or vteps that are no array of
+// NODE_EVPN_MAX_OFFERS addresses at most.
 UINT NodeEvpnParseRoute(const char *line, NODE_EVPN_ROUTE *r) {
 	UINT ret = NODE_EVPN_NO_ROUTE;
 
@@ -584,6 +615,32 @@ void NodeEvpnFreeTable(NODE_EVPN_TABLE *t) {
 	Free(t);
 }
 
+// The VTEPs that the gateway knows for its EVPN VRFs (NodeEvpnReceive), of the routes of e: the VTEP of each route and the next
+// hops of the routes that the peers offer for its prefix (its vteps; SDN-25-R3, #571), each with the VRF of the route, sorted
+// (NodeEvpnSortVteps) in a new array, and their number into *known; the caller holds the lock
+static NODE_EVPN_VTEP *NodeEvpnKnownVteps(NODE_EVPN *e, UINT *known) {
+	UINT num = 0;
+	UINT n = 0;
+
+	for (UINT i = 0; i < LIST_NUM(e->Routes); i++)
+		num += 1 + MIN(((NODE_EVPN_ROUTE *)LIST_DATA(e->Routes, i))->NumVteps, NODE_EVPN_MAX_OFFERS);
+
+	NODE_EVPN_VTEP *vteps = ZeroMalloc(sizeof(NODE_EVPN_VTEP) * MAX(num, 1));
+	for (UINT i = 0; i < LIST_NUM(e->Routes); i++) {
+		const NODE_EVPN_ROUTE *r = LIST_DATA(e->Routes, i);
+
+		vteps[n].VrfId = r->VrfId;
+		Copy(vteps[n++].Ip, r->Vtep, sizeof(vteps[0].Ip));
+		for (UINT j = 0; j < r->NumVteps && j < NODE_EVPN_MAX_OFFERS; j++) {
+			vteps[n].VrfId = r->VrfId;
+			Copy(vteps[n++].Ip, r->Vteps[j], sizeof(vteps[0].Ip));
+		}
+	}
+
+	*known = NodeEvpnSortVteps(vteps, n);
+	return vteps;
+}
+
 // The routes of e as a table of the snapshot, NULL for none; the caller holds the lock. Routes that do not fit into tables
 // (NodeNewVrfTables) are none, and the node log says so.
 static NODE_EVPN_TABLE *NodeEvpnBuild(NODE_EVPN *e) {
@@ -599,9 +656,9 @@ static NODE_EVPN_TABLE *NodeEvpnBuild(NODE_EVPN *e) {
 	t->Evpn = e;
 	t->NumHops = num;
 	t->Hops = ZeroMalloc(sizeof(NODE_EVPN_HOP) * num);
-	t->Vteps = ZeroMalloc(sizeof(NODE_EVPN_VTEP) * num);
+	t->Vteps = NodeEvpnKnownVteps(e, &t->NumVteps);
 
-	// Each route has a next hop of its own, and its VTEP is one that the gateway knows for its VRF (NodeEvpnReceive)
+	// Each route has a next hop of its own
 	for (UINT i = 0; i < num; i++) {
 		const NODE_EVPN_ROUTE *r = LIST_DATA(e->Routes, i);
 		NODE_EVPN_HOP *h = &t->Hops[i];
@@ -618,11 +675,7 @@ static NODE_EVPN_TABLE *NodeEvpnBuild(NODE_EVPN *e) {
 		routes[i].AddressSize = r->AddressSize;
 		routes[i].Length = r->Length;
 		routes[i].NextHop = i;
-
-		t->Vteps[i].VrfId = r->VrfId;
-		Copy(t->Vteps[i].Ip, r->Vtep, sizeof(t->Vteps[i].Ip));
 	}
-	t->NumVteps = NodeEvpnSortVteps(t->Vteps, num);
 
 	t->Routes = NodeNewVrfTables(0, routes, num, hops, num);
 	Free(hops);
@@ -692,7 +745,8 @@ bool NodeEvpnRoute(NODE *n, const char *line) {
 	else if (full)
 		NodeLog(n, "EVPN route %s of VRF %u from %s not taken: the gateway holds %u routes of the fabric, the most it takes", r.Prefix, r.VrfId, r.Peer, (UINT)NODE_EVPN_MAX_ROUTES);
 	else
-		NodeLog(n, "EVPN route %s of VRF %u learned: via the VTEP %s, VNI %u, router MAC %s, from %s", r.Prefix, r.VrfId, r.NextHop, r.Vni, mac, r.Peer);
+		NodeLog(n, "EVPN route %s of VRF %u learned: via the VTEP %s, VNI %u, router MAC %s, from %s; VTEPs that offer it: %u", r.Prefix, r.VrfId, r.NextHop, r.Vni, mac, r.Peer,
+		        MAX(r.NumVteps, 1));
 
 	return true;
 }
