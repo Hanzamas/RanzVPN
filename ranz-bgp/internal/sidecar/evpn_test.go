@@ -294,10 +294,10 @@ func TestEVPN(t *testing.T) {
 	fabric.announce(fabricRoute{rd: "192.0.2.10:2", prefix: "172.16.1.0/24", nextHop: testFabricVTEP, mac: testFabricMAC2, label: 10102, targets: []string{"65000:10102"}})
 	la := node.wait("learned 172.16.1.0/24 in VRF 101", true, isEVPNRoute(TypeLearned, 101, "172.16.1.0/24"))
 	lb := node.wait("learned 172.16.1.0/24 in VRF 102", true, isEVPNRoute(TypeLearned, 102, "172.16.1.0/24"))
-	if la.NextHop != testFabricVTEP || la.VNI != 10101 || la.RouterMAC != testFabricMAC || la.Peer != "127.0.0.3" {
+	if la.NextHop != testFabricVTEP || la.VNI != 10101 || la.RouterMAC != testFabricMAC || la.Peer != "127.0.0.3" || !slices.Equal(la.VTEPs, []string{testFabricVTEP}) {
 		t.Errorf("learned in VRF 101: %+v", la)
 	}
-	if lb.NextHop != testFabricVTEP || lb.VNI != 10102 || lb.RouterMAC != testFabricMAC2 || lb.Peer != "127.0.0.3" {
+	if lb.NextHop != testFabricVTEP || lb.VNI != 10102 || lb.RouterMAC != testFabricMAC2 || lb.Peer != "127.0.0.3" || !slices.Equal(lb.VTEPs, []string{testFabricVTEP}) {
 		t.Errorf("learned in VRF 102: %+v", lb)
 	}
 
@@ -321,15 +321,33 @@ func TestEVPN(t *testing.T) {
 		}
 	}
 
-	// A second leaf offers 172.16.1.0/24 of VRF 101 under its own route distinguisher: the node keeps its route, and the
-	// route moves to the second leaf when the first withdraws it, without a withdrawn message between. The withdraw waits
-	// until the sidecar has the ninth route, the one of the second leaf: else the fabric router may send the withdraw
-	// first, and the prefix of VRF 101 is rightly withdrawn and learned again.
-	inA2 := fabric.announce(fabricRoute{rd: "192.0.2.11:1", prefix: "172.16.1.0/24", nextHop: "192.0.2.11", mac: testFabricMAC2, label: 10101, targets: []string{"65000:10101"}})
+	// A second leaf offers 172.16.1.0/24 of VRF 101 under its own route distinguisher, and has no prefix of its own in the
+	// VRF: the node keeps its route, and the learned message names the VTEP of the second leaf beside the next hop, so that
+	// the node takes the frames of the second leaf too; when the second leaf withdraws its route, the message names the next
+	// hop alone again (SDN-25-R3 #571). Then the route moves to the second leaf when the first withdraws it, without a
+	// withdrawn message between. The withdraw waits until the sidecar has the ninth route, the one of the second leaf: else
+	// the fabric router may send the withdraw first, and the prefix of VRF 101 is rightly withdrawn and learned again.
+	second := fabricRoute{rd: "192.0.2.11:1", prefix: "172.16.1.0/24", nextHop: "192.0.2.11", mac: testFabricMAC2, label: 10101, targets: []string{"65000:10101"}}
+	both := []string{testFabricVTEP, "192.0.2.11"}
+	withVTEPs := func(vteps []string) func(Message) bool {
+		return func(m Message) bool {
+			return isEVPNRoute(TypeLearned, 101, "172.16.1.0/24")(m) && slices.Equal(m.VTEPs, vteps)
+		}
+	}
+	inA2 := fabric.announce(second)
+	if m := node.wait("172.16.1.0/24 of VRF 101 with the VTEP of the second leaf", false, withVTEPs(both)); m.NextHop != testFabricVTEP || m.RouterMAC != testFabricMAC {
+		t.Errorf("the second leaf took the route of 172.16.1.0/24 of VRF 101, which should stay via the first: %+v", m)
+	}
+	fabric.withdraw(inA2)
+	if m := node.wait("172.16.1.0/24 of VRF 101 without the VTEP of the second leaf", false, withVTEPs([]string{testFabricVTEP})); m.NextHop != testFabricVTEP {
+		t.Errorf("172.16.1.0/24 of VRF 101 after the second leaf withdrew its route: %+v", m)
+	}
+	inA2 = fabric.announce(second)
+	node.wait("172.16.1.0/24 of VRF 101 with the VTEP of the second leaf again", false, withVTEPs(both))
 	waitUntil(t, "the sidecar has the route of the second leaf", func() bool { return node.hasEVPN(9) })
 	fabric.withdraw(inA)
 	moved := node.wait("172.16.1.0/24 of VRF 101 via the second leaf", false, isEVPNRoute(TypeLearned, 101, "172.16.1.0/24"))
-	if moved.NextHop != "192.0.2.11" || moved.RouterMAC != testFabricMAC2 {
+	if moved.NextHop != "192.0.2.11" || moved.RouterMAC != testFabricMAC2 || !slices.Equal(moved.VTEPs, []string{"192.0.2.11"}) {
 		t.Errorf("172.16.1.0/24 of VRF 101 via the second leaf: %+v", moved)
 	}
 	if c := node.count(isEVPNRoute(TypeWithdrawn, 101, "172.16.1.0/24")); c != 0 {
