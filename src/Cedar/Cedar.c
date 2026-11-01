@@ -9,11 +9,9 @@
 #include "Connection.h"
 #include "HubLog.h"
 #include "Link.h"
-#include "Listener.h"
 #include "Protocol.h"
 #include "Sam.h"
 #include "Session.h"
-#include "WaterMark.h"
 
 #include "Mayaqua/Cfg.h"
 #include "Mayaqua/Encrypt.h"
@@ -34,7 +32,8 @@ static void MakeRoomInNoSslList(CEDAR *c);
 static NON_SSL *SearchNoSslList(CEDAR *c, const IP *ip);
 static void FreeNetSvcList(CEDAR *cedar);
 
-static UINT init_cedar_counter = 0;
+// The hooks of the SE-VPN code of the slim fork (Cedar.h): NULL until InitSeVpn fills them
+SEVPN_HOOKS SeVpnHooks;
 
 static bool IsSupportedWinVer(const RPC_WINVER *v) {
 	if (v == NULL)
@@ -519,39 +518,6 @@ static void StopAllHub(CEDAR *c) {
 	Free(hubs);
 }
 
-void AddListener(CEDAR *c, LISTENER *r) {
-	if (c == NULL || r == NULL)
-		return;
-
-	LockList(c->ListenerList);
-	{
-		Add(c->ListenerList, r);
-		AddRef(r->ref);
-	}
-	UnlockList(c->ListenerList);
-}
-
-static void StopAllListener(CEDAR *c) {
-	LISTENER **array;
-	UINT num;
-	if (c == NULL)
-		return;
-
-	LockList(c->ListenerList);
-	{
-		array = ToArray(c->ListenerList);
-		num = LIST_NUM(c->ListenerList);
-		DeleteAll(c->ListenerList);
-	}
-	UnlockList(c->ListenerList);
-
-	for (UINT i = 0; i < num; i++) {
-		StopListener(array[i]);
-		ReleaseListener(array[i]);
-	}
-	Free(array);
-}
-
 // Both budgets are plain counters shared by every connection and link of the Cedar, so one atomic add
 // replaces the lock each of them had. Callers keep the queue budget in step through CedarSyncQueueBudget
 static void CedarAddQueueBudget(CEDAR *c, int diff) {
@@ -624,11 +590,12 @@ UINT CedarGetCurrentTcpQueueSize(CEDAR *c) {
 	return c->CurrentTcpQueueSize;
 }
 
+// Stop the connections and the Hubs of c. The TCP listeners of the slim fork in its ListenerList are stopped by the
+// server that started them (StopAllListener, Listener.c), before it stops its Cedar
 void StopCedar(CEDAR *c) {
 	if (c == NULL)
 		return;
 
-	StopAllListener(c);
 	StopAllConnection(c);
 	StopAllHub(c);
 }
@@ -896,7 +863,8 @@ CEDAR *NewCedar(X *server_x, K *server_k) {
 
 	c->CurrentTcpConnections = GetNumTcpConnectionsCounter();
 
-	c->ListenerList = NewList(CompareListener);
+	// The TCP listeners of the slim fork (AddListener): the list is never sorted or searched, so it needs no compare
+	c->ListenerList = NewList(NULL);
 	c->HubList = NewList(CompareHub);
 	c->ConnectionList = NewList(CompareConnection);
 
@@ -999,17 +967,73 @@ void FreeTraffic(TRAFFIC *t) {
 	Free(t);
 }
 
+// Cedar has nothing of its own to start or end for the process. The watermark of the SE-VPN signature, which was
+// loaded here, belongs to the SE-VPN code: InitSeVpn (Server.c) loads it in the programs that run that code, so
+// ranz-node neither reads watermark.bin nor links WaterMark.c (CORE-S8-2, #576)
 void InitCedar() {
-	if ((init_cedar_counter++) > 0)
-		return;
-
-	InitWaterMark();
 }
 
 void FreeCedar() {
-	if ((--init_cedar_counter) > 0)
+}
+
+// Machine identity (FIX-5, #101): the first SHA1_SIZE bytes of SHA-256 over MACHINE_ID_LABEL with its
+// terminator, the MachineGuid of Windows (trimmed, lower case) with its terminator, and the salt. Host
+// name, IP addresses and OS version are no input. An unreadable MachineGuid is the empty string, so the
+// salt alone still tells two servers apart.
+void ComputeMachineUniqueHash(void *data, char *machine_guid, void *salt, UINT salt_size) {
+	char guid[MAX_SIZE];
+	UCHAR hash[SHA256_SIZE];
+	if (data == NULL || (salt == NULL && salt_size != 0))
 		return;
 
-	FreeWaterMark();
+	StrCpy(guid, sizeof(guid), machine_guid);
+	Trim(guid);
+	StrLower(guid);
+
+	BUF *b = NewBuf();
+	WriteBuf(b, MACHINE_ID_LABEL, StrSize(MACHINE_ID_LABEL));
+	WriteBuf(b, guid, StrSize(guid));
+	WriteBuf(b, salt, salt_size);
+
+	Sha2_256(hash, b->Buf, b->Size);
+
+	FreeBuf(b);
+
+	Copy(data, hash, SHA1_SIZE);
+}
+
+// HKLM\SOFTWARE\Microsoft\Cryptography\MachineGuid in the 64-bit registry view, or "" when it cannot be read
+static void GetMachineGuid(char *guid, UINT size) {
+	if (guid == NULL)
+		return;
+
+	char *s = MsRegReadStrEx2(REG_LOCAL_MACHINE, "SOFTWARE\\Microsoft\\Cryptography", "MachineGuid", false);
+
+	StrCpy(guid, size, s);
+
+	Free(s);
+}
+
+// Set the machine identity salt of a CEDAR (NewCedar: a random one; SiLoadMachineIdCfg: the one of the
+// config file) and derive its machine identity. Called before the hubs and listeners exist, so readers
+// of the identity need no lock.
+void SetCedarMachineIdSalt(CEDAR *c, void *salt) {
+	char guid[MAX_SIZE];
+	if (c == NULL || salt == NULL)
+		return;
+
+	Copy(c->MachineIdSalt, salt, sizeof(c->MachineIdSalt));
+
+	GetMachineGuid(guid, sizeof(guid));
+
+	ComputeMachineUniqueHash(c->MachineUniqueHash, guid, c->MachineIdSalt, sizeof(c->MachineIdSalt));
+}
+
+// The machine identity of a server (SHA1_SIZE bytes): virtual hub MAC address and address, Cascade unique_id
+void GenerateMachineUniqueHash(CEDAR *c, void *data) {
+	if (c == NULL || data == NULL)
+		return;
+
+	Copy(data, c->MachineUniqueHash, SHA1_SIZE);
 }
 

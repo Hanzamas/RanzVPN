@@ -107,3 +107,21 @@ UINT StEnumLocalBridge(ADMIN *a, RPC_ENUM_LOCALBRIDGE *t) {
 
 	return ERR_NO_ERROR;
 }
+
+TOKEN_LIST *GetEthList(void) {
+	RPC_ENUM_ETH t;
+
+	if (EnumEthWin32(&t) == false)
+		return NULL;
+
+	TOKEN_LIST *ret = ZeroMalloc(sizeof(TOKEN_LIST));
+	ret->NumTokens = t.NumItem;
+	ret->Token = ZeroMalloc(sizeof(char *) * ret->NumTokens);
+
+	for (UINT i = 0; i < t.NumItem; i++)
+		ret->Token[i] = CopyStr(t.Items[i].DeviceName);
+
+	FreeRpcEnumEth(&t);
+
+	return ret;
+}

@@ -2258,7 +2258,9 @@ void SetHubOnline(HUB *h) {
 		}
 		HLog(h, "LH_ONLINE");
 
-		StartAllLink(h);
+		// The cascades of the hub (Link.c), through the hooks of the SE-VPN code
+		if (SeVpnHooks.StartAllLink != NULL)
+			SeVpnHooks.StartAllLink(h);
 
 		LockList(h->Cedar->LocalBridgeList);
 		{
@@ -2291,7 +2293,8 @@ void SetHubOffline(HUB *h) {
 
 		HLog(h, "LH_OFFLINE");
 
-		StopAllLink(h);
+		if (SeVpnHooks.StopAllLink != NULL)
+			SeVpnHooks.StopAllLink(h);
 
 		LockList(h->Cedar->LocalBridgeList);
 		{
@@ -2395,7 +2398,8 @@ void CleanupHub(HUB *h) {
 
 	FreeAccessList(h);
 
-	ReleaseAllLink(h);
+	if (SeVpnHooks.ReleaseAllLink != NULL)
+		SeVpnHooks.ReleaseAllLink(h);
 	DeleteHubDb(h->HubDb);
 	ReleaseCedar(h->Cedar);
 	DeleteLock(h->lock);

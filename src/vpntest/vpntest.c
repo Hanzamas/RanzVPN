@@ -411,7 +411,7 @@ void watermark_test(UINT num, char **arg)
 		ok = false;
 	}
 
-	// The buffer loaded by InitCedar() must hold the same bytes
+	// The buffer loaded by InitSeVpn() at startup must hold the same bytes
 	if (WaterMark != NULL && WaterMarkSize == b->Size && Cmp(WaterMark, b->Buf, b->Size) == 0)
 	{
 		Print("  [PASS] Startup buffer matches the file\n");
@@ -642,12 +642,16 @@ int main(int argc, char *argv[])
 	InitMayaqua(memchk, true);
 	EnableProbe(true);
 	InitCedar();
+	// The SE-VPN code of the slim fork, which the in-process oracle of the tests runs: its watermark, and the hooks
+	// through which Cedar calls its cascades, client sessions and UDP Acceleration (CORE-S8-2, #576)
+	InitSeVpn();
 	SetHamMode();
 	wchar_t *args_w = MsCopyProcessArgsW();
 	char *args = CopyUniToStr(args_w);
 	status = TestMain(args);
 	Free(args);
 	Free(args_w);
+	FreeSeVpn();
 	FreeCedar();
 	FreeMayaqua();
 
