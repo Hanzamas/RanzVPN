@@ -12,8 +12,8 @@
 #   or integration, every night (a schedule runs on the default branch, master), on workflow_dispatch, on a
 #   pull request with the label full-ci and on a pull request that changes src/Core/Crypto*,
 #   src/Core/Noise*, src/SeLow, .github/scripts/self-integrity.ps1, .github/scripts/install.ps1,
-#   .github/signing, .github/msi, .github/scripts/msi-*, docs/first-test.md or
-#   .github/scripts/first-test.ps1 (SENSITIVE in ci-plan.py).
+#   .github/signing, .github/msi, .github/scripts/msi-*, docs/first-test.md,
+#   .github/scripts/first-test.ps1 or compat/ (SENSITIVE in ci-plan.py).
 # A job that only the full set runs has needs: plan and if: needs.plan.outputs.full == 'true' (install
 # follows sign_and_integrity, which it needs, and first_test and kmtest follow build_and_test and sign_and_integrity),
 # and a pull request shows it as skipped. A new job
@@ -1249,7 +1249,8 @@ jobs:
   # #576). The job checks that commit out with its submodules and builds compat/, which configures the tree of the
   # commit as a project of its own and builds its cedar and mayaqua libraries, with OpenSSL from vcpkg and liboqs. The
   # msquic headers and the nanopb generator of its new core come from the scripts of that commit, so that the build of
-  # the frozen tree stays the one of its own time.
+  # the frozen tree stays the one of its own time. It is a job of the full set, and compat/ is a path of SENSITIVE in
+  # ci-plan.py, so a pull request that changes the pin or the build of ranz-compat runs it before it merges.
   compat:
     needs: plan
     if: needs.plan.outputs.full == 'true'
