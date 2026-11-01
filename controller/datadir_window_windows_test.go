@@ -3,9 +3,12 @@
 package controllercmd
 
 import (
+	"context"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
+	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -377,6 +380,75 @@ func TestCheckDataDirName(t *testing.T) {
 	}
 }
 
+// A data directory that is there, named by a path that ends in a period or a space, is refused by the start of the service,
+// by a Controller that an administrator starts by hand, and by reset-admin, backup and restore, and nothing is made in it.
+// Windows takes the tail off, so the path finds the folder, and these steps then check the folder that is there
+// (checkDataDirOwner) and never reach the steps that make one, which refuse such a path too. So the check of the name in
+// checkDataDirOwner is what refuses a Controller that was registered with `-data "D:\RanzData\ "` before the upgrade, whose
+// folder the install of then made (finding E of the read-only review of PR 541). The third review found that no test failed
+// without that check, since each case of TestNewDataDirWithATrailingSeparatorIsMadeWithItsOwnList starts with no folder.
+// The folder is the one that the install makes, which the Administrators own, so that its owner is no reason to refuse it.
+// Two controls show that the check of the name is the one that refuses: Windows finds the folder by each path, so the start
+// does not go to the steps that make a folder, and the rest of checkDataDirOwner, the owner read by the path, passes it.
+func TestControllerRefusesAnExistingDataDirNamedWithATrailingPeriodOrSpace(t *testing.T) {
+	requireAdministrator(t)
+	dir := filepath.Join(t.TempDir(), "Ranz", "controller")
+	if err := takeOverDataDir(dir); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	defer cancel()
+	log := slog.New(slog.NewTextHandler(io.Discard, nil))
+	allowed := func() error { return nil }
+	for _, tail := range []struct{ name, text string }{
+		{"a space after its name", " "},
+		{"a period after its name", "."},
+		{"a trailing space", `\ `},
+		{"three trailing periods", `\...`},
+		{"a trailing period and space", `\. `},
+	} {
+		t.Run(tail.name, func(t *testing.T) {
+			typed := dir + tail.text
+			if fi, err := os.Stat(typed); err != nil || !fi.IsDir() {
+				t.Fatalf("Windows does not find the data directory %s by %q (%v): the start would go to the steps that make a folder, so this test shows nothing", dir, typed, err)
+			}
+			owner, err := dataDirOwner(typed)
+			if err != nil {
+				t.Fatalf("the owner of the data directory, read by %q: %v: the start would refuse it without the check of the name, so this test shows nothing", typed, err)
+			}
+			if trusted, err := ownerIsTrusted(owner); err != nil || !trusted {
+				t.Fatalf("the data directory, read by %q, is owned by %s (%v): the start would refuse it without the check of the name, so this test shows nothing", typed, accountName(owner), err)
+			}
+			cfg, err := parseFlags([]string{"-data", typed})
+			if err != nil {
+				t.Fatal(err)
+			}
+			file := filepath.Join(t.TempDir(), "store.backup")
+			wantRefused := func(what string, err error) {
+				t.Helper()
+				if err == nil || !strings.Contains(err.Error(), "ends in a period or a space") {
+					t.Errorf("%s answered %v for %q, want a refusal that says that it ends in a period or a space", what, err, typed)
+				}
+			}
+			wantRefused("makeDataDir", makeDataDir(typed))
+			_, err = (&service{cfg: cfg}).openLog()
+			wantRefused("the start of the service", err)
+			wantRefused("run", run(ctx, cfg, log, io.Discard, hooks{}))
+			_, _, err = resetAdmin(ctx, cfg, allowed, io.Discard)
+			wantRefused("reset-admin", err)
+			_, err = backup(ctx, cfg, file, allowed, io.Discard)
+			wantRefused("backup", err)
+			wantRefused("restore", restore(ctx, cfg, file, allowed, io.Discard))
+			if entries, err := os.ReadDir(dir); err != nil || len(entries) != 0 {
+				t.Errorf("the data directory holds %d entries after the refusals (%v), want none", len(entries), err)
+			}
+			if _, err := os.Stat(file); err == nil {
+				t.Error("backup wrote a file although it refused the data directory")
+			}
+		})
+	}
+}
+
 // keptDataDir makes the folder that an earlier install or an administrator left, which the Administrators (or the
 // account of this process) own, and which the test fills.
 func keptDataDir(t *testing.T) string {
@@ -423,20 +495,12 @@ func TestInstallRefusesAKeptDataDirThatHoldsAChildOfAStandardUser(t *testing.T) 
 			wantDataDirRefused(t, "the install", dir, err)
 			if err != nil {
 				said := err.Error()
-				for _, want := range []string{
-					offender,
-					"did not take",
-					"remove it, and run the install again",
-					"Only when an administrator made it",
-					`takeown /F "` + offender + `" /A /R /D Y, then icacls "` + offender + `" /reset /T`,
-				} {
+				for _, want := range []string{offender, "did not take"} {
 					if !strings.Contains(said, want) {
 						t.Errorf("the message %q does not say %q", said, want)
 					}
 				}
-				if n := strings.Count(said, "takeown /F"); n != 1 {
-					t.Errorf("the message %q offers takeown %d times, want once, together with the reset of the access list", said, n)
-				}
+				wantSafeAdvice(t, said, offender, "run the install again")
 				if strings.Contains(said, `takeown /F "`+dir+`"`) {
 					t.Errorf("the message %q offers to give the whole data directory to the Administrators, which would take what the user made with it", said)
 				}

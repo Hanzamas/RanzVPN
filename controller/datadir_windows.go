@@ -38,14 +38,15 @@ import (
 // filepath.Clean keeps them, so the folder above such a path is the data directory itself, and the step that makes the
 // folder above it would make the data directory with the list of its own folder, as a trailing separator did.
 //
-// Four things are not closed, and #554 (AUD1-DT-18-R1) is for them; ST-3 of docs/threat-model.md says so, with what
+// Five things are not closed, and #554 (AUD1-DT-18-R1) is for them; ST-3 of docs/threat-model.md says so, with what
 // else is open (checkDataDirChildren lists what the look does not see). The new folder is changed by name after the
-// call that makes it, so a user that owns the folder above it can put a folder of its own in its place in that moment
-// (makeProtectedDir). A kept folder is changed by name after the look at what it holds, so the same user can put a
-// folder of its own, or a junction, in its place in that moment (takeOverDataDir). The look works by name, one call
-// after the other, so an entry that its owner switches between a folder and a junction while the install looks can
-// pass it. And the look does not see a hard link, which can name a file outside the folder that the list of the
-// install then reaches (checkDataDirChildren).
+// call that makes it, so a user that owns the folder above it can put a folder of its own, or a junction, in its place
+// in that moment (makeProtectedDir). A kept folder is changed by name after the look at what it holds, so the same user
+// can put a folder of its own, or a junction, in its place in that moment (takeOverDataDir). The look works by name, one
+// call after the other, so an entry that its owner switches between a folder and a junction while the install looks
+// can pass it. The look reads an entry whose name ends in a period or a space by the name that Windows makes of it,
+// which is the name of another entry. And the look does not see a hard link, which can name a file outside the folder
+// that the list of the install then reaches (checkDataDirChildren).
 
 // installDataDirSDDL is dataDirSDDL with the Administrators as its owner, as NODE_DATA_DIR_SDDL of
 // src/Cedar/Node.c is.
@@ -158,6 +159,12 @@ func accountName(sid *windows.SID) string {
 // rqlited of its payload folder as an administrator. It refuses a path that ends in a period or a space as well
 // (checkDataDirName), since the folder that Windows finds by it is not the one that the files of the controller,
 // joined to the path, are looked for in.
+//
+// The message says to remove the directory, and offers to give it to the Administrators only for what an administrator
+// made, with a reset of its access list (takeownAdvice), and then to register the service again over it: the reset leaves
+// the folder the list that it inherits from the folder above, which under C:\ProgramData lets the Users group read what
+// it holds and add files and folders, and the start does not set the list of a folder that is there, while the install
+// sets it after a look at what the folder holds (finding 2 of the third read-only review of PR 541).
 func checkDataDirOwner(dir string) error {
 	if err := checkDataDirName(dir); err != nil {
 		return err
@@ -172,7 +179,8 @@ func checkDataDirOwner(dir string) error {
 	}
 	if !trusted {
 		return fmt.Errorf("the data directory %s is owned by %s, and only SYSTEM, the Administrators and %s may own it: another account may have made it before the install, and what it holds would run as the controller. "+
-			`Look at what it holds, then remove it, or, when you made it yourself, give it to the Administrators (takeown /F "%s" /A /R /D Y) and start again`, dir, accountName(owner), serviceAccount, dir)
+			"Look at what it holds, remove it, and start again. %s", dir, accountName(owner), serviceAccount,
+			takeownAdvice(dir, "register the service again over it before it starts (ranz controller uninstall, then ranz controller install with the flags of the service), since the reset leaves it the access list of the folder above it, which only the install replaces"))
 	}
 	return nil
 }
@@ -224,12 +232,15 @@ func ownDataDir(dir string) error {
 // whatever is at the name then gets them. A user that owns the folder above (a C:\ProgramData\Ranz that it made first)
 // may delete the children of that folder, so it can rename the new folder away in that moment and put a folder of its
 // own in its place, with payload\ inside and a handle held. The install then gives that folder to the Administrators,
-// and the user keeps payload\ and what is in it. The start of the service, which makes a missing folder the same way,
-// does not look at the owner of what it finds there either (dataDirOwner drops the owner that it reads), and only the
-// next start refuses a folder of another owner (checkDataDirOwner). The install before AUD1-DT-18, a Mkdir and then
-// ownDataDir, had the same gap. Setting the owner and the list through the handle that made the folder closes it:
-// that is #554 (AUD1-DT-18-R1), and this change does not do it. ST-3 of docs/threat-model.md says so. It is reasoned,
-// not tested: a test has to swap the folder between the two steps, which #554 adds.
+// and the user keeps payload\ and what is in it. When it puts a junction there after dataDirOwner looked,
+// setDataDirSecurity follows the junction, and the install gives the folder that it names to the Administrators, with
+// the protected list passed down to what that folder holds (the service then refuses the data directory as a link).
+// The start of the service, which makes a missing folder the same way, does not look at the owner of what it finds
+// there either (dataDirOwner drops the owner that it reads), and only the next start refuses a folder of another owner
+// (checkDataDirOwner). The install before AUD1-DT-18, a Mkdir and then ownDataDir, had the same gap. Setting the owner
+// and the list through the handle that made the folder closes it: that is #554 (AUD1-DT-18-R1), and this change does
+// not do it. ST-3 of docs/threat-model.md says so. It is reasoned, not tested: a test has to swap the folder, or put a
+// junction in its place, between the two steps, which #554 adds.
 //
 // CreateDirectory gives the folder its list as a protected list and no more: the flag of a list that passes a change
 // down to what the folder holds (auto-inherited, AI in the text of a descriptor) is not set, whatever the descriptor says,
@@ -323,19 +334,21 @@ func createDataDir(dir string) error {
 //     still writes after, and an entry that its owner put on its list stays, since the list that the install
 //     passes down replaces only the entries that came from the folder. The message says to remove it, and
 //     offers to give it to the Administrators, with a reset of its list, only for what an administrator made
-//     (refuseChild). The look has four limits, and all are open (checkDataDirChildren says more): it does not
+//     (refuseChild). The look has five limits, and all are open (checkDataDirChildren says more): it does not
 //     see a hard link; it works by name, so an entry that its owner switches between a folder and a junction
-//     while the install looks can pass it; it does not see a file that a user adds between the look and the
-//     change of the list, which a folder that an administrator made by hand allows, since it has the list
-//     that it inherits, and on C:\ProgramData that lets the Users group add files and folders; and the folder
-//     is changed by name after the look, so a user that owns the folder above it can put a folder of its own,
-//     or a junction, in its place in that moment.
+//     while the install looks can pass it; it reads an entry whose name ends in a period or a space by the
+//     name that Windows makes of it, which is the name of another entry; it does not see a file that a user
+//     adds between the look and the change of the list, which a folder that an administrator made by hand
+//     allows, since it has the list that it inherits, and on C:\ProgramData that lets the Users group add
+//     files and folders; and the folder is changed by name after the look, so a user that owns the folder
+//     above it can put a folder of its own, or a junction, in its place in that moment.
 //   - A directory that another account owns is not kept: it may hold anything, a store with a token that
 //     the user knows or an rqlited.exe of its own, and the account that made it may hold it open, and so
 //     keep a way to write into it after the access list changed. It is taken over by making it again:
 //     an empty one is removed, which fails while anybody holds it open, and made anew. One that holds
-//     anything, one that is a link, and one that cannot be read or removed is refused, with a message that
-//     says what to do.
+//     anything, and one that cannot be read or removed, is refused with a message that says to remove it,
+//     and offers to give it to the Administrators, with a reset of its list, only for what an administrator
+//     made (removeForeignDataDir). One that is a link is refused before its owner counts (dataDirOwner).
 //
 // A path whose last element ends in a period or a space is refused first, whether the folder is there or not, and
 // nothing is changed (checkDataDirName): it names the folder without the tail, and the files of the controller, which
@@ -371,11 +384,15 @@ func takeOverDataDir(dir string) error {
 }
 
 // removeForeignDataDir removes the data directory dir, which the account owner owns, when it is empty,
-// and refuses it otherwise.
+// and refuses it otherwise. The message says to remove it, and offers to give it to the Administrators only for what
+// an administrator made, with a reset of its access list (takeownAdvice): after takeown alone, the look of the next
+// install would pass the folder, whose owners are then trusted, and an entry that the user put on the list of payload\
+// would stay and pass down to the rqlited.exe that the service writes there (finding 2 of the third read-only review
+// of PR 541).
 func removeForeignDataDir(dir string, owner *windows.SID) error {
 	refuse := func(why string) error {
 		return fmt.Errorf("the data directory %s is owned by %s, so the install did not take it over: %s. A user may have made it before the install, and what it holds would run as the controller. "+
-			`Look at what it holds, then remove it, or give it to the Administrators (takeown /F "%s" /A /R /D Y), and run the install again`, dir, accountName(owner), why, dir)
+			"Look at what it holds, remove it, and run the install again. %s", dir, accountName(owner), why, takeownAdvice(dir, "run the install again"))
 	}
 	entries, err := os.ReadDir(dir)
 	if err != nil {
@@ -399,7 +416,7 @@ func removeForeignDataDir(dir string, owner *windows.SID) error {
 // it: the Controller makes none, and what a link points at is not the data directory. Nothing is changed: the check
 // reads the owners and the attributes only, and runs before the owner and the list are set.
 //
-// What the look does not see is open, and #554 (AUD1-DT-18-R1) is for all of it but the third; ST-3 of
+// What the look does not see is open, and #554 (AUD1-DT-18-R1) is for all of it but the fourth; ST-3 of
 // docs/threat-model.md says so. All of it is reasoned, not tested:
 //
 //   - An entry that changes while the install looks. The look works by name, one call after the other: it reads the
@@ -411,6 +428,11 @@ func removeForeignDataDir(dir string, owner *windows.SID) error {
 //     owner of the folder). A lost race is a refusal that names the user. Whether the list that ownDataDir passes down
 //     follows a junction that is left in place is not known. #554 opens each entry once, without following a link,
 //     and reads all three through that handle.
+//   - An entry whose name ends in a period or a space, which a user that may add to the folder can make with a \\?\
+//     path. The look joins the name to the folder and reads the attributes and the owner by that path, and Windows
+//     takes the tail off it, so the look reads the entry of the name without the tail in its place: a junction or a
+//     folder of a user named `admin.token ` is looked at as the file admin.token of the service next to it, and
+//     passes with no race. #554 opens each entry by its exact name.
 //   - A hard link. It is one more name of a file, and the file has an owner, so a hard link to a file elsewhere on
 //     the volume that SYSTEM or the Administrators own, which a user that may add files here could plant when it may
 //     write that file, passes the look. The list that ownDataDir passes down is then written to that file, and the
@@ -490,14 +512,22 @@ func ownerOf(path string) (*windows.SID, error) {
 }
 
 // refuseChild is the refusal of the kept data directory dir, because of the file or folder path in it, which why
-// says what is wrong with. The message says to remove it. It offers to give it to the Administrators only for what an
-// administrator made, and then with a reset of its access list: takeown changes only the owner, and the list that the
-// install passes down replaces only the entries that came from the folder, so an entry that a user put on the list of
-// what it made, or a protected list, would stay, and so would a handle that the user holds (finding B2 of the second
-// read-only review of PR 541).
+// says what is wrong with. The message says to remove it, and offers to give it to the Administrators only for what an
+// administrator made, with a reset of its access list (takeownAdvice; finding B2 of the second read-only review of
+// PR 541).
 func refuseChild(dir, path, why string) error {
 	return fmt.Errorf("the data directory %s is kept with what it holds, so the install did not take it over: %s %s. A user may have put it there before the install, and it would run as the controller. "+
-		`Look at it, remove it, and run the install again. Only when an administrator made it and all that it holds, give it to the Administrators and reset its access list instead (takeown /F "%s" /A /R /D Y, then icacls "%s" /reset /T), and run the install again: takeown alone changes only the owner, and keeps an entry that a user put on the list`, dir, path, why, path, path)
+		"Look at it, remove it, and run the install again. %s", dir, path, why, takeownAdvice(path, "run the install again"))
+}
+
+// takeownAdvice is the part of a refusal that offers to give the file or folder path, which an untrusted account owns, to
+// the Administrators: only when an administrator made it and all that it holds, and always with a reset of its access list
+// and of every list below it, and then to do what then says. takeown changes only the owner, and the list that the install
+// passes down replaces only the entries that came from the folder, so an entry that a user put on the list of what it
+// made, or a protected list, would stay, and so would a handle that the user holds. What a user made is removed instead,
+// as the message says before this part.
+func takeownAdvice(path, then string) string {
+	return fmt.Sprintf(`Only when an administrator made it and all that it holds, give it to the Administrators and reset its access list instead (takeown /F "%s" /A /R /D Y, then icacls "%s" /reset /T), and %s: takeown alone changes only the owner, and keeps an entry that a user put on the list`, path, path, then)
 }
 
 // refuseReparsePoint is the refusal of the kept data directory dir, because the file or folder path in it is a
