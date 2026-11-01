@@ -34,5 +34,8 @@ bool CheckLogFileNameFromEnumList(LIST *o, char *name);
 void ServerLogDir(char *dir, UINT size);
 void HubSecurityLogDir(char *dir, UINT size, char *hubname);
 void HubPacketLogDir(char *dir, UINT size, char *hubname);
+void SiGetSysLogSetting(SERVER *s, SYSLOG_SETTING *setting);
+void SiWriteSysLog(SERVER *s, char *typestr, char *hubname, wchar_t *message);
+UINT SiGetSysLogSaveStatus(SERVER *s);
 
 #endif
