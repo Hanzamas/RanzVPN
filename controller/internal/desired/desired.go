@@ -58,6 +58,8 @@ func KeyOf(o *controlpb.Object) Key {
 // policy of its VRFs that can match a flow with one end at the node (policy.go). The node's own
 // endpoints are in its own NodeConfig. in must be an intent that intent.Apply returned.
 func Compile(in intent.Intent) (map[string]State, error) {
+	// The 1:1 NAT rule, the rules of policy and the name that each Endpoint compiles to (publish.go; SDN-24)
+	in = in.WithPublished()
 	vrfs := map[string]*controlpb.Vrf{}
 	for name, v := range in.VRFs {
 		ula, err := intent.ParseULA(v.ULA)
