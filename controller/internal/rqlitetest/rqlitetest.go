@@ -5,14 +5,24 @@
 //
 // Start starts an rqlited of the test's own. Fresh gives the test an empty database of an rqlited
 // that the tests of the package share instead (shared.go), which spares them a start each.
+//
+// Every start of a member goes through launch. It takes the two addresses of the member from the
+// ports that no other test of the run holds (Addrs, ports.go), lets at most startBound starts of
+// the test process run at once, and waits for the node: its /readyz is polled until it answers
+// 200, which needs a leader, or the member exits, or startTimeout is over. A start that fails says
+// in its error what the last answer of /readyz was and what rqlited printed last.
 package rqlitetest
 
 import (
 	"context"
 	"errors"
-	"net"
+	"fmt"
+	"io"
+	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -24,6 +34,14 @@ const startTimeout = 60 * time.Second
 
 // startAttempts is how many times Start picks two addresses and starts rqlited on them.
 const startAttempts = 3
+
+// startBound is how many starts of rqlited run at the same time in a test process, at most. The tests of a package that
+// run in parallel (Fresh) each want an rqlited, and a runner of four cores tests four packages at once. A start that has
+// no place waits for one, and its startTimeout begins when it has it.
+const startBound = 3
+
+// starting holds a place for each start that runs.
+var starting = make(chan struct{}, startBound)
 
 // Start starts rqlited and stops it when the test ends. On a failure the test log shows
 // rqlited's output.
@@ -53,8 +71,11 @@ func start(t testing.TB, id, join string) *sidecar.Rqlited {
 		joinAddrs = []string{join}
 	}
 	r := &sidecar.Rqlited{Path: path, DataDir: filepath.Join(dir, "data"), NodeID: id, Join: joinAddrs, Output: out}
+	// The addresses go back once rqlited is stopped
+	release := func() {}
 	t.Cleanup(func() {
 		r.Stop()
+		release()
 		out.Close()
 		if t.Failed() {
 			if b, err := os.ReadFile(out.Name()); err == nil {
@@ -62,9 +83,11 @@ func start(t testing.TB, id, join string) *sidecar.Rqlited {
 			}
 		}
 	})
-	if err := launch(r, t.Logf); err != nil {
+	free, err := launch(r, t.Logf)
+	if err != nil {
 		t.Fatal(err)
 	}
+	release = free
 	return r
 }
 
@@ -82,38 +105,134 @@ func rqlitedPath(t testing.TB) string {
 	return path
 }
 
-// launch starts r, which has its data directory, on two addresses, and returns why it did not start.
-// The addresses were free a moment ago. A process that runs at the same time (the tests of another
-// package, or a connection that took one of the ports as its own) may take one before rqlited binds
-// it, and rqlited then exits at once, so a start that ended so goes again on two other addresses,
-// with an empty data directory, and logf says so. A start that ran out of time, and the last of the
-// attempts, fail.
-func launch(r *sidecar.Rqlited, logf func(format string, args ...any)) error {
+// launch starts r, which has its data directory, on two addresses that no other test of the run holds, and returns the
+// function that gives the addresses back, which the caller calls once r is stopped, or why r did not start. The addresses
+// are free when they are handed out. A process that does not ask for its ports here may still take one before rqlited
+// binds it, and rqlited then exits at once, so a start that ended so goes again on two other addresses, with an empty
+// data directory, and logf says so. A start that ran out of time, and the last of the attempts, fail.
+func launch(r *sidecar.Rqlited, logf func(format string, args ...any)) (func(), error) {
 	for attempt := 1; ; attempt++ {
-		addrs, err := freeAddrs(2)
+		addrs, release, err := runPorts.reserve(2)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		r.HTTPAddr, r.RaftAddr = addrs[0], addrs[1]
 		err = startOnce(r)
 		if err == nil {
-			return nil
+			return release, nil
 		}
+		release()
 		if attempt == startAttempts || errors.Is(err, context.DeadlineExceeded) {
-			return err
+			return nil, err
 		}
 		logf("rqlited did not start on %s and %s, another try: %v", r.HTTPAddr, r.RaftAddr, err)
 		if err := os.RemoveAll(r.DataDir); err != nil {
-			return err
+			return nil, err
 		}
 	}
 }
 
-// startOnce starts r, which has its addresses, and returns why it did not start.
+// startOnce starts r, which has its addresses, and returns why it did not start. It takes one of the startBound places
+// for starts first, and keeps it until r is ready or did not start.
 func startOnce(r *sidecar.Rqlited) error {
+	starting <- struct{}{}
+	defer func() { <-starting }()
+	began := time.Now()
 	ctx, cancel := context.WithTimeout(context.Background(), startTimeout)
 	defer cancel()
-	return r.Start(ctx)
+	w := watchReadiness(ctx, r.URL()+"/readyz")
+	err := r.Start(ctx)
+	cancel()
+	<-w.done
+	if err != nil {
+		return startFailure(r, err, began, w.answer())
+	}
+	return nil
+}
+
+// startFailure is err, the end of a start of r that began at began, with the last answer of its /readyz, the number of
+// starts and of locked addresses at that moment, and the last lines that r printed, so that a test that fails on a slow
+// runner says what its rqlited was doing. It wraps err, so that errors.Is finds the deadline in it.
+func startFailure(r *sidecar.Rqlited, err error, began time.Time, last string) error {
+	return fmt.Errorf("%w\nafter %v, with %d of %d places for starts of this process taken and %d addresses locked by the tests of this run\nthe last answer of %s/readyz: %s\nwhat rqlited printed last:\n%s",
+		err, time.Since(began).Round(time.Millisecond), len(starting), startBound, runPorts.held(), r.URL(), last, tail(r))
+}
+
+// readiness polls the /readyz of an rqlited, as Start does, and keeps the last answer that it got while the start ran.
+type readiness struct {
+	done chan struct{} // closed once ctx ended and the last poll is over
+	mu   sync.Mutex
+	last string
+}
+
+// watchReadiness starts polling url, until ctx ends.
+func watchReadiness(ctx context.Context, url string) *readiness {
+	w := &readiness{done: make(chan struct{}), last: "none yet"}
+	go func() {
+		defer close(w.done)
+		tick := time.NewTicker(250 * time.Millisecond)
+		defer tick.Stop()
+		for {
+			// A poll that ctx cut short says nothing about the node
+			if s := answerOf(ctx, url); ctx.Err() == nil {
+				w.mu.Lock()
+				w.last = s
+				w.mu.Unlock()
+			}
+			select {
+			case <-ctx.Done():
+				return
+			case <-tick.C:
+			}
+		}
+	}()
+	return w
+}
+
+// answer returns the last answer that the poll got.
+func (w *readiness) answer() string {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.last
+}
+
+// answerOf returns what a GET of url answers, the status and the start of the body, or why it got no answer.
+func answerOf(ctx context.Context, url string) string {
+	ctx, cancel := context.WithTimeout(ctx, time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return err.Error()
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return err.Error()
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(io.LimitReader(resp.Body, 200))
+	return resp.Status + ": " + oneLine(body)
+}
+
+// oneLine returns b with its lines joined by "; ".
+func oneLine(b []byte) string {
+	return strings.Join(strings.Split(strings.TrimSpace(string(b)), "\n"), "; ")
+}
+
+// tailLines is how many lines of what rqlited printed a failed start shows.
+const tailLines = 12
+
+// tail returns the last lines that r printed, read from the file that its Output is.
+func tail(r *sidecar.Rqlited) string {
+	f, ok := r.Output.(*os.File)
+	if !ok {
+		return "(its output is not kept)"
+	}
+	b, err := os.ReadFile(f.Name())
+	if err != nil {
+		return err.Error()
+	}
+	lines := strings.Split(strings.TrimRight(string(b), "\r\n"), "\n")
+	return strings.Join(lines[max(0, len(lines)-tailLines):], "\n")
 }
 
 // Restart starts r, which Start returned, again after r.Stop, on the same data directory and
@@ -124,18 +243,4 @@ func Restart(t testing.TB, r *sidecar.Rqlited) {
 	if err := startOnce(r); err != nil {
 		t.Fatal(err)
 	}
-}
-
-// freeAddrs returns n TCP addresses on 127.0.0.1 that were free a moment ago, all different.
-func freeAddrs(n int) ([]string, error) {
-	var addrs []string
-	for range n {
-		l, err := net.Listen("tcp", "127.0.0.1:0")
-		if err != nil {
-			return nil, err
-		}
-		defer l.Close()
-		addrs = append(addrs, l.Addr().String())
-	}
-	return addrs, nil
 }
