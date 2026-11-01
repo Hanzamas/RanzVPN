@@ -47,6 +47,7 @@
 #include "NodeLink.h"
 #include "NodePeering.h"
 #include "NodeProfile.h"
+#include "NodeSplit.h"
 
 // One peer of the overlay, from a Peer object of the desired state: a next hop of the forwarding tables
 typedef struct NODE_OVERLAY_PEER {
@@ -375,6 +376,10 @@ static void NodeOverlayState(void *param, const CONTROL_STATE *state) {
 	// The proxy of the internet exit listens on the addresses of the adapters of its VRFs (NodeEgress.c; SDN-12, #188)
 	if (swapped)
 		NodeEgressApplied(ov->Node, st);
+	// The listeners of TCP splitting listen on the addresses of the adapters of the Networks that split TCP (NodeSplit.c;
+	// CORE-P2-3, #94)
+	if (swapped)
+		NodeSplitApplied(ov->Node, st);
 	// The sidecar of the BGP peering takes the Generation that went in (NodePeering.c; SDN-77, #357)
 	NodePeeringApplied(ov->Node, state, swapped);
 	NodeExitFreeState(exits);
@@ -472,6 +477,8 @@ static void NodeOverlayClose(NODE_OVERLAY *ov, NODE_OVERLAY_PEER *p) {
 
 	TransportNoiseClose(s);
 	Free(s);
+	// The split TCP flows of the peer end with its session (NodeSplit.c; CORE-P2-3, #94)
+	NodeSplitPeerDown(ov->Node, p);
 	NodeLog(ov->Node, "Overlay: the session to %s closed", p->Name);
 }
 
@@ -775,8 +782,10 @@ static bool NodeOverlayReceive(NODE_OVERLAY *ov) {
 			if (ret == NOISE_RECEIVE_DATA) {
 				NodeOverlayDeliver(ov, p, ov->Buf, size, ov->NatBuf);
 			} else if (ret == NOISE_RECEIVE_CONTROL) {
-				// A probe of a gateway, or the answer to one (NodeGateway.c; SDN-19, #195)
-				NodeGatewayControl(ov->Node, p, ov->Buf, size);
+				// A record of a split TCP flow (NodeSplit.c; CORE-P2-3, #94), else a probe of a gateway, or the answer to one
+				// (NodeGateway.c; SDN-19, #195)
+				if (NodeSplitControl(ov->Node, p, ov->Buf, size) == false)
+					NodeGatewayControl(ov->Node, p, ov->Buf, size);
 			} else {
 				NodeOverlayClose(ov, p);
 				break;
@@ -904,6 +913,8 @@ bool NodeOverlayStart(NODE *n, NODE_OVERLAY_CONFIG *cfg) {
 	NodeProfileStart(n);
 	// The internet exit, whose VRFs the states name (NodeEgress.c; SDN-12, #188)
 	NodeEgressStart(n, cfg->EgressTier);
+	// The TCP splitting of the L3 Networks, which the states name (NodeSplit.c; CORE-P2-3, #94)
+	NodeSplitStart(n, cfg);
 	// The Listener, which listens where a state says (NodeListener.c; SDN-45, #238)
 	NodeListenerStart(n, cfg->Key);
 	n->Overlay = ov;
@@ -1009,6 +1020,8 @@ void NodeOverlayStop(NODE *n) {
 	NodeAgentStop(n);
 	// No packet of a peer or of the host reaches the internet exit any more: its proxy goes (NodeEgress.c; SDN-12, #188)
 	NodeEgressStop(n);
+	// ... nor TCP splitting: its flows and its listeners go (NodeSplit.c; CORE-P2-3, #94)
+	NodeSplitStop(n);
 	// The thread closed every session, the ones over the streams of the Listener too (NodeListener.c; SDN-45, #238)
 	NodeListenerStop(n);
 	// No table holds a gateway any more, and the thread forgot every peer: the gateway HA goes (NodeGateway.c; SDN-19, #195)
@@ -1104,13 +1117,16 @@ static bool NodeOverlayForward(NODE *n, UINT vrf_id, const UCHAR *packet, UINT s
 	bool plain = (NodeLinkKind(v, hop, READ_UINT(record)) != CONTROL_LINK_NOISE);
 	// The datagram path of the peer agent carries it while the peer has no session (NodeAgent.c; CORE-S5-5, #411)
 	bool datagram = (allowed && s == NULL && plain == false && NodeAgentHasPath(n, peer->Key));
+	// TCP splitting (NodeSplit.c; CORE-P2-3, #94): the SYN of a connection of the host from its address in a Network that splits
+	// TCP opens a split flow to a peer that has its Noise session, in place of going there as a packet
+	bool split = (allowed && s != NULL && plain == false && fabric == false && NodeSplitTake(n, v, vrf_id, peer, packet, record + NODE_OVERLAY_VRF_TAG, size));
 	// The MTU of the VRF clamps the MSS of a TCP SYN as the overlay sees it, after the 1:1 NAT rules, and the rate limits
 	// of the VRF and the node may drop it (NodeShape.c)
-	bool ok = (allowed && (s != NULL || plain || datagram) && NodeShapeOutput(n, v, vrf_id, record + NODE_OVERLAY_VRF_TAG, size) && (plain ? NodeLinkSend(v, hop, record, size) : (datagram ? NodeAgentSend(n, peer->Key, record, size + NODE_OVERLAY_VRF_TAG) : TransportNoiseSend(s, NOISE_RECORD_DATA, record, size + NODE_OVERLAY_VRF_TAG))));
+	bool ok = split || (allowed && (s != NULL || plain || datagram) && NodeShapeOutput(n, v, vrf_id, record + NODE_OVERLAY_VRF_TAG, size) && (plain ? NodeLinkSend(v, hop, record, size) : (datagram ? NodeAgentSend(n, peer->Key, record, size + NODE_OVERLAY_VRF_TAG) : TransportNoiseSend(s, NOISE_RECORD_DATA, record, size + NODE_OVERLAY_VRF_TAG))));
 	InterlockedDecrement(&peer->Senders);
 
-	// A Mirror copies the packet as it went to the peer (NodeMirror.c)
-	if (ok)
+	// A Mirror copies the packet as it went to the peer (NodeMirror.c); a SYN that opened a split flow went nowhere
+	if (ok && split == false)
 		NodeMirrorCopy(v, vrf_id, record + NODE_OVERLAY_VRF_TAG, size, true);
 
 	if (record != buf)
@@ -1120,8 +1136,12 @@ static bool NodeOverlayForward(NODE *n, UINT vrf_id, const UCHAR *packet, UINT s
 	return ok;
 }
 
-// A packet of the host in the VRF vrf_id (NodeOverlayForward)
+// A packet of the host in the VRF vrf_id (NodeOverlayForward); a segment of a split TCP flow goes back to the host
+// (NodeSplit.c; CORE-P2-3, #94)
 bool NodeOverlayInput(NODE *n, UINT vrf_id, const UCHAR *packet, UINT size) {
+	if (NodeSplitFromHost(n, vrf_id, packet, size))
+		return true;
+
 	return NodeOverlayForward(n, vrf_id, packet, size, false);
 }
 

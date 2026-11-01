@@ -21,6 +21,15 @@
 // the link carries), then the inner TCP over a queue that CoDel runs and over a FIFO queue, and prints the inner TCP's
 // goodput, the time its segments waited in the queue and its retransmissions. With CoDel the goodput must be at least
 // LOSSYLINK_FLOOR percent of what the link carries (no collapse), and the median wait below the target.
+//
+// TCP splitting (CORE-P2-3 #94, Cedar/NodeSplit.c): a fourth run at each loss rate splits the inner TCP. The Windows TCP stack
+// of the client node terminates it, so the application's segments never cross the lossy link: only their byte stream does,
+// as the data records of the split flow, NODE_SPLIT_CHUNK bytes each, which the writer appends to the stream of the outer TCP
+// while the socket takes them and the window of the flow (NODE_SPLIT_WINDOW) lets it; the server node writes each record that
+// the outer receiver hands over to the real destination at once and grants its bytes again a one-way delay later. Its goodput
+// is the bytes of the stream that the destination got. Splitting must beat both the plain run (FIFO) and the run with the
+// active queue alone (CoDel) by LOSSYLINK_SPLIT_GAIN percent at least, and keep LOSSYLINK_FLOOR percent of what the link
+// carries.
 // Print "LOSSYLINK TEST OK" only when every check passes.
 
 #include "testlist.h"
@@ -51,6 +60,13 @@
 #define	LOSSYLINK_SEED			0x2545F491		// The generator of the losses
 #define	LOSSYLINK_FLOOR			75				// The goodput with CoDel at least, in percent of what the link carries
 #define	LOSSYLINK_ALONE			0xFFFFFFFF		// The mode of a run of the outer TCP alone, beside TRANSPORT_QUEUE_*
+#define	LOSSYLINK_SPLIT			0xFFFFFFFE		// ... and of a run with TCP splitting
+#define	LOSSYLINK_SPLIT_CHUNK	16384			// The bytes of the stream in one data record of a split flow (NODE_SPLIT_CHUNK)
+#define	LOSSYLINK_SPLIT_RECORD	(LOSSYLINK_SPLIT_CHUNK + 6 + 4 + 1 + 22)	// ... and the record on the outer stream: the header of the split
+																		// record, the frame header, the record type and the overhead of a
+																		// TLS 1.3 record
+#define	LOSSYLINK_SPLIT_WINDOW	262144			// The bytes that the server node takes at first, and holds at most (NODE_SPLIT_WINDOW)
+#define	LOSSYLINK_SPLIT_GAIN	108				// The goodput with splitting at least, in percent of the plain run and of the run with CoDel
 
 // The states of a segment of a sender
 #define	LOSSYLINK_UNSENT		0
@@ -159,6 +175,9 @@ struct LOSSYLINK_SIM
 	bool *InnerRcv;						// The inner receiver: the segments it has ...
 	UINT InnerRcvNext;					// ... the first it does not have
 	UINT64 AloneDelivered;				// The records of the outer TCP alone handed over
+	UINT64 SplitAppended;				// Splitting: the bytes of the stream that the writer appended ...
+	UINT64 SplitGranted;				// ... the ones that the server node granted again, as the client node knows it ...
+	UINT64 SplitDelivered;				// ... and the ones that the real destination got
 	UINT LinkLosses;					// Segments the link lost
 	UINT RouterDrops;					// Segments the bottleneck dropped
 	UINT *Waits;						// The histogram of the waits in the queue, in ticks ...
@@ -646,12 +665,31 @@ static void LossyLinkWriter(LOSSYLINK_SIM *sim, UINT64 now)
 	LOSSYLINK_PAYLOAD p;
 	UINT size = 0;
 
+	// Splitting: the bytes that the server node granted again, a one-way delay after it wrote them to the destination
+	while (sim->Mode == LOSSYLINK_SPLIT && sim->InnerAcks.Head < sim->InnerAcks.Num && sim->InnerAcks.Events[sim->InnerAcks.Head].Time <= now)
+	{
+		sim->SplitGranted += sim->InnerAcks.Events[sim->InnerAcks.Head++].Size;
+	}
+
 	while (sim->Full == false && LossyLinkSocketRoom(sim))
 	{
 		if (sim->Mode == LOSSYLINK_ALONE)
 		{
 			Zero(&p, sizeof(p));
 			LossyLinkAppend(sim, LOSSYLINK_RECORD, &p);
+			continue;
+		}
+
+		// Splitting: the application always has data, and the split flow sends a record within its window
+		if (sim->Mode == LOSSYLINK_SPLIT)
+		{
+			if (sim->SplitAppended + LOSSYLINK_SPLIT_CHUNK > sim->SplitGranted + LOSSYLINK_SPLIT_WINDOW)
+			{
+				break;
+			}
+			Zero(&p, sizeof(p));
+			LossyLinkAppend(sim, LOSSYLINK_SPLIT_RECORD, &p);
+			sim->SplitAppended += LOSSYLINK_SPLIT_CHUNK;
 			continue;
 		}
 
@@ -738,6 +776,12 @@ static void LossyLinkOuterReceive(LOSSYLINK_SIM *sim, UINT64 now)
 			{
 				sim->AloneDelivered++;
 			}
+			else if (sim->Mode == LOSSYLINK_SPLIT)
+			{
+				// The server node writes the bytes of the record to the real destination at once, and grants them again
+				sim->SplitDelivered += LOSSYLINK_SPLIT_CHUNK;
+				LossyLinkPut(sim, &sim->InnerAcks, now + LOSSYLINK_ONE_WAY, 0, 0, LOSSYLINK_SPLIT_CHUNK);
+			}
 			else
 			{
 				LossyLinkInnerReceive(sim, now, p);
@@ -786,8 +830,9 @@ static UINT64 LossyLinkPercentile(LOSSYLINK_SIM *sim, UINT pct)
 static void LossyLinkRun(UINT mode, UINT loss_bp, LOSSYLINK_RESULT *r)
 {
 	LOSSYLINK_SIM *sim = ZeroMalloc(sizeof(LOSSYLINK_SIM));
-	UINT64 mark_inner = 0, mark_alone = 0;
+	UINT64 mark_inner = 0, mark_alone = 0, mark_split = 0;
 	bool marked = false;
+	bool inner = (mode != LOSSYLINK_ALONE && mode != LOSSYLINK_SPLIT);
 
 	sim->Mode = mode;
 	sim->LossBp = loss_bp;
@@ -803,13 +848,13 @@ static void LossyLinkRun(UINT mode, UINT loss_bp, LOSSYLINK_RESULT *r)
 	sim->RcvHave = ZeroMalloc(sizeof(bool) * LOSSYLINK_MAX);
 	sim->InnerRcv = ZeroMalloc(sizeof(bool) * LOSSYLINK_MAX);
 	sim->Waits = ZeroMalloc(sizeof(UINT) * LOSSYLINK_HISTOGRAM);
-	TransportQueueInit(&sim->Queue, mode == LOSSYLINK_ALONE ? TRANSPORT_QUEUE_FIFO : mode);
+	TransportQueueInit(&sim->Queue, inner ? mode : TRANSPORT_QUEUE_FIFO);
 	LossyLinkSenderInit(sim, &sim->Outer, LOSSYLINK_OUTER_MSS, LOSSYLINK_OUTER_RTO, LossyLinkOuterNew, LossyLinkOuterTransmit);
 	LossyLinkSenderInit(sim, &sim->Inner, LOSSYLINK_INNER_MSS, LOSSYLINK_INNER_RTO, LossyLinkInnerNew, LossyLinkInnerTransmit);
 
 	for (UINT64 now = 0; now < LOSSYLINK_RUN && sim->Full == false; now += LOSSYLINK_TICK)
 	{
-		if (mode != LOSSYLINK_ALONE)
+		if (inner)
 		{
 			LossyLinkAcks(&sim->InnerAcks, &sim->Inner, now);
 			LossyLinkSenderStep(&sim->Inner, now);
@@ -824,15 +869,17 @@ static void LossyLinkRun(UINT mode, UINT loss_bp, LOSSYLINK_RESULT *r)
 		{
 			mark_inner = sim->InnerRcvNext;
 			mark_alone = sim->AloneDelivered;
+			mark_split = sim->SplitDelivered;
 			marked = true;
 		}
 	}
 
 	UINT64 seconds = (LOSSYLINK_RUN - LOSSYLINK_MEASURE) / 1000000;
 	UINT64 segments = (mode == LOSSYLINK_ALONE ? sim->AloneDelivered - mark_alone : sim->InnerRcvNext - mark_inner);
+	UINT64 bytes = (mode == LOSSYLINK_SPLIT ? sim->SplitDelivered - mark_split : segments * LOSSYLINK_INNER_MSS);
 
 	Zero(r, sizeof(LOSSYLINK_RESULT));
-	r->Kbps = (UINT)(segments * LOSSYLINK_INNER_MSS * 8 / (seconds * 1000));
+	r->Kbps = (UINT)(bytes * 8 / (seconds * 1000));
 	r->Wait50 = LossyLinkPercentile(sim, 50);
 	r->Wait95 = LossyLinkPercentile(sim, 95);
 	r->Retransmits = sim->Inner.Retransmits;
@@ -866,10 +913,10 @@ static void LossyLinkWaits(char *str, UINT size, const LOSSYLINK_RESULT *r)
 		r->Wait95 % 1000 / 100);
 }
 
-// The three runs at a loss rate: the outer TCP alone, the inner TCP over CoDel and over FIFO
+// The four runs at a loss rate: the outer TCP alone, the inner TCP over CoDel and over FIFO, and the inner TCP split
 static void LossyLinkCase(LOSSYLINK_CTX *ctx, UINT loss_bp)
 {
-	LOSSYLINK_RESULT alone, codel, fifo;
+	LOSSYLINK_RESULT alone, codel, fifo, split;
 	char waits[MAX_SIZE], what[MAX_SIZE];
 
 	Print("[the lossy link: %u%% loss, 50 ms round trip, 10 Mbit/s]\n", loss_bp / 100);
@@ -877,9 +924,11 @@ static void LossyLinkCase(LOSSYLINK_CTX *ctx, UINT loss_bp)
 	LossyLinkRun(LOSSYLINK_ALONE, loss_bp, &alone);
 	LossyLinkRun(TRANSPORT_QUEUE_CODEL, loss_bp, &codel);
 	LossyLinkRun(TRANSPORT_QUEUE_FIFO, loss_bp, &fifo);
+	LossyLinkRun(LOSSYLINK_SPLIT, loss_bp, &split);
 
 	UINT codel_pct = (alone.Kbps != 0 ? codel.Kbps * 100 / alone.Kbps : 0);
 	UINT fifo_pct = (alone.Kbps != 0 ? fifo.Kbps * 100 / alone.Kbps : 0);
+	UINT split_pct = (alone.Kbps != 0 ? split.Kbps * 100 / alone.Kbps : 0);
 
 	Print("  the outer TCP alone carries %u kbit/s of records (%u segments lost)\n", alone.Kbps, alone.LinkLosses);
 	LossyLinkWaits(waits, sizeof(waits), &codel);
@@ -889,14 +938,25 @@ static void LossyLinkCase(LOSSYLINK_CTX *ctx, UINT loss_bp)
 	Print("  the inner TCP over a FIFO queue: %u kbit/s (%u%%), %s, %u retransmissions, %u timeouts, %I64u dropped at the limit\n", fifo.Kbps,
 		fifo_pct, waits, fifo.Retransmits, fifo.Timeouts, fifo.Overflow);
 
-	LossyLinkCheck(ctx, alone.Full == false && codel.Full == false && fifo.Full == false && alone.Kbps != 0, "  the runs stay within their arrays",
+	Print("  the inner TCP split (CORE-P2-3): %u kbit/s (%u%%), its byte stream in records of %u bytes within a window of %u bytes\n", split.Kbps, split_pct,
+		(UINT)LOSSYLINK_SPLIT_CHUNK, (UINT)LOSSYLINK_SPLIT_WINDOW);
+
+	LossyLinkCheck(ctx, alone.Full == false && codel.Full == false && fifo.Full == false && split.Full == false && alone.Kbps != 0, "  the runs stay within their arrays",
 		"a run went past them");
 	Format(what, sizeof(what), "  no collapse with the active queue: the inner TCP keeps at least %u%% of what the link carries", (UINT)LOSSYLINK_FLOOR);
 	LossyLinkCheck(ctx, codel_pct >= LOSSYLINK_FLOOR, what, "%u%%", codel_pct);
 	LossyLinkCheck(ctx, codel.Wait50 < TRANSPORT_QUEUE_TARGET, "  the active queue keeps the median wait below its target of 5 ms", "%I64u us", codel.Wait50);
+
+	// TCP splitting: clearly above the plain run and the run with the active queue alone, and no collapse
+	Format(what, sizeof(what), "  splitting: the inner goodput is at least %u%% of the plain run (FIFO) and of the run with the active queue alone (CoDel)",
+		(UINT)LOSSYLINK_SPLIT_GAIN);
+	LossyLinkCheck(ctx, (UINT64)split.Kbps * 100 >= (UINT64)fifo.Kbps * LOSSYLINK_SPLIT_GAIN && (UINT64)split.Kbps * 100 >= (UINT64)codel.Kbps * LOSSYLINK_SPLIT_GAIN,
+		what, "%u kbit/s split, %u plain, %u with CoDel", split.Kbps, fifo.Kbps, codel.Kbps);
+	Format(what, sizeof(what), "  no collapse with splitting: the inner TCP keeps at least %u%% of what the link carries", (UINT)LOSSYLINK_FLOOR);
+	LossyLinkCheck(ctx, split_pct >= LOSSYLINK_FLOOR, what, "%u%%", split_pct);
 }
 
-RANZ_TEST_TAGS("lossylink", lossylink_test, "core", "Lossy link: the ingress queue of the session layer (FIFO, CoDel's drops), and an inner TCP over the TLS-443 path on a simulated link of 1% and 2% loss and 50 ms round trip, over CoDel and over FIFO: no collapse with CoDel.");
+RANZ_TEST_TAGS("lossylink", lossylink_test, "core", "Lossy link: the ingress queue of the session layer (FIFO, CoDel's drops), and an inner TCP over the TLS-443 path on a simulated link of 1% and 2% loss and 50 ms round trip, over CoDel, over FIFO and split (CORE-P2-3): no collapse with CoDel, and splitting clearly above both.");
 void lossylink_test(UINT num, char **arg)
 {
 	LOSSYLINK_CTX *ctx = ZeroMalloc(sizeof(LOSSYLINK_CTX));

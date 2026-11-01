@@ -417,6 +417,8 @@ static void ControlDeliver(CONTROL_CLIENT *c, UINT64 gen) {
 	ControlCopyProfiles(&st, c->Objects, c->NumObjects);
 	// The VRFs whose internet exit the node is (ControlEgress.c; SDN-12, #188)
 	ControlCopyEgress(&st, c->Objects, c->NumObjects);
+	// The L3 Networks that split TCP (ControlSplit.c; CORE-P2-3, #94)
+	ControlCopySplits(&st, c->Objects, c->NumObjects);
 
 	if (c->Config.Proc != NULL)
 		c->Config.Proc(c->Config.Param, &st);

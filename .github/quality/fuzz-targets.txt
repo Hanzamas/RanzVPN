@@ -181,6 +181,16 @@ src/Cedar  NodeEgressEchoReply  fuzz_egress
 src/Cedar  NodeEgressRefuses    fuzz_egress
 src/Cedar  NodeEgressDeliver    exempt  reads the version and the destination of a packet of a peer only once it holds the 20 bytes of an IPv4 header, then hands it to NodeEgressParse (fuzz_egress) and the copy that goes to the host to NodeEgressRewrite (fuzz_egress)
 src/Cedar  NodeEgressFromHost   exempt  a packet of the host's own IP stack, which it hands to NodeEgressParse (fuzz_egress) and, when it answers a flow of the proxy, to NodeEgressRewrite (fuzz_egress); it reads no byte that NodeEgressParse did not check
+# TCP splitting of the L3 Networks of the Node (CORE-P2-3 #94) reads the control records that a peer sends on its Noise session
+# for a split flow, writes its own, and builds the reset that refuses the SYN of the host from that SYN. NodeSplitReset has no
+# parser word in its name, listed as the reader of the host's SYN that it is; NodeSplitControl hands a record to
+# NodeSplitParseRecord, and NodeSplitFromHost and NodeSplitTake read only what NodeEgressParse gives.
+src/Cedar  NodeSplitParseRecord  fuzz_split
+src/Cedar  NodeSplitWriteRecord  fuzz_split
+src/Cedar  NodeSplitReset        fuzz_split
+src/Cedar  NodeSplitControl      exempt  hands a control record of a peer to NodeSplitParseRecord (fuzz_split) and reads only what it gave; a record of another kind it leaves to NodeGatewayControl (fuzz_gateway)
+src/Cedar  NodeSplitFromHost     exempt  a packet of the host's own IP stack, which it hands to NodeEgressParse (fuzz_egress) and, on a split flow, to NodeEgressRewrite (fuzz_egress); it reads no byte that NodeEgressParse did not check
+src/Cedar  NodeSplitTake         exempt  the SYN of the host that the overlay forwards, which it hands to NodeEgressParse (fuzz_egress); of the packet as the host sent it it compares only the IPv4 header and the two ports that NodeEgressParse checked in the copy of the overlay, of the same size
 # The bridge of the L2 adapter (CORE-S3-3 #73) looks at each frame of the wire that its XDP backend takes: no parser word in the
 # name, listed as the reader of the bytes of the LAN that it is
 src/Cedar  NodeL2BridgeWay  exempt  compares the first six bytes of a frame, its destination MAC address, with the address of the NIC and tests their group bit; it reads no length and no field beyond them, and a frame shorter than six bytes is not read
