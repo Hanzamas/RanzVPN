@@ -11,6 +11,58 @@ The data directory of a Controller that is installed is not touched by the upgra
 - **A Controller that is installed already is not looked at again.** `ranz install` only starts a service that is registered, and the service does not look at what its directory holds at its start. The install looks when it registers the service over a directory that is there, one that `ranz uninstall` left or that an administrator made. A data directory of an earlier release, in which a user made a folder while the directory had the list of its parent, stays as it is until the service is registered again over it.
 - **What the look does not catch yet.** The install reads each file and folder of a kept data directory by its name, one call after the other, and changes the directory by its name after the look. A user that owns a folder in it can switch that folder between a plain folder and a junction while the install looks, and so pass the look. A user that owns `C:\ProgramData\Ranz` can put a folder of its own, or a junction, in the place of the kept directory between the look and the change. The look does not see a hard link either. Ticket #554 (AUD1-DT-18-R1) makes the install look and change through a handle. Until then, the look finds what a user left in a kept data directory, and not a user that changes it while the install runs.
 
+## CORE-S8-1-R1 (#575): a machine with a hand-installed vpnserver moves to the Node by hand, and nothing does it for you
+
+`vpnserver.exe` is retired (CORE-S8-1, #84): no build holds it, and the Node, `ranz-node.exe`, is the one server program. No Ranz release ever shipped `vpnserver` (the only release, `oracle-8e6504d5`, is the upstream build, and the MSI carries `ranz.exe` only), so the upgrade of a release never meets it. A machine that was set up by hand does: someone copied the build output into a folder and ran `vpnserver.exe /install`, which registered the service `sevpnserverdev` (display name "Ranz VPN Server", ADR-0020), added the inbound firewall rule "Ranz VPN Server" for that `vpnserver.exe`, and left the data next to the program: `ranz_server.config`, its backups and its logs.
+
+Nothing removes that service. Decision 4 of ADR-0020 had the MSI stop and delete `sevpnserverdev`, but the MSI is a thin wrapper that runs `ranz install` now, and `ranz install` registers the services `ranzvpnserver` and, with `--controller`, `ranz-controller`, and no other. The old service keeps running the old program, which holds TCP 443, TCP 5555 or both (the listener list of an existing server keeps what it had, ADR-0020 decision 6). The Node needs TCP 443 and UDP 443 for its front door, and the Controller needs TCP 443, or 5555 when 443 is taken, so with the old server still there they cannot take their ports. Move the machine by hand, from a PowerShell that runs as an Administrator, before `ranz install`:
+
+1. **Read what the service is.** The name `sevpnserverdev` is also the name of the service of an upstream SoftEther VPN Developer Edition server (ADR-0020), so look at the program before you delete anything:
+
+   ```powershell
+   Get-CimInstance Win32_Service -Filter "Name='sevpnserverdev'" | Format-List Name, State, PathName
+   ```
+
+   `PathName` is the path of `vpnserver.exe`, with `/service` after it. The folder of that file holds `ranz_server.config`: note where it is. A program that is not a Ranz build is an upstream server, which this note does not cover: leave it where it is, and move its listeners off TCP 443 and 5555 before you install the Node.
+
+2. **Stop the service and delete it.** TCP 443 and 5555 are free after that, and the last command prints nothing:
+
+   ```powershell
+   Stop-Service sevpnserverdev
+   sc.exe delete sevpnserverdev
+   Get-NetTCPConnection -LocalPort 443, 5555 -State Listen -ErrorAction SilentlyContinue
+   ```
+
+3. **Delete the firewall rule.** It names the old `vpnserver.exe` and lets every port and protocol in on it:
+
+   ```powershell
+   Remove-NetFirewallRule -DisplayName 'Ranz VPN Server'
+   ```
+
+   The command prints an error when there is no such rule, which is fine. A server that started before REL-2 (#47) ran a VBScript for the rule and wrote the registry key `HKLM\SOFTWARE\Hanzcodes\Ranz VPN\PacketiX VPN\FW ScriptHash`, which nothing reads any more: `Remove-Item -Recurse 'HKLM:\SOFTWARE\Hanzcodes\Ranz VPN\PacketiX VPN\FW ScriptHash'` removes it. Leave the keys above it, which the Node and `ranz install` use.
+
+4. **Install the Node**, and the Controller where it runs on this machine: `ranz install` or `ranz install --controller` (`docs/first-test.md`, step 5, says what it does). The Node starts with an empty Configuration store, and makes its data directory `C:\ProgramData\Hanzcodes\Ranz VPN` for SYSTEM, the Administrators and its service account only.
+
+5. **Put `ranz_server.config` into the data directory of the Node.** Stop the service first, so that the file never lies in a folder with another access list than the one the Node gave it, and start the service after:
+
+   ```powershell
+   Stop-Service ranzvpnserver
+   Copy-Item '<the folder of vpnserver.exe>\ranz_server.config' 'C:\ProgramData\Hanzcodes\Ranz VPN\'
+   Start-Service ranzvpnserver
+   ```
+
+   The Node imports the file once at its start, and renames it `ranz_server.config.imported`. It imports the Virtual Hubs as L2 Networks with their CAs, groups and users, the TCP listeners as TLS listeners, the server certificate with its chain, the administrators, and the access lists as rules of the policy. It leaves out the password hashes that are SHA-0 (ADR-0022: those users and administrators need a new password), the server key (it belongs in a key storage provider, not in the store), the cascades, and the items of the policies of users and groups other than their VLAN. The node log says what it carried and what it left out:
+
+   ```powershell
+   Select-String -Path 'C:\ProgramData\Hanzcodes\Ranz VPN\node_log\*.log' -Pattern 'Fork configuration'
+   ```
+
+   The import needs a store that holds no Network, Listener, certificate or administrator and has imported nothing before. When a Controller has put a Network or a Listener there already, the log says `not imported` with `the configuration store is not empty`, the file stays where it is, and nothing was changed.
+
+6. **Clean up.** `ranz_server.config.imported` and the old folder hold the server key and the password hashes of the old server. Delete the renamed file once the import is checked, and the old folder with its backups and logs when you do not need them: ADR-0020 decision 3 keeps them on uninstall, and nothing deletes them.
+
+Nothing warns you either: the Node, `ranz install` and `ranz doctor` do not look for `sevpnserverdev`. And there is no way back to `vpnserver`: no build holds it any more.
+
 ## AUD1-DT-17 (#502): what holds for a secret that the upgrade sealed, the URL of a target is not sealed, and a secret opens for its URL only
 
 The note of AUD1-DT-10 (#458, below) says that the Controller seals the secrets of the export and audit targets, and the threat model said that the table, the data of `rqlited`, a snapshot and a backup then hold none in clear. That holds for a secret that is put after the upgrade. For a secret that the earlier release kept in clear and that the upgrade sealed it holds in part, and the text now says which part:
