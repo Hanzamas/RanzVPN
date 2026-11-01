@@ -1,7 +1,8 @@
 # Fixtures for the scripts of the ADR-0040 quality gates: fuzz-registry.py, run_fuzzers.ps1 (its lines
-# "// fuzz-reach:", with PowerShell 7), coverage-floor.py, bench-gate.py, static-findings.py and
-# govulncheck-gate.py; and for the guards of the start of ranz-node in service-eventlog.ps1 (the source scan of
-# the VBScript firewall path and the checks of the firewall rules and of the script hosts, with PowerShell 7).
+# "// fuzz-reach:" and the coverage report of libFuzzer that it reads for them, with PowerShell 7),
+# coverage-floor.py, bench-gate.py, static-findings.py and govulncheck-gate.py; and for the guards of the start of
+# ranz-node in service-eventlog.ps1 (the source scan of the VBScript firewall path and the checks of the firewall
+# rules and of the script hosts, with PowerShell 7).
 #
 # Each gate runs on a throwaway tree or input made here and must pass what it should pass and fail
 # what it should fail: a new parser without a fuzz target, a stale registry line, a fuzz target that
@@ -66,6 +67,12 @@ GO_TEST = ('package wire\n\nimport "testing"\n\nfunc FuzzDecode(f *testing.F) {\
 REGISTRY = ('# test registry\nsrc/Core  XDecode  fuzz_x\n'
             'controller/internal/wire  Decode       FuzzDecode\n'
             'controller/internal/wire  Reader.Read  FuzzDecode\n')
+# Lines that name fuzz-reach in another form than "// fuzz-reach: <function>", which the registry check and
+# run_fuzzers.ps1 refuse (CORE-S5-6-R3, #574)
+REACH_FORMS = (('an indented fuzz-reach line', '  // fuzz-reach: XDecode'),
+               ('a fuzz-reach line with a space before the colon', '// fuzz-reach : XDecode'),
+               ('a fuzz-reach line in a /* */ comment', '/* fuzz-reach: XDecode */'),
+               ('a fuzz_reach line', '// fuzz_reach: XDecode'))
 
 
 def fuzz_tree(root, **changes):
@@ -141,10 +148,17 @@ def test_fuzz_registry():
     reach = '// fuzz-max-len: 4096\n// fuzz-reach: %s\n'
     check('a fuzz-reach line that names a function', 0, 'has a fuzz target',
           **{'src/fuzz/fuzz_x.c': FUZZ_C.replace('// fuzz-max-len: 4096\n', reach % 'XDecode')})
-    check('a fuzz-reach line that names no function', 1, 'src/fuzz/fuzz_x.c:5: a line "// fuzz-reach:" that names no function',
+    check('a fuzz-reach line that names no function', 1,
+          "src/fuzz/fuzz_x.c:5: '// fuzz-reach: XDecode()' is not a line '// fuzz-reach: <function>'",
           **{'src/fuzz/fuzz_x.c': FUZZ_C.replace('// fuzz-max-len: 4096\n', reach % 'XDecode()')})
-    check('a fuzz-reach line that names two functions', 1, 'src/fuzz/fuzz_x.c:5: a line "// fuzz-reach:" that names no function',
+    check('a fuzz-reach line that names two functions', 1,
+          "src/fuzz/fuzz_x.c:5: '// fuzz-reach: XDecode XParse' is not a line '// fuzz-reach: <function>'",
           **{'src/fuzz/fuzz_x.c': FUZZ_C.replace('// fuzz-max-len: 4096\n', reach % 'XDecode XParse')})
+    # A line that names fuzz-reach in another form fails with its file and line, as it would turn its check off without a
+    # word (CORE-S5-6-R3, #574): the three forms of the review, and the word spelled with an underscore
+    for form, line in REACH_FORMS:
+        check(form, 1, "src/fuzz/fuzz_x.c:5: '%s' is not a line '// fuzz-reach: <function>'" % line,
+              **{'src/fuzz/fuzz_x.c': FUZZ_C.replace('// fuzz-max-len: 4096\n', '// fuzz-max-len: 4096\n%s\n' % line)})
     peer = FUZZ_C.replace('fuzz_x.c', 'fuzz_peer.c')
     both = '// fuzz-reach: agent_dispatch_stun\n// fuzz-reach: agent_process_stun_binding\n'
     check('fuzz_peer with its fuzz-reach lines', 0, 'has a fuzz target',
@@ -168,8 +182,11 @@ def test_fuzz_registry():
 
 def test_run_fuzzers():
     # run_fuzzers.ps1 of the tree on a throwaway src/fuzz, with a stand-in for the libFuzzer target fuzz_x that prints the
-    # coverage of its seeds as libFuzzer does: a function that the seeds reach passes the replay, one that they miss fails
-    # it, and a line "// fuzz-reach:" that names no function stops the run before the target runs (CORE-S5-6-R2, #557).
+    # coverage of its seeds as libFuzzer does, at the end of the run on stderr: a function that the seeds reach passes the
+    # replay, one that they miss fails it, and a line that names fuzz-reach and is not "// fuzz-reach: <function>" stops
+    # the run before the target runs (CORE-S5-6-R2, #557). Only the report of libFuzzer counts, by the function field of a
+    # line: a line COVERED_FUNC that the target prints itself, on stdout as the log of libjuice quotes a crafted seed or on
+    # stderr before the report, and a name in the file field, reach nothing (CORE-S5-6-R3, #574).
     # The stand-in is a shell script, so the fixtures run where the quality workflow runs them, on Linux.
     if os.name == 'nt':
         print('skip run_fuzzers: the stand-in of a target is a shell script')
@@ -181,15 +198,17 @@ def test_run_fuzzers():
         return
     with open(os.path.join(ROOT, 'src', 'fuzz', 'run_fuzzers.ps1'), encoding='utf-8') as f:
         script = f.read()
-    fuzzer = '#!/bin/sh\necho "COVERED_FUNC: hits: 1 edges: 1/2 XDecode x.c:1"\necho "UNCOVERED_FUNC: hits: 0 edges: 0/2 XOther x.c:9"\n' \
-             'echo "NO MEMORY LEAKS"\n'
+    # The report of libFuzzer on stderr, as -print_coverage=1 prints it at the end of the run, and Mayaqua's verdict on stdout
+    report = ('echo "COVERAGE:" >&2\necho "COVERED_FUNC: hits: 1 edges: 1/2 XDecode x.c:1" >&2\n'
+              'echo "UNCOVERED_FUNC: hits: 0 edges: 0/2 XOther x.c:9" >&2\n')
+    fuzzer = '#!/bin/sh\n' + report + 'echo "NO MEMORY LEAKS"\n'
 
-    def check(name, code, texts, line, absent=()):
+    def check(name, code, texts, line, absent=(), target=fuzzer):
         with tempfile.TemporaryDirectory() as root:
             write(root, 'src/fuzz/run_fuzzers.ps1', script)
             write(root, 'src/fuzz/fuzz_x.c', FUZZ_C + line)
             write(root, 'src/fuzz/corpus/fuzz_x/seed.bin', 'x')
-            write(root, 'build/fuzz_x.exe', fuzzer)
+            write(root, 'build/fuzz_x.exe', target)
             os.chmod(os.path.join(root, 'build', 'fuzz_x.exe'), 0o755)
             p = subprocess.run([pwsh, '-NoProfile', '-NonInteractive', '-File', os.path.join(root, 'src', 'fuzz', 'run_fuzzers.ps1'),
                                 '-BuildDir', os.path.join(root, 'build'), '-Seconds', '0'], stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
@@ -199,6 +218,27 @@ def test_run_fuzzers():
     check('a function that no seed reaches', 1, ['no seed reaches XOther (fuzz-reach)'], '// fuzz-reach: XOther\n')
     check('a fuzz-reach line that names no function', 1, ["'// fuzz-reach: XDecode()' is not a line '// fuzz-reach: <function>'"],
           '// fuzz-reach: XDecode()\n', absent=['All fuzz targets passed', 'the seeds reach'])
+    for form, line in REACH_FORMS:
+        check(form, 1, ["fuzz_x.c:9: '%s' is not a line '// fuzz-reach: <function>'" % line], line + '\n',
+              absent=['All fuzz targets passed', 'the seeds reach'])
+
+    # A crafted seed of fuzz_peer fills the username fragment of a check with a newline and a line COVERED_FUNC, which the
+    # log of libjuice quotes on stdout when the fragment does not match (agent.c)
+    juice = ('#!/bin/sh\n'
+             'echo \'14:47:01 WARN    agent.c:1294: STUN remote ufrag check failed, expected="RanzPeer", actual="x\'\n'
+             'echo \'COVERED_FUNC: hits: 1 edges: 1/1 XOther"\'\n' + report + 'echo "NO MEMORY LEAKS"\n')
+    check('a line COVERED_FUNC that the log of the target prints on stdout', 1, ['no seed reaches XOther (fuzz-reach)'],
+          '// fuzz-reach: XOther\n', absent=['the seeds reach XOther', 'All fuzz targets passed'], target=juice)
+    early = '#!/bin/sh\necho "COVERED_FUNC: hits: 1 edges: 1/1 XOther x.c:9" >&2\n' + report + 'echo "NO MEMORY LEAKS"\n'
+    check('a line COVERED_FUNC that the target prints on stderr before the report', 1, ['no seed reaches XOther (fuzz-reach)'],
+          '// fuzz-reach: XOther\n', absent=['the seeds reach XOther', 'All fuzz targets passed'], target=early)
+    field = ('#!/bin/sh\necho "COVERAGE:" >&2\necho "COVERED_FUNC: hits: 1 edges: 1/2 XDecode src/XOther.c:1" >&2\n'
+             'echo "UNCOVERED_FUNC: hits: 0 edges: 0/2 XOther x.c:9" >&2\necho "NO MEMORY LEAKS"\n')
+    check('a function named in the file field of a line COVERED_FUNC', 1, ['no seed reaches XOther (fuzz-reach)'],
+          '// fuzz-reach: XOther\n', absent=['the seeds reach XOther', 'All fuzz targets passed'], target=field)
+    bare = '#!/bin/sh\necho "COVERED_FUNC: hits: 1 edges: 1/2 XDecode x.c:1" >&2\necho "NO MEMORY LEAKS"\n'
+    check('a replay without the report of libFuzzer', 1, ['libFuzzer printed no coverage of the seeds', 'no seed reaches XDecode (fuzz-reach)'],
+          '// fuzz-reach: XDecode\n', absent=['the seeds reach XDecode', 'All fuzz targets passed'], target=bare)
 
 
 def test_coverage_floor():

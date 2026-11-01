@@ -21,9 +21,11 @@
 # (src/fuzz/CMakeLists.txt): a new target is a new file and needs no line here. Its source gives the largest input,
 # the -max_len of libFuzzer, in a line "// fuzz-max-len: <bytes>"; the target is not run without one. It may name a
 # function that its seeds must reach, in a line "// fuzz-reach: <function>" each: the replay then prints the coverage
-# of the seeds (-print_coverage=1), and fails unless libFuzzer lists each such function as covered (COVERED_FUNC). A
-# line that starts with "// fuzz-reach:" and names no function stops the run, as it would turn that check off without a
-# word; the registry check (.github/scripts/fuzz-registry.py) fails without the lines that a target must have.
+# of the seeds (-print_coverage=1), and fails unless libFuzzer lists each such function as covered (COVERED_FUNC) in
+# its report on stderr, by the function field of the line. A line that names fuzz-reach and is not such a line (it
+# names no function, or it is indented, has a space before the colon or is in a /* */ comment) stops the run, as it
+# would turn that check off without a word; the registry check (.github/scripts/fuzz-registry.py) fails without the
+# lines that a target must have.
 #
 # Usage: pwsh -File src/fuzz/run_fuzzers.ps1 [-BuildDir build] [-Seconds 60] [-Seed 1] [-Targets fuzz_pack,...]
 
@@ -54,11 +56,14 @@ function Get-MaxLen([string] $Target) {
 }
 
 # The functions that the seeds of a target must reach: the "// fuzz-reach: <function>" lines of its source. Every line
-# that starts with "// fuzz-reach:" must name one function, or the run stops (CORE-S5-6-R2, #557).
+# that names fuzz-reach, in any case and with a hyphen, an underscore or nothing between the two words, must be such a
+# line, at the start of the line and with one function, or the run stops with its file and line: a line spelled a
+# little otherwise (indented, with a space before the colon, in a /* */ comment) would turn its check off without a word
+# (CORE-S5-6-R2, #557; CORE-S5-6-R3, #574).
 function Get-Reach([string] $Target) {
 	$source = Join-Path $PSScriptRoot "$Target.c"
 	$functions = @()
-	foreach ($line in @(Select-String -LiteralPath $source -CaseSensitive -Pattern '^//\s*fuzz-reach:')) {
+	foreach ($line in @(Select-String -LiteralPath $source -Pattern 'fuzz[-_]?reach')) {
 		if ($line.Line -cmatch '^//\s*fuzz-reach:\s*(\w+)\s*$') {
 			$functions += $Matches[1]
 		} else {
@@ -79,7 +84,8 @@ foreach ($dir in @($WorkRoot, $ArtifactDir, $LogDir)) {
 }
 
 # Runs one fuzzer process with stdin closed (a leak report waits for Enter otherwise), captures
-# stdout (Mayaqua) and stderr (libFuzzer, ASan) into the log, returns the result
+# stdout (Mayaqua) and stderr (libFuzzer, ASan) into the log, returns the result: the exit code, the text of the log,
+# and stderr alone, where libFuzzer prints the coverage of the seeds (Get-Covered)
 function Invoke-Fuzzer([string] $Exe, [string[]] $Arguments, [string] $Log) {
 	$psi = New-Object System.Diagnostics.ProcessStartInfo
 	$psi.FileName = $Exe
@@ -101,7 +107,7 @@ function Invoke-Fuzzer([string] $Exe, [string[]] $Arguments, [string] $Log) {
 		"`r`n===== stdout (Mayaqua) =====`r`n" + $stdout.Result
 	Set-Content -Path $Log -Value $text -Encoding UTF8
 
-	return @{ Code = $proc.ExitCode; Text = $text }
+	return @{ Code = $proc.ExitCode; Text = $text; Stderr = $stderr.Result }
 }
 
 # Last lines of a run's log (the AddressSanitizer or libFuzzer report and Mayaqua's verdict)
@@ -119,6 +125,25 @@ function Get-Problems($Result, [bool] $LeaksAreErrors) {
 	if ($Result.Text -match '==RANZ FUZZ== Mayaqua objects leaked') { $problems += 'an input leaked Mayaqua objects' }
 	if ($LeaksAreErrors -and ($Result.Text -notmatch 'NO MEMORY LEAKS')) { $problems += 'no "NO MEMORY LEAKS" verdict' }
 	return $problems
+}
+
+# The functions that libFuzzer reports as covered by the seeds, each with its line, or $null when it printed no report.
+# With -print_coverage=1 it prints the report at the end of the run, on stderr: the line "COVERAGE:", then a line
+# "COVERED_FUNC: hits: <n> edges: <covered>/<all> <function> <file>:<line>" for each function that a seed reached and
+# UNCOVERED_FUNC for one that none did. A function is covered only by the function field of such a line after the last
+# line "COVERAGE:" of stderr: what the target prints itself is no coverage, on stdout (Mayaqua, and the log of libjuice,
+# which quotes what an input holds) or on stderr before the report, and a name in the file field is no function
+# (CORE-S5-6-R3, #574).
+function Get-Covered([string] $Stderr) {
+	$covered = $null
+	foreach ($line in ($Stderr -split "`r?`n")) {
+		if ($line -cmatch '^COVERAGE:\s*$') {
+			$covered = [hashtable]::new([StringComparer]::Ordinal)
+		} elseif ($null -ne $covered -and $line -cmatch '^COVERED_FUNC: hits: \d+ edges: \d+/\d+ (\S+)(\s|$)') {
+			$covered[$Matches[1]] = $line
+		}
+	}
+	return $covered
 }
 
 $failed = @()
@@ -140,15 +165,18 @@ foreach ($target in $Targets) {
 	$log = Join-Path $LogDir "$target-replay.log"
 	Write-Host "[$target] replay $seeds"
 	$result = Invoke-Fuzzer $exe ($common + $replay + @($seeds)) $log
-	$problems = Get-Problems $result $true
-	foreach ($function in $reach) {
-		# libFuzzer prints "COVERED_FUNC: hits: <n> edges: <covered>/<all> <function> <file>:<line>" for a function that a
-		# seed reached, and UNCOVERED_FUNC for one that none did
-		$covered = @($result.Text -split "`r?`n" | Where-Object { $_ -match ('^COVERED_FUNC: .*\b' + [regex]::Escape($function) + '\b') })
-		if ($covered.Count -eq 0) {
-			$problems += "no seed reaches $function (fuzz-reach)"
-		} else {
-			Write-Host "  [$target] the seeds reach ${function}: $($covered[0])"
+	$problems = @(Get-Problems $result $true)
+	if ($reach.Count -gt 0) {
+		$covered = Get-Covered $result.Stderr
+		if ($null -eq $covered) {
+			$problems += 'libFuzzer printed no coverage of the seeds: no line "COVERAGE:" on its stderr (fuzz-reach)'
+		}
+		foreach ($function in $reach) {
+			if ($null -ne $covered -and $covered.ContainsKey($function)) {
+				Write-Host "  [$target] the seeds reach ${function}: $($covered[$function])"
+			} else {
+				$problems += "no seed reaches $function (fuzz-reach)"
+			}
 		}
 	}
 	if ($problems.Count -ne 0) {
