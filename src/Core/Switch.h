@@ -190,6 +190,7 @@ UINT SwitchInput(SWITCH *sw, UINT64 now, UINT port, const UCHAR *frame, UINT siz
 UINT SwitchAge(SWITCH *sw, UINT64 now);
 UINT SwitchClearMacs(SWITCH *sw);
 UINT SwitchClearMac(SWITCH *sw, const UCHAR *mac);
+bool SwitchLearnAt(SWITCH *sw, UINT64 now, UINT port, UINT vlan, const UCHAR *mac);
 UINT SwitchGetMacs(SWITCH *sw, SWITCH_MAC_ENTRY *list, UINT max);
 void SwitchGetStats(SWITCH *sw, SWITCH_STATS *st);
 bool SwitchGetVlanStats(SWITCH *sw, UINT vlan, SWITCH_VLAN_STATS *st);

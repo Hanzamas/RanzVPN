@@ -466,6 +466,9 @@ struct NODE {
 	// The EVPN of a gateway (NodeEvpn.c; SDN-25, #201): the VTEP and the routes of the fabric of a sidecar whose Bgp setting
 	// has an evpn object, from the start of the sidecar to its stop; NULL without one
 	struct NODE_EVPN *Evpn;
+	// The stretch of a gateway (NodeStretch.c; SDN-64, #291): the switches of the L2 Networks that the L2 data path attached and the
+	// stretches of the running sidecar; NULL until the first of them, kept until FreeNode
+	struct NODE_STRETCH *volatile Stretch;
 
 	// The mimicry sidecar and the mimic transport (NodeMimic.c; CORE-P2-6, #406), under Lock. A test may name another
 	// executable and set MimicTest before NodeStart.
@@ -957,6 +960,7 @@ bool NodeBgpWithdraw(NODE *n, char *prefix);
 bool NodeBgpAnnounceVrf(NODE *n, UINT vrf_id, char *prefix);
 bool NodeBgpWithdrawVrf(NODE *n, UINT vrf_id, char *prefix);
 void NodeBgpGetStatus(NODE *n, NODE_BGP_STATUS *st);
+bool NodeBgpRestart(NODE *n);
 
 // NodeMimic.c, NodeMimicTransport.c
 TRANSPORT *NodeMimicTransport(NODE *n);

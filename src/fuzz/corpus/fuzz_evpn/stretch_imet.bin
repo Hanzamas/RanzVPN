@@ -1,0 +1,1 @@
+3{"type":"stretch","routes":[{"vni":5010,"next_hop":"192.0.2.10"}]}

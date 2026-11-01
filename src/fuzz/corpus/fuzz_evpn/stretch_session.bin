@@ -1,0 +1,4 @@
+3{"type":"stretch","routes":[{"vni":5010,"next_hop":"192.0.2.10"}]}
+{"type":"stretch","routes":[{"vni":5010,"mac":"02:00:5e:50:00:0a","next_hop":"192.0.2.10"},{"vni":5010,"mac":"02:00:5e:50:00:0a","ip":"10.50.0.10","next_hop":"192.0.2.10"},{"vni":5010,"mac":"02:00:5e:50:00:0b","ip":"fd50::b","next_hop":"2001:db8::11"}]}
+{"type":"stretch","routes":[{"vni":5010,"mac":"02:00:5e:50:00:0a","next_hop":"192.0.2.10","withdraw":true}]}
+{"type":"learned","prefix":"172.16.1.0/24","next_hop":"192.0.2.10","vrf":101,"peer":"192.0.2.10","vni":10101,"router_mac":"02:00:5e:10:00:01"}
