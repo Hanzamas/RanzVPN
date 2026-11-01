@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"unsafe"
 
 	"golang.org/x/sys/windows"
@@ -32,6 +33,11 @@ import (
 // down to its last file before the install changes it (checkDataDirChildren), since the same user could have
 // made payload\ in it while it had that list.
 //
+// A path whose last element ends in a period or a space is refused by every step that makes, takes over or looks at
+// the data directory, and nothing is made (checkDataDirName): Windows takes those off the end of a path and
+// filepath.Clean keeps them, so the folder above such a path is the data directory itself, and the step that makes the
+// folder above it would make the data directory with the list of its own folder, as a trailing separator did.
+//
 // Four things are not closed, and #554 (AUD1-DT-18-R1) is for them; ST-3 of docs/threat-model.md says so, with what
 // else is open (checkDataDirChildren lists what the look does not see). The new folder is changed by name after the
 // call that makes it, so a user that owns the folder above it can put a folder of its own in its place in that moment
@@ -44,6 +50,27 @@ import (
 // installDataDirSDDL is dataDirSDDL with the Administrators as its owner, as NODE_DATA_DIR_SDDL of
 // src/Cedar/Node.c is.
 const installDataDirSDDL = "O:BA" + dataDirSDDL
+
+// checkDataDirName refuses the path dir of a data directory when its last element, as filepath.Clean leaves it, ends in a
+// period or a space (finding E of the read-only review of PR 541, at the head 8d282cf3). Windows takes trailing periods and
+// spaces off the end of a path, and filepath.Clean takes off only a trailing separator and the elements `.` and `..`, so
+// `D:\RanzData\ `, `D:\RanzData\...` and `D:\RanzData\. ` name D:\RanzData, and so does `D:\RanzData\ \` once filepath.Clean
+// has taken its separator off. filepath.Dir of such a path is the folder itself, so the step that makes the folder above it
+// (os.MkdirAll) would make the data directory with the access list of its own folder, which on C:\ProgramData lets the Users
+// group add files and folders, as a trailing separator did before createDataDir cleaned the path (finding A). And the files
+// of the controller, whose names are joined to the path, would not lie in the folder that was looked at. Nobody names a data
+// directory so on purpose, so the path is refused, with nothing made. A last element of `.` or `..` is not one of these:
+// Windows resolves it before it takes anything off.
+func checkDataDirName(dir string) error {
+	last := filepath.Base(filepath.Clean(dir))
+	if last == "." || last == ".." {
+		return nil
+	}
+	if strings.HasSuffix(last, ".") || strings.HasSuffix(last, " ") {
+		return fmt.Errorf(`the data directory "%s" ends in a period or a space, which Windows takes off the end of a path, so the path names another folder than its text says. Name the data directory without them with -data`, dir)
+	}
+	return nil
+}
 
 // dataDirOwner returns the owner of the data directory dir. It refuses a link, a junction or a symbolic
 // link, which whoever made it points anywhere, and what is no directory: the folder itself must be the
@@ -128,8 +155,13 @@ func accountName(sid *windows.SID) string {
 // checkDataDirOwner refuses the data directory dir, which exists, when an account other than SYSTEM, the
 // Administrators, the service's account or the one that runs this process owns it, and when it is a link.
 // The service does not start in such a directory, and reset-admin, backup and restore do not run the
-// rqlited of its payload folder as an administrator.
+// rqlited of its payload folder as an administrator. It refuses a path that ends in a period or a space as well
+// (checkDataDirName), since the folder that Windows finds by it is not the one that the files of the controller,
+// joined to the path, are looked for in.
 func checkDataDirOwner(dir string) error {
+	if err := checkDataDirName(dir); err != nil {
+		return err
+	}
 	owner, err := dataDirOwner(dir)
 	if err != nil {
 		return err
@@ -183,9 +215,9 @@ func ownDataDir(dir string) error {
 // C:\ProgramData lets the Users group add files and folders, so no handle that has the right to add to it can
 // be opened before its own list is there, and a handle that is opened after is judged by that list (AUD1-DT-18,
 // #503). A call that made the folder and set the list after, as os.Mkdir and ownDataDir did, leaves that gap.
-// The path is cleaned first, so that no caller passes it as it was typed (createDataDir says why). A volume that
-// keeps no access lists, such as a FAT drive, takes the folder and ignores the descriptor: the folder is removed
-// again, and the error says so.
+// The path is cleaned first, so that no caller passes it as it was typed (createDataDir says why), and one that ends in
+// a period or a space is refused before anything is made (checkDataDirName). A volume that keeps no access lists, such
+// as a FAT drive, takes the folder and ignores the descriptor: the folder is removed again, and the error says so.
 //
 // The call fails when the name is taken when it runs, so a folder that exists is never taken for the one that this
 // call made. It does not hold the new folder afterwards: the steps below read its owner and set its list by name, and
@@ -210,6 +242,9 @@ func ownDataDir(dir string) error {
 // not have.
 func makeProtectedDir(dir, sddl string) error {
 	dir = filepath.Clean(dir)
+	if err := checkDataDirName(dir); err != nil {
+		return err
+	}
 	sd, err := windows.SecurityDescriptorFromString(sddl)
 	if err != nil {
 		return fmt.Errorf("data directory ACL: %w", err)
@@ -235,9 +270,13 @@ func makeProtectedDir(dir, sddl string) error {
 
 // makeOwnedDataDir makes the data directory dir, which is not there, with the Administrators as its owner and
 // the protected access list of dataDirSDDL from the moment it exists (makeProtectedDir). The path is cleaned
-// first, as createDataDir says.
+// first, as createDataDir says, and one that ends in a period or a space is refused before the folder above it is
+// made (checkDataDirName).
 func makeOwnedDataDir(dir string) error {
 	dir = filepath.Clean(dir)
+	if err := checkDataDirName(dir); err != nil {
+		return err
+	}
 	if err := os.MkdirAll(filepath.Dir(dir), 0o700); err != nil {
 		return err
 	}
@@ -255,8 +294,15 @@ func makeOwnedDataDir(dir string) error {
 // and the call that makes it with its own list would then fail because the name was taken. The start would fail
 // once, and the next start would keep the folder with that list, which its owner makes trusted (finding A of the
 // read-only review of PR 541; TestNewDataDirWithATrailingSeparatorIsMadeWithItsOwnList).
+//
+// A path whose last element ends in a period or a space is refused before the folder above it is made, and nothing is
+// made (checkDataDirName says why; finding E, and the same test): filepath.Clean keeps the tail and Windows drops it, so
+// the folder above the cleaned path is the data directory itself, as it was with a trailing separator.
 func createDataDir(dir string) error {
 	dir = filepath.Clean(dir)
+	if err := checkDataDirName(dir); err != nil {
+		return err
+	}
 	if err := os.MkdirAll(filepath.Dir(dir), 0o700); err != nil {
 		return err
 	}
@@ -290,8 +336,15 @@ func createDataDir(dir string) error {
 //     an empty one is removed, which fails while anybody holds it open, and made anew. One that holds
 //     anything, one that is a link, and one that cannot be read or removed is refused, with a message that
 //     says what to do.
+//
+// A path whose last element ends in a period or a space is refused first, whether the folder is there or not, and
+// nothing is changed (checkDataDirName): it names the folder without the tail, and the files of the controller, which
+// are joined to the path, would not lie in the folder that the install took over.
 func takeOverDataDir(dir string) error {
 	dir = filepath.Clean(dir)
+	if err := checkDataDirName(dir); err != nil {
+		return err
+	}
 	if _, err := os.Lstat(dir); errors.Is(err, fs.ErrNotExist) {
 		return makeOwnedDataDir(dir)
 	} else if err != nil {
