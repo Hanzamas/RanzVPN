@@ -114,13 +114,15 @@
 // (Vrf.tag_mode). A node judges the claims of a peer only once its state gives the peer the frame
 // version 1 with its groups: before, as when a peer's Generation went in before the node's own, it
 // ignores them. Each claim names the group generation of its sender in its VRF (SourceGroup.generation),
-// the Generation of the sender's state from which on it may assert what it asserts there: a claim of a
-// group that the peer may not assert is an unknown group only when it names the group generation that
-// the node's state gives the peer; one of another group generation was made on another state, and the
-// node judges its packet by the map of address to group. The node reports the packets that it judged
-// by their source group in its Telemetry (SourceGroupCounters). No schema version changes with them: a
-// node of an older release skips the fields it does not know, reports no Capability tags and gets no
-// record of version 1.
+// the Generation of the sender's state from which on it may assert what it asserts there. A claim of a
+// group that the peer may not assert is an unknown group, whatever group generation it names, unless a
+// rollout of the Generations explains it: a group that the peer could assert before the Generation of
+// the node that last changed its groups, or a group ID that the node's state does not know, which the
+// node ignores, and it judges the packet by the map of address to group. A claim that names the group
+// generation that the node's state gives the peer was made on that state, so no rollout explains it.
+// The node reports the packets that it judged by their source group in its Telemetry
+// (SourceGroupCounters). No schema version changes with them: a node of an older release skips the
+// fields it does not know, reports no Capability tags and gets no record of version 1.
 //
 // Live operations (SDN-50, #243): an operator reads or clears the MAC table or the IP table of an L2
 // Network on a node. The controller sends the node an Operation on its stream, with an id of its own;
@@ -3797,8 +3799,8 @@ type Peer struct {
 	Vtep *Vtep `protobuf:"bytes,8,opt,name=vtep,proto3" json:"vtep,omitempty"`
 	// The source group of the peer in each shared VRF (SDN-87 #386), ordered by VRF id, when the node and
 	// the peer both report the Capability tags. With the groups of the Devices whose gateway the peer
-	// is, these are the groups that it may assert; a claim of another one that names the group
-	// generation of the peer here is an unknown group.
+	// is, these are the groups that it may assert; a claim of another one is an unknown group, unless a
+	// rollout of the Generations explains it and it does not name the group generation of the peer here.
 	Groups []*SourceGroup `protobuf:"bytes,9,rep,name=groups,proto3" json:"groups,omitempty"`
 	// The frame version of the data records of the Noise sessions that the node sends the peer (SDN-87
 	// #386): 1 when both report the Capability tags, and each record then carries its source group;
@@ -5122,8 +5124,8 @@ type SourceGroupCounters struct {
 	Carried uint64                 `protobuf:"varint,2,opt,name=carried,proto3" json:"carried,omitempty"` // judged by the source group that they carried
 	Missing uint64                 `protobuf:"varint,3,opt,name=missing,proto3" json:"missing,omitempty"` // carried none, judged by the map of address to group
 	// carried one that the node ignores, judged by that map too: in the mode off, of a peer whose
-	// groups the node does not know yet, or a claim of a group that the peer may not assert which names
-	// another group generation of the peer than the node's state, as it was made on another state
+	// groups the node does not know yet, or a claim that a rollout of the Generations explains, a group
+	// that the peer could assert before or a group ID that the node's state does not know
 	Ignored       uint64 `protobuf:"varint,4,opt,name=ignored,proto3" json:"ignored,omitempty"`
 	Refused       uint64 `protobuf:"varint,5,opt,name=refused,proto3" json:"refused,omitempty"` // claimed a group that the sending node may not assert: dropped as an unknown group
 	unknownFields protoimpl.UnknownFields
