@@ -107,53 +107,6 @@ def make_pack_bad_seeds():
                pack_one_element(VALUE_STR, 2, pack_value(VALUE_STR, 'abc') + struct.pack('>I', 10) + b'abc'))
 
 
-def make_login_seeds():
-    # Login PACKs for ParseLoginRequest (fuzz_login, FND-196 #164)
-    write_seed('fuzz_login', 'udp_accel_v2.bin', pack([
-        ('method', VALUE_STR, ['login']),
-        ('hubname', VALUE_STR, ['DEFAULT']),
-        ('username', VALUE_STR, ['fuzz']),
-        ('authtype', VALUE_INT, [1]),
-        ('max_connection', VALUE_INT, [8]),
-        ('use_encrypt', VALUE_INT, [1]),
-        ('use_compress', VALUE_INT, [1]),
-        ('half_connection', VALUE_INT, [1]),
-        ('qos', VALUE_INT, [1]),
-        ('client_id', VALUE_INT, [123]),
-        ('adjust_mss', VALUE_INT, [1300]),
-        ('use_udp_acceleration', VALUE_INT, [1]),
-        ('udp_acceleration_max_version', VALUE_INT, [2]),
-        ('support_hmac_on_udp_acceleration', VALUE_INT, [1]),
-        ('support_udp_accel_fast_disconnect_detect', VALUE_INT, [1]),
-        ('udp_acceleration_client_key', VALUE_DATA, [bytes(range(20))]),
-        ('udp_acceleration_client_key_v2', VALUE_DATA, [bytes(range(128))]),
-        ('udp_acceleration_client_ip', VALUE_INT, [0x0100007F]),
-        ('udp_acceleration_client_port', VALUE_INT, [40000]),
-        ('require_bridge_routing_mode', VALUE_INT, [1]),
-        ('unique_id', VALUE_DATA, [bytes(range(100, 120))]),
-        ('ClientProductName', VALUE_STR, ['Ranz VPN Client']),
-        ('ClientHostname', VALUE_STR, ['fuzz-host']),
-        ('ClientIpAddress', VALUE_INT, [0x0100007F]),
-    ]))
-    write_seed('fuzz_login', 'monitor_ipv6.bin', pack([
-        ('hubname', VALUE_STR, ['DEFAULT']),
-        ('username', VALUE_STR, ['administrator']),
-        ('authtype', VALUE_INT, [0]),
-        ('qos', VALUE_INT, [1]),
-        ('use_udp_acceleration', VALUE_INT, [1]),
-        ('udp_acceleration_client_ip@ipv6_bool', VALUE_INT, [1]),
-        ('udp_acceleration_client_ip@ipv6_array', VALUE_DATA, [bytes(16)]),
-        ('udp_acceleration_client_ip@ipv6_scope_id', VALUE_INT, [0]),
-        ('udp_acceleration_client_port', VALUE_INT, [0]),
-        ('require_monitor_mode', VALUE_INT, [1]),
-        ('unique_id', VALUE_DATA, [bytes(7)]),
-    ]))
-    write_seed('fuzz_login', 'no_hubname.bin', pack([
-        ('username', VALUE_STR, ['fuzz']),
-        ('authtype', VALUE_INT, [1]),
-    ]))
-
-
 # ---------------------------------------------------------------------------
 # Configuration (Mayaqua/Cfg.c): text and binary
 # ---------------------------------------------------------------------------
@@ -547,58 +500,6 @@ def make_http_seeds():
         b'Content-Length: 16\r\n'
         b'X-Pad: ' + b'A' * 4200 + b'\r\n'
         b'\r\n'))
-
-
-# ---------------------------------------------------------------------------
-# HTTP listener (Cedar/HttpListener.c, REL-6 #51): the requests of the vpntest test httplistener
-# ---------------------------------------------------------------------------
-HTTPLISTENER_TOKEN = b'fuzz-token_0123456789abcdef'     # The one token that fuzz_httplistener.c serves
-
-
-def http_request(line, *headers):
-    return line + b'\r\n' + b''.join(h + b'\r\n' for h in headers) + b'\r\n'
-
-
-def make_httplistener_seeds():
-    host = b'Host: example.test'
-    challenge = b'/.well-known/acme-challenge/'
-    seeds = {
-        # Redirects to HTTPS
-        'redirect_query.txt': http_request(b'GET /some/path?x=1&y=2 HTTP/1.1', host),
-        'redirect_host_port.txt': http_request(b'GET /some/path?x=1&y=2 HTTP/1.1', b'Host: example.test:8080'),
-        'redirect_head.txt': http_request(b'HEAD /some/path?x=1&y=2 HTTP/1.1', host),
-        'redirect_http10.txt': http_request(b'GET /some/path?x=1&y=2 HTTP/1.0', host),
-        'redirect_ipv6_host.txt': http_request(b'GET /some/path?x=1&y=2 HTTP/1.1', b'Host: [2001:db8::1]:8080'),
-        'redirect_ipv4_host.txt': http_request(b'GET / HTTP/1.1', b'Host: 192.0.2.1'),
-        # ACME HTTP-01 challenges
-        'challenge_get.txt': http_request(b'GET ' + challenge + HTTPLISTENER_TOKEN + b' HTTP/1.1', host),
-        'challenge_head_query.txt': http_request(b'HEAD ' + challenge + HTTPLISTENER_TOKEN + b'?x=1 HTTP/1.1', host),
-        'challenge_unknown.txt': http_request(b'GET ' + challenge + b'0123456789abcdef0123 HTTP/1.1', host),
-        'challenge_dotdot.txt': http_request(b'GET ' + challenge + b'.. HTTP/1.1', host),
-        'challenge_percent.txt': http_request(b'GET ' + challenge + b'%2e%2e HTTP/1.1', host),
-        'challenge_slash.txt': http_request(b'GET ' + challenge + HTTPLISTENER_TOKEN + b'/x HTTP/1.1', host),
-        'challenge_backslash.txt': http_request(b'GET ' + challenge + HTTPLISTENER_TOKEN + b'\\x HTTP/1.1', host),
-        'challenge_device.txt': http_request(b'GET ' + challenge + b'NUL HTTP/1.1', host),
-        'challenge_long.txt': http_request(b'GET ' + challenge + b'a' * 256 + b' HTTP/1.1', host),
-        # Errors
-        'post.txt': http_request(b'POST / HTTP/1.1', host, b'Content-Length: 0'),
-        'request_line_no_version.txt': http_request(b'GET /', host),
-        'request_line_extra_word.txt': http_request(b'GET / HTTP/1.1 more', host),
-        'request_line_other_version.txt': http_request(b'GET / FTP/1.1', host),
-        'missing_host.txt': http_request(b'GET / HTTP/1.1', b'Accept: */*'),
-        'repeated_host.txt': http_request(b'GET / HTTP/1.1', host, b'Host: other.test'),
-        'host_at.txt': http_request(b'GET / HTTP/1.1', b'Host: user@example.test'),
-        'host_slash.txt': http_request(b'GET / HTTP/1.1', b'Host: example.test/x'),
-        'host_control.txt': http_request(b'GET / HTTP/1.1', b'Host: exa\x01mple.test'),
-        'host_bad_port.txt': http_request(b'GET / HTTP/1.1', b'Host: example.test:8x'),
-        'absolute_form.txt': http_request(b'GET http://example.test/ HTTP/1.1', host),
-        # Bytes that never complete a request, or go over the limits of the reader
-        'tls_client_hello.bin': client_hello(b''),
-        'incomplete.txt': b'GET / HTTP/1.1\r\n' + host + b'\r\n',
-        'over_long_line.txt': http_request(b'GET / HTTP/1.1', host, b'X-Pad: ' + b'A' * 4200),
-    }
-    for name, data in seeds.items():
-        write_seed('fuzz_httplistener', name, data)
 
 
 # ---------------------------------------------------------------------------
@@ -1070,12 +971,10 @@ if __name__ == '__main__':
     assert len(PEER_SIGNAL) == 99 and len(PEER_SIGNAL_ENVELOPE) == 180 and len(PEER_BIND_ENVELOPE) == 90
     make_pack_seeds()
     make_pack_bad_seeds()
-    make_login_seeds()
     make_cfg_seeds()
     make_tcpip_seeds()
     make_x509_seeds()
     make_http_seeds()
-    make_httplistener_seeds()
     make_dhcp_seeds()
     make_net_seeds()
     make_stun_seeds()

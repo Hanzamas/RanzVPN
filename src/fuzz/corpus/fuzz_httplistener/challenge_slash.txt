@@ -1,3 +1,0 @@
-GET /.well-known/acme-challenge/fuzz-token_0123456789abcdef/x HTTP/1.1
-Host: example.test
-
