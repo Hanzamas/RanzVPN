@@ -402,6 +402,7 @@ jobs:
     # of the runner and the SeLow and XDP runtime that it holds (ONE-3, #312;
     # .github/scripts/sdn-tracer.ps1)
     - name: Build ranz for the default VRF tracer
+      if: ${{ !cancelled() }}
       shell: pwsh
       working-directory: controller
       env:
