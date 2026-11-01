@@ -61,15 +61,23 @@
 # sidecar and FRR, and VXLAN both ways between the gateway and the VRFs of the kernel of FRR
 # (TestFRREVPN of ranz-bgp/internal/sidecar).
 #
+# scale: the scale test of SDN-18 (#194, ADR-0026 decision 7, ADR-0040 item 5). One controller serves simulated nodes
+# (internal/nodesim) in VRFs that advertise routes, and the run measures how long each node takes to acknowledge a change, from
+# the apply that makes it, by percentile (TestScale of internal/controller). The fast set of a pull request runs a tenth of the
+# target, 1,000 nodes, 100 VRFs and 10,000 routes; the full set runs that and the target, 10,000 nodes, 1,000 VRFs and 100,000
+# routes. Each run writes its report, a summary table and BENCH lines; the performance gate (.github/scripts/bench-gate.py) compares
+# them with the medians recorded in .github/quality/scale-pr.txt and scale-full.txt, the job summary shows the table, and the
+# artifact ranz-scale-<size> keeps the report of each run, so a regression is visible.
+#
 # No job here touches the C build, so they run beside windows.yml and add nothing to its time.
 #
 # Two sets of jobs, which the plan job chooses (ci-plan.yml, .github/scripts/ci-plan.py; windows.yml
-# says when each runs). A pull request runs linux, evpn-frr and windows for x64. The full set also runs windows
-# for arm64, which a pull request does not create, since GitHub cannot skip one leg of a matrix: it
-# runs on a push to master or integration, every night, on workflow_dispatch, and on a pull request
+# says when each runs). A pull request runs linux, evpn-frr, scale (at a tenth of the target) and windows for x64. The full set
+# also runs windows for arm64, which a pull request does not create, since GitHub cannot skip one leg of a matrix, and scale at
+# the target as well: it runs on a push to master or integration, every night, on workflow_dispatch, and on a pull request
 # with the label full-ci or with a sensitive path of ci-plan.py.
 #
-# A push to master or integration, a scheduled run and a run by hand run both jobs, with no path
+# A push to master or integration, a scheduled run and a run by hand run every job, with no path
 # filter. A pull request runs them when it changes a path that they read: controller/ and
 # ranz-bgp/, the two trees of the module; go.mod and go.sum; proto/, the schema that go generate
 # and the nanopb round trip read; tests/control/, the round trip program; tests/explain/, the
@@ -80,7 +88,7 @@
 # .github/scripts/controller-service.ps1 with the .github/scripts/controller-hostfiles.ps1 that it
 # runs, .github/scripts/ranz-tools.ps1, the binary hardening gate
 # .github/scripts/binary-hardening.ps1, which windows.yml runs too, the fuzz targets, coverage
-# floors and accepted vulnerabilities of .github/quality and the scripts that read them. A pull
+# floors, accepted vulnerabilities and recorded scale medians of .github/quality and the scripts that read them. A pull
 # request that changes none of them (a C change under src/, or docs only) does not run this
 # workflow.
 
@@ -114,8 +122,10 @@ on:
     - '.github/quality/fuzz-targets.txt'
     - '.github/quality/coverage-floors.txt'
     - '.github/quality/govulncheck-accepted.txt'
+    - '.github/quality/scale-*.txt'
     - '.github/scripts/fuzz-registry.py'
     - '.github/scripts/coverage-floor.py'
+    - '.github/scripts/bench-gate.py'
     - '.github/scripts/govulncheck-gate.py'
     - '.github/scripts/binary-hardening.ps1'
     - '.github/scripts/fetch-wintun.ps1'
@@ -579,6 +589,100 @@ jobs:
         path: |
           controller/**/testdata/fuzz/
           ranz-bgp/**/testdata/fuzz/
+
+  # The scale test of SDN-18 (#194, ADR-0026 decision 7, ADR-0040 item 5). TestScale runs the scenario of
+  # controller/internal/nodesim/scale.go against one controller on an rqlited of its own, without the race detector, which would
+  # change what it measures: the VRFs of the intent are declared, the simulated nodes enrol, the MTU of every VRF changes, and a
+  # route changes, and at the end every node is at the generation that it acknowledged with the state of the intent. Every run of
+  # the job measures a tenth of the target (pr: 1,000 nodes, 100 VRFs, 10,000 routes, the change of every VRF three times); the
+  # full set measures the target as well (full: 10,000 nodes, 1,000 VRFs, 100,000 routes, the VRFs declared and changed in 5
+  # applies each), after the tenth, so that the runs that record the medians of the target record those of the tenth too. The
+  # test writes scale.json, scale-summary.md and the BENCH lines to RANZ_SCALE_OUT, a directory for each size; the gate compares
+  # them with the recorded medians of the size, the summary goes to the job summary, and the artifact ranz-scale-<size> holds all
+  # of it for 90 days. The time of a run is the time of the applies, which compile the whole intent: 15 seconds at the tenth,
+  # 9 to 12 minutes at the target.
+  scale:
+    name: scale (Linux)
+    needs: plan
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+    - uses: actions/checkout@v4
+    - uses: actions/setup-go@v5
+      with:
+        go-version: ${{ env.GO_VERSION }}
+        cache-dependency-path: go.sum
+    - uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'
+    - name: Install rqlited
+      timeout-minutes: 5
+      run: |
+        curl -fsSL -o "$RUNNER_TEMP/rqlite.tar.gz" "https://github.com/rqlite/rqlite/releases/download/${RQLITE_VERSION}/rqlite-${RQLITE_VERSION}-linux-amd64.tar.gz"
+        echo "${RQLITE_LINUX_AMD64_SHA256}  $RUNNER_TEMP/rqlite.tar.gz" | sha256sum -c -
+        mkdir -p "$RUNNER_TEMP/rqlite"
+        tar -xzf "$RUNNER_TEMP/rqlite.tar.gz" -C "$RUNNER_TEMP/rqlite"
+        rqlited="$(find "$RUNNER_TEMP/rqlite" -name rqlited -type f | head -n 1)"
+        test -n "$rqlited"
+        "$rqlited" -version
+        echo "RQLITED=$rqlited" >> "$GITHUB_ENV"
+    # The scenario without a controller: the intent that it declares is accepted by the rules of the intent and compiles to
+    # the states that it promises, the Fleet waits for Acks, the report has its formats
+    - name: The scenario without a controller
+      timeout-minutes: 10
+      run: go test -count=1 -v ./controller/internal/nodesim
+    - name: The scale scenario at a tenth of the target
+      timeout-minutes: 30
+      env:
+        RANZ_SCALE: pr
+        RANZ_SCALE_OUT: ${{ github.workspace }}/scale-out/pr
+      run: go test -count=1 -v -timeout 25m -run '^TestScale$' ./controller/internal/controller
+    # ADR-0040 item 5: every BENCH case of the run against the median recorded for its size, in .github/quality/scale-pr.txt
+    # and scale-full.txt (bench-gate.py record makes them from the files of earlier runs); the best of the runs of each case
+    # counts, and one that is slower than its median by more than its margin fails the job
+    - name: Performance regression gate at a tenth of the target
+      timeout-minutes: 5
+      env:
+        RANZ_SCALE_OUT: ${{ github.workspace }}/scale-out/pr
+      run: python .github/scripts/bench-gate.py compare --medians .github/quality/scale-pr.txt "${RANZ_SCALE_OUT}/scale-bench*.txt"
+    # The target runs when the tenth failed too: a failure at one size and not at the other says what kind of failure it is
+    - name: The scale scenario at the target
+      id: scale-full
+      if: ${{ !cancelled() && needs.plan.outputs.full == 'true' }}
+      timeout-minutes: 75
+      env:
+        RANZ_SCALE: full
+        RANZ_SCALE_OUT: ${{ github.workspace }}/scale-out/full
+      run: go test -count=1 -v -timeout 70m -run '^TestScale$' ./controller/internal/controller
+    - name: Performance regression gate at the target
+      if: ${{ !cancelled() && steps.scale-full.outcome == 'success' }}
+      timeout-minutes: 5
+      env:
+        RANZ_SCALE_OUT: ${{ github.workspace }}/scale-out/full
+      run: python .github/scripts/bench-gate.py compare --medians .github/quality/scale-full.txt "${RANZ_SCALE_OUT}/scale-bench*.txt"
+    - name: Summary
+      if: ${{ !cancelled() }}
+      timeout-minutes: 2
+      run: |
+        for size in pr full; do
+          if [ -f "scale-out/$size/scale-summary.md" ]; then
+            cat "scale-out/$size/scale-summary.md" >> "$GITHUB_STEP_SUMMARY"
+          fi
+        done
+    - uses: actions/upload-artifact@v4
+      if: ${{ !cancelled() }}
+      with:
+        name: ranz-scale-pr
+        retention-days: 90
+        if-no-files-found: ignore
+        path: ${{ github.workspace }}/scale-out/pr
+    - uses: actions/upload-artifact@v4
+      if: ${{ !cancelled() && needs.plan.outputs.full == 'true' }}
+      with:
+        name: ranz-scale-full
+        retention-days: 90
+        if-no-files-found: ignore
+        path: ${{ github.workspace }}/scale-out/full
 
   windows:
     needs: plan

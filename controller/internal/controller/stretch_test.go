@@ -239,9 +239,9 @@ func TestStretchRefusals(t *testing.T) {
 		`Network "dc-l2" has Node "lan-1", which has the role bridge and is no gateway of the Stretch (gateways: "gw-1")`)
 	h.waitNode("gw-1", 1, true)
 
-	// The gateway reports evpn in its next Hello and takes the Stretch. The Controller shows the stream that just ended as
-	// connected until it reads its end, so the wait for the node to be back counts the new stream, with its Hello, only
-	// after the wait for it to be gone: without it the apply can come before the Hello and be refused for the missing evpn
+	// The gateway reports evpn in its next Hello and takes the Stretch. The Controller lists the stream that just ended as
+	// connected until it reads its end, and checks the apply against the Capabilities of the Hello that it took last: wait
+	// until it lists gw-1 as gone, so that the next connected gw-1 is the one with the new Hello
 	gw.halt()
 	h.waitNode("gw-1", 1, false)
 	gw.Capabilities = capsEVPN

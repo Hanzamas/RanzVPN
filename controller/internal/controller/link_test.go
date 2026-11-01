@@ -58,9 +58,9 @@ func TestLinkSwitchIsOneGeneration(t *testing.T) {
 		t.Errorf("the refusal is not one of a missing Capability: %v", err)
 	}
 
-	// db reports it in its next Hello: the switch is one Generation of gw-1 and db, and not of lab-1. The Controller shows
-	// the stream that just ended as connected until it reads its end, so the node is waited for to be gone first, and the
-	// wait for it to be back is the one for the stream with the new Hello
+	// db reports it in its next Hello: the switch is one Generation of gw-1 and db, and not of lab-1. The Controller lists the
+	// stream that just ended as connected until it reads its end, and checks the apply against the Capabilities of the Hello
+	// that it took last: wait until it lists db as gone, so that the next connected db is the one with the new Hello
 	db.halt()
 	h.waitNode("db", 1, false)
 	db.Capabilities = plain

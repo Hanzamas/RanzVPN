@@ -169,6 +169,17 @@ def test_fuzz_registry():
           **{'src/fuzz/fuzz_peer.c': peer, 'src/fuzz/corpus/fuzz_peer/seed.bin': 'p'})
     check('fuzz_peer with one of its fuzz-reach lines gone', 1, 'no line "// fuzz-reach: agent_process_stun_binding"',
           **{'src/fuzz/fuzz_peer.c': peer + both.split('\n')[0] + '\n', 'src/fuzz/corpus/fuzz_peer/seed.bin': 'p'})
+    # The seeds of fuzz_evpn reach the sort of the VTEPs that an EVPN gateway knows and the check of the outer source of a
+    # frame against them (SDN-25-R3, #571)
+    evpn = FUZZ_C.replace('fuzz_x.c', 'fuzz_evpn.c')
+    vteps = '// fuzz-reach: NodeEvpnSortVteps\n// fuzz-reach: NodeEvpnHasVtep\n'
+    check('fuzz_evpn with its fuzz-reach lines', 0, 'has a fuzz target',
+          **{'src/fuzz/fuzz_evpn.c': evpn + vteps, 'src/fuzz/corpus/fuzz_evpn/seed.bin': 'e'})
+    check('fuzz_evpn without its fuzz-reach lines', 1, 'src/fuzz/fuzz_evpn.c: no line "// fuzz-reach: NodeEvpnSortVteps"',
+          'src/fuzz/fuzz_evpn.c: no line "// fuzz-reach: NodeEvpnHasVtep"',
+          **{'src/fuzz/fuzz_evpn.c': evpn, 'src/fuzz/corpus/fuzz_evpn/seed.bin': 'e'})
+    check('fuzz_evpn with one of its fuzz-reach lines gone', 1, 'no line "// fuzz-reach: NodeEvpnHasVtep"',
+          **{'src/fuzz/fuzz_evpn.c': evpn + vteps.split('\n')[0] + '\n', 'src/fuzz/corpus/fuzz_evpn/seed.bin': 'e'})
     check('a Go fuzz test that no line names', 1, 'FuzzLonely is listed for no function',
           **{'controller/internal/wire/lonely_test.go': 'package wire\n\nimport "testing"\n\nfunc FuzzLonely(f *testing.F) {}\n'})
 
