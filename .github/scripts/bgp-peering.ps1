@@ -37,39 +37,6 @@ foreach ($test in @(@{ Name = 'peering'; Ok = 'PEERING TEST OK' }, @{ Name = 'bg
 		$failed += "vpntest $($test.Name) (exit code $code, $($test.Ok) $ok, NO MEMORY LEAKS $leak)"
 	}
 }
-
-# TEMPORARY, for SDN-77-R3 (#570), and taken out before the pull request is ready: vpntest peering once more, with the ranz.exe of
-# origin/integration, whose sidecar has none of the filters of the pull request, in place of the one of this head. It has to fail at
-# the hostile peer of Generation 9, whose path hides the LAN of node-c at node-a, and at the flood, which no sidecar of integration
-# ends; the lines of the cases and of the failed checks are printed.
-$integration = Join-Path $env:RUNNER_TEMP 'ranz-of-integration'
-$thisRanz = Join-Path $build 'ranz.exe'
-$keptRanz = Join-Path $build 'ranz-of-this-head.exe'
-git fetch --no-tags --depth=1 origin integration
-if ($LASTEXITCODE -ne 0) { throw "git fetch of integration exited with $LASTEXITCODE" }
-git worktree add --detach $integration FETCH_HEAD
-if ($LASTEXITCODE -ne 0) { throw "git worktree add exited with $LASTEXITCODE" }
-Move-Item -LiteralPath $thisRanz -Destination $keptRanz
-try {
-	go -C $integration build -trimpath -o $thisRanz ./controller/cmd/ranz
-	if ($LASTEXITCODE -ne 0) { throw "go build of the ranz of integration exited with $LASTEXITCODE" }
-	& $thisRanz version
-	$old = (Write-Output "q\n" | & (Join-Path $build 'vpntest.exe') peering | Out-String)
-	Write-Host ((($old -split '\r?\n') | Where-Object { $_ -match '^\[' -or $_ -match '\[FAIL\]' }) -join "`n")
-	# What the node log and the sidecar log of each node, which the test prints after a failed check, say of the LAN of node-c
-	Write-Host ((($old -split '\r?\n') | Where-Object { $_ -match '192\.168\.3\.0/24' -and $_ -match 'BGP peering: route|not taken' } | Select-Object -First 40) -join "`n")
-	$hostile = ($old -cmatch '\[FAIL\]\s+Node-a keeps the LAN 192\.168\.3\.0/24 of node-c')
-	$flood = ($old -cmatch '\[FAIL\]\s+The sidecar of node-a ends its session with node-b')
-	Write-Host "vpntest peering with the ranz.exe of integration: the hostile peer failed $hostile, the flood failed $flood"
-	if (-not $hostile -or -not $flood) {
-		$failed += 'vpntest peering with the ranz.exe of integration did not fail at the hostile peer and at the flood'
-	}
-} finally {
-	Remove-Item -LiteralPath $thisRanz -ErrorAction SilentlyContinue
-	Move-Item -LiteralPath $keptRanz -Destination $thisRanz
-	git worktree remove --force $integration
-}
-
 if ($failed.Count -ne 0) {
 	throw ('failed: ' + ($failed -join '; '))
 }
