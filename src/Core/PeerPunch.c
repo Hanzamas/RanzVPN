@@ -55,6 +55,9 @@
 // peer to the direct path there, and sends a proof that echoes the second nonce, which moves the other end to the direct
 // path at the address that proof came from, the one its own nonce went to. Only the peer can read a nonce, and it can
 // echo one only from where the nonce reached it, so a probe that names an address the peer does not own sets no path.
+// An end keeps one nonce for an address until its echo comes, and every challenge or response to that address carries
+// it, so the probes of a burst from one address draw no nonce that evicts the first, and the echo of any answer to them
+// meets (PeerPunchNonce, CORE-H2-R1 #436).
 // A proof can be lost on the way, which would leave the other end on the relay while the leader sends on the direct
 // path. So the other end says from the direct path with a keepalive that it moved there, and the leader sends the proof
 // again every PEER_PUNCH_PROOF_RETRY until it hears that or a record of the peer session from there, PEER_PUNCH_PROOFS
@@ -728,9 +731,20 @@ bool PeerPunchParse(const UCHAR *payload, UINT size, PEER_PUNCH_INFO *m) {
 	return true;
 }
 
-// A fresh nonce of the punch, which goes to the address to: kept in the next slot, in place of the oldest. False when
-// the random generator fails. The caller holds the lock.
+// The nonce of the punch that goes to the address to: the one that went there before and waits for its echo, so that
+// every challenge or response to one address carries one nonce and the echo of any of them meets, however many probes
+// of a burst from there each drew one (CORE-H2-R1 #436); else a fresh one, kept in the next slot, in place of the
+// oldest. False when the random generator fails. The caller holds the lock.
 static bool PeerPunchNonce(PEER_PUNCH *punch, const PEER_ADDR *to, UCHAR *nonce) {
+	static const UCHAR zero[PEER_PUNCH_NONCE_SIZE] = {0};
+
+	for (UINT i = 0; i < PEER_PUNCH_NONCES; i++) {
+		if (PeerAddrEqual(&punch->NonceTo[i], to) && memcmp(punch->Nonces[i], zero, PEER_PUNCH_NONCE_SIZE) != 0) {
+			CopyMemory(nonce, punch->Nonces[i], PEER_PUNCH_NONCE_SIZE);
+			return true;
+		}
+	}
+
 	if (CryptoRandom(nonce, PEER_PUNCH_NONCE_SIZE) == false)
 		return false;
 

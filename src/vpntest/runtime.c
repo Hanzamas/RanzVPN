@@ -404,10 +404,82 @@ static void RtCheckZoneOffset(RT_CTX *ctx)
 		"GetCurrentTimezone = %d min, OS offset = %I64d ms", offset, os_offset);
 }
 
+// Zone data of the change vectors, as a TIME_ZONE_INFORMATION holds it: the biases are UTC minus
+// local time (minutes). A change is a month, the occurrence of Sunday in it (5 is the last) and
+// the hour of the local time that is in effect just before the change
+typedef struct RT_ZONE_DATA
+{
+	LONG Bias, StandardBias, DaylightBias;
+	UINT StandardMonth, StandardWeek, StandardHour;		// Standard time starts
+	UINT DaylightMonth, DaylightWeek, DaylightHour;		// Daylight time starts
+} RT_ZONE_DATA;
+
+// US Pacific time: UTC-8, and UTC-7 from the second Sunday of March at 02:00 to the first Sunday of
+// November at 02:00
+static RT_ZONE_DATA rt_zone_us_pacific = {480, 0, -60, 11, 1, 2, 3, 2, 2};
+
+// A change vector: zone data, a UTC time and the offset of local time from UTC (minutes) that the
+// zone has at that time
+typedef struct RT_ZONE_CHANGE_VECTOR
+{
+	char *What;
+	RT_ZONE_DATA *Zone;
+	UINT Year, Month, Day, Hour, Minute;				// UTC time
+	int OffsetMin;										// Local time minus UTC (minutes)
+} RT_ZONE_CHANGE_VECTOR;
+
+// Change vectors (ticket #601): hours either side of both changes of daylight saving time that
+// follow 2026-11-01, the day that the arm64 runner, in US Pacific time, got the offset of standard
+// time from GetTimeZoneInformation for hours before its daylight time ended (09:00 UTC)
+static RT_ZONE_CHANGE_VECTOR rt_zone_change_vectors[] =
+{
+	{"Zone change: US Pacific at 2026-11-01 06:51 UTC, before daylight time ends, is -420", &rt_zone_us_pacific, 2026, 11, 1, 6, 51, -420},
+	{"Zone change: US Pacific at 2026-11-01 09:30 UTC, after daylight time ended, is -480", &rt_zone_us_pacific, 2026, 11, 1, 9, 30, -480},
+	{"Zone change: US Pacific at 2027-03-14 08:00 UTC, before daylight time starts, is -480", &rt_zone_us_pacific, 2027, 3, 14, 8, 0, -480},
+	{"Zone change: US Pacific at 2027-03-14 11:00 UTC, after daylight time started, is -420", &rt_zone_us_pacific, 2027, 3, 14, 11, 0, -420},
+};
+
+// Fill a TIME_ZONE_INFORMATION from zone data: both changes are given as a Sunday (day of the week
+// 0) of a month, which year 0 marks
+static void RtSetZone(TIME_ZONE_INFORMATION *info, RT_ZONE_DATA *zone)
+{
+	Zero(info, sizeof(TIME_ZONE_INFORMATION));
+	info->Bias = zone->Bias;
+	info->StandardBias = zone->StandardBias;
+	info->DaylightBias = zone->DaylightBias;
+	info->StandardDate.wMonth = (WORD)zone->StandardMonth;
+	info->StandardDate.wDay = (WORD)zone->StandardWeek;
+	info->StandardDate.wHour = (WORD)zone->StandardHour;
+	info->DaylightDate.wMonth = (WORD)zone->DaylightMonth;
+	info->DaylightDate.wDay = (WORD)zone->DaylightWeek;
+	info->DaylightDate.wHour = (WORD)zone->DaylightHour;
+}
+
+// GetTimezoneOffsetAtUtcWin32 against the change vectors. The zone data and the time are the
+// vector's, so no call reads the clock or the time zone of the runner
+static void RtCheckZoneChange(RT_CTX *ctx)
+{
+	TIME_ZONE_INFORMATION info;
+	SYSTEMTIME st;
+	int offset;
+
+	for (UINT i = 0; i < _countof(rt_zone_change_vectors); i++)
+	{
+		RT_ZONE_CHANGE_VECTOR *v = &rt_zone_change_vectors[i];
+
+		RtSetZone(&info, v->Zone);
+		RtSetSystem(&st, v->Year, v->Month, v->Day, v->Hour, v->Minute, 0, 0);
+
+		offset = GetTimezoneOffsetAtUtcWin32(&info, &st);
+		RtCheck(ctx, offset == v->OffsetMin, v->What, "offset %d min, expected %d min", offset, v->OffsetMin);
+	}
+}
+
 // timeenc: the UINT64 time encoding is Unix-epoch milliseconds minus 9 hours, times before
 // 1971-01-11 encode as 0, local time is UTC plus the OS time zone offset, Tick64ToTime64
-// maps a tick to that encoding, and RFC 3339 strings carry the offset from UTC as +HH:MM,
-// -HH:MM or Z
+// maps a tick to that encoding, RFC 3339 strings carry the offset from UTC as +HH:MM,
+// -HH:MM or Z, and the offset of a time zone at a UTC time follows its daylight saving time
+// rule, also in the hours around a change
 RANZ_TEST("timeenc", timeenc_test, "Time encoding: SystemTime64/LocalTime64 against the OS clock, fixed-input conversions, RFC 3339 strings.");
 void timeenc_test(UINT num, char **arg)
 {
@@ -516,6 +588,7 @@ void timeenc_test(UINT num, char **arg)
 	RtCheckRfc3339Print(&ctx);
 	RtCheckRfc3339Parse(&ctx);
 	RtCheckZoneOffset(&ctx);
+	RtCheckZoneChange(&ctx);
 
 	RtEnd(&ctx);
 }

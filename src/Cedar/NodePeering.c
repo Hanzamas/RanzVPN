@@ -39,6 +39,16 @@
 // - The halt is answered at once: every wait of the worker ends at the halt, and a sidecar that stops is not waited for at the
 //   halt: a wait of the thread pool gives it NODE_PEERING_EXIT_WAIT to stop BGP, which sends the peers a Cease, and exit, then its
 //   job ends it. So NodeOverlayStop waits for no sidecar, also under the lock of the node (NodeClientFree).
+//
+// What the review of that work asked in its turn (SDN-77-R3, #570):
+// - A copy of the state that fails when the worker settles the sidecar on a Generation is logged, counted (NumSettleFailed) and
+//   leaves Changed set, for another try after NODE_PEERING_RETRY, as a copy for a rebuild does: the sidecar never keeps the peers and
+//   the announced prefixes of an older Generation, and a prefix that the node withdrew, until the next Generation.
+// - The node needs protocol NODE_PEERING_PROTOCOL of its sidecar. A protocol 3 sidecar drops the more of a peers message, so a list of
+//   several lines would collapse to its last line, and answers a ping with an error: its ready ends it, and the log names its version.
+// - The sidecar takes sessions from the nodes that the Controller named, and from no other address. A router of the operator that dials
+//   TCP 179 of the tunnel endpoint of the node, which is where this sidecar listens, is refused and counted like any other session
+//   (the refusal line says so); the sidecar toward the routers of the operator is a sidecar of its own (NodeBgp.c).
 
 #include "NodePeering.h"
 
@@ -148,6 +158,7 @@ struct NODE_PEERING {
 
 	CONTROL_STATE *State; // A copy of the Generation in force while it has a peering of the node, NULL for none
 	bool Changed;         // State changed since the worker settled the sidecar on it, or a sidecar has to start again
+	UINT64 NextSettle;    // ... and no settle goes before this tick, after one whose copy of the state failed
 	bool Dirty;           // The learned routes changed since the forwarding tables took them
 	UINT64 NextRebuild;   // ... and no rebuild goes before this tick, after one that failed
 	bool Reported;        // The peers, their sessions, the learned routes or the refused sessions changed since the report
@@ -157,6 +168,8 @@ struct NODE_PEERING {
 	NODE_PEERING_SIDECAR *Sidecar; // The sidecar that runs, NULL for none: the worker's, which the reader thread reads
 	bool Ready;                    // ... it sent ready: BGP runs
 	bool Exited;                   // ... it closed the pipe by itself
+	bool Old;                      // ... it sent a ready of a protocol older than NODE_PEERING_PROTOCOL, which the worker ends it for
+	UINT OldProtocol;              // ... the protocol that it named
 	UINT64 NextStart;              // The worker's: no sidecar starts before this tick
 	char Version[MAX_SIZE];        // What the sidecar named in ready
 	UINT NumStarts;                // The sidecars that started
@@ -164,10 +177,14 @@ struct NODE_PEERING {
 	UINT NumRebuilds;              // The forwarding tables built anew with the learned routes
 	UINT NumDeferred;              // ... rebuilds that met an apply
 	UINT NumFailed;                // ... rebuilds that failed: no copy of the Generation in force, or no tables
+	UINT NumSettleFailed;          // The settles of the sidecar whose copy of the Generation in force failed
 	UINT FailCopies;               // A test's (NodePeeringFailNext): the copies of the state for a rebuild that fail next ...
 	UINT FailRebuilds;             // ... and then the rebuilds that fail
+	UINT FailSettles;              // ... and the copies of the state for a settle that fail
+	LIST *Said;                    // A test's (NodePeeringSay): the lines that the worker sends the sidecar next, as if the node said them
 	UINT NumUnsent;                // The sidecars ended because a message did not reach them
 	UINT NumHung;                  // The sidecars ended because they did not answer a ping
+	UINT NumOld;                   // The sidecars ended because their protocol is older than NODE_PEERING_PROTOCOL
 	UINT NumAnnounced;             // The prefixes that the node announces
 	UINT64 Refused;                // The sessions that the sidecars refused
 	LIST *Peers;                   // The peers of the sidecar (NODE_PEERING_PEER)
@@ -519,14 +536,22 @@ static void NodePeeringOnMessage(NODE_PEERING *p, const char *line) {
 	if (cJSON_IsObject(m) == false) {
 		NodeLog(p->Node, "BGP peering: a message of the sidecar that is not a JSON object");
 	} else if (StrCmp(type, "ready") == 0) {
+		UINT protocol = NodePeeringJsonUint(m, "protocol");
+
 		Lock(p->Lock);
 		{
 			p->Ready = true;
 			StrCpy(p->Version, sizeof(p->Version), NodePeeringJsonStr(m, "version"));
+			// A sidecar of an older protocol has to go: the worker ends it (NodePeeringCheck)
+			if (protocol < NODE_PEERING_PROTOCOL) {
+				p->Old = true;
+				p->OldProtocol = protocol;
+				wake = true;
+			}
 		}
 		Unlock(p->Lock);
 
-		NodeLog(p->Node, "BGP peering: the sidecar is ready: %s (protocol %u)", NodePeeringJsonStr(m, "version"), NodePeeringJsonUint(m, "protocol"));
+		NodeLog(p->Node, "BGP peering: the sidecar is ready: %s (protocol %u)", NodePeeringJsonStr(m, "version"), protocol);
 	} else if (StrCmp(type, "peer") == 0) {
 		Lock(p->Lock);
 		{
@@ -564,7 +589,8 @@ static void NodePeeringOnMessage(NODE_PEERING *p, const char *line) {
 		}
 		Unlock(p->Lock);
 
-		NodeLog(p->Node, "BGP peering: a session from %s refused: the Controller named no peer of that address", peer_text);
+		NodeLog(p->Node, "BGP peering: a session from %s refused: the Controller named no peer of that address; this sidecar takes sessions from the nodes that the Controller named only, so a router of the operator that dials TCP 179 of the tunnel endpoint of this node is refused too",
+		        peer_text);
 		wake = true;
 	} else if (StrCmp(type, "error") == 0) {
 		const char *text = NodePeeringJsonStr(m, "prefix");
@@ -1176,6 +1202,7 @@ static void NodePeeringStopSidecar(NODE_PEERING *p, const char *why) {
 		p->Sidecar = NULL;
 		p->Ready = false;
 		p->Exited = false;
+		p->Old = false;
 		p->Pinged = 0;
 		p->NumAnnounced = 0;
 		num = NodePeeringClearRoutes(p);
@@ -1250,6 +1277,7 @@ static bool NodePeeringStartSidecar(NODE_PEERING *p, const CONTROL_STATE *st) {
 			p->Sidecar = s;
 			p->Ready = false;
 			p->Exited = false;
+			p->Old = false;
 			p->Pinged = 0;
 			p->Answered = GetTickCount64();
 		}
@@ -1455,19 +1483,37 @@ static void NodePeeringSettle(NODE_PEERING *p) {
 	UINT64 now = GetTickCount64();
 	bool changed = false;
 	bool none = false;
+	bool failed = false;
 	CONTROL_STATE *st = NULL;
 
 	NodePeeringReap(p);
 
 	Lock(p->Lock);
 	{
-		changed = p->Changed;
-		p->Changed = false;
+		changed = (p->Changed && now >= p->NextSettle);
 		none = (changed && p->State == NULL);
-		st = (changed && p->State != NULL ? ControlCopyState(p->State) : NULL);
+		if (changed && p->State != NULL) {
+			// A test may make the copy fail, as when there is no memory for it (NodePeeringFailNext)
+			if (p->FailSettles != 0)
+				p->FailSettles--;
+			else
+				st = ControlCopyState(p->State);
+			failed = (st == NULL);
+		}
+
+		// The copy takes the state of now: a change from here on sets Changed again. A copy that failed leaves it set, for another try
+		// after NODE_PEERING_RETRY, so that the change is not lost until the next Generation (SDN-77-R3, #570)
+		if (failed) {
+			p->NextSettle = now + NODE_PEERING_RETRY;
+			p->NumSettleFailed++;
+		} else if (changed) {
+			p->Changed = false;
+		}
 	}
 	Unlock(p->Lock);
 
+	if (failed)
+		NodeLog(p->Node, "BGP peering: the sidecar is not settled on the Generation in force: no memory for a copy of it; the node tries again in %u ms", (UINT)NODE_PEERING_RETRY);
 	if (none) {
 		NodePeeringStopSidecar(p, "no VRF of the node peers by BGP any more");
 		return;
@@ -1501,6 +1547,29 @@ static void NodePeeringSettle(NODE_PEERING *p) {
 	NodePeeringReap(p);
 }
 
+// The lines that a test had the node say (NodePeeringSay) go to the sidecar that runs, in the order of the calls, from the worker, the
+// one writer of the pipe, as the lines of the node do: one that does not reach the sidecar ends it. They go nowhere while no sidecar runs.
+static void NodePeeringSaid(NODE_PEERING *p) {
+	LIST *said = NULL;
+
+	Lock(p->Lock);
+	{
+		if (LIST_NUM(p->Said) != 0) {
+			said = p->Said;
+			p->Said = NewListFast(NULL);
+		}
+	}
+	Unlock(p->Lock);
+
+	if (said == NULL)
+		return;
+
+	for (UINT i = 0; i < LIST_NUM(said) && p->Sidecar != NULL; i++)
+		NodePeeringSendLine(p, p->Sidecar, LIST_DATA(said, i));
+
+	FreeListItems(said);
+}
+
 // Whether the sidecar runs (protocol 4): NODE_PEERING_PING after its last answer the worker asks it again (ping), and the sidecar
 // answers once GoBGP answered it too (pong). A sidecar that does not answer within NODE_PEERING_ANSWER hangs: the worker ends it
 // (NodePeeringEnd), so the routes that it learned go, and another starts, as for one that ends by itself (SDN-77-R1, #531).
@@ -1509,16 +1578,29 @@ static void NodePeeringCheck(NODE_PEERING *p) {
 	UINT64 now = GetTickCount64();
 	bool ping = false;
 	bool hung = false;
+	bool old = false;
+	UINT protocol = 0;
+	char version[MAX_SIZE];
 
 	if (s == NULL || s->Dead)
 		return;
 
+	version[0] = 0;
+
 	Lock(p->Lock);
 	{
-		if (p->Exited == false && p->Pinged != 0)
+		old = p->Old;
+		if (old) {
+			// A sidecar that named an older protocol in its ready: no need to ask it whether it runs
+			p->Old = false;
+			p->NumOld++;
+			protocol = p->OldProtocol;
+			StrCpy(version, sizeof(version), p->Version);
+		} else if (p->Exited == false && p->Pinged != 0) {
 			hung = (now >= p->Pinged + NODE_PEERING_ANSWER);
-		else if (p->Exited == false)
+		} else if (p->Exited == false) {
 			ping = (now >= p->Answered + NODE_PEERING_PING);
+		}
 
 		if (ping)
 			p->Pinged = now;
@@ -1527,7 +1609,11 @@ static void NodePeeringCheck(NODE_PEERING *p) {
 	}
 	Unlock(p->Lock);
 
-	if (hung) {
+	if (old) {
+		NodeLog(p->Node, "BGP peering: the sidecar \"%s\" speaks protocol %u of its pipe, and the node needs protocol %u or later, so the node ends it: %S is older than this node", version, protocol,
+		        (UINT)NODE_PEERING_PROTOCOL, p->Node->BgpSidecar);
+		NodePeeringEnd(s);
+	} else if (hung) {
 		NodeLog(p->Node, "BGP peering: the sidecar did not answer within %u ms whether it runs, so it hangs: the node ends it, its learned routes go, and another starts", (UINT)NODE_PEERING_ANSWER);
 		NodePeeringEnd(s);
 	} else if (ping) {
@@ -1649,16 +1735,18 @@ static void NodePeeringUpdateReport(NODE_PEERING *p) {
 	Free(peers);
 }
 
-// How long the worker waits for its events: until a sidecar may start again while one has to, until a rebuild that failed may go
-// again, and until the sidecar is to be asked whether it runs, or has to have answered; else for them alone
+// How long the worker waits for its events: until a sidecar may start again while one has to, until a settle or a rebuild that failed
+// may go again, and until the sidecar is to be asked whether it runs, or has to have answered; else for them alone
 static DWORD NodePeeringWait(NODE_PEERING *p) {
 	UINT64 now = GetTickCount64();
 	UINT64 due = MAXUINT64;
 
 	Lock(p->Lock);
 	{
-		if (p->Changed && p->State != NULL && p->Sidecar == NULL)
-			due = MIN(due, p->NextStart);
+		// A sidecar that has to start waits for the tick of its start, and for the one of the next settle after a settle whose
+		// copy of the state failed, as a sidecar that runs does: the worker does not pass until then for nothing
+		if (p->Changed && p->State != NULL)
+			due = MIN(due, (p->Sidecar == NULL ? MAX(p->NextStart, p->NextSettle) : p->NextSettle));
 		if (p->Dirty && p->State != NULL)
 			due = MIN(due, p->NextRebuild);
 		if (p->Sidecar != NULL && p->Sidecar->Dead == false && p->Exited == false)
@@ -1690,6 +1778,7 @@ static DWORD WINAPI NodePeeringWorker(void *param) {
 			break;
 
 		NodePeeringSettle(p);
+		NodePeeringSaid(p);
 		NodePeeringCheck(p);
 		NodePeeringRebuild(p);
 		NodePeeringUpdateReport(p);
@@ -1718,6 +1807,7 @@ CONTROL_PEERING_REPORT *NodePeeringStart(NODE *n) {
 	p->Peers = NewListFast(NULL);
 	p->Routes = NewListFast(NULL);
 	p->Announced = NewListFast(NULL);
+	p->Said = NewListFast(NULL);
 	p->Report = ControlNewPeeringReport();
 	p->Wake = CreateEventW(NULL, FALSE, FALSE, NULL);
 	p->Halt = CreateEventW(NULL, TRUE, FALSE, NULL);
@@ -1778,6 +1868,7 @@ void NodePeeringFree(NODE *n) {
 	FreeListItems(p->Peers);
 	FreeListItems(p->Routes);
 	FreeListItems(p->Announced);
+	FreeListItems(p->Said);
 	if (p->Wake != NULL)
 		CloseHandle(p->Wake);
 	if (p->Halt != NULL)
@@ -1934,8 +2025,10 @@ void NodePeeringGetStatus(NODE *n, NODE_PEERING_STATUS *st) {
 		st->NumRebuilds = p->NumRebuilds;
 		st->NumDeferred = p->NumDeferred;
 		st->NumFailed = p->NumFailed;
+		st->NumSettleFailed = p->NumSettleFailed;
 		st->NumUnsent = p->NumUnsent;
 		st->NumHung = p->NumHung;
+		st->NumOld = p->NumOld;
 		st->Refused = p->Refused;
 		st->NumErrors = p->NumErrors;
 		StrCpy(st->Version, sizeof(st->Version), p->Version);
@@ -1985,8 +2078,8 @@ CONTROL_PEERING_REPORT *NodePeeringGetReport(NODE *n) {
 
 // A test makes the next copies copies of the Generation in force for a rebuild of the forwarding tables fail, as when there is no
 // memory for one, and then the next rebuilds rebuilds, as when the tables cannot be built or installed (NodePeeringRebuild;
-// SDN-77-R1, #531)
-void NodePeeringFailNext(NODE *n, UINT copies, UINT rebuilds) {
+// SDN-77-R1, #531), and the next settles copies of it for the settle of the sidecar (NodePeeringSettle; SDN-77-R3, #570)
+void NodePeeringFailNext(NODE *n, UINT copies, UINT rebuilds, UINT settles) {
 	NODE_PEERING *p = (n != NULL ? n->Peering : NULL);
 
 	if (p == NULL)
@@ -1996,6 +2089,31 @@ void NodePeeringFailNext(NODE *n, UINT copies, UINT rebuilds) {
 	{
 		p->FailCopies = copies;
 		p->FailRebuilds = rebuilds;
+		p->FailSettles = settles;
 	}
 	Unlock(p->Lock);
+}
+
+// A test hands the node a line as if its sidecar had sent it, as the stand-in of a sidecar of another protocol does: the node takes it
+// as it takes the lines that the reader thread reads (SDN-77-R3, #570)
+void NodePeeringFeed(NODE *n, const char *line) {
+	NODE_PEERING *p = (n != NULL ? n->Peering : NULL);
+
+	if (p != NULL && line != NULL)
+		NodePeeringOnMessage(p, line);
+}
+
+// A test has the node say the line to its sidecar, as a node that announces what the Controller did not give it would: the worker sends it
+// on its next pass, after the lines of the node and the lines that a test had it say before (NodePeeringSaid; SDN-77-R3, #570)
+void NodePeeringSay(NODE *n, const char *line) {
+	NODE_PEERING *p = (n != NULL ? n->Peering : NULL);
+
+	if (p == NULL || line == NULL)
+		return;
+
+	Lock(p->Lock);
+	Add(p->Said, CopyStr(line));
+	Unlock(p->Lock);
+
+	SetEvent(p->Wake);
 }
