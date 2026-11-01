@@ -22,7 +22,8 @@ import (
 // it is not), its Wintun adapters with their VRFs and addresses, the Noise sessions of its peers
 // with their transport and age, how it reaches each peer (on its stream session or through a Relay)
 // with the datagrams each way, its datagram path with the Upgrades and the Fallbacks of its Paths
-// and its port mapping (CORE-S5-6, #412) and its punches (CORE-S5-7, #413), and its listeners. JSON, the default, is the answer of the service
+// and its port mapping (CORE-S5-6, #412) and its punches (CORE-S5-7, #413), the EVPN of a gateway with the counters of its
+// frames, the ones of unknown VTEPs among them (SDN-25-R3, #571), and its listeners. JSON, the default, is the answer of the service
 // with the field service; a table is a few lines for a person. For a stopped service the verb says
 // that the service is stopped, with the exit code 3, as the status of a stopped service is in
 // scripts.
@@ -46,8 +47,10 @@ type nodeStateAnswer struct {
 	NumPeers      int                `json:"numPeers"`
 	// DatagramPath is nil for a Node service from before the field (CORE-S5-6, #412)
 	DatagramPath *nodeStateDatagramPath `json:"datagramPath,omitempty"`
-	Listeners    nodeStateListeners     `json:"listeners"`
-	Error        string                 `json:"error,omitempty"`
+	// EVPN is the EVPN of a gateway (nodestate_evpn.go; SDN-25-R3, #571), nil for a Node service from before the field
+	EVPN      *nodeStateEVPN     `json:"evpn,omitempty"`
+	Listeners nodeStateListeners `json:"listeners"`
+	Error     string             `json:"error,omitempty"`
 }
 
 // nodeStateDatagramPath is the peer agent of a Node (CORE-S5-5, #411; CORE-S5-6, #412): whether its
@@ -245,6 +248,10 @@ func nodeStateTable(out io.Writer, a nodeStateAnswer) error {
 		if words, ok := d.punches(); ok && d.Running {
 			fmt.Fprintf(tw, "Punches\t%s\n", words)
 		}
+	}
+	if e := a.EVPN; e != nil && e.Running {
+		fmt.Fprintf(tw, "EVPN\t%s\n", e.words())
+		fmt.Fprintf(tw, "Dropped of the fabric\t%s\n", e.dropped())
 	}
 	l := a.Listeners
 	fmt.Fprintf(tw, "Listeners\toverlay %s; front door %s; relay %s\n", orNone(l.Overlay), frontDoor(l), portOrNone("UDP", l.RelayUDPPort))

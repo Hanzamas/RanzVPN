@@ -11,6 +11,7 @@
 #define NODE_PEERING_RESTART  5000                    // ms before a sidecar that ended, or did not start, starts again
 #define NODE_PEERING_PING     5000                    // ms after the last answer of the sidecar before the node asks it again whether it runs
 #define NODE_PEERING_ANSWER   10000                   // ms within which the sidecar answers that question, or it hangs and the node ends it
+#define NODE_PEERING_PROTOCOL 4                       // The protocol of the pipe that the node needs from its sidecar, and ends one of an older protocol (SDN-77-R3, #570)
 
 typedef struct NODE_PEERING NODE_PEERING;
 
@@ -28,8 +29,10 @@ typedef struct NODE_PEERING_STATUS {
 	UINT NumRebuilds;       // The forwarding tables built anew with the routes that it learned
 	UINT NumDeferred;       // ... rebuilds that met an apply of the overlay, counted at once: they wait for it, or take the Generation that it puts in force
 	UINT NumFailed;         // ... rebuilds that failed, for no copy of the Generation in force or no tables: each goes again after a while
+	UINT NumSettleFailed;   // The settles of the sidecar on a Generation that failed, for no copy of it: each goes again after a while (SDN-77-R3, #570)
 	UINT NumUnsent;         // The sidecars that the node ended because a message did not reach them
 	UINT NumHung;           // The sidecars that the node ended because they did not answer whether they run
+	UINT NumOld;            // The sidecars that the node ended because their protocol is older than NODE_PEERING_PROTOCOL
 	UINT64 Refused;         // The sessions that the sidecar refused, from an address that no peer has
 	UINT NumErrors;         // Error messages of the sidecar
 	char Version[MAX_SIZE]; // What the sidecar named in ready: ranz bgp and its GoBGP
@@ -56,7 +59,9 @@ void NodePeeringApplied(NODE *n, const struct CONTROL_STATE *st, bool swapped);
 void NodePeeringGetStatus(NODE *n, NODE_PEERING_STATUS *st);
 UINT NodePeeringGetPeers(NODE *n, struct CONTROL_PEERING_PEER *list, UINT max);
 struct CONTROL_PEERING_REPORT *NodePeeringGetReport(NODE *n);
-void NodePeeringFailNext(NODE *n, UINT copies, UINT rebuilds);
+void NodePeeringFailNext(NODE *n, UINT copies, UINT rebuilds, UINT settles);
+void NodePeeringFeed(NODE *n, const char *line);
+void NodePeeringSay(NODE *n, const char *line);
 
 // NodeOverlay.c
 UINT NodeOverlayRebuild(NODE *n, const struct CONTROL_STATE *with);
