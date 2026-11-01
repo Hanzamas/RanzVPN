@@ -1198,15 +1198,34 @@ int GetTimezoneInfoOffsetWin32(TIME_ZONE_INFORMATION *info, UINT zone_id) {
 	return -(int)bias;
 }
 
-// Current offset of local time from UTC in minutes (positive east of UTC), daylight saving
-// time included when it is in effect; 0 when the time zone cannot be read
-int GetCurrentTimezone() {
-	TIME_ZONE_INFORMATION info;
-	Zero(&info, sizeof(info));
-
-	DWORD zone_id = GetTimeZoneInformation(&info);
-	if (zone_id == TIME_ZONE_ID_INVALID)
+// Offset of local time from UTC in minutes (positive east of UTC) at the UTC time utc, for the
+// time zone data info, or for the time zone of the OS when info is NULL. The OS converts that
+// one time by the rule of the zone data, so the offset is right on the day that daylight saving
+// time changes too. 0 when utc is NULL or the OS cannot convert it
+int GetTimezoneOffsetAtUtcWin32(TIME_ZONE_INFORMATION *info, SYSTEMTIME *utc) {
+	SYSTEMTIME local;
+	FILETIME utc_ft, local_ft;
+	if (utc == NULL)
 		return 0;
 
-	return GetTimezoneInfoOffsetWin32(&info, zone_id);
+	if (SystemTimeToTzSpecificLocalTime(info, utc, &local) == FALSE)
+		return 0;
+	if (SystemTimeToFileTime(utc, &utc_ft) == FALSE || SystemTimeToFileTime(&local, &local_ft) == FALSE)
+		return 0;
+
+	// Local time minus UTC, in minutes
+	return (int)(((INT64)FileTimeToTicks(&local_ft) - (INT64)FileTimeToTicks(&utc_ft)) / (INT64)(60 * TIME_TICKS_PER_SEC));
+}
+
+// Current offset of local time from UTC in minutes (positive east of UTC), daylight saving
+// time included when it is in effect at this moment; 0 when the OS cannot convert the time.
+// The OS converts the moment, as SystemToLocal does. The zone ID of GetTimeZoneInformation is
+// not used: on 2026-11-01, for hours before US daylight time ended, it gave -480 on the arm64
+// runner where the conversion gave -420 (ticket #601)
+int GetCurrentTimezone() {
+	SYSTEMTIME utc;
+
+	SystemTime(&utc);
+
+	return GetTimezoneOffsetAtUtcWin32(NULL, &utc);
 }
