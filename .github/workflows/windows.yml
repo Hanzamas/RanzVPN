@@ -250,13 +250,13 @@ jobs:
         name: link-map-${{ matrix.platform.ARCHITECTURE }}
         path: build/ranz-node.map
     # ranz-node links no SE-VPN code of the slim fork (CORE-S8-2, #576): its linker map (src/ranz-node/CMakeLists.txt)
-    # names no object of the files that CORE-S8-3 (#577) deletes, and neither ServerAccept nor ClientConnect. A name
-    # is "gone", which fails the job when the map holds it, or "allowed", which the job only reports: the local bridge
-    # of the slim fork, which the Hub and Session code still starts until CORE-S8-3 deletes it and turns it into
-    # "gone". The map must name Node.c.obj and Hub.c.obj, so that a map of another program or in another format
-    # cannot pass by matching nothing. The shared constants (the string literals ??_C@ and the numbers __real@,
-    # __xmm@ and __ymm@) are left out: the linker keeps one copy of each, from whichever object it read first. It
-    # reads only the map of the build, so it runs right after it, before the tests, as the check of /volatile:ms does.
+    # names no object of the files that CORE-S8-3 (#577) deleted, and neither ServerAccept nor ClientConnect, so that
+    # none of them comes back. Every name is "gone", which fails the job when the map holds it; the state "allowed",
+    # which the job only reports, held the local bridge of the slim fork until CORE-S8-3 deleted it. The map must
+    # name Node.c.obj and Hub.c.obj, so that a map of another program or in another format cannot pass by matching
+    # nothing. The shared constants (the string literals ??_C@ and the numbers __real@, __xmm@ and __ymm@) are left
+    # out: the linker keeps one copy of each, from whichever object it read first. It reads only the map of the
+    # build, so it runs right after it, before the tests, as the check of /volatile:ms does.
     - name: ranz-node links no SE-VPN code
       shell: pwsh
       run: |
@@ -282,8 +282,8 @@ jobs:
           @{ Name = 'ProtocolServer.c.obj'; Re = '[\s:\\/(]ProtocolServer\.c\.obj'; State = 'gone' },
           @{ Name = 'ServerAccept'; Re = '\sServerAccept(\s|$)'; State = 'gone' },
           @{ Name = 'ClientConnect'; Re = '\sClientConnect(\s|$)'; State = 'gone' },
-          @{ Name = 'Bridge.c.obj'; Re = '[\s:\\/(]Bridge\.c\.obj'; State = 'allowed' },
-          @{ Name = 'BridgeWin32.c.obj'; Re = '[\s:\\/(]BridgeWin32\.c\.obj'; State = 'allowed' }
+          @{ Name = 'Bridge.c.obj'; Re = '[\s:\\/(]Bridge\.c\.obj'; State = 'gone' },
+          @{ Name = 'BridgeWin32.c.obj'; Re = '[\s:\\/(]BridgeWin32\.c\.obj'; State = 'gone' }
         )
         $failed = @()
         foreach ($c in $checks) {
@@ -292,8 +292,8 @@ jobs:
           $hits | Select-Object -First 5 | ForEach-Object { Write-Host "    $($_.Trim())" }
           if ($c.State -eq 'gone' -and $hits.Count -gt 0) { $failed += $c.Name }
         }
-        if ($failed.Count -gt 0) { throw "ranz-node links SE-VPN code that CORE-S8-2 cut off: $($failed -join ', ')" }
-        Write-Host "build/ranz-node.map (${{ matrix.platform.ARCHITECTURE }}): none of the SE-VPN code that CORE-S8-3 deletes is linked, except the local bridge that the list still allows"
+        if ($failed.Count -gt 0) { throw "ranz-node links SE-VPN code that CORE-S8-3 deleted: $($failed -join ', ')" }
+        Write-Host "build/ranz-node.map (${{ matrix.platform.ARCHITECTURE }}): none of the SE-VPN code that CORE-S8-3 deleted is linked"
     # Source lines per directory and executable sizes, in the job log and the job summary. Never a gate.
     - name: Size metrics
       if: ${{ !cancelled() }}

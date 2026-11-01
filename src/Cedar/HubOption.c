@@ -3,12 +3,7 @@
 
 #include "Hub.h"
 
-#include "Admin.h"
-#include "Bridge.h"
 #include "Connection.h"
-#include "Link.h"
-#include "Protocol.h"
-#include "Server.h"
 
 #include "Mayaqua/Cfg.h"
 #include "Mayaqua/FileIO.h"
@@ -189,65 +184,6 @@ bool IsURLMsg(wchar_t *str, char *url, UINT url_size) {
 	UniFreeToken(t);
 
 	return ret;
-}
-
-UINT GetHubAdminOptionData(RPC_ADMIN_OPTION *ao, char *name) {
-	if (ao == NULL || name == NULL)
-		return INFINITE;
-
-	for (UINT i = 0; i < ao->NumItem; i++) {
-		ADMIN_OPTION *a = &ao->Items[i];
-
-		if (StrCmpi(a->Name, name) == 0)
-			return a->Value;
-	}
-
-	return INFINITE;
-}
-
-void DataToHubOptionStruct(HUB_OPTION *o, RPC_ADMIN_OPTION *ao) {
-	if (o == NULL || ao == NULL)
-		return;
-
-	for (UINT i = 0; i < num_hub_option_fields; i++) {
-		HUB_OPTION_FIELD *f = &hub_option_fields[i];
-
-		if (f->AdminName != NULL) {
-			UINT value = GetHubAdminOptionData(ao, f->AdminName);
-
-			if (value != INFINITE)
-				SetHubOptionField(o, f, value);
-		}
-	}
-}
-
-void HubOptionStructToData(RPC_ADMIN_OPTION *ao, HUB_OPTION *o, char *hub_name) {
-	if (ao == NULL || o == NULL || hub_name == NULL)
-		return;
-
-	Zero(ao, sizeof(RPC_ADMIN_OPTION));
-
-	StrCpy(ao->HubName, sizeof(ao->HubName), hub_name);
-
-	for (UINT i = 0; i < num_hub_option_fields; i++)
-		if (hub_option_fields[i].AdminName != NULL)
-			ao->NumItem++;
-
-	ao->Items = ZeroMalloc(sizeof(ADMIN_OPTION) * ao->NumItem);
-
-	UINT num = 0;
-
-	for (UINT i = 0; i < num_hub_option_fields; i++) {
-		HUB_OPTION_FIELD *f = &hub_option_fields[i];
-
-		if (f->AdminName != NULL) {
-			ADMIN_OPTION *a = &ao->Items[num++];
-
-			StrCpy(a->Name, sizeof(a->Name), f->AdminName);
-			a->Value = GetHubOptionField(o, f);
-			UniStrCpy(a->Descrption, sizeof(a->Descrption), GetHubAdminOptionHelpString(a->Name));
-		}
-	}
 }
 
 wchar_t *GetHubAdminOptionHelpString(char *name) {

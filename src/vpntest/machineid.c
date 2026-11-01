@@ -2,22 +2,18 @@
 // Named machine identity test of vpntest ("machineid" command, FIX-5 #101)
 //
 // The machine identity (GenerateMachineUniqueHash) sets the MAC address and the 172.31.x.y address
-// of every virtual hub and the unique_id of a Cascade login. The old identity hashed the host name,
-// the host IP addresses and the OS version: it changed with a rename, a DHCP lease or an OS update,
-// and two servers on cloned machines got the same one. FIX-5 hashes the MachineGuid of Windows with
-// a random salt that the server configuration keeps (ComputeMachineUniqueHash). This test pins that
-// hash with known answers and checks that the same MachineGuid with separate salts gives separate
-// identities, that a server's identity has no other input (so a rename, an IP change or an OS update
-// keeps it), and that the salt goes into the configuration text and back. Prints "MACHINEID TEST OK"
-// only when every check passes, and frees everything it allocates.
+// of every virtual hub. The old identity hashed the host name, the host IP addresses and the OS
+// version: it changed with a rename, a DHCP lease or an OS update, and two servers on cloned machines
+// got the same one. FIX-5 hashes the MachineGuid of Windows with a random salt of the CEDAR
+// (ComputeMachineUniqueHash). This test pins that hash with known answers and checks that the same
+// MachineGuid with separate salts gives separate identities and that a server's identity has no
+// other input (so a rename, an IP change or an OS update keeps it). Prints "MACHINEID TEST OK" only
+// when every check passes, and frees everything it allocates.
 
 #include "testlist.h"
 
 #include "Cedar/Cedar.h"
-#include "Cedar/Protocol.h"
-#include "Cedar/Server.h"
 
-#include "Mayaqua/Cfg.h"
 #include "Mayaqua/Encrypt.h"
 #include "Mayaqua/Memory.h"
 #include "Mayaqua/Str.h"
@@ -178,69 +174,8 @@ static void MachineIdTestCedar(MACHINEID_CTX *ctx)
 	ReleaseCedar(c2);
 }
 
-// Load a folder holding a MachineIdSalt item of the given size into c; true when the salt of c stayed
-static bool MachineIdLoadKeeps(CEDAR *c, UINT size)
-{
-	UCHAR before[MACHINE_ID_SALT_SIZE];
-	UCHAR item[MACHINE_ID_SALT_SIZE * 2];
-	FOLDER *f = CfgCreateFolder(NULL, TAG_ROOT);
-
-	Copy(before, c->MachineIdSalt, sizeof(before));
-	Rand(item, sizeof(item));
-
-	if (size != 0)
-	{
-		CfgAddByte(f, "MachineIdSalt", item, size);
-	}
-
-	SiLoadMachineIdCfg(c, f);
-
-	bool ret = (Cmp(before, c->MachineIdSalt, sizeof(before)) == 0);
-
-	CfgDeleteFolder(f);
-
-	return ret;
-}
-
-// The salt in the config file: written, read back from the configuration text; a config file without it
-// (an upgrade) or with a salt of another size keeps the salt of NewCedar
-static void MachineIdTestCfg(MACHINEID_CTX *ctx)
-{
-	CEDAR *c1 = NewCedar(NULL, NULL);
-	CEDAR *c2 = NewCedar(NULL, NULL);
-	UCHAR id1[SHA1_SIZE];
-	UCHAR id2[SHA1_SIZE];
-	FOLDER *f = CfgCreateFolder(NULL, TAG_ROOT);
-
-	MachineIdCheck(ctx, MachineIdLoadKeeps(c2, 0), "a config file without MachineIdSalt keeps the salt of NewCedar");
-	MachineIdCheck(ctx, MachineIdLoadKeeps(c2, MACHINE_ID_SALT_SIZE / 2), "a MachineIdSalt of half the size is ignored");
-	MachineIdCheck(ctx, MachineIdLoadKeeps(c2, MACHINE_ID_SALT_SIZE * 2), "a MachineIdSalt of twice the size is ignored");
-	MachineIdCheck(ctx, MachineIdLoadKeeps(c2, MACHINE_ID_SALT_SIZE) == false, "a MachineIdSalt of the right size replaces the salt");
-
-	SiWriteMachineIdCfg(f, c1);
-	BUF *b = CfgFolderToBuf(f);
-	SeekBufToBegin(b);
-	FOLDER *f2 = CfgBufTextToFolder(b);
-
-	if (MachineIdCheck(ctx, f2 != NULL && CfgIsItem(f2, "MachineIdSalt"), "SiWriteMachineIdCfg writes the MachineIdSalt item"))
-	{
-		SiLoadMachineIdCfg(c2, f2);
-		GenerateMachineUniqueHash(c1, id1);
-		GenerateMachineUniqueHash(c2, id2);
-		MachineIdCheck(ctx, Cmp(id1, id2, SHA1_SIZE) == 0,
-			"the salt read back from the configuration text gives the same identity (a restart keeps it)");
-	}
-
-	CfgDeleteFolder(f2);
-	FreeBuf(b);
-	CfgDeleteFolder(f);
-
-	ReleaseCedar(c1);
-	ReleaseCedar(c2);
-}
-
 // machineid: the machine identity of FIX-5
-RANZ_TEST("machineid", machineid_test, "Machine identity: MachineGuid and the configuration salt, known answers, separate salts, the salt in the config.");
+RANZ_TEST("machineid", machineid_test, "Machine identity: MachineGuid and the salt of the CEDAR, known answers, separate salts.");
 void machineid_test(UINT num, char **arg)
 {
 	MACHINEID_CTX ctx;
@@ -251,7 +186,6 @@ void machineid_test(UINT num, char **arg)
 
 	MachineIdTestDerivation(&ctx);
 	MachineIdTestCedar(&ctx);
-	MachineIdTestCfg(&ctx);
 
 	if (ctx.NumFailed == 0)
 	{

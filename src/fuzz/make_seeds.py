@@ -465,7 +465,7 @@ def make_x509_seeds():
 
 
 # ---------------------------------------------------------------------------
-# HTTP headers of the SE-VPN handshake (Cedar/Protocol.c, Mayaqua/HTTP.c HttpHeaderToStr)
+# HTTP headers of the SE-VPN handshake (Mayaqua/HTTP.c HttpHeaderToStr)
 # ---------------------------------------------------------------------------
 def make_http_seeds():
     write_seed('fuzz_http', 'client_connect.txt', (

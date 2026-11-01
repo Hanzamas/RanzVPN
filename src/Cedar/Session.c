@@ -4,13 +4,8 @@
 #include "Session.h"
 
 #include "Account.h"
-#include "Bridge.h"
 #include "Connection.h"
 #include "Hub.h"
-#include "Link.h"
-#include "Protocol.h"
-#include "Server.h"
-#include "UdpAccel.h"
 
 #include "Mayaqua/Internat.h"
 #include "Mayaqua/Kernel.h"
@@ -38,15 +33,10 @@ void SessionMain(SESSION *s) {
 	int packet_queue_diff;
 	bool is_server_session = false;
 	bool lock_receive_blocks_queue = false;
-	HUB *udp_accel_log_hub;
 	UINT64 auto_disconnect_tick = 0;
 
 	if (s == NULL)
 		return;
-
-	// The drop counters of the UDP Acceleration go to the log of the session's hub, or for a
-	// cascade connection to the log of the local hub of the cascade
-	udp_accel_log_hub = (s->Hub != NULL ? s->Hub : (s->Link != NULL ? s->Link->Hub : NULL));
 
 	s->CurrentRetryCount = 0;
 	s->ConnectSucceed = true;
@@ -78,8 +68,6 @@ void SessionMain(SESSION *s) {
 	s->RetryFlag = false;
 
 	s->LastCommTime = Tick64();
-	if (s->ServerMode == false)
-		s->NextConnectionTime = Tick64() + (UINT64)((UINT64)s->ClientOption->AdditionalConnectionInterval * (UINT64)1000);
 
 	s->NumConnectionsEstablished++;
 	s->CurrentConnectionEstablishTime = Tick64();
@@ -139,26 +127,9 @@ void SessionMain(SESSION *s) {
 			}
 		}
 
-		// The additional connections of a client Session of the SE-VPN code (ProtocolClient.c), through its hooks
-		if (is_server_session == false && SeVpnHooks.ClientAdditionalConnectChance != NULL) {
-			if (GetGlobalServerFlag(GSF_DISABLE_SESSION_RECONNECT) == false)
-				SeVpnHooks.ClientAdditionalConnectChance(s);
-		}
-
 		ConnectionReceive(c, s->Cancel1, s->Cancel2);
 
 		now = Tick64();
-
-		if (s->UseUdpAcceleration && s->UdpAccel != NULL && s->UdpAccel->FatalError) {
-			// A send error on the UDP acceleration socket is fatal
-			err = ERR_DISCONNECTED;
-			pa_fail = true;
-		}
-
-		if (s->UseUdpAcceleration && s->UdpAccel != NULL) {
-			// Dropped datagrams of the UDP Acceleration port, at most one entry per interval
-			SeVpnHooks.UdpAccelLogDrops(s->UdpAccel, udp_accel_log_hub, s->Name, false);
-		}
 
 		if (lock_receive_blocks_queue)
 			LockQueue(c->ReceivedBlocks);
@@ -213,10 +184,7 @@ void SessionMain(SESSION *s) {
 					b = NewBlock(packet, packet_size, s->UseCompress ? 1 : 0);
 					b->PriorityQoS = priority;
 
-					if (b->PriorityQoS && c->Protocol == CONNECTION_TCP && s->QoS)
-						q = c->SendBlocks2;
-					else
-						q = c->SendBlocks;
+					q = c->SendBlocks;
 
 					if (q->num_item > MAX_STORED_QUEUE_NUM)
 						q = NULL;
@@ -249,7 +217,7 @@ void SessionMain(SESSION *s) {
 
 		now = Tick64();
 
-		ConnectionSend(c, now);
+		ConnectionSend(c);
 
 		if (s->Halt) {
 			if (s->ForceStopFlag)
@@ -258,7 +226,7 @@ void SessionMain(SESSION *s) {
 		}
 
 		if (auto_disconnect_tick != 0 && auto_disconnect_tick <= now) {
-			// A client session does not reconnect: the retry count is used up (ClientThread)
+			// The session ends for good: its retry count is used up
 			err = ERR_AUTO_DISCONNECTED;
 			s->CurrentRetryCount = INFINITE;
 			break;
@@ -289,31 +257,6 @@ void SessionMain(SESSION *s) {
 			if ((now > s->LastCommTime) && ((now - s->LastCommTime) >= ((UINT64)s->Timeout)))
 				timeouted = true;
 
-			if (c->Protocol == CONNECTION_TCP) {
-				if (GetGlobalServerFlag(GSF_DISABLE_SESSION_RECONNECT)) {
-					UINT num_tcp_connections = Count(c->CurrentNumConnection);
-
-					if (num_tcp_connections == 0)
-						timeouted = true;
-				}
-			}
-
-			if (is_server_session == false && s->ClientOption != NULL && s->ClientOption->ConnectionDisconnectSpan == 0) {
-				if (LIST_NUM(s->Connection->Tcp->TcpSockList) < s->MaxConnection) {
-					if ((s->LastTryAddConnectTime +
-					     (UINT64)(s->ClientOption->AdditionalConnectionInterval * 1000 * 2 + CONNECTING_TIMEOUT * 2)) <= Tick64())
-						timeouted = true;
-
-					UINT num_tcp_conn = LIST_NUM(s->Connection->Tcp->TcpSockList);
-
-					if ((s->CurrentConnectionEstablishTime +
-					     (UINT64)(num_tcp_conn * s->ClientOption->AdditionalConnectionInterval * 1000 * 2 + CONNECTING_TIMEOUT * 2)) <= Tick64()) {
-						if (s->ClientOption->BindLocalPort != 0 || num_tcp_conn == 0)
-							timeouted = true;
-					}
-				}
-			}
-
 			if (timeouted) {
 				s->SessionTimeOuted = true;
 				err = ERR_SESSION_TIMEOUT;
@@ -329,11 +272,6 @@ void SessionMain(SESSION *s) {
 
 CLEANUP:
 
-	if (s->UdpAccel != NULL) {
-		// The drops since the last entry, before the UDP Acceleration of this connection is freed
-		SeVpnHooks.UdpAccelLogDrops(s->UdpAccel, udp_accel_log_hub, s->Name, true);
-	}
-
 	if (s->ServerMode) {
 		IncrementUserTraffic(s->Hub, s->UserNameReal, s);
 
@@ -343,12 +281,9 @@ CLEANUP:
 	s->ConnectSucceed = false;
 
 	if (s->Connection) {
-		int diff = -((int)s->Connection->LastTcpQueueSize);
-		s->Connection->LastTcpQueueSize = 0;
 		FlagWrite(&s->Connection->Halt, true);
-		CedarAddCurrentTcpQueueSize(s->Cedar, diff);
 
-		diff = ((int)c->CurrentSendQueueSize) - ((int)c->LastPacketQueueSize);
+		int diff = ((int)c->CurrentSendQueueSize) - ((int)c->LastPacketQueueSize);
 		CedarAddCurrentTcpQueueSize(c->Cedar, diff);
 		c->LastPacketQueueSize = c->CurrentSendQueueSize;
 	}
@@ -356,18 +291,10 @@ CLEANUP:
 	if (pa_inited)
 		pa->Free(s);
 
-	if (s->ServerMode == false)
-		StopAllAdditionalConnectThread(s->Connection);
-
-	if (s->BridgeMode)
-		BrSessionCleanup(s);
-
 	if (s->Cancel2 != NULL) {
 		ReleaseCancel(s->Cancel2);
 		s->Cancel2 = NULL;
 	}
-
-	EndTunnelingMode(c);
 
 	c->Err = err;
 }
@@ -511,10 +438,10 @@ void StopSession(SESSION *s) {
 	StopSessionEx(s, false);
 }
 
-// Teardown lock order: LINK lock, then SESSION lock, then CONNECTION lock. The teardown paths
-// (StopLink, StopSessionEx, StopConnection) take each lock only to read the child pointer and
-// add a ref, and release it before they stop the child, so no two of these locks nest there.
-// None of them is taken under the MacHashTable lock of a hub.
+// Teardown lock order: SESSION lock, then CONNECTION lock. The teardown paths (StopSessionEx,
+// StopConnection) take each lock only to read the child pointer and add a ref, and release it
+// before they stop the child, so no two of these locks nest there. None of them is taken under
+// the MacHashTable lock of a hub.
 void StopSessionEx(SESSION *s, bool no_wait) {
 	CONNECTION *c;
 	if (s == NULL)
@@ -527,7 +454,7 @@ void StopSessionEx(SESSION *s, bool no_wait) {
 
 	Set(s->HaltEvent);
 
-	// SessionConnect sets and clears s->Connection under s->lock and then releases it
+	// A reference to s->Connection, taken under s->lock
 	Lock(s->lock);
 	{
 		c = s->Connection;
@@ -631,8 +558,7 @@ void ReleaseSession(SESSION *s) {
 		CleanupSession(s);
 }
 
-// The fields every session constructor sets the same way: NewServerSession, and NewClientSession and NewRpcSession of
-// the SE-VPN client (ProtocolClient.c)
+// The fields that every session gets, whatever creates it (NewServerSession)
 SESSION *NewSessionBase(CEDAR *cedar, bool server_mode) {
 	SESSION *s = ZeroMalloc(sizeof(SESSION));
 
@@ -795,57 +721,4 @@ void ReleaseCancelList(LIST *o) {
 	}
 
 	ReleaseList(o);
-}
-
-// Copy what the admin RPCs report about the session. Lock order as in HubCountUserSessions: the caller may hold the
-// hub's SessionList; this takes s->lock, then the TcpSockList lock and the traffic lock
-void SessionGetInfo(SESSION *s, SESSION_INFO *info) {
-	if (info == NULL)
-		return;
-
-	Zero(info, sizeof(SESSION_INFO));
-
-	if (s == NULL)
-		return;
-
-	Lock(s->lock);
-	{
-		StrCpy(info->Name, sizeof(info->Name), s->Name);
-		StrCpy(info->Username, sizeof(info->Username), s->Username);
-		StrCpy(info->RealUsername, sizeof(info->RealUsername), s->UserNameReal);
-		StrCpy(info->GroupName, sizeof(info->GroupName), s->GroupName);
-		Copy(&info->NodeInfo, &s->NodeInfo, sizeof(NODE_INFO));
-
-		if (s->Connection != NULL) {
-			CONNECTION *c = s->Connection;
-
-			Copy(&info->ClientIp, &c->ClientIp, sizeof(IP));
-			StrCpy(info->ClientHostname, sizeof(info->ClientHostname), c->ClientHostname);
-
-			LockList(c->Tcp->TcpSockList);
-			{
-				info->NumTcp = LIST_NUM(c->Tcp->TcpSockList);
-			}
-			UnlockList(c->Tcp->TcpSockList);
-		}
-
-		info->MaxConnection = s->MaxConnection;
-		info->CreatedTime = s->CreatedTime;
-		info->LastCommTime = s->LastCommTime;
-		info->LastCommTimeForDormant = s->LastCommTimeForDormant;
-		info->LinkModeServer = s->LinkModeServer;
-		info->BridgeMode = s->BridgeMode;
-		info->NormalClient = s->NormalClient;
-		info->IsBridgeMode = s->IsBridgeMode;
-		info->IsMonitorMode = s->IsMonitorMode;
-		info->VLanId = s->VLanId;
-
-		Lock(s->TrafficLock);
-		{
-			info->PacketSize = GetTrafficPacketSize(s->Traffic);
-			info->PacketNum = GetTrafficPacketNum(s->Traffic);
-		}
-		Unlock(s->TrafficLock);
-	}
-	Unlock(s->lock);
 }

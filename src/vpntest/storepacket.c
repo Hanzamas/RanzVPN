@@ -40,7 +40,6 @@
 #include "Cedar/Hub.h"
 #include "Cedar/LogWriter.h"
 #include "Cedar/PacketLog.h"
-#include "Cedar/Server.h"
 #include "Cedar/Session.h"
 #include "Cedar/Tunables.h"
 

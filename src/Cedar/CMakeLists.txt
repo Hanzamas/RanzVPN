@@ -23,13 +23,13 @@ set_target_properties(cedar
 
 # A Windows library sits on the target whose sources call it. setupapi.lib: SetupCopyOEMInfW and
 # SetupUninstallOEMInf* (SeLowUser.c, Win32Com.c); ole32.lib and uuid.lib: CoCreateInstance and the
-# INetCfg GUIDs (Win32Com.c), CoTaskMemFree and FOLDERID_ProgramData (Node.c); winhttp.lib: the HTTP
-# client of Protocol.c; winsqlite3.lib: the SQLite of System32 (ConfigStore.c, ADR-0022); bcrypt.lib:
-# BCryptDeriveKeyPBKDF2 and crypt32.lib: the certificate subject and thumbprint (ConfigStore.c);
+# INetCfg GUIDs (Win32Com.c), CoTaskMemFree and FOLDERID_ProgramData (Node.c); winsqlite3.lib: the
+# SQLite of System32 (ConfigStore.c, ADR-0022); bcrypt.lib: BCryptDeriveKeyPBKDF2 and crypt32.lib:
+# the certificate subject and thumbprint (ConfigStore.c);
 # iphlpapi.lib: the learned routes of the BGP sidecar and ParseNetworkString (NodeBgp.c), which also
 # takes the pipe name's nonce from bcrypt.lib, and the addresses, routes and address changes of the client role
 # (NodeClient.c, NodeWintun.c); powrprof.lib: the suspend and resume events of the client role
-target_link_libraries(cedar PRIVATE bcrypt.lib crypt32.lib iphlpapi.lib ole32.lib powrprof.lib setupapi.lib uuid.lib winhttp.lib winsqlite3.lib)
+target_link_libraries(cedar PRIVATE bcrypt.lib crypt32.lib iphlpapi.lib ole32.lib powrprof.lib setupapi.lib uuid.lib winsqlite3.lib)
 
 # fwpuclnt.lib: the Windows Filtering Platform, whose filters keep two WireGuard Devices of a gateway apart
 # (NodeWireGuardFilter.c; SDN-80, #375)
@@ -113,9 +113,9 @@ target_link_libraries(cedar PRIVATE coreswitch)
 # of the new core to itself, as corepeer does.
 target_link_libraries(cedar PRIVATE corefrontdoor)
 
-# Build identity: version, build time and builder in one generated BuildInfo.h. Only the files that
-# print it include it (Cedar.c, Admin.c, AdminServer.c, Server.c), so a new stamp rebuilds those four
-# and not the whole library. configure_file leaves the header alone when its content is the same.
+# Build identity: version, build time and builder in one generated BuildInfo.h. Only the file that
+# prints it includes it (Cedar.c), so a new stamp rebuilds that file and not the whole library.
+# configure_file leaves the header alone when its content is the same.
 option(RANZ_EMBED_BUILDER "Put the builder's user and host name in the build info string. Off by default: they differ per machine, so the build is not reproducible." OFF)
 
 if(RANZ_EMBED_BUILDER)
