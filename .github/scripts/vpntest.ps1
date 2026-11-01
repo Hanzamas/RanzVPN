@@ -28,24 +28,6 @@ if ($env:RANZ_BENCH_RUNS) { $benchRuns = [int] $env:RANZ_BENCH_RUNS }
 # The files of an earlier run of the script are no results of this one
 Get-ChildItem -Path $benchDir -Filter "bench-$benchArch*.txt" -ErrorAction SilentlyContinue | Remove-Item
 
-# Start/stop smoke test: server mode must exit without leaks
-('s') | % {
-
-	[String] $mode = $_
-	Write-Host "testing: $mode"
-
-	$full = (Write-Output "q\n" | & "$BuildDir\vpntest.exe" $mode)
-	$t = ($full | Select-String -Pattern 'NO MEMORY LEAKS' -CaseSensitive)
-
-	if (($t).Count -ne 1) {
-		$full
-		Write-Error 'failed'
-		return $false
-	} else {
-		Write-Host 'ok'
-	}
-}
-
 # The tests: vpntest prints its own list ("vpntest list": one "TESTLIST <name> <tags>" line per test, <tags> comma-separated
 # or - for none). A test registers itself with RANZ_TEST in its own file (src/vpntest/testlist.h), so a new test needs no
 # line in this script, the harness or CMake.

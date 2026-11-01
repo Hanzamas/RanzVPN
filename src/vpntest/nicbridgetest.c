@@ -58,7 +58,6 @@
 //   refuses the adapter, which it took before, and names the host vNIC of the switch, which NodeL2HyperVIndex finds.
 // Prints "NICBRIDGE TEST OK" only when every check passes.
 
-#include "harness_int.h"
 #include "testlist.h"
 
 #include "Cedar/ConfigStore.h"

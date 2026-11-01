@@ -2,12 +2,15 @@
 // The golden files of vpntest: a test writes its output into the output directory of its golden family and compares it
 // with the golden file of the family (tests/golden/<family>), or records it in update mode
 
-#include "harness_int.h"
+#include "golden.h"
 
 #include "Mayaqua/FileIO.h"
 #include "Mayaqua/Kernel.h"
 #include "Mayaqua/Memory.h"
 #include "Mayaqua/Str.h"
+
+#define	HARNESS_DIFF_MAX_LINES		1000				// Larger texts only report the first difference
+#define	HARNESS_DIFF_CONTEXT		2					// Context lines around a difference
 
 // Print a check result and count the failures
 bool HarnessCheck(HARNESS *h, bool ok, char *what)

@@ -8,9 +8,8 @@
 // a random salt that the server configuration keeps (ComputeMachineUniqueHash). This test pins that
 // hash with known answers and checks that the same MachineGuid with separate salts gives separate
 // identities, that a server's identity has no other input (so a rename, an IP change or an OS update
-// keeps it), and that the salt goes into the configuration text and back. The harness test checks
-// the same across a real server restart. Prints "MACHINEID TEST OK" only when every check passes,
-// and frees everything it allocates.
+// keeps it), and that the salt goes into the configuration text and back. Prints "MACHINEID TEST OK"
+// only when every check passes, and frees everything it allocates.
 
 #include "testlist.h"
 

@@ -19,7 +19,6 @@
 //   the node instead, red and blue together leave at that rate. Every packet that the overlay sent arrives at node-b.
 // Print "SHAPE TEST OK" only when every check passes.
 
-#include "harness_int.h"
 #include "testlist.h"
 
 #include "Cedar/ConfigStore.h"

@@ -29,7 +29,7 @@
 //   does otherwise holds the members that the fork got its frame to (PITEST_CASE.Fork).
 // Print "POLICYIMPORT TEST OK" only when every check passes.
 
-#include "harness_int.h"
+#include "golden.h"
 #include "testlist.h"
 
 #include "Cedar/Account.h"

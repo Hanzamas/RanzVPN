@@ -1,9 +1,0 @@
-# RPC_STR_live RPC_STR live
-[out]
-#0 String str[1] = <masked>
-bytes=<masked>
-[in-out]
-#0 String str[1] = "String#0"
-bytes=34 sha1=a18b088b3305733ca48ca72b4e8f42d8880bba4b
-[in-out-in-out]
-same

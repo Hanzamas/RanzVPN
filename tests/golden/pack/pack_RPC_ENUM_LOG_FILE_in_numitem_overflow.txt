@@ -1,6 +1,0 @@
-# RPC_ENUM_LOG_FILE_in_numitem_overflow RPC_ENUM_LOG_FILE in
-[in-out]
-#0 NumItem int[1] = 0
-bytes=27 sha1=804d5268de50934b1d3eff596fa8ead791a43f4b
-[in-out-in-out]
-same

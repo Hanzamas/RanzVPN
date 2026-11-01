@@ -1,28 +1,48 @@
 // hubtest.c
-// The Hub code that the Node keeps, which the harness of the slim fork's SE-VPN server tested in process: the
-// benchmarks of its data path, the golden file of its packet log, and pointer keys
+// The Hub code that the Node keeps, which the harness of the slim fork's SE-VPN server tested in process until CORE-S8-3
+// (#577) retired that server:
+// - "bench" times the data path of a hub of the server role of a node (a flood to many sessions, also while one of
+//   them waits for the log writer, and new source addresses into the hub IP table), the ParsePacket of the hub, the
+//   expiry of its IP table, the Pack and the FIFO and queue of Mayaqua. Every case runs HARNESS_BENCH_RUNS times and
+//   prints "BENCH <name> <median> <unit>", then "BENCH <name>_runs <run 1>,...,<run n> <unit>" in run order; the
+//   performance regression gate of windows.yml compares them with the recorded medians (.github/quality/bench-<arch>.txt).
+//   A wrong result of a case prints a "BENCH WARNING" line and skips the case; it does not fail the test.
+// - "packetlog" compares the packet log lines and levels of fixed frames with tests/golden/harness/packetlog.txt
+//   (golden family "harness"), and checks the log record of InsertUnicodeRecord.
+// - "ptrkey" checks that POINTER_TO_KEY keys a block by its address.
 
-#include "harness_int.h"
+#include "golden.h"
 #include "testlist.h"
 
 #include "Cedar/Account.h"
 #include "Cedar/Cedar.h"
+#include "Cedar/ConfigStore.h"
 #include "Cedar/Connection.h"
 #include "Cedar/Hub.h"
 #include "Cedar/HubLog.h"
 #include "Cedar/LogWriter.h"
+#include "Cedar/Node.h"
 #include "Cedar/PacketLog.h"
 #include "Cedar/Session.h"
 
+#include "Mayaqua/Encrypt.h"
 #include "Mayaqua/FileIO.h"
+#include "Mayaqua/Internat.h"
+#include "Mayaqua/IpAddr.h"
 #include "Mayaqua/Kernel.h"
 #include "Mayaqua/Memory.h"
+#include "Mayaqua/Microsoft.h"
 #include "Mayaqua/Object.h"
 #include "Mayaqua/Pack.h"
 #include "Mayaqua/Str.h"
 #include "Mayaqua/TcpIp.h"
 #include "Mayaqua/Tick64.h"
 
+#define	HARNESS_HUB_FLOOD			"HARNESS_FLOOD"		// The hub of the flood and IP table add cases
+#define	HARNESS_FRAME_SIZE			96
+#define	HARNESS_ETHERTYPE_HI		0x88				// EtherType 0x88B5 (IEEE local experimental)
+#define	HARNESS_ETHERTYPE_LO		0xB5
+#define	HARNESS_BENCH_HOST			"www.example.invalid"	// Host name in the HTTP, TLS and DNS bench frames
 #define	HARNESS_BENCH_BUDGET		30000				// Whole "bench" test (warning only)
 #define	HARNESS_BENCH_PACK_SPAN		200					// Per run of a Pack case
 #define	HARNESS_BENCH_FLOOD_SPAN	200					// Per run of a flood case
@@ -41,7 +61,7 @@
 #define	HARNESS_QUEUE_BURST			4096				// Items inserted, then taken, per queue_burst operation
 #define	HARNESS_NS_PER_MS			1000000ULL
 #define	HARNESS_NS_PER_S			1000000000ULL
-#define	HARNESS_IPTABLE_PORT		9					// UDP destination port of the stress frames (discard)
+#define	HARNESS_IPTABLE_PORT		9					// UDP destination port of the IP table frames (discard)
 
 // One operation of a timed bench case: false means a wrong result and stops the case
 typedef bool (HARNESS_BENCH_OP)(void *param);
@@ -49,7 +69,6 @@ typedef bool (HARNESS_BENCH_OP)(void *param);
 // State of the Pack bench cases
 typedef struct HARNESS_PACK_BENCH
 {
-	RPC_ENUM_SESSION *Struct;	// Encoded by pack_encode_enum_session
 	BUF *Buf;					// Decoded by the decode case
 	char **Names;				// HARNESS_PACK_NAMES distinct element names, not in sorted order
 } HARNESS_PACK_BENCH;
@@ -91,10 +110,13 @@ typedef struct HARNESS_LOGWAIT
 	EVENT *Sending;				// Set right before the frame goes into the hub
 } HARNESS_LOGWAIT;
 
-// Locally administered MAC addresses of the two test sessions
+// Locally administered MAC addresses of the two ends of the frames
 static UCHAR harness_mac_a[6] = {0x02, 0x42, 0x55, 0x52, 0x00, 0x0A};
 static UCHAR harness_mac_b[6] = {0x02, 0x42, 0x55, 0x52, 0x00, 0x0B};
 static UCHAR harness_mac_broadcast[6] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
+
+static UINT HarnessBuildIpFrame(UCHAR *buf, UINT buf_size, UCHAR protocol, USHORT dst_port, UCHAR *payload, UINT payload_size);
+static UINT HarnessBuildDnsQuery(UCHAR *buf, UINT buf_size, char *host);
 
 // Build a deterministic test frame: dst, src, EtherType 0x88B5, sequence number, pattern
 static void HarnessBuildFrame(UCHAR *buf, UINT size, const UCHAR *dst, const UCHAR *src, UINT seq)
@@ -226,9 +248,9 @@ static void HarnessFloodIdleThread(THREAD *thread, void *param)
 {
 }
 
-// In-process server session on the flood hub, made like the server side of a cascade (Link.c): a CONNECTION
-// without sockets and the hub packet adapter, but no SessionMain thread. The bench thread calls the packet
-// adapter itself, so a frame goes through HubPaPutPacket, StorePacket and HubPaGetNextPacket only
+// In-process server session on the flood hub: a CONNECTION without sockets and the hub packet adapter, but no
+// SessionMain thread. The bench thread calls the packet adapter itself, so a frame goes through HubPaPutPacket,
+// StorePacket and HubPaGetNextPacket only
 static SESSION *HarnessNewFloodSession(HUB *hub, THREAD *thread, UINT index, bool sender)
 {
 	POLICY *policy = ClonePolicy(GetDefaultPolicy());
@@ -976,9 +998,8 @@ static void HarnessPacketLogGolden(HARNESS *h)
 	BUF *b = NewBuf();
 
 	Print("[packetlog]\n");
-	HarnessSetPhase("packetlog", NULL);
 
-	HarnessGetDirs(out_dir, sizeof(out_dir), golden_dir, sizeof(golden_dir), &update);
+	HarnessGetFamilyDirs("harness", out_dir, sizeof(out_dir), golden_dir, sizeof(golden_dir), &update);
 	MakeDirEx(out_dir);
 
 	// Fixed machine-readable mode line: CI fails a run that records the golden file in place of comparing it
@@ -1096,14 +1117,8 @@ static void HarnessLogRecordCheck(HARNESS *h)
 
 // "ptrkey" (FND-84 #127): POINTER_TO_KEY (HashPtrToUINT) keys a block by its address. It hashed the first
 // pointer-size bytes the block holds instead, so blocks with the same leading bytes got the same key and the key
-// of a block changed with its content. The admin RPC hands these keys out as ids (access list UniqueId; CRL, CA,
-// MAC and IP table keys) and finds the entry again by them. An access list entry begins with its Id, and the Ids
-// are renumbered in priority order on every add: on the old code the UniqueId an earlier AccessList gave an entry
-// named another entry after an add, and AccessDelete by it removed that one. Uses the in-process server of the
-// harness on TCP 39555 with its own hub.
-#define	PTRKEY_WATCHDOG_LIMIT		60000				// "ptrkey" process aborted after this
-#define	PTRKEY_HUB					"PTRKEY"			// Hub of the access list checks
-#define	PTRKEY_NOTE					L"ptrkey entry"		// Note of every access list entry (equal leading bytes)
+// of a block changed with its content. The admin RPC of the retired server handed these keys out as ids and found
+// the entry again by them; its case of the access list went with it (CORE-S8-3, #577).
 #define	PTRKEY_BLOCK				64					// Bytes of the blocks of the key checks
 
 // Two blocks with equal content: a key each, found again by it, unchanged when the content changes
@@ -1727,4 +1742,179 @@ static void HarnessBenchFifo()
 
 	ReleaseQueue(b->Queue);
 	Free(b);
+}
+
+////////////////////////////
+// The node of the flood hub
+
+// A new empty data directory with the configuration store of the server role: one worker and the flood hub as an
+// online L2 network
+static void HarnessNewNodeDir(wchar_t *dir, UINT size)
+{
+	wchar_t tmp[MAX_PATH];
+	wchar_t path[MAX_PATH];
+
+	UniFormat(tmp, sizeof(tmp), L"hub_bench_%u", Rand32());
+	ConbinePathW(dir, size, MsGetMyTempDirW(), tmp);
+	MakeDirExW(dir);
+
+	ConbinePathW(path, sizeof(path), dir, CS_FILE_NAME);
+	CONFIG_STORE *s = CsOpen(path);
+	if (s == NULL)
+	{
+		Print("  configuration store %S cannot be opened\n", path);
+		return;
+	}
+
+	CsSetSetting(s, NODE_SETTING_ROLES, "server");
+	CsSetSetting(s, NODE_SETTING_WORKERS, "1");
+	CsAddNetwork(s, HARNESS_HUB_FLOOD, CS_MODE_L2, true);
+	CsClose(s);
+}
+
+// Delete the files of a directory, then the directory (it holds no subdirectory)
+static void HarnessDeleteDirFiles(wchar_t *dir)
+{
+	DIRLIST *d = EnumDirW(dir);
+
+	for (UINT i = 0;d != NULL && i < d->NumFiles;i++)
+	{
+		DIRENT *e = d->File[i];
+		wchar_t path[MAX_PATH];
+
+		if (e->Folder == false)
+		{
+			ConbinePathW(path, sizeof(path), dir, e->FileNameW);
+			FileDeleteW(path);
+		}
+	}
+
+	FreeDir(d);
+	DeleteDirW(dir);
+}
+
+// The flood cases on the hub of a node: the flood loop of StorePacket sends to every session of the hub. The hub has
+// the default options and log settings of a new hub; its watchdog sends no ARP or neighbor polls into the sessions
+static void HarnessBenchFlood(HARNESS *h)
+{
+	wchar_t dir[MAX_PATH];
+	wchar_t log_dir[MAX_PATH];
+
+	HarnessNewNodeDir(dir, sizeof(dir));
+	NODE *n = NewNode(dir);
+	NodeStart(n);
+
+	HUB *hub = NodeGetHub(n, HARNESS_HUB_FLOOD);
+	if (HarnessCheck(h, hub != NULL, "the server role of a node runs the hub " HARNESS_HUB_FLOOD))
+	{
+		hub->Option->NoArpPolling = true;
+		hub->Option->NoIPv6AddrPolling = true;
+
+		HarnessBenchFloodCase(hub, 8);
+		HarnessBenchFloodCase(hub, 64);
+		HarnessBenchFloodLogWaitCase(hub, 8);
+
+		// The IP table cases use the same hub, with one session
+		HarnessBenchIpTableAdd(hub, 1024);
+		HarnessBenchIpTableAdd(hub, 16384);
+
+		ReleaseHub(hub);
+	}
+
+	NodeStop(n);
+	FreeNode(n);
+	ConbinePathW(log_dir, sizeof(log_dir), dir, NODE_LOG_DIR_NAME);
+	HarnessDeleteDirFiles(log_dir);
+	HarnessDeleteDirFiles(dir);
+}
+
+////////////////////////////
+// Entry points
+
+// "bench": the hub flood, IP table, ParsePacket, Pack, IP table expiry, FIFO and queue cases (informational, fails only
+// on errors). Every case runs HARNESS_BENCH_RUNS times: the median, then every run
+RANZ_TEST("bench", bench_test, "Hub flood, IP table, ParsePacket, Pack, FIFO and queue benchmarks on a hub of the server role of a node (informational).");
+void bench_test(UINT num, char **arg)
+{
+	HARNESS h;
+	UINT64 start = Tick64();
+
+	Zero(&h, sizeof(h));
+
+	Print("Ranz bench: %u runs per case (median, then every run); per run: hub flood %u ms, Pack %u ms, ParsePacket %u ms, "
+		"one IP table expiry pass\n", HARNESS_BENCH_RUNS, HARNESS_BENCH_FLOOD_SPAN, HARNESS_BENCH_PACK_SPAN,
+		HARNESS_BENCH_MICRO_SPAN);
+
+	Print("[bench]\n");
+	HarnessBenchFlood(&h);
+	HarnessBenchPackNames();
+	HarnessBenchParse();
+	HarnessBenchIpTableExpire(1024);
+	HarnessBenchIpTableExpire(4096);
+	HarnessBenchIpTableExpire(16384);
+	HarnessBenchFifo();
+
+	UINT64 elapsed = Tick64() - start;
+	Print("BENCH bench_runtime_ms %I64u ms\n", elapsed);
+
+	// Informational like the numbers: the budget is reported, never failed
+	if (elapsed >= HARNESS_BENCH_BUDGET)
+	{
+		Print("WARNING: bench runtime %I64u ms is over the %u ms budget\n", elapsed, HARNESS_BENCH_BUDGET);
+	}
+
+	if (h.NumFail == 0)
+	{
+		Print("BENCH TEST OK\n");
+	}
+	else
+	{
+		Print("BENCH TEST FAILED (%u failed checks)\n", h.NumFail);
+	}
+}
+
+// "packetlog": the packet log lines and levels of fixed frames against the golden file packetlog.txt, and the log record
+RANZ_TEST("packetlog", packetlog_test, "Packet log of a hub: the lines of PacketLogParseProc and the levels of CalcPacketLoggingLevel against packetlog.txt (golden family harness), and the log record of InsertUnicodeRecord.");
+void packetlog_test(UINT num, char **arg)
+{
+	HARNESS h;
+
+	Zero(&h, sizeof(h));
+
+	Print("Ranz packetlog: the packet log of a hub against its golden file, and the log record\n");
+
+	HarnessPacketLogGolden(&h);
+	HarnessLogRecordCheck(&h);
+
+	if (h.NumFail == 0)
+	{
+		Print("PACKETLOG TEST OK\n");
+	}
+	else
+	{
+		Print("PACKETLOG TEST FAILED (%u failed checks)\n", h.NumFail);
+	}
+}
+
+// "ptrkey": POINTER_TO_KEY keys a block by its address
+RANZ_TEST("ptrkey", ptrkey_test, "Pointer keys: POINTER_TO_KEY keys a block by its address, and ListKeyToPointer finds the block again by that key.");
+void ptrkey_test(UINT num, char **arg)
+{
+	HARNESS h;
+
+	Zero(&h, sizeof(h));
+
+	Print("Ranz ptrkey: POINTER_TO_KEY keys a block by its address\n");
+
+	Print("[blocks]\n");
+	PtrKeyBlocks(&h);
+
+	if (h.NumFail == 0)
+	{
+		Print("PTRKEY TEST OK\n");
+	}
+	else
+	{
+		Print("PTRKEY TEST FAILED (%u failed checks)\n", h.NumFail);
+	}
 }

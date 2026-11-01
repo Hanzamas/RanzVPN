@@ -63,7 +63,6 @@
 //   comes back to node-a through it. When gw-1 loses its datagrams, the hub moves both to gw-2 in under one second.
 // Print "GATEWAYPATH TEST OK" only when every check passes.
 
-#include "harness_int.h"
 #include "testlist.h"
 
 #include "Cedar/ConfigStore.h"

@@ -22,7 +22,7 @@
 // tests/golden/vrfpolicy/vrfpolicy_overlay.txt (golden family "vrfpolicy").
 // Print "VRFPOLICY TEST OK" only when every check passes.
 
-#include "harness_int.h"
+#include "golden.h"
 #include "testlist.h"
 
 #include "Cedar/ConfigStore.h"

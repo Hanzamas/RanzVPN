@@ -1790,9 +1790,9 @@ void charset_test(UINT num, char **arg)
 #define	RT_FILEIO_CREATE_TIME	(RT_TIME_2024 - 86400000ULL)	// Creation date written on close: one day before RT_TIME_2024
 #define	RT_FILEIO_DATE_SLACK	600000ULL					// Slack between the update date read on open and SystemTime64 (ms)
 
-// Size and SHA-256 of the watermark, shared with watermark_test (vpntest.c)
-extern UINT watermark_expect_size;
-extern char *watermark_expect_sha256;
+// Size and SHA-256 of the hamcore file watermark.bin, which the fileio test reads through "|"
+static UINT watermark_expect_size = 1411;
+static char *watermark_expect_sha256 = "96A706BBAB378EC37DFEF21E02B1A3C177FBEBEFFA039EB0EFAC918630DF12A0";
 
 // Create a file through a prefixed name ("@" or "$"), write the test bytes, and check that
 // the file is at the expected path

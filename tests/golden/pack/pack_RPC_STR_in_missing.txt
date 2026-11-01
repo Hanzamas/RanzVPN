@@ -1,6 +1,0 @@
-# RPC_STR_in_missing RPC_STR in
-[in-out]
-#0 String str[1] = ""
-bytes=26 sha1=b265c6bf30956bbcbe64b6b9cb87c156b2e20447
-[in-out-in-out]
-same

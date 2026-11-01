@@ -22,7 +22,6 @@
 // - Shutdown (#72, risk R2): NodeL2Free stops the injector, then detaches the backend, within L2TEST_FREE ms.
 // Prints "L2ADAPTER TEST OK" only when every check passes.
 
-#include "harness_int.h"
 #include "testlist.h"
 
 #include "Cedar/ConfigStore.h"

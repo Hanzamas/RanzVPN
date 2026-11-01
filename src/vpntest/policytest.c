@@ -27,7 +27,7 @@
 //   the main thread puts two documents in force in turn: every verdict is that of the document whose number it carries.
 // Print "POLICY TEST OK" only when every check passes.
 
-#include "harness_int.h"
+#include "golden.h"
 #include "testlist.h"
 
 #include "Mayaqua/FileIO.h"
