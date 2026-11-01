@@ -14,8 +14,12 @@
 // address that it came from (16 bytes, an IPv4 address as an IPv4-mapped one), and the messages follow: the VTEPs of the
 // learned routes, sorted and each copied into a buffer of their number exactly, hold the VTEP of each learned route with its
 // VRF once, in order, and the gateway knows the address for the VRF exactly when a learned route of the VRF has it as its VTEP.
+// The seeds vtep_*.bin reach the sort and the check of the VTEPs, and the replay of run_fuzzers.ps1 fails when they no longer
+// do, by the two reach lines below (SDN-25-R3, #571).
 //
 // fuzz-max-len: 9217
+// fuzz-reach: NodeEvpnSortVteps
+// fuzz-reach: NodeEvpnHasVtep
 
 #include "fuzz_common.h"
 
