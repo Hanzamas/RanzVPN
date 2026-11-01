@@ -76,7 +76,7 @@ type Document struct {
 
 // Resource is one declared object. Spec holds the fields of its kind: VRF, Network, Node, Policy,
 // Mirror (mirror.go), Controller, NAT, DnsRecord (dns.go), Group or User (user.go), Listener
-// (listener.go), Device (device.go), SessionProfile (profile.go) or Stretch (stretch.go).
+// (listener.go), Device (device.go), SessionProfile (profile.go), Stretch (stretch.go) or Endpoint (publish.go).
 type Resource struct {
 	Kind string          `json:"kind"`
 	Name string          `json:"name"`
@@ -274,6 +274,8 @@ type Intent struct {
 	SessionProfiles map[string]SessionProfile
 	// The Stretches of the L2 Networks (stretch.go; SDN-63)
 	Stretches map[string]Stretch
+	// The Endpoints, the services that a VRF publishes into another (publish.go; SDN-24)
+	Endpoints map[string]PublishedEndpoint
 }
 
 // New returns an empty intent.
@@ -281,7 +283,7 @@ func New() Intent {
 	return Intent{VRFs: map[string]VRF{}, Networks: map[string]Network{}, Nodes: map[string]Node{}, Policies: map[string]Policy{},
 		Mirrors: map[string]Mirror{}, Controllers: map[string]Controller{}, NATs: map[string]NAT{}, DNSRecords: map[string]DNSRecord{},
 		Groups: map[string]Group{}, Users: map[string]User{}, Listeners: map[string]Listener{}, Devices: map[string]Device{},
-		SessionProfiles: map[string]SessionProfile{}, Stretches: map[string]Stretch{}}
+		SessionProfiles: map[string]SessionProfile{}, Stretches: map[string]Stretch{}, Endpoints: map[string]PublishedEndpoint{}}
 }
 
 // Clone returns a copy of in that shares nothing with it.
@@ -321,6 +323,8 @@ func (in Intent) Clone() Intent {
 	cloneDevices(out.Devices)
 	// The Stretches of the L2 Networks (stretch.go)
 	out.Stretches = in.cloneStretches()
+	// The Endpoints (publish.go)
+	out.Endpoints = in.cloneEndpoints()
 	for name, n := range in.Networks {
 		n.EnrolSources = slices.Clone(n.EnrolSources)
 		n.Reserved = slices.Clone(n.Reserved)
@@ -448,9 +452,14 @@ func Apply(in Intent, doc Document, random io.Reader) (Intent, error) {
 			if err = decodeSpec(r.Spec, &s); err == nil {
 				next.Stretches[r.Name] = s
 			}
+		case KindEndpoint:
+			var e PublishedEndpoint
+			if err = decodeSpec(r.Spec, &e); err == nil {
+				next.Endpoints[r.Name] = e
+			}
 		default:
-			err = fmt.Errorf("the kind must be %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s or %s", KindVRF, KindNetwork, KindNode, KindPolicy, KindMirror, KindController, KindNAT,
-				KindDNSRecord, KindGroup, KindUser, KindListener, KindDevice, KindSessionProfile, KindStretch)
+			err = fmt.Errorf("the kind must be %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s or %s", KindVRF, KindNetwork, KindNode, KindPolicy, KindMirror, KindController, KindNAT,
+				KindDNSRecord, KindGroup, KindUser, KindListener, KindDevice, KindSessionProfile, KindStretch, KindEndpoint)
 		}
 		if err != nil {
 			problems = append(problems, fmt.Errorf("%s %q: %w", r.Kind, r.Name, err))
@@ -478,7 +487,8 @@ func Apply(in Intent, doc Document, random io.Reader) (Intent, error) {
 // gateway of a Device or of the security of a Network, that answers DHCP for a Network or that is
 // the hub or the internet exit of a VRF, a Group that a User belongs to, and a User that owns a
 // Node. A Network that a Stretch binds and a Node that is the gateway of one cannot be deleted
-// either. The Nodes lose their addresses in a deleted Network.
+// either, nor can a VRF that an Endpoint publishes a service of or into, and a Node that serves one.
+// The Nodes lose their addresses in a deleted Network.
 func Delete(in Intent, kind, name string) (Intent, error) {
 	next := in.Clone()
 	switch kind {
@@ -505,6 +515,7 @@ func Delete(in Intent, kind, name string) (Intent, error) {
 		users = append(users, next.mirrorUsers(name)...)
 		users = append(users, next.natUsers(name, "")...)
 		users = append(users, next.dnsUsers(name, "")...)
+		users = append(users, next.publishedUsers(name, "")...)
 		if len(users) > 0 {
 			return in, fmt.Errorf("%w: VRF %q is used by %s", ErrInvalid, name, strings.Join(users, ", "))
 		}
@@ -566,6 +577,10 @@ func Delete(in Intent, kind, name string) (Intent, error) {
 		if users := next.stretchUsers("", name); len(users) > 0 {
 			return in, fmt.Errorf("%w: Node %q is the gateway of %s", ErrInvalid, name, strings.Join(users, ", "))
 		}
+		// The Endpoints that the Node serves (SDN-24, publish.go)
+		if users := next.publishedUsers("", name); len(users) > 0 {
+			return in, fmt.Errorf("%w: Node %q serves %s", ErrInvalid, name, strings.Join(users, ", "))
+		}
 		delete(next.Nodes, name)
 	case KindPolicy:
 		if _, ok := next.Policies[name]; !ok {
@@ -620,9 +635,14 @@ func Delete(in Intent, kind, name string) (Intent, error) {
 			return in, fmt.Errorf("%w: %s %q", ErrNotFound, kind, name)
 		}
 		delete(next.Stretches, name)
+	case KindEndpoint:
+		if _, ok := next.Endpoints[name]; !ok {
+			return in, fmt.Errorf("%w: %s %q", ErrNotFound, kind, name)
+		}
+		delete(next.Endpoints, name)
 	default:
-		return in, fmt.Errorf("%w: the kind must be %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s or %s, not %q", ErrInvalid, KindVRF, KindNetwork, KindNode, KindPolicy, KindMirror,
-			KindController, KindNAT, KindDNSRecord, KindGroup, KindUser, KindListener, KindDevice, KindSessionProfile, KindStretch, kind)
+		return in, fmt.Errorf("%w: the kind must be %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s or %s, not %q", ErrInvalid, KindVRF, KindNetwork, KindNode, KindPolicy, KindMirror,
+			KindController, KindNAT, KindDNSRecord, KindGroup, KindUser, KindListener, KindDevice, KindSessionProfile, KindStretch, KindEndpoint, kind)
 	}
 	return next, nil
 }
@@ -630,7 +650,7 @@ func Delete(in Intent, kind, name string) (Intent, error) {
 // Resources returns every resource of in: the VRFs, then the Networks, then the Nodes, then the
 // Policies, then the Mirrors, then the Controllers, then the NATs, then the DnsRecords, then the
 // SessionProfiles, then the Groups, then the Users, then the Listeners, then the Devices, then the
-// Stretches, each ordered by name.
+// Stretches, then the Endpoints, each ordered by name.
 func (in Intent) Resources() []Resource {
 	var out []Resource
 	for _, name := range sortedNames(in.VRFs) {
@@ -666,6 +686,9 @@ func (in Intent) Resources() []Resource {
 	}
 	for _, name := range sortedNames(in.Stretches) {
 		out = append(out, resource(KindStretch, name, in.Stretches[name]))
+	}
+	for _, name := range sortedNames(in.Endpoints) {
+		out = append(out, resource(KindEndpoint, name, in.Endpoints[name]))
 	}
 	return out
 }
@@ -733,6 +756,10 @@ func FromResources(rs []Resource) (Intent, error) {
 			var s Stretch
 			err = decodeSpec(r.Spec, &s)
 			in.Stretches[r.Name] = s
+		case KindEndpoint:
+			var e PublishedEndpoint
+			err = decodeSpec(r.Spec, &e)
+			in.Endpoints[r.Name] = e
 		default:
 			err = errors.New("unknown kind")
 		}
@@ -899,6 +926,8 @@ func (in Intent) complete(prev Intent, random io.Reader) []error {
 	in.completeStretches()
 	// The tag modes of the Networks (tagmode.go)
 	in.completeTagModes()
+	// The Endpoints (publish.go; SDN-24)
+	in.completeEndpoints()
 	return problems
 }
 
@@ -1038,7 +1067,9 @@ func (in Intent) validate() []error {
 	problems = append(problems, in.validateStretches()...)
 	// The tag modes of the Networks (tagmode.go)
 	problems = append(problems, in.validateTagModes()...)
-	return append(problems, in.validateIPAM()...)
+	problems = append(problems, in.validateIPAM()...)
+	// The Endpoints, and what they compile to once the rest of the intent is valid (publish.go; SDN-24)
+	return append(problems, in.validatePublished(len(problems) == 0)...)
 }
 
 // checkAddress checks the address of a Controller: host:port, with a host and a port number.

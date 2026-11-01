@@ -211,7 +211,8 @@ type Model struct {
 
 // New returns the model of the desired states of the Nodes, by Node name, which desired.Compile made of in.
 func New(in intent.Intent, states map[string]desired.State) *Model {
-	m := &Model{in: in, nodes: map[string]*node{}}
+	// The 1:1 NAT rules of the Endpoints are named after them (publish.go; SDN-24)
+	m := &Model{in: in.WithPublished(), nodes: map[string]*node{}}
 	for name, s := range states {
 		m.nodes[name] = newNode(name, s)
 	}
@@ -306,8 +307,13 @@ func (w *walk) send(s *node, vrf uint32, p packet) {
 		into = h.vrf
 		route.Leaked = w.m.vrfName(h.vrf)
 		route.RouteTargets = w.m.routeTargets(h.vrf, vrf)
-		w.step(s, StepRoute, vrf, Step{Route: route}, "%s leads to %s: a route that VRF %s leaks into VRF %s through the route targets %s, so the packet goes into VRF %s of %s",
-			r.prefix, peer.GetName(), route.Leaked, w.m.vrfName(vrf), strings.Join(route.RouteTargets, ", "), route.Leaked, peer.GetName())
+		// No route target leaks the route of an Endpoint, which publishes one address into the VRF (publish.go; SDN-24)
+		through := "through the route targets " + strings.Join(route.RouteTargets, ", ")
+		if len(route.RouteTargets) == 0 {
+			through = "for an Endpoint"
+		}
+		w.step(s, StepRoute, vrf, Step{Route: route}, "%s leads to %s: a route that VRF %s leaks into VRF %s %s, so the packet goes into VRF %s of %s",
+			r.prefix, peer.GetName(), route.Leaked, w.m.vrfName(vrf), through, route.Leaked, peer.GetName())
 	} else {
 		w.step(s, StepRoute, vrf, Step{Route: route}, "%s leads to %s: %s", r.prefix, peer.GetName(), r.what)
 	}

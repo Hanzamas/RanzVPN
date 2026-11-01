@@ -53,8 +53,14 @@ func leakRoutes(in intent.Intent, vrfs map[string]*controlpb.Vrf) leaks {
 	for _, r := range in.LeakedRoutes() {
 		route := &controlpb.Route{VrfId: vrfs[r.VRF].GetId(), Prefix: prefix(r.Prefix), PeerVrfId: vrfs[r.From].GetId()}
 		for _, node := range members[r.VRF] {
-			if node == r.Via {
+			// A route that an Endpoint puts into the tables of some Nodes (publish.go; SDN-24) is held by those alone, and joins
+			// each of them to the Node that it leads to, with no other member of that Node's VRF
+			if node == r.Via || !r.HeldBy(node) {
 				continue
+			}
+			if len(r.Nodes) != 0 {
+				join(node, r.Via)
+				join(r.Via, node)
 			}
 			if out.routes[node] == nil {
 				out.routes[node] = map[string][]*controlpb.Route{}

@@ -1,0 +1,33 @@
+{
+  "description": "An Endpoint (SDN-24): corp publishes the HTTPS port of corp-app into vendor, which uses the same range 10.0.0.0/24 and even holds 10.0.0.1 itself. The Endpoint compiles to the 1:1 NAT rule of corp-app (10.0.0.1 is 172.16.1.1 in the overlay), the one route to 172.16.1.1 that leaks into vendor, the route back to the 1:1 NAT address 172.16.2.1 of vendor-1 that only corp-app holds, and a rule of the policy of each VRF for that port. vendor-1, which has the tag buyer, reaches the service by that address and port; the other ports and protocols, the other addresses of corp, vendor-2 (no buyer), and any flow that corp starts into vendor, are stopped. The name in the zone of vendor is checked in the Go tests.",
+  "nodes": {"corp-app": 1, "corp-db": 33, "vendor-1": 97, "vendor-2": 129},
+  "intent": {"resources": [
+    {"kind": "VRF", "name": "corp", "spec": {"id": 1, "ula": "fd00:1::/48"}},
+    {"kind": "VRF", "name": "vendor", "spec": {"id": 2, "ula": "fd00:2::/48", "dns": true}},
+    {"kind": "Network", "name": "corp-lan", "spec": {"vrf": "corp", "ipv4Pool": "10.0.0.0/24"}},
+    {"kind": "Network", "name": "vendor-lan", "spec": {"vrf": "vendor", "ipv4Pool": "10.0.0.0/24"}},
+    {"kind": "Node", "name": "corp-app", "spec": {"vrfs": ["corp"], "tags": ["app"], "addresses": {"corp-lan": "10.0.0.1"}}},
+    {"kind": "Node", "name": "corp-db", "spec": {"vrfs": ["corp"], "tags": ["db"], "addresses": {"corp-lan": "10.0.0.5"}}},
+    {"kind": "Node", "name": "vendor-1", "spec": {"vrfs": ["vendor"], "tags": ["buyer"], "addresses": {"vendor-lan": "10.0.0.1"}}},
+    {"kind": "Node", "name": "vendor-2", "spec": {"vrfs": ["vendor"], "tags": ["guest"], "addresses": {"vendor-lan": "10.0.0.2"}}},
+    {"kind": "NAT", "name": "vendor-1-out", "spec": {"vrf": "vendor", "node": "vendor-1", "inside": "10.0.0.1/32", "outside": "172.16.2.1/32"}},
+    {"kind": "Endpoint", "name": "billing", "spec": {"vrf": "corp", "node": "corp-app", "address": "10.0.0.1", "port": 443, "consumer": "vendor", "as": "172.16.1.1", "consumerTags": ["buyer"]}},
+    {"kind": "Policy", "name": "vendor-ping", "spec": {"vrf": "vendor", "action": "allow", "protocol": "icmp"}}
+  ]},
+  "packets": [
+    {"name": "vendor-reaches-billing", "from": "vendor-1", "to": "172.16.1.1", "protocol": "tcp", "sourcePort": 40000, "port": 443,
+     "expect": {"delivered": true, "node": "corp-app", "vrf": "corp", "source": "172.16.2.1", "destination": "10.0.0.1", "rules": {"vendor-1": "billing.consumer", "corp-app": "billing.source"}}},
+    {"name": "vendor-to-billing-ssh", "from": "vendor-1", "to": "172.16.1.1", "protocol": "tcp", "sourcePort": 40001, "port": 22,
+     "expect": {"delivered": false, "node": "vendor-1", "reason": "policy", "rules": {"vendor-1": "default:deny"}}},
+    {"name": "vendor-to-billing-ping", "from": "vendor-1", "to": "172.16.1.1", "protocol": "icmp",
+     "expect": {"delivered": false, "node": "corp-app", "reason": "policy", "rules": {"vendor-1": "vendor-ping", "corp-app": "default:deny"}}},
+    {"name": "vendor-to-corp-db", "from": "vendor-1", "to": "10.0.0.5", "protocol": "tcp", "sourcePort": 40002, "port": 443,
+     "expect": {"delivered": false, "node": "vendor-1", "reason": "route"}},
+    {"name": "vendor-to-next-address", "from": "vendor-1", "to": "172.16.1.2", "protocol": "tcp", "sourcePort": 40003, "port": 443,
+     "expect": {"delivered": false, "node": "vendor-1", "reason": "route"}},
+    {"name": "guest-to-billing", "from": "vendor-2", "to": "172.16.1.1", "protocol": "tcp", "sourcePort": 40004, "port": 443,
+     "expect": {"delivered": false, "node": "vendor-2", "reason": "route"}},
+    {"name": "corp-to-vendor", "from": "corp-app", "to": "172.16.2.1", "protocol": "tcp", "sourcePort": 40005, "port": 443,
+     "expect": {"delivered": false, "node": "corp-app", "reason": "policy", "rules": {"corp-app": "default:deny"}}}
+  ]
+}
