@@ -1133,3 +1133,106 @@ static void PtrKeyBlocks(HARNESS *h)
 	Free(b);
 	Free(a);
 }
+
+// Pack with HARNESS_PACK_NAMES distinct element names (integers and strings), added in a non-sorted order
+static PACK *HarnessNewNamesPack(const HARNESS_PACK_BENCH *b)
+{
+	PACK *p = NewPack();
+
+	for (UINT i = 0;i < HARNESS_PACK_NAMES;i++)
+	{
+		if ((i % 2) == 0)
+		{
+			PackAddInt(p, b->Names[i], i);
+		}
+		else
+		{
+			PackAddStr(p, b->Names[i], b->Names[i]);
+		}
+	}
+
+	return p;
+}
+
+// Encode the many-names Pack: element adds -> BUF
+static bool HarnessOpEncodeNames(void *param)
+{
+	HARNESS_PACK_BENCH *b = (HARNESS_PACK_BENCH *)param;
+	PACK *p = HarnessNewNamesPack(b);
+	BUF *buf = PackToBuf(p);
+
+	FreePack(p);
+	FreeBuf(buf);
+
+	return true;
+}
+
+// Decode a Pack: BUF -> PACK
+static bool HarnessOpDecodePack(void *param)
+{
+	HARNESS_PACK_BENCH *b = (HARNESS_PACK_BENCH *)param;
+
+	SeekBufToBegin(b->Buf);
+	PACK *p = BufToPack(b->Buf);
+	if (p == NULL)
+	{
+		return false;
+	}
+
+	FreePack(p);
+
+	return true;
+}
+
+// pack_<encode|decode>_names_<n>: a Pack with many distinct element names (every new name is looked up first)
+static void HarnessBenchPackNames()
+{
+	HARNESS_PACK_BENCH b;
+	bool ok = false;
+	char name[MAX_SIZE];
+
+	Zero(&b, sizeof(b));
+	b.Names = ZeroMalloc(sizeof(char *) * HARNESS_PACK_NAMES);
+	for (UINT i = 0;i < HARNESS_PACK_NAMES;i++)
+	{
+		char tmp[MAX_ELEMENT_NAME_LEN + 1];
+
+		// 7919 is a prime: (i * 7919) % n takes every value below n once, in a non-sorted order
+		Format(tmp, sizeof(tmp), "bench_item_%03u", (i * 7919) % HARNESS_PACK_NAMES);
+		b.Names[i] = CopyStr(tmp);
+	}
+
+	PACK *p = HarnessNewNamesPack(&b);
+	b.Buf = PackToBuf(p);
+	FreePack(p);
+
+	Print("BENCH pack_names_%u_bytes %u bytes\n", HARNESS_PACK_NAMES, b.Buf->Size);
+
+	SeekBufToBegin(b.Buf);
+	p = BufToPack(b.Buf);
+	if (p != NULL)
+	{
+		ok = (LIST_NUM(p->elements) == HARNESS_PACK_NAMES && PackGetInt(p, b.Names[2]) == 2);
+		FreePack(p);
+	}
+
+	Format(name, sizeof(name), "pack_encode_names_%u", HARNESS_PACK_NAMES);
+	HarnessBenchOps(name, HarnessOpEncodeNames, &b, HARNESS_BENCH_PACK_SPAN, 1);
+
+	Format(name, sizeof(name), "pack_decode_names_%u", HARNESS_PACK_NAMES);
+	if (ok)
+	{
+		HarnessBenchOps(name, HarnessOpDecodePack, &b, HARNESS_BENCH_PACK_SPAN, 1);
+	}
+	else
+	{
+		Print("BENCH WARNING %s: the decoded Pack does not hold the encoded names, case skipped\n", name);
+	}
+
+	FreeBuf(b.Buf);
+	for (UINT i = 0;i < HARNESS_PACK_NAMES;i++)
+	{
+		Free(b.Names[i]);
+	}
+	Free(b.Names);
+}
