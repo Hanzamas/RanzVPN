@@ -188,12 +188,12 @@ typedef struct NICBRIDGE_PCAP
 	char Error[MAX_SIZE];
 } NICBRIDGE_PCAP;
 
-// The datagrams that one filter of the filter engine dropped, in the record of dropped datagrams (#569)
+// The drops of datagrams that the filter engine recorded for one of its filters, in the record of dropped datagrams (#569)
 typedef struct NICBRIDGE_DROP
 {
 	UINT64 FilterId;
 	UINT Layer;							// The layer of the filter engine where it dropped them
-	UINT Count;
+	UINT Count;							// The drops, which can be more than the datagrams
 	UINT64 First;						// ms after the start of the record that it dropped the first of them
 	UINT64 Last;						// ... and the last
 } NICBRIDGE_DROP;
@@ -1054,11 +1054,12 @@ static void NicBridgeHostState(NICBRIDGE_PORT *p, USHORT port, int bind_error, c
 	Format(s, size, "%s, the address %s, %s%s", socket_text, address, state, made);
 }
 
-// The datagrams to the UDP port port of this host that the filter engine dropped since the time since, for the record
-// (CI-FLAKE-3, #569): a NICBRIDGE DIAG line of who for each filter that dropped them, with how many it dropped, its name
-// and the name of its sublayer, then one with how many were dropped in all, which it returns. The name of the filter that
-// dropped the most of them goes into filter, "" for none. The engine keeps such net events while its option
-// FWPM_ENGINE_COLLECT_NET_EVENTS is on, as it is by default.
+// The drops of datagrams to the UDP port port of this host that the filter engine recorded since the time since, for the
+// record (CI-FLAKE-3, #569): a NICBRIDGE DIAG line of who for each filter that dropped them, with how many drops it
+// recorded, its name and the name of its sublayer, then one with how many drops were recorded in all, which it returns.
+// The engine can record more than one drop of one datagram (2 to 4 in the logs of #569), so the count is of drops, not of
+// datagrams. The name of the filter with the most drops goes into filter, "" for none. The engine keeps such net events
+// while its option FWPM_ENGINE_COLLECT_NET_EVENTS is on.
 static UINT NicBridgeDrops(char *who, USHORT port, const FILETIME *since, char *filter, UINT filter_size)
 {
 	FWPM_SESSION0 session;
@@ -1165,7 +1166,7 @@ static UINT NicBridgeDrops(char *who, USHORT port, const FILETIME *since, char *
 		}
 
 		wchar_t *name = ((f != NULL && f->displayData.name != NULL) ? f->displayData.name : L"?");
-		Print("NICBRIDGE DIAG %s wfp: %u datagrams to port %u dropped by filter %I64u '%S' of the sublayer '%S' at layer %u, from %I64u to %I64u ms after the step began\n",
+		Print("NICBRIDGE DIAG %s wfp: %u drops of datagrams to port %u by filter %I64u '%S' of the sublayer '%S' at layer %u, from %I64u to %I64u ms after the step began\n",
 			who, list[j].Count, (UINT)port, list[j].FilterId, name, (sub != NULL && sub->displayData.name != NULL) ? sub->displayData.name : L"?", list[j].Layer,
 			list[j].First, list[j].Last);
 		if (j == most)
@@ -1189,7 +1190,7 @@ static UINT NicBridgeDrops(char *who, USHORT port, const FILETIME *since, char *
 	}
 	FwpmEngineClose0(engine);
 
-	Print("NICBRIDGE DIAG %s wfp: %u datagrams to port %u dropped since the step began (the engine %s net events; error 0x%x)\n", who, drops, (UINT)port,
+	Print("NICBRIDGE DIAG %s wfp: %u drops of datagrams to port %u recorded since the step began (the engine %s net events; error 0x%x)\n", who, drops, (UINT)port,
 		on ? "collects" : "does not collect", (UINT)err);
 
 	return drops;
@@ -1269,7 +1270,7 @@ static bool NicBridgeHostReady(NICBRIDGE_PORT *p, const GUID *guid, char *s, UIN
 	{
 		Format(who, sizeof(who), "%s ready", p->Tag);
 		drops = NicBridgeDrops(who, NICBRIDGE_READY_PORT, &since, filter, sizeof(filter));
-		Format(dropped, sizeof(dropped), ", %u of them dropped by the filter engine%s%s%s", drops, IsEmptyStr(filter) ? "" : ", the most by its filter '", filter,
+		Format(dropped, sizeof(dropped), ", the filter engine recorded %u drops of them%s%s%s", drops, IsEmptyStr(filter) ? "" : ", the most by its filter '", filter,
 			IsEmptyStr(filter) ? "" : "'");
 	}
 
@@ -2010,7 +2011,9 @@ static void NicBridgeRun(NICBRIDGE_CTX *ctx, NODE *n, NICBRIDGE_PORT *p, const N
 		}
 		closesocket(r);
 	}
-	NodeL2BridgeGetStatus(net.Bridge, &st);
+	// The injector adds a batch to its count once the backend has taken it, which can be after the host stack delivered its
+	// datagrams to the socket: so the count is read once it holds each datagram that arrived
+	NicBridgeWaitInjected(net.Bridge, udp_injected + got, &st);
 	UINT64 udp_taken = st.Injected - udp_injected;
 	if (from_host && p->Address != 0 && p->Member != 0 && got < 5)
 	{

@@ -209,8 +209,8 @@ try { Write-Host "Secure Boot: $(Confirm-SecureBootUEFI)" } catch { Write-Host "
 # that listens has its own
 New-NetFirewallRule -DisplayName $firewallRule -Direction Inbound -Program $vpntestExe -Action Allow -Profile Any | Out-Null
 
-# TEMPORARY (CI-FLAKE-3, #569), with the step of the 20 runs below: the filter engine records the packets that it drops,
-# which vpntest nicbridge reads for the record of a datagram that did not reach its socket
+# The filter engine records the packets that it drops, which vpntest nicbridge reads for the record of a datagram that did
+# not reach its socket, such as one that the quarantine of Windows Firewall dropped (CI-FLAKE-3, #569)
 & netsh wfp set options netevents=on | Out-Host
 & netsh wfp show options optionsfor=netevents | Out-Host
 
