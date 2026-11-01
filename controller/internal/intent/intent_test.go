@@ -61,7 +61,7 @@ func TestApplyRejects(t *testing.T) {
 		doc  Document
 		want string
 	}{
-		{doc(res("Router", "r1", `{}`)), `Router "r1": the kind must be VRF, Network, Node, Policy, Mirror, Controller, NAT, DnsRecord, Group, User, Listener, Device, SessionProfile or Stretch`},
+		{doc(res("Router", "r1", `{}`)), `Router "r1": the kind must be VRF, Network, Node, Policy, Mirror, Controller, NAT, DnsRecord, Group, User, Listener, Device, SessionProfile, Stretch or Endpoint`},
 		{doc(res(KindPolicy, "p", `{"vrf": "lab", "action": "allow"}`)), `Policy "p": VRF "lab" does not exist`},
 		{doc(res(KindPolicy, "p", `{"vrf": "corp", "action": "permit"}`)), `Policy "p": the action must be allow or deny, not "permit"`},
 		{doc(res(KindController, "c2", `{"address": "192.0.2.2", "publicKey": "`+key1+`"}`)), `Controller "c2": address "192.0.2.2" is not host:port`},
