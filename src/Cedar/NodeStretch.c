@@ -110,8 +110,10 @@ typedef struct NODE_STRETCH_RUN {
 	NODE_BGP *Bgp;                                     // The sidecar that the routes of the gateway go to
 	bool Resync;                                       // The next round is a full resync
 	bool Full;                                         // The switches gave more routes than NODE_STRETCH_MAX_LOCAL, which the node log said
-	SWITCH_MAC_ENTRY *Macs;                            // The MAC table of a switch, NODE_STRETCH_MAX_LOCAL entries ...
-	SWITCH_IP_ENTRY *Ips;                              // ... and its IP table
+	SWITCH_MAC_ENTRY *Macs;                            // The MAC table of a switch, whole (NodeStretchGetMacs) ...
+	UINT MaxMacs;                                      // ... in this many entries, which grow until the table fits them
+	SWITCH_IP_ENTRY *Ips;                              // ... and its IP table (NodeStretchGetIps) ...
+	UINT MaxIps;                                       // ... in this many entries
 	NODE_STRETCH_MAC *Remote;                          // NODE_STRETCH_CHUNK MAC addresses of the fabric, for the switch of their Network
 	NODE_STRETCH_LOCAL *Want;                          // The routes of the gateway that the switches give this round ...
 	UINT NumWant;                                      // ... their number, NODE_STRETCH_MAX_LOCAL at most
@@ -996,6 +998,35 @@ static void NodeStretchWant(NODE_STRETCH_RUN *r, UINT vni, const UCHAR *mac, con
 	}
 }
 
+// The MAC table of the switch sw, whole, into the entries of r, which grow until the table fits them: their number. SwitchGetMacs
+// gives the first entries of a table by VLAN and address, so a part of it would leave out the members whose addresses come after
+// the addresses of the fabric at its port and those of other VLANs, and the gateway would withdraw their routes.
+static UINT NodeStretchGetMacs(NODE_STRETCH_RUN *r, SWITCH *sw) {
+	UINT num = SwitchGetMacs(sw, r->Macs, r->MaxMacs);
+
+	while (num == r->MaxMacs && r->MaxMacs < SWITCH_MAX_MACS) {
+		r->MaxMacs = MIN(r->MaxMacs * 2, (UINT)SWITCH_MAX_MACS);
+		r->Macs = ReAlloc(r->Macs, sizeof(SWITCH_MAC_ENTRY) * r->MaxMacs);
+		num = SwitchGetMacs(sw, r->Macs, r->MaxMacs);
+	}
+
+	return num;
+}
+
+// The IP table of the switch sw, whole, into the entries of r, which grow as those of the MAC table do (NodeStretchGetMacs): their
+// number
+static UINT NodeStretchGetIps(NODE_STRETCH_RUN *r, SWITCH *sw) {
+	UINT num = SwitchGetIps(sw, r->Ips, r->MaxIps);
+
+	while (num == r->MaxIps && r->MaxIps < SWITCH_MAX_IPS) {
+		r->MaxIps = MIN(r->MaxIps * 2, (UINT)SWITCH_MAX_IPS);
+		r->Ips = ReAlloc(r->Ips, sizeof(SWITCH_IP_ENTRY) * r->MaxIps);
+		num = SwitchGetIps(sw, r->Ips, r->MaxIps);
+	}
+
+	return num;
+}
+
 // The switch of the Network net in a round: the MAC addresses of the type-2 routes of the fabric go into it at the port of the
 // fabric (SwitchLearnAt), which refreshes them as frames would, and the routes of the gateway come from it: each MAC address that a
 // member of the overlay sends from in the VLAN of the Network, MAC only, and each IP address that it sends from, MAC plus IP. The
@@ -1022,7 +1053,7 @@ static void NodeStretchScan(NODE_STRETCH_RUN *r, NODE_STRETCH_NET *net, UINT64 n
 		done += num;
 	}
 
-	UINT num_macs = SwitchGetMacs(net->Switch, r->Macs, NODE_STRETCH_MAX_LOCAL);
+	UINT num_macs = NodeStretchGetMacs(r, net->Switch);
 	for (UINT i = 0; i < num_macs; i++) {
 		const SWITCH_MAC_ENTRY *e = &r->Macs[i];
 
@@ -1030,7 +1061,7 @@ static void NodeStretchScan(NODE_STRETCH_RUN *r, NODE_STRETCH_NET *net, UINT64 n
 			NodeStretchWant(r, net->Vni, e->Mac, NULL, 0);
 	}
 
-	UINT num_ips = SwitchGetIps(net->Switch, r->Ips, NODE_STRETCH_MAX_LOCAL);
+	UINT num_ips = NodeStretchGetIps(r, net->Switch);
 	for (UINT i = 0; i < num_ips; i++) {
 		const SWITCH_IP_ENTRY *e = &r->Ips[i];
 
@@ -1239,8 +1270,10 @@ void NodeStretchRun(NODE *n, NODE_BGP *b) {
 	r->Stretch = s;
 	r->Bgp = b;
 	r->Resync = true;
-	r->Macs = ZeroMalloc(sizeof(SWITCH_MAC_ENTRY) * NODE_STRETCH_MAX_LOCAL);
-	r->Ips = ZeroMalloc(sizeof(SWITCH_IP_ENTRY) * NODE_STRETCH_MAX_LOCAL);
+	r->MaxMacs = NODE_STRETCH_MAX_LOCAL;
+	r->Macs = ZeroMalloc(sizeof(SWITCH_MAC_ENTRY) * r->MaxMacs);
+	r->MaxIps = NODE_STRETCH_MAX_LOCAL;
+	r->Ips = ZeroMalloc(sizeof(SWITCH_IP_ENTRY) * r->MaxIps);
 	r->Remote = ZeroMalloc(sizeof(NODE_STRETCH_MAC) * NODE_STRETCH_CHUNK);
 	r->Want = ZeroMalloc(sizeof(NODE_STRETCH_LOCAL) * NODE_STRETCH_MAX_LOCAL);
 	r->Have = ZeroMalloc(sizeof(NODE_STRETCH_LOCAL) * NODE_STRETCH_MAX_LOCAL);

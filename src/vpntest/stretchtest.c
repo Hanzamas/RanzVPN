@@ -29,6 +29,9 @@
 //   sidecar refuses a message of more. Each leaf learns every route of gw; once the pipe of gw reconnects again, its full resync
 //   goes in two stretch messages and each leaf learns the same routes again; and once the addresses leave the switch of gw, the
 //   leaves hold the routes of host 1 and host 2 alone again.
+// - A crowded MAC table: the switch of gw holds more addresses of the fabric at the port of the fabric than gw announces routes at
+//   most, each before host 1 and host 2 in the order of the table. gw reads the table whole, so it keeps announcing the routes of host
+//   1 and host 2, and the leaves keep them.
 // Print "STRETCH TEST OK" only when every check passes. .github/scripts/bgp-spike.ps1 runs it, with ranz.exe next to vpntest.
 
 #include "harness_int.h"
@@ -68,6 +71,8 @@
 #define	STRETCHTEST_ROUTES		16			// The routes of the fabric that a node of the test holds at most, but in the case of many routes
 #define	STRETCHTEST_MANY		600			// The MAC addresses that host 2 sends from in the case of many routes: with the 4 routes of host 1 and host 2, more than a stretch message holds
 #define	STRETCHTEST_ETHER_LOCAL	0x88B5		// The EtherType of their frames, the first local experimental one of IEEE 802: no IP table learns from them
+#define	STRETCHTEST_CROWD		(NODE_STRETCH_MAX_LOCAL + 16)	// The addresses of the fabric in the case of a crowded MAC table: more than gw announces routes
+#define	STRETCHTEST_ROUNDS		2000		// Four rounds of the thread of the stretch of gw, one each 500 ms (NODE_STRETCH_ROUND of NodeStretch.c)
 
 // The nodes
 #define	STRETCHTEST_GW			0
@@ -1181,6 +1186,69 @@ static void StretchTestMany(STRETCHTEST_CTX *ctx)
 	}
 }
 
+// The MAC address i of the many addresses of the fabric in the case of a crowded MAC table, 02:00:5e:66:..: before the addresses of
+// host 1 and host 2 (02:52:5a:64:..) in the order of the table
+static void StretchTestCrowdMac(UCHAR *mac, UINT i)
+{
+	static const UCHAR prefix[4] = {0x02, 0x00, 0x5E, 0x66};
+
+	Copy(mac, prefix, sizeof(prefix));
+	mac[4] = (UCHAR)(i >> 8);
+	mac[5] = (UCHAR)i;
+}
+
+// A crowded MAC table: the switch of gw holds STRETCHTEST_CROWD more addresses of the fabric at the port of the fabric, more than the
+// NODE_STRETCH_MAX_LOCAL routes that gw announces at most, and each comes before the addresses of host 1 and host 2 in the order in
+// which SwitchGetMacs gives the first entries of a table. gw reads the table whole in each round, so it keeps announcing the 4 routes
+// of host 1 and host 2 and none of the addresses of the fabric, and each leaf keeps them.
+static void StretchTestCrowded(STRETCHTEST_CTX *ctx)
+{
+	STRETCHTEST_NODE *gw = &ctx->Nodes[STRETCHTEST_GW];
+	STRETCHTEST_HOST *a = &ctx->Hosts[STRETCHTEST_HOST_A];
+	SWITCH_MAC_ENTRY list[32];
+	NODE_STRETCH_STATUS st;
+	SWITCH_STATS ss;
+	char what[MAX_SIZE];
+	UINT port = SWITCH_PORT_NONE;
+	UINT learned = 0;
+
+	Print("[a crowded MAC table: more addresses of the fabric at its port than gw announces routes]\n");
+
+	// The port of the fabric: the port of the switch of gw where the type-2 route of host a put its address
+	UINT num = SwitchGetMacs(gw->Switch, list, 32);
+	for (UINT i = 0;i < num && i < 32;i++)
+	{
+		if (Cmp(list[i].Mac, a->Mac, 6) == 0)
+		{
+			port = list[i].Port;
+		}
+	}
+
+	// The addresses of the fabric at that port, as the switch learns the sources of the frames of the fabric there
+	UINT64 now = GetTickCount64();
+	for (UINT i = 0;port != SWITCH_PORT_NONE && i < STRETCHTEST_CROWD;i++)
+	{
+		UCHAR mac[6];
+
+		StretchTestCrowdMac(mac, i);
+		if (SwitchLearnAt(gw->Switch, now, port, STRETCHTEST_VLAN, mac))
+		{
+			learned++;
+		}
+	}
+
+	// The thread of the stretch of gw reads the table in each round: a round that left out host 1 and host 2 would withdraw their routes
+	SleepThread(STRETCHTEST_ROUNDS);
+	SwitchGetStats(gw->Switch, &ss);
+	NodeStretchGetStatus(gw->Node, &st);
+	bool kept = StretchTestHasAll(ctx, STRETCHTEST_LEAF_A) && StretchTestHasAll(ctx, STRETCHTEST_LEAF_B);
+	Format(what, sizeof(what), "The switch of gw holds %u more addresses of the fabric, more than the %u routes that gw announces at most and each before host 1 and host 2 in its table: gw keeps announcing their 4 routes and none of those addresses, and each leaf keeps them",
+		(UINT)STRETCHTEST_CROWD, (UINT)NODE_STRETCH_MAX_LOCAL);
+	StretchTestCheck(ctx, learned == STRETCHTEST_CROWD && ss.NumMacs > NODE_STRETCH_MAX_LOCAL && st.NumAnnounced == 4 && kept, what,
+		"port of the fabric %u, %u addresses learnt, %u entries in the table, %u announced, leaf-a %u routes, leaf-b %u routes", port, learned, ss.NumMacs, st.NumAnnounced,
+		NodeStretchGetRoutes(ctx->Nodes[STRETCHTEST_LEAF_A].Node, NULL, 0), NodeStretchGetRoutes(ctx->Nodes[STRETCHTEST_LEAF_B].Node, NULL, 0));
+}
+
 // The switches leave the stretches, the nodes stop and their sidecars with them, and the node log of gw tells the story; the logs of
 // the sidecars go into the job log when a check failed
 static void StretchTestClose(STRETCHTEST_CTX *ctx)
@@ -1344,6 +1412,7 @@ void stretch_test(UINT num, char **arg)
 		StretchTestResync(ctx);
 		StretchTestIntoFabric(ctx, true);
 		StretchTestMany(ctx);
+		StretchTestCrowded(ctx);
 	}
 
 	StretchTestClose(ctx);
