@@ -1036,13 +1036,6 @@ void ToStr(char *str, UINT i) {
 	StringCchPrintfA(str, TOSTR_SIZE, "%u", i);
 }
 
-int ToInti(const char *str) {
-	if (str == NULL)
-		return 0;
-
-	return (int)ToInt(str);
-}
-
 UINT ToInt(const char *str) {
 	if (str == NULL)
 		return 0;

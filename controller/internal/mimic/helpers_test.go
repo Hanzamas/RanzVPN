@@ -250,6 +250,21 @@ func (n *sidecarNode) counters() Message {
 	return Message{}
 }
 
+// countersUntil asks for the counters until counted accepts them or testTimeout has passed, and returns the last ones,
+// which the caller checks: a count that never comes is a failure of that check. The sidecar writes the binding of a stream
+// to the data pipe before it counts the stream, so a node that has read the binding can ask for the counters before the
+// count is made.
+func (n *sidecarNode) countersUntil(counted func(Message) bool) Message {
+	n.t.Helper()
+	deadline := time.Now().Add(testTimeout)
+	m := n.counters()
+	for !counted(m) && time.Now().Before(deadline) {
+		time.Sleep(20 * time.Millisecond)
+		m = n.counters()
+	}
+	return m
+}
+
 // A stream that the sidecar opened on the data pipe, as the node reads it.
 type stream struct {
 	conn    net.Conn
