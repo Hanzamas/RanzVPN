@@ -339,6 +339,44 @@ func TestNewDataDirWithATrailingSeparatorIsMadeWithItsOwnList(t *testing.T) {
 	}
 }
 
+// checkDataDirName refuses a path whose last element ends in a period or a space, as the path stands after filepath.Clean, and
+// no other: a trailing separator, a last element of `.` or `..` (which Windows resolves before it takes anything off) and the
+// root of a drive are read as they are written, and a relative -data such as `.` keeps working (finding E of the read-only
+// review of PR 541). It looks at the text only, so it needs no administrator, and the refusal names the tail.
+func TestCheckDataDirName(t *testing.T) {
+	for _, c := range []struct {
+		path    string
+		refused bool
+	}{
+		{`D:\RanzData`, false},
+		{`D:\RanzData\`, false},
+		{`D:/RanzData/`, false},
+		{`D:\RanzData\.`, false},
+		{`D:\RanzData\..`, false},
+		{`D:\Ranz Data\controller`, false},
+		{`D:\`, false},
+		{`data`, false},
+		{`..\data`, false},
+		{`.`, false},
+		{`..`, false},
+		{`D:\RanzData.`, true},
+		{`D:\RanzData `, true},
+		{`D:\RanzData\ `, true},
+		{`D:\RanzData\...`, true},
+		{`D:\RanzData\. `, true},
+		{`D:\RanzData\ \`, true},
+		{`D:/RanzData/ /`, true},
+	} {
+		err := checkDataDirName(c.path)
+		switch {
+		case c.refused && (err == nil || !strings.Contains(err.Error(), "ends in a period or a space")):
+			t.Errorf("checkDataDirName(%q) answered %v, want a refusal that says that it ends in a period or a space", c.path, err)
+		case !c.refused && err != nil:
+			t.Errorf("checkDataDirName(%q) answered %v, want none: Windows reads the path as it is written", c.path, err)
+		}
+	}
+}
+
 // keptDataDir makes the folder that an earlier install or an administrator left, which the Administrators (or the
 // account of this process) own, and which the test fills.
 func keptDataDir(t *testing.T) string {
