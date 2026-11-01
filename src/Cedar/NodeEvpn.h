@@ -131,7 +131,7 @@ typedef struct NODE_STRETCH_STATUS {
 	UINT64 Failed;      // Frames of the overlay for the fabric that could not go: no flood list, too large, or a failed send
 	UINT64 Delivered;   // Frames of the fabric that the switch of their Network delivered to a port
 	UINT64 Undelivered; // ... that it delivered to none, or that came while the fabric was on no switch
-	UINT64 UnknownVtep; // Frames of the fabric from an address that is the VTEP of no route of their VNI: dropped
+	UINT64 UnknownVtep; // Frames of an L2 VNI from an address that is the VTEP of no route of the VNI (NodeStretchInput): dropped, whatever they hold
 	UINT64 Refused;     // Routes of the fabric that the gateway did not take: none that it can take, of no stretch, or one too many
 } NODE_STRETCH_STATUS;
 
