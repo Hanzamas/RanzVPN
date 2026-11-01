@@ -13,7 +13,6 @@
 #include "ConfigStore.h"
 #include "Hub.h"
 #include "Sam.h"
-#include "Server.h"
 
 #include "Mayaqua/Encrypt.h"
 #include "Mayaqua/FileIO.h"

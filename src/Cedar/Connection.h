@@ -163,10 +163,10 @@ struct TUNNEL_STATUS {
 
 CONNECTION *NewClientConnectionEx(SESSION *s, char *client_str);
 CONNECTION *NewServerConnection(CEDAR *cedar, SOCK *s, THREAD *t);
+void GetServerProductName(SERVER *s, char *name, UINT size);
 void ReleaseConnection(CONNECTION *c);
 int CompareConnection(void *p1, void *p2);
 void StopConnection(CONNECTION *c, bool no_wait);
-void ConnectionAccept(CONNECTION *c);
 UINT TlsErrToCedarErr(UINT tls_err);
 void StartTunnelingMode(CONNECTION *c);
 void EndTunnelingMode(CONNECTION *c);
