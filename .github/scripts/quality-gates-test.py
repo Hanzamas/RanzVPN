@@ -546,7 +546,8 @@ def test_msi_install():
            'ok: a msiexec that never ends fails within its bound (20 s, after ',
            'and the failure names the verb and the package',
            'ok: the evidence holds the processes, the end of the verbose log, the events of Windows Installer and the state of msiserver, and is kept in a file',
-           'ok: the process tree of the call is ended: the stand-in and its child')
+           'ok: the process tree of the call is ended: the stand-in and its child',
+           'ok: no other call starts after a call that did not end')
 
 
 if __name__ == '__main__':

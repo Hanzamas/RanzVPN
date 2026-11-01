@@ -66,18 +66,31 @@ function Test-ProcessAlive([int] $id) {
 	return ($null -ne $process -and -not $process.HasExited)
 }
 
-# What a person needs to see why a msiexec call does not end, one line each: the msiexec processes and the tree of the call with the
-# parent, the time and the command line of each, the end of the verbose log of the call, the events of Windows Installer of the last
-# 15 minutes and the state of its service. A part that the computer cannot give says why, so that it never hides the others.
-function Get-MsiexecEvidence([int] $callId, [string] $log) {
-	$lines = [System.Collections.Generic.List[string]]::new()
-	$lines.Add("msiexec processes, and the tree of the call (process $callId), each with its parent and its command line:")
+# A time in UTC, as the log of a job shows its lines: the time of a process, of a file and of an event is a local time, and the
+# format u adds a Z to whatever it is given
+function Format-Utc($when) {
+	if ($when -is [datetime]) { return $when.ToUniversalTime().ToString('u') }
+	return ''
+}
+
+# What a person needs to see why a msiexec call does not end: the msiexec processes, the processes of the runner and the tree of
+# each of them, with the parent, the time and the command line of each, the end of the verbose log of the call, the events of
+# Windows Installer of the last 15 minutes and the state of its service. Each line goes to the log of the job and to $file as it
+# is found, so that a part that stalls hides none of the others, and a part that the computer cannot give says why.
+function Write-MsiexecEvidence([int] $callId, [string] $log, [string] $file) {
+	[System.IO.File]::WriteAllText($file, '')
+	function Add-Evidence([string] $line) {
+		Write-Host $line
+		Add-Content -LiteralPath $file -Value $line
+	}
+	Add-Evidence "msiexec processes, runner processes, the call (process $callId) and the tree of each, with the parent and the command line of each:"
 	try {
 		if (-not (Get-Command Get-CimInstance -ErrorAction SilentlyContinue)) { throw 'this computer has no Get-CimInstance' }
-		$all = @(Get-CimInstance Win32_Process)
+		$all = @(Get-CimInstance Win32_Process -OperationTimeoutSec 30)
+		$roots = @('msiexec.exe', 'Runner.Worker.exe', 'Runner.Listener.exe')
 		$shown = [System.Collections.Generic.HashSet[int]]::new()
 		$queue = [System.Collections.Generic.Queue[int]]::new()
-		foreach ($id in @($callId) + @($all | Where-Object { $_.Name -eq 'msiexec.exe' } | ForEach-Object { [int] $_.ProcessId })) {
+		foreach ($id in @($callId) + @($all | Where-Object { $roots -contains $_.Name } | ForEach-Object { [int] $_.ProcessId })) {
 			if ($shown.Add($id)) { $queue.Enqueue($id) }
 		}
 		while ($queue.Count -gt 0) {
@@ -90,47 +103,46 @@ function Get-MsiexecEvidence([int] $callId, [string] $log) {
 			$parent = @($all | Where-Object { $_.ProcessId -eq $process.ParentProcessId })[0]
 			$parentName = if ($parent) { $parent.Name } else { 'gone' }
 			$cpu = ([double] $process.KernelModeTime + [double] $process.UserModeTime) / 1e7
-			$lines.Add(('  process {0} {1}, parent {2} {3}, {4} threads, {5:N1} s of cpu, started {6:u}: {7}' -f $process.ProcessId, $process.Name, $process.ParentProcessId, $parentName, $process.ThreadCount, $cpu, $process.CreationDate, $process.CommandLine))
+			Add-Evidence ('  process {0} {1}, parent {2} {3}, {4} threads, {5:N1} s of cpu, started {6}: {7}' -f $process.ProcessId, $process.Name, $process.ParentProcessId, $parentName, $process.ThreadCount, $cpu, (Format-Utc $process.CreationDate), $process.CommandLine)
 		}
 	} catch {
-		$lines.Add("  not read: $($_.Exception.Message)")
+		Add-Evidence "  not read: $($_.Exception.Message)"
 	}
 
-	$lines.Add("the verbose log ${log}:")
+	Add-Evidence "the verbose log ${log}:"
 	try {
 		if (Test-Path -LiteralPath $log) {
 			$item = Get-Item -LiteralPath $log
-			$lines.Add(('  {0} bytes, last written {1:u}, and its last lines:' -f $item.Length, $item.LastWriteTime))
-			Get-Content -LiteralPath $log -Tail 40 | ForEach-Object { $lines.Add("  $_") }
+			Add-Evidence ('  {0} bytes, last written {1}, and its last lines:' -f $item.Length, (Format-Utc $item.LastWriteTime))
+			Get-Content -LiteralPath $log -Tail 40 | ForEach-Object { Add-Evidence "  $_" }
 		} else {
-			$lines.Add('  the log is not there')
+			Add-Evidence '  the log is not there'
 		}
 	} catch {
-		$lines.Add("  not read: $($_.Exception.Message)")
+		Add-Evidence "  not read: $($_.Exception.Message)"
 	}
 
-	$lines.Add('events of Windows Installer (provider MsiInstaller, log Application) of the last 15 minutes, the last 60 of them:')
+	Add-Evidence 'events of Windows Installer (provider MsiInstaller, log Application) of the last 15 minutes, the last 60 of them:'
 	try {
 		$events = @(Get-WinEvent -FilterHashtable @{ LogName = 'Application'; ProviderName = 'MsiInstaller'; StartTime = (Get-Date).AddMinutes(-15) } -ErrorAction SilentlyContinue)
-		if ($events.Count -eq 0) { $lines.Add('  none') }
+		if ($events.Count -eq 0) { Add-Evidence '  none' }
 		foreach ($record in @($events | Sort-Object RecordId | Select-Object -Last 60)) {
-			$lines.Add(('  {0:u} id {1}: {2}' -f $record.TimeCreated, $record.Id, ($record.Message -replace '\s+', ' ')))
+			Add-Evidence ('  {0} id {1}: {2}' -f (Format-Utc $record.TimeCreated), $record.Id, ($record.Message -replace '\s+', ' '))
 		}
 	} catch {
-		$lines.Add("  not read: $($_.Exception.Message)")
+		Add-Evidence "  not read: $($_.Exception.Message)"
 	}
 
 	try {
-		$service = Get-CimInstance Win32_Service -Filter "Name='msiserver'"
+		$service = Get-CimInstance Win32_Service -Filter "Name='msiserver'" -OperationTimeoutSec 30
 		if ($service) {
-			$lines.Add("service msiserver: $($service.State), process $($service.ProcessId), start mode $($service.StartMode), status $($service.Status), exit code $($service.ExitCode)")
+			Add-Evidence "service msiserver: $($service.State), process $($service.ProcessId), start mode $($service.StartMode), status $($service.Status), exit code $($service.ExitCode)"
 		} else {
-			$lines.Add('service msiserver: not installed')
+			Add-Evidence 'service msiserver: not installed'
 		}
 	} catch {
-		$lines.Add("service msiserver: not read ($($_.Exception.Message))")
+		Add-Evidence "service msiserver: not read ($($_.Exception.Message))"
 	}
-	return $lines.ToArray()
 }
 
 # Ends the process of a call and every process that it started
@@ -146,15 +158,16 @@ function Stop-MsiexecCall([System.Diagnostics.Process] $call) {
 # A msiexec run: its exit code and the path of its verbose log. A call that is not done after $msiexecSeconds is a hang: it prints the
 # evidence and keeps it in a file of the log folder, ends the process tree of the call and fails with a message that names the call.
 function Invoke-Msiexec([string] $verb, [string] $package, [string] $step) {
+	# After a call that did not end Windows Installer is in a state that nobody knows: no other call starts
+	if ($script:msiexecHang) { throw "msiexec $verb $(Split-Path -Leaf $package) was not started: an earlier call did not end ($script:msiexecHang)" }
 	$log = Join-Path $LogDir "$step.log"
 	$call = Start-Process -FilePath $msiexecFile -ArgumentList ($msiexecPrefix + @($verb, "`"$package`"", '/qn', '/norestart', '/l*v', "`"$log`"")) -PassThru
 	$script:lastLog = $log
 	if (-not $call.WaitForExit($msiexecSeconds * 1000)) {
 		$what = "msiexec $verb $(Split-Path -Leaf $package)"
 		Write-Host "$what did not end within $msiexecSeconds s (step $step, process $($call.Id)). What the computer shows:"
-		$evidence = @(Get-MsiexecEvidence $call.Id $log)
-		$evidence | ForEach-Object { Write-Host $_ }
-		Set-Content -LiteralPath (Join-Path $LogDir "$step-evidence.txt") -Value $evidence
+		# Whatever the evidence does, the call ends and fails
+		try { Write-MsiexecEvidence $call.Id $log (Join-Path $LogDir "$step-evidence.txt") } catch { Write-Host "the evidence stopped: $($_.Exception.Message)" }
 		Stop-MsiexecCall $call
 		$script:msiexecHang = "$what did not end within $msiexecSeconds s (step $step): its process tree was ended, the evidence is above and in $step-evidence.txt, and the verbose log is $log"
 		throw $script:msiexecHang
@@ -165,9 +178,10 @@ function Invoke-Msiexec([string] $verb, [string] $package, [string] $step) {
 
 # The bound on a planted hang. A bound that no hang has tested proves nothing, so a stand-in for msiexec.exe that never ends, and
 # starts a child that never ends either, runs through Invoke-Msiexec with a bound of 20 s. The call must fail within it, with a
-# message that names the verb and the package; the evidence must be printed and kept; both processes must be ended. The stand-in
-# sleeps for 120 s, so a call with no bound returns after 120 s with no failure, and the check fails on that. A stand-in that exits
-# at once checks that a call that ends is left alone, and on Windows a package that is not there checks the real msiexec.exe.
+# message that names the verb and the package; the evidence must be printed and kept; both processes must be ended; no other call
+# may start. The stand-in sleeps for 120 s, so a call with no bound returns after 120 s with no failure, and the check fails on
+# that. A stand-in that exits at once checks that a call that ends is left alone, and on Windows a package that is not there
+# checks the real msiexec.exe.
 function Invoke-SelfTest {
 	$bound = 20
 	$work = Join-Path ([System.IO.Path]::GetTempPath()) "msi-install-selftest-$([guid]::NewGuid().ToString('N'))"
@@ -231,6 +245,15 @@ Start-Sleep -Seconds 120
 		$alive = @($ids | Where-Object { Test-ProcessAlive ([int] $_) })
 		if ($alive.Count -gt 0) { throw "the process tree of the call is still there after its failure: process $($alive -join ', ')" }
 		Write-Host 'ok: the process tree of the call is ended: the stand-in and its child'
+
+		$after = $null
+		try {
+			[void](Invoke-Msiexec '/i' (Join-Path $work 'refused.msi') 'planted-after-hang')
+		} catch {
+			$after = $_.Exception.Message
+		}
+		if (-not $after) { throw 'a call started after a call that did not end' }
+		Write-Host 'ok: no other call starts after a call that did not end'
 	} finally {
 		Remove-Item -LiteralPath $work -Recurse -Force -ErrorAction SilentlyContinue
 	}

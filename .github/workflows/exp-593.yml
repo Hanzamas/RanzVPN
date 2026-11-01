@@ -91,7 +91,7 @@ jobs:
         '@
         Push-Location $dir
         try {
-          & (Join-Path $env:USERPROFILE '.dotnet\tools\wix.exe') build -arch x86 -sval -o hang.msi hang.wxs
+          & (Join-Path $env:USERPROFILE '.dotnet\tools\wix.exe') build -arch x86 -o hang.msi hang.wxs
           if ($LASTEXITCODE -ne 0) { throw "wix build exited with code $LASTEXITCODE" }
         } finally {
           Pop-Location
