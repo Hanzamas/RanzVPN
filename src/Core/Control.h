@@ -233,8 +233,9 @@ typedef struct CONTROL_SOURCE_GROUP {
 
 // The packets of the peers that a node judged in one tag mode, which it reports (SourceGroupCounters of the control
 // protocol; SDN-87, #386): by the source group that they carried; with none, by the map of address to group; with one
-// that the node ignores, in the tag mode off or of a peer whose groups the node does not know yet, by that map too; and
-// those that claimed a group that the sending node may not assert, which it dropped
+// that the node ignores, in the tag mode off, of a peer whose groups the node does not know yet, or one that a rollout of
+// the Generations explains, by that map too; and those that claimed a group that the sending node may not assert, which
+// it dropped
 typedef struct CONTROL_GROUP_COUNTERS {
 	UINT64 Carried;
 	UINT64 Missing;

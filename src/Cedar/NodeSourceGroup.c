@@ -37,22 +37,31 @@
 // in the VRF of the packet, with the tag set of that group where the claim carries one: the policy of the VRF then judges
 // the packet by that group. The controller never gives a group ID or a bit of a VRF to another set of tags or tag, so the
 // group means the same in the Generation of the sender and in the node's own, and the node takes it whatever group
-// generation the claim names. Any other claim that names the group generation that the node's state gives the peer, or
-// none, as the group policy extension of VXLAN has no room for one, is an unknown group: the node drops the packet, counts
-// it and logs it, at most one line every NODE_SOURCE_GROUP_LOG ms. A claim of another group generation was made on another
-// state of the peer than the one that the node's state knows, the one before or the one after: the node ignores it and
-// judges the packet by the map of address to group of its own state, so that neither node misjudges an honest packet while
-// their Generations roll out. The node judges the claims of a peer only once it knows the groups that the peer may assert,
-// which its state gives with the frame version 1 of the peer once both report the Capability tags. The controller gives
-// both nodes their Generations at once, but each applies its own when it comes, and a node that the controller cannot
-// reach forwards on the state that it applied last: so a peer can send its claims before the node knows its groups, and
-// the node ignores them until it does, as the tag mode off ignores the claims of a link, instead of dropping every packet
-// of the peer. A packet that carried no source group, or one that the node ignores, is judged by the map of address to
-// group, as before SDN-87: the route of its source leads to the peer, whose own group it is, or to a Device of the peer,
-// whose group it is; an address that no route of the VRF leads to the peer is no address of the map, and the overlay drops
-// its packet. A claim gains nothing over that map, so ignoring one opens nothing. The node counts the packets of its peers
-// by the tag mode in which it judged them, the records of its sessions as the mode session, and reports the counters on
-// its control stream (Core/ControlSourceGroup.c).
+// generation the claim names. Any other claim is an unknown group, whatever group generation it names: the node drops the
+// packet, counts it and logs it, at most one line every NODE_SOURCE_GROUP_LOG ms. The one exception is a claim that the
+// Generations of the two nodes explain while they roll out, as it was made on another state of the peer than the one that
+// the node's state knows: a group that the peer could assert in the VRF before the Generation of the node that last
+// changed its groups there, with the tag set of that group, which the node keeps from its tables before
+// (NODE_SOURCE_PEER.Before), or a group ID that the node's state does not know at all in the VRF, as a group that the peer
+// may assert in a Generation that the node does not run yet: the controller gives a new set of tags the group ID after the
+// largest one that the VRF gave. The node ignores such a claim and judges the packet by the map of address to group of its
+// own state, so that neither node misjudges an honest packet while their Generations roll out, over every carrier, the
+// group policy extension of VXLAN too, which has no room for the group generation. A claim that names the group generation
+// that the node's state gives the peer was made on the state that the node knows, so no rollout explains it: the node
+// refuses it unless the peer may assert its group. So the group generation that the sender writes can make the node refuse
+// a claim, and never ignore one.
+//
+// The node judges the claims of a peer only once it knows the groups that the peer may assert, which its state gives with
+// the frame version 1 of the peer once both report the Capability tags. The controller gives both nodes their Generations
+// at once, but each applies its own when it comes, and a node that the controller cannot reach forwards on the state that
+// it applied last: so a peer can send its claims before the node knows its groups, and the node ignores them until it
+// does, as the tag mode off ignores the claims of a link, instead of dropping every packet of the peer. A packet that
+// carried no source group, or one that the node ignores, is judged by the map of address to group, as before SDN-87: the
+// route of its source leads to the peer, whose own group it is, or to a Device of the peer, whose group it is; an address
+// that no route of the VRF leads to the peer is no address of the map, and the overlay drops its packet. A claim gains
+// nothing over that map, so ignoring one opens nothing. The node counts the packets of its peers by the tag mode in which
+// it judged them, the records of its sessions as the mode session, and reports the counters on its control stream
+// (Core/ControlSourceGroup.c).
 
 #include "NodeSourceGroup.h"
 
@@ -63,10 +72,12 @@
 #include "NodeGateway.h"
 #include "NodeInternal.h"
 
+#include <stdlib.h>
+
 // The results of a packet in a tag mode, as the node counts them
 #define NODE_SOURCE_CARRIED 0 // It carried a source group that the node took
 #define NODE_SOURCE_MISSING 1 // It carried none: the map of address to group judged it
-#define NODE_SOURCE_IGNORED 2 // It carried one that the node ignores, in the tag mode off, of a peer whose groups it does not know or made on another state of the peer: the map judged it
+#define NODE_SOURCE_IGNORED 2 // It carried one that the node ignores, in the tag mode off, of a peer whose groups it does not know yet, or one that a rollout of the Generations explains: the map judged it
 #define NODE_SOURCE_REFUSED 3 // It claimed a group that the sending peer may not assert: dropped
 #define NODE_SOURCE_RESULTS 4
 
@@ -87,12 +98,15 @@ typedef struct NODE_SOURCE_DEVICE {
 } NODE_SOURCE_DEVICE;
 
 // What the node knows of one peer: its name, the frame version of the records of the Noise session that the node sends
-// it, and the groups that it may assert
+// it, the groups that it may assert, and in each VRF the ones that it could assert before the Generation of the node that
+// last changed its groups there, which the node keeps from its tables before (NodeSourceGroupKeep)
 typedef struct NODE_SOURCE_PEER {
 	char Name[CONTROL_NAME_SIZE];
 	UINT FrameVersion;
 	UINT NumGroups;
 	NODE_SOURCE_GROUP *Groups;
+	UINT NumBefore;
+	NODE_SOURCE_GROUP *Before;
 } NODE_SOURCE_PEER;
 
 // The source groups of one Generation, which go in with its forwarding tables: peer i is next hop i of the tables
@@ -106,6 +120,8 @@ struct NODE_SOURCE_GROUP_TABLE {
 	NODE_SOURCE_DEVICE *Devices;             // ...
 	UINT NumPeers;                           // The peers
 	NODE_SOURCE_PEER *Peers;                 // ...
+	UINT NumKnown;                           // Every group that the state gives in the VRFs of the node, the node's own, of its
+	NODE_SOURCE_GROUP *Known;                // peers and of the Devices, sorted by VRF and group ID (NodeSourceGroupKnownOf)
 };
 
 // The source groups of the overlay of a node: the counters by tag mode and result, the report of them on the control
@@ -247,11 +263,110 @@ static void NodeSourceGroupOfDevice(NODE_SOURCE_GROUP *g, const CONTROL_DEVICE *
 	g->Generation = NodeSourceGroupGenerationOf(groups, num, d->VrfId);
 }
 
+// Whether the num groups of groups hold the group ID group in the VRF vrf_id, with the tag set tags when has_tags is set.
+// No group is 0.
+static bool NodeSourceGroupHolds(const NODE_SOURCE_GROUP *groups, UINT num, UINT vrf_id, UINT group, bool has_tags, UINT64 tags) {
+	for (UINT i = 0; group != 0 && i < num; i++)
+		if (groups[i].VrfId == vrf_id && groups[i].Group == group && (has_tags == false || groups[i].Tags == tags))
+			return true;
+
+	return false;
+}
+
+// Whether the num_a groups of a and the num_b groups of b are the same groups in the VRF vrf_id, each with its tag set
+static bool NodeSourceGroupSame(const NODE_SOURCE_GROUP *a, UINT num_a, const NODE_SOURCE_GROUP *b, UINT num_b, UINT vrf_id) {
+	for (UINT i = 0; i < num_a; i++)
+		if (a[i].VrfId == vrf_id && NodeSourceGroupHolds(b, num_b, vrf_id, a[i].Group, true, a[i].Tags) == false)
+			return false;
+	for (UINT i = 0; i < num_b; i++)
+		if (b[i].VrfId == vrf_id && NodeSourceGroupHolds(a, num_a, vrf_id, b[i].Group, true, b[i].Tags) == false)
+			return false;
+
+	return true;
+}
+
+// The peer of the table t named name, NULL for none
+static const NODE_SOURCE_PEER *NodeSourceGroupPeerNamed(const NODE_SOURCE_GROUP_TABLE *t, const char *name) {
+	for (UINT i = 0; t != NULL && i < t->NumPeers; i++)
+		if (StrCmp(t->Peers[i].Name, name) == 0)
+			return &t->Peers[i];
+
+	return NULL;
+}
+
+// The groups that each peer of the table t could assert in each VRF before the Generation of the node n that last changed
+// its groups there, from the source groups of the live tables of n, which t is to follow: in a VRF in which the groups of
+// the peer change with t, the ones that the live tables give it there, and in any other the ones before that the live
+// tables kept. A peer that the live tables do not hold, as in the first Generation of the node, has none. The node builds
+// one Generation at a time (the apply lock of the overlay), and the table lock keeps the live tables from going under the
+// read.
+static void NodeSourceGroupKeep(NODE *n, NODE_SOURCE_GROUP_TABLE *t) {
+	Lock(n->TableLock);
+	{
+		NODE_TABLES *tables = NodeGetTables(n);
+		const NODE_SOURCE_GROUP_TABLE *live = (tables != NULL && tables->Vrfs != NULL ? tables->Vrfs->SourceGroups : NULL);
+
+		for (UINT i = 0; i < t->NumPeers; i++) {
+			NODE_SOURCE_PEER *p = &t->Peers[i];
+			const NODE_SOURCE_PEER *lp = NodeSourceGroupPeerNamed(live, p->Name);
+
+			if (lp == NULL)
+				continue;
+
+			p->Before = ZeroMalloc(sizeof(NODE_SOURCE_GROUP) * MAX(lp->NumGroups + lp->NumBefore, 1));
+			for (UINT j = 0; j < lp->NumGroups; j++)
+				if (NodeSourceGroupSame(p->Groups, p->NumGroups, lp->Groups, lp->NumGroups, lp->Groups[j].VrfId) == false)
+					p->Before[p->NumBefore++] = lp->Groups[j];
+			for (UINT j = 0; j < lp->NumBefore; j++)
+				if (NodeSourceGroupSame(p->Groups, p->NumGroups, lp->Groups, lp->NumGroups, lp->Before[j].VrfId))
+					p->Before[p->NumBefore++] = lp->Before[j];
+		}
+	}
+	Unlock(n->TableLock);
+}
+
+// Order two source groups by VRF, then by group ID
+static int NodeSourceGroupCompare(const void *a, const void *b) {
+	const NODE_SOURCE_GROUP *x = (const NODE_SOURCE_GROUP *)a;
+	const NODE_SOURCE_GROUP *y = (const NODE_SOURCE_GROUP *)b;
+
+	if (x->VrfId != y->VrfId)
+		return (x->VrfId < y->VrfId ? -1 : 1);
+	if (x->Group != y->Group)
+		return (x->Group < y->Group ? -1 : 1);
+
+	return 0;
+}
+
+// Every group that the state st gives in the VRFs of the node into the table t, sorted by VRF and group ID: the node's own,
+// those of its peers and those of the Devices of the state, whatever their gateway
+static void NodeSourceGroupKnownOf(NODE_SOURCE_GROUP_TABLE *t, const CONTROL_STATE *st) {
+	UINT num_devices = (st->Devices != NULL ? st->NumDevices : 0);
+	UINT max = t->NumOwn + num_devices;
+
+	for (UINT i = 0; i < t->NumPeers; i++)
+		max += t->Peers[i].NumGroups;
+
+	t->Known = ZeroMalloc(sizeof(NODE_SOURCE_GROUP) * MAX(max, 1));
+	for (UINT i = 0; i < t->NumOwn; i++)
+		t->Known[t->NumKnown++] = t->Own[i];
+	for (UINT i = 0; i < t->NumPeers; i++)
+		for (UINT j = 0; j < t->Peers[i].NumGroups; j++)
+			t->Known[t->NumKnown++] = t->Peers[i].Groups[j];
+	for (UINT i = 0; i < num_devices; i++)
+		if (st->Devices[i].Group != 0)
+			NodeSourceGroupOfDevice(&t->Known[t->NumKnown++], &st->Devices[i], st->Groups, st->NumGroups);
+
+	qsort(t->Known, t->NumKnown, sizeof(NODE_SOURCE_GROUP), NodeSourceGroupCompare);
+}
+
 // The source groups of the Generation of st onto its forwarding tables v, before they go in: the tag mode of each VRF, the
 // node's own groups, the addresses of the Devices whose gateway the node is with their groups, and of each peer the frame
 // version of the records that the node sends it and the groups that it may assert: its own and those of the Devices whose
 // gateway it is. Each group holds the group generation of the node that may assert it in its VRF, the node's own or the
-// peer's, which the claims of that node name.
+// peer's, which the claims of that node name. Then the groups that each peer could assert before, which the node keeps
+// from its live tables, and every group that the state gives: by them the node tells a claim that a rollout of the
+// Generations explains from an unknown group (NodeSourceGroupJudge).
 void NodeSourceGroupAttach(NODE *n, NODE_VRF_TABLES *v, const CONTROL_STATE *st) {
 	if (n == NULL || v == NULL || st == NULL)
 		return;
@@ -327,6 +442,9 @@ void NodeSourceGroupAttach(NODE *n, NODE_VRF_TABLES *v, const CONTROL_STATE *st)
 		}
 	}
 
+	NodeSourceGroupKeep(n, t);
+	NodeSourceGroupKnownOf(t, st);
+
 	NodeFreeSourceGroupTable(v->SourceGroups);
 	v->SourceGroups = t;
 }
@@ -336,10 +454,13 @@ void NodeFreeSourceGroupTable(NODE_SOURCE_GROUP_TABLE *t) {
 	if (t == NULL)
 		return;
 
-	for (UINT i = 0; i < t->NumPeers; i++)
+	for (UINT i = 0; i < t->NumPeers; i++) {
 		Free(t->Peers[i].Groups);
+		Free(t->Peers[i].Before);
+	}
 	Free(t->Peers);
 	Free(t->Devices);
+	Free(t->Known);
 
 	Zero(t, sizeof(NODE_SOURCE_GROUP_TABLE));
 	Free(t);
@@ -437,21 +558,16 @@ static bool NodeSourceGroupKnows(const NODE_SOURCE_GROUP_TABLE *t, UINT hop) {
 	return (t != NULL && hop < t->NumPeers && t->Peers[hop].FrameVersion == NODE_FRAME_VERSION);
 }
 
-// Whether the peer of the next hop hop of the table t may assert the claim in the VRF vrf_id: the group is one of its
-// groups in the VRF, with the tag set of that group when the claim carries one
-static bool NodeSourceGroupAllowed(const NODE_SOURCE_GROUP_TABLE *t, UINT hop, UINT vrf_id, const NODE_SOURCE_CLAIM *claim) {
-	if (t == NULL || hop >= t->NumPeers || claim->Group == 0)
-		return false;
+// Whether the state of the table t gives the group ID group in the VRF vrf_id: the node's own group there, or one of a
+// peer or of a Device
+static bool NodeSourceGroupKnown(const NODE_SOURCE_GROUP_TABLE *t, UINT vrf_id, UINT group) {
+	NODE_SOURCE_GROUP key;
 
-	const NODE_SOURCE_PEER *p = &t->Peers[hop];
-	for (UINT i = 0; i < p->NumGroups; i++) {
-		const NODE_SOURCE_GROUP *g = &p->Groups[i];
+	Zero(&key, sizeof(key));
+	key.VrfId = vrf_id;
+	key.Group = group;
 
-		if (g->VrfId == vrf_id && g->Group == claim->Group && (claim->HasTags == false || g->Tags == claim->Tags))
-			return true;
-	}
-
-	return false;
+	return (t->NumKnown != 0 && bsearch(&key, t->Known, t->NumKnown, sizeof(NODE_SOURCE_GROUP), NodeSourceGroupCompare) != NULL);
 }
 
 // The group generation that the table t gives the peer of the next hop hop in the VRF vrf_id, its 32 low bits: 0 when the
@@ -467,19 +583,28 @@ static UINT NodeSourceGroupGeneration(const NODE_SOURCE_GROUP_TABLE *t, UINT hop
 }
 
 // How the node of the table t judges a packet of the next hop hop in the VRF vrf_id with the claim, in the tag mode mode
-// (NODE_SOURCE_*): it takes a group that the peer may assert, whatever group generation the claim names, as a group ID
-// means the same set of tags in every Generation; a claim of any other group is an unknown group when it names the group
-// generation that the node's state gives the peer, or none, and one made on another state of the peer otherwise, which
-// the node ignores. A packet without a claim, or with one that off ignores or of a peer whose groups the node does not
-// know yet, goes to the map of address to group.
+// (NODE_SOURCE_*). It takes a group that the peer may assert, with the tag set of that group where the claim carries one,
+// whatever group generation the claim names, as a group ID means the same set of tags in every Generation. It ignores a
+// claim that a rollout of the Generations explains: a group that the peer could assert before the Generation of the node
+// that last changed its groups in the VRF, with its tag set, or a group ID that the node's state does not know at all,
+// unless the claim names the group generation that the node's state gives the peer, as it was made on that state then.
+// Any other claim is an unknown group, whatever group generation it names. A packet without a claim, or with one that off
+// ignores or of a peer whose groups the node does not know yet, goes to the map of address to group.
 static UINT NodeSourceGroupJudge(const NODE_SOURCE_GROUP_TABLE *t, UINT mode, UINT vrf_id, UINT hop, const NODE_SOURCE_CLAIM *claim) {
 	if (claim == NULL || claim->Carried == false)
 		return NODE_SOURCE_MISSING;
-	if (mode == CONTROL_TAG_MODE_OFF || NodeSourceGroupKnows(t, hop) == false)
+	if (mode == CONTROL_TAG_MODE_OFF || t == NULL || NodeSourceGroupKnows(t, hop) == false)
 		return NODE_SOURCE_IGNORED;
-	if (NodeSourceGroupAllowed(t, hop, vrf_id, claim))
+
+	const NODE_SOURCE_PEER *p = &t->Peers[hop];
+	if (NodeSourceGroupHolds(p->Groups, p->NumGroups, vrf_id, claim->Group, claim->HasTags, claim->Tags))
 		return NODE_SOURCE_CARRIED;
-	if (claim->HasGeneration && claim->Generation != NodeSourceGroupGeneration(t, hop, vrf_id))
+
+	UINT generation = NodeSourceGroupGeneration(t, hop, vrf_id);
+	if (claim->HasGeneration && generation != 0 && claim->Generation == generation)
+		return NODE_SOURCE_REFUSED;
+	if (NodeSourceGroupHolds(p->Before, p->NumBefore, vrf_id, claim->Group, claim->HasTags, claim->Tags) ||
+	    NodeSourceGroupKnown(t, vrf_id, claim->Group) == false)
 		return NODE_SOURCE_IGNORED;
 
 	return NODE_SOURCE_REFUSED;

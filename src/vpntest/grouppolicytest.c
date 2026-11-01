@@ -28,8 +28,16 @@
 //   leads to node-a, is in no group and dropped. In the tag mode off the option is ignored and the map judges each
 //   packet, and node-a sends none, which node-b counts as missing.
 // Each claim names the group generation of node-a in red (Cedar/NodeSourceGroup.c), the Generation of node-a's state from
-// which on it may assert what it asserts there, 1 while the states agree. A node on a stale state must not misjudge the
-// honest packets of a peer on another one:
+// which on it may assert what it asserts there, 1 while the states agree. A claim of a group that node-a may not assert is
+// refused whatever group generation it names: over noise and geneve node-a stamps server with the group generation
+// 0xffffffff, which no state of node-b gives it, and node-b drops the packet, counts it as refused and logs it, in the
+// first line of its node log about refused claims, which names that group generation. Over geneve a claim of server from
+// the harness tunnel endpoint that names another group generation of node-a than node-b's state is refused too, while a
+// claim of admin that names one is taken, as a group ID means the same set of tags in every Generation: it arrives.
+// A node on a stale state must not misjudge the honest packets of a peer on another one, over each kind of link, the group
+// policy extension of VXLAN too, which has no room for the group generation: it ignores a claim of a group that the peer
+// could assert before the Generation that last changed its groups, and one of a group ID that its state does not know at
+// all, as a group of a Generation that it does not run yet. Over noise, vxlan and geneve:
 // - The controller deletes Device phone: its Generation goes in at node-b, while node-a forwards on the one before, which
 //   still holds phone, as a node that the controller cannot reach does. Node-a may assert another set of groups from that
 //   Generation on, so node-b's state gives it the group generation 2, and node-a's own still names 1. Guest and server keep
@@ -37,17 +45,20 @@
 //   10.0.0.1 and drops the packet as guest; the packet of 10.0.0.50 has no route of red to node-a any more and is dropped
 //   before any group. Once node-a stamps admin, the retired group of phone, on the packets of its own address, node-b
 //   ignores the claim, made on the state before, and the map judges the packet as guest: dropped, and counted as ignored,
-//   not as a refused claim. The same claim that names the group generation 2, which node-a may not make, is an unknown
-//   group.
+//   not as a refused claim. Over noise and geneve the same claim that names the group generation 2, which node-a may not
+//   make on that state, is an unknown group.
 // - The other way round: node-a runs the Generation that deletes phone, of the group generation 2, and node-b the one
 //   before. Node-a stamps guest, which keeps its number, and node-b takes it as guest, not as admin, the group of phone
 //   whose gateway node-a was in node-b's state: dropped. Where numbers by rank would have given guest the group ID of admin
 //   in the Generation without phone, node-b would have let the packet in as admin. Node-a, whose tags are ops in a
 //   Generation of the group generation 3, stamps ops, a group that node-b's state does not know: node-b ignores the claim,
 //   made on another state, and the map judges the packet as guest, counted as ignored.
-// - Over geneve, a claim of server from the harness tunnel endpoint that names another group generation of node-a than
-//   node-b's state is ignored, and the map judges the packet, as guest: dropped; a claim of admin that names one is taken,
-//   as a group ID means the same set of tags in every Generation: it arrives.
+// - The Groups of the owner of phone change, so that its tags are admin and ops, a set of tags whose group ID 5 comes after
+//   the largest one of red. While node-a runs that Generation, of the group generation 4, and node-b the one before, node-a
+//   stamps 5 on the packets of phone, a group that node-b's state does not know: node-b ignores the claim, and the map
+//   judges the packet as phone, admin: it arrives. While node-b runs it and node-a the one before, node-a stamps admin,
+//   which it could assert before: node-b ignores the claim, and the map judges the packet as phone, whose tags are admin
+//   and ops now: it arrives.
 // - The Generations roll out: node-a reports the Capability tags and stamps admin on the records that it sends node-b,
 //   while the state of node-b gives node-a the frame version 0 and none of its groups, as until the Generation of node-b
 //   goes in, or while the controller cannot reach node-b. Node-b ignores those claims and judges the packets by the map:
@@ -134,22 +145,28 @@
 
 // The groups of red, as the controller numbers them when red comes in one intent (desired/sourcegroup.go): one for each set
 // of tags of an endpoint, admin, guest and server in name order, and a bit of the tag set for each tag of red in name
-// order; ops comes with a later intent and takes the numbers after them. A number stays with its set of tags or its tag
-// for good, also once no endpoint has them.
+// order; ops comes with a later intent and takes the numbers after them, and the set of admin and ops, the tags of phone
+// once the Groups of its owner change, with one after that. A number stays with its set of tags or its tag for good, also
+// once no endpoint has them.
 #define	GPTEST_ADMIN			1
 #define	GPTEST_GUEST			2
 #define	GPTEST_SERVER			3
 #define	GPTEST_OPS				4
+#define	GPTEST_ADMIN_OPS		5
 #define	GPTEST_ADMIN_TAGS		0x1ULL
 #define	GPTEST_GUEST_TAGS		0x2ULL
 #define	GPTEST_SERVER_TAGS		0x4ULL
 #define	GPTEST_OPS_TAGS			0x8ULL
+#define	GPTEST_ADMIN_OPS_TAGS	0x9ULL
 
 // The group generations of node-a in red: the one of the states that agree, the one of the Generation that deletes Device
-// phone, and the one of the Generation in which the tags of node-a are ops
+// phone, the one of the Generation in which the tags of node-a are ops, and the one of the Generation in which the tags of
+// phone are admin and ops; and one that no state of node-a names
 #define	GPTEST_SINCE			1
 #define	GPTEST_SINCE_NO_PHONE	2
 #define	GPTEST_SINCE_OPS		3
+#define	GPTEST_SINCE_ADMIN_OPS	4
+#define	GPTEST_SINCE_FORGED		0xFFFFFFFF
 
 // What node-b counts a packet as in the tag mode of the case (NODE_SOURCE_GROUP_STATUS), or GPTEST_UNCOUNTED: its overlay
 // drops it before it judges its source group, as no route of red leads its source to node-a
@@ -216,6 +233,12 @@ static GPTEST_CASE gptest_rogue[] =
 	{"a packet from 10.0.0.1 that claims server, which node-a may not assert: dropped as an unknown group, counted as refused", false, "10.0.0.1", false, 0, 0, GPTEST_REFUSED, false},
 };
 
+// ... and names the group generation 0xffffffff, which node-b's state does not give node-a
+static GPTEST_CASE gptest_rogue_generation[] =
+{
+	{"a packet from 10.0.0.1 that claims server and names the group generation 0xffffffff, which node-b's state does not give node-a: refused all the same, dropped as an unknown group", false, "10.0.0.1", false, 0, 0, GPTEST_REFUSED, false},
+};
+
 // The datagrams of the harness tunnel endpoint on 127.0.0.1, the address of node-a, in the tag mode trusted-underlay
 static GPTEST_CASE gptest_trusted[] =
 {
@@ -254,7 +277,7 @@ static GPTEST_CASE gptest_kept[] =
 // the state before
 static GPTEST_CASE gptest_retired[] =
 {
-	{"a packet from 10.0.0.1 that claims admin, the retired group of phone, made on the state before: node-b ignores the claim of that group generation, and the map judges the packet as guest: dropped", false, "10.0.0.1", false, 0, 0, GPTEST_IGNORED, false},
+	{"a packet from 10.0.0.1 that claims admin, the retired group of phone, made on the state before: node-b ignores the claim, and the map judges the packet as guest: dropped", false, "10.0.0.1", false, 0, 0, GPTEST_IGNORED, false},
 };
 
 // ... and with the group generation that node-b's state gives node-a, which node-a's state does not name: a forged claim
@@ -273,15 +296,28 @@ static GPTEST_CASE gptest_ahead[] =
 // ... while node-a runs a Generation in which its tags are ops, a group that node-b's state does not know
 static GPTEST_CASE gptest_ahead_ops[] =
 {
-	{"a packet from 10.0.0.1 claims ops, which node-b's state does not give node-a: node-b ignores the claim, made on another state, and the map judges the packet as guest: dropped", false, "10.0.0.1", false, 0, 0, GPTEST_IGNORED, false},
+	{"a packet from 10.0.0.1 claims ops, a group that node-b's state does not know: node-b ignores the claim, made on a later state of node-a, and the map judges the packet as guest: dropped", false, "10.0.0.1", false, 0, 0, GPTEST_IGNORED, false},
 	{"one from 10.0.0.50 carries admin, the group of phone in both states: node-b takes it, and it arrives", false, GPTEST_PHONE, false, 0, 0, GPTEST_CARRIED, true},
+};
+
+// The packets of node-a's host from the address of phone once the Groups of the owner of phone change, so that its tags are
+// admin and ops: node-a runs that Generation and node-b the one before
+static GPTEST_CASE gptest_regroup_ahead[] =
+{
+	{"a packet from 10.0.0.50 claims 5, the new group of phone, which node-b's state does not know: node-b ignores the claim, made on a later state of node-a, and the map judges the packet as phone, admin: it arrives", false, GPTEST_PHONE, false, 0, 0, GPTEST_IGNORED, true},
+};
+
+// ... node-b runs that Generation and node-a the one before
+static GPTEST_CASE gptest_regroup_behind[] =
+{
+	{"a packet from 10.0.0.50 claims admin, the group of phone that node-a could assert before: node-b ignores the claim, made on the state before, and the map judges the packet as phone, admin and ops now: it arrives", false, GPTEST_PHONE, false, 0, 0, GPTEST_IGNORED, true},
 };
 
 // The datagrams of the harness tunnel endpoint over geneve, in the tag mode trusted-underlay, that name another group
 // generation of node-a than node-b's state
 static GPTEST_CASE gptest_stale_geneve[] =
 {
-	{"trusted-underlay: a claim of server that names another group generation of node-a is ignored, and the map judges the packet from 10.0.0.1 as guest: dropped", true, "10.0.0.1", true, GPTEST_SERVER, GPTEST_SERVER_TAGS, GPTEST_IGNORED, false, true},
+	{"trusted-underlay: a claim of server that names another group generation of node-a is refused all the same: dropped as an unknown group, counted as refused", true, "10.0.0.1", true, GPTEST_SERVER, GPTEST_SERVER_TAGS, GPTEST_REFUSED, false, true},
 	{"trusted-underlay: a claim of admin that names another group generation of node-a is taken, as admin means the same in every Generation: it arrives", true, "10.0.0.1", true, GPTEST_ADMIN, GPTEST_ADMIN_TAGS, GPTEST_CARRIED, true, true},
 };
 
@@ -351,6 +387,7 @@ typedef struct GPTEST_NODE
 	USHORT GenevePort;					// ... and of Geneve
 	UINT64 Generation;					// The Generation of the last state that the test applied
 	bool NoPhone;						// Its next states hold no Device phone: the controller deleted it
+	bool AdminOps;						// Its next states give phone the tags admin and ops: the Groups of its owner changed
 	UINT64 Since;						// The group generation of node-a in red that its next states name: of its own group at node-a, of the Peer node-a at node-b
 	SRWLOCK Lock;						// Arrivals, Last and LastSize
 	volatile LONG Arrivals;				// Packets that the host took
@@ -732,10 +769,11 @@ static void GpTestVtep(GPTEST_CTX *ctx, UINT i, CONTROL_VTEP *v, bool address)
 	v->GenevePort = ctx->Nodes[i].GenevePort;
 }
 
-// The Device phone into d: its address in red and its tag admin, its source group admin when grouped, and in the state of
-// node-a, its gateway, the WireGuard key that makes node-a terminate it. The state names no WireGuard port, so node-a runs
-// no WireGuard interface for it, and the address of phone leads to node-a's host, which sends from it as phone would.
-static void GpTestPhone(CONTROL_DEVICE *d, bool gateway, bool grouped)
+// The Device phone into d: its address in red and its tag admin, or its tags admin and ops with admin_ops, its source group
+// when grouped, and in the state of node-a, its gateway, the WireGuard key that makes node-a terminate it. The state names
+// no WireGuard port, so node-a runs no WireGuard interface for it, and the address of phone leads to node-a's host, which
+// sends from it as phone would.
+static void GpTestPhone(CONTROL_DEVICE *d, bool gateway, bool grouped, bool admin_ops)
 {
 	Zero(d, sizeof(CONTROL_DEVICE));
 	StrCpy(d->Name, sizeof(d->Name), "phone");
@@ -747,6 +785,11 @@ static void GpTestPhone(CONTROL_DEVICE *d, bool gateway, bool grouped)
 	d->Addresses[0].Length = 32;
 	d->NumTags = 1;
 	StrCpy(d->Tags[0], sizeof(d->Tags[0]), "admin");
+	if (admin_ops)
+	{
+		d->NumTags = 2;
+		StrCpy(d->Tags[1], sizeof(d->Tags[1]), "ops");
+	}
 	StrCpy(d->Gateway, sizeof(d->Gateway), gptest_names[GPTEST_A]);
 
 	if (gateway)
@@ -760,8 +803,8 @@ static void GpTestPhone(CONTROL_DEVICE *d, bool gateway, bool grouped)
 
 	if (grouped)
 	{
-		d->Group = GPTEST_ADMIN;
-		d->TagSet = GPTEST_ADMIN_TAGS;
+		d->Group = (admin_ops ? GPTEST_ADMIN_OPS : GPTEST_ADMIN);
+		d->TagSet = (admin_ops ? GPTEST_ADMIN_OPS_TAGS : GPTEST_ADMIN_TAGS);
 	}
 }
 
@@ -778,7 +821,8 @@ static void GpTestRoute(CONTROL_PEER *p, char *prefix, UINT length)
 
 // Apply the next Generation of node i: its addresses, its tag and its tunnel endpoint; VRF red with the link of kind and
 // the tag mode mode, whose policy node-b enforces with the rule admin-in and node-a not at all; the other node as its
-// peer; and the Device phone, unless the node's states hold it no more (NoPhone). With tagged, both nodes report the
+// peer; and the Device phone, unless the node's states hold it no more (NoPhone), with the tags admin and ops once the
+// Groups of its owner changed (AdminOps). With tagged, both nodes report the
 // Capability tags, as the controller then makes their
 // states: node-a's own group in red is own_group with the tag set own_tags, node-b's server, each node's Peer object names
 // the group of the other and the frame version 1, and phone has its group. The group generation of node-a is the Since of
@@ -864,7 +908,7 @@ static bool GpTestApply(GPTEST_CTX *ctx, UINT i, UINT kind, UINT mode, bool tagg
 	// The Device phone, whose gateway node-a is, unless the controller deleted it
 	if (t->NoPhone == false)
 	{
-		GpTestPhone(phone, b == false, tagged || b);
+		GpTestPhone(phone, b == false, tagged || b, t->AdminOps);
 		st->NumDevices = 1;
 		st->Devices = phone;
 	}
@@ -1092,10 +1136,13 @@ static void GpTestCases(GPTEST_CTX *ctx, UINT kind, UINT mode, GPTEST_CASE *case
 
 // The packets of node-a's host over the link of kind, by the group that node-a stamps on them: guest, its own, and admin for
 // the address of phone; then admin, which it may assert as the gateway of phone, and server, the group of node-b, which it
-// may not, on the packets of its own address. Node-b logs the first claim that it refuses.
+// may not, on the packets of its own address: over noise and geneve first with the group generation 0xffffffff, which
+// node-b's state does not give node-a, then with the one that it gives. Node-b logs the first claim that it refuses, with
+// the group generation that the claim names.
 static void GpTestStamped(GPTEST_CTX *ctx, UINT kind)
 {
 	UINT mode = (kind == CONTROL_LINK_NOISE ? CONTROL_TAG_MODE_SESSION : CONTROL_TAG_MODE_TRUSTED);
+	GPTEST_NODE *a = &ctx->Nodes[GPTEST_A];
 	NODE_SOURCE_GROUP_STATUS st;
 	char what[MAX_SIZE];
 
@@ -1110,21 +1157,34 @@ static void GpTestStamped(GPTEST_CTX *ctx, UINT kind)
 	NodeSourceGroupGetStatus(ctx->Nodes[GPTEST_B].Node, &st);
 	UINT64 logged = st.Logged;
 
+	// The group generation that a claim names does not save a claim of a group that node-a may not assert; the group policy
+	// extension of VXLAN names none
+	if (kind != CONTROL_LINK_VXLAN)
+	{
+		a->Since = GPTEST_SINCE_FORGED;
+		Format(what, sizeof(what), "  %s: node-a stamps server, the group of node-b, on them with the group generation 0xffffffff, one Generation of node-a", gptest_kind_names[kind]);
+		if (GpTestCheck(ctx, GpTestApplyA(ctx, kind, CONTROL_TAG_MODE_TRUSTED, true, GPTEST_SERVER, GPTEST_SERVER_TAGS), what, "not within %u ms", GPTEST_BOUND))
+		{
+			GpTestCases(ctx, kind, mode, gptest_rogue_generation, sizeof(gptest_rogue_generation) / sizeof(gptest_rogue_generation[0]));
+		}
+		a->Since = GPTEST_SINCE;
+	}
+
 	Format(what, sizeof(what), "  %s: node-a stamps server, the group of node-b, on them, one Generation of node-a", gptest_kind_names[kind]);
 	if (GpTestCheck(ctx, GpTestApplyA(ctx, kind, CONTROL_TAG_MODE_TRUSTED, true, GPTEST_SERVER, GPTEST_SERVER_TAGS), what, "not within %u ms", GPTEST_BOUND))
 	{
 		GpTestCases(ctx, kind, mode, gptest_rogue, sizeof(gptest_rogue) / sizeof(gptest_rogue[0]));
 	}
 
-	// The first claim that node-b refused is logged; it counts the ones within NODE_SOURCE_GROUP_LOG ms after it in its next
-	// line
+	// The first claim that node-b refused is logged, over noise the one that names the group generation 0xffffffff; it counts
+	// the ones within NODE_SOURCE_GROUP_LOG ms after it in its next line
 	if (logged == 0)
 	{
 		bool ok = GpTestLogged(ctx, 1, &st);
 
-		Format(what, sizeof(what), "  %s: node-b logged the claim that it refused, as an unknown group", gptest_kind_names[kind]);
-		GpTestCheck(ctx, ok && InStr(st.Last, "node-a claimed the group 3") && InStr(st.Last, "dropped as an unknown group"), what, "%I64u lines, the last \"%s\"",
-			st.Logged, st.Last);
+		Format(what, sizeof(what), "  %s: node-b logged the first claim that it refused, as an unknown group, with the group generation 0xffffffff that it named", gptest_kind_names[kind]);
+		GpTestCheck(ctx, ok && InStr(st.Last, "node-a claimed the group 3") && InStr(st.Last, "in its group generation 4294967295") && InStr(st.Last, "dropped as an unknown group"),
+			what, "%I64u lines, the last \"%s\"", st.Logged, st.Last);
 	}
 
 	Format(what, sizeof(what), "  %s: node-a stamps guest again, one Generation of node-a", gptest_kind_names[kind]);
@@ -1149,39 +1209,53 @@ static void GpTestInjected(GPTEST_CTX *ctx, UINT kind)
 	}
 }
 
-// The controller deletes Device phone, over noise: its Generation goes in at node-b, whose state then holds no phone and
-// gives node-a guest alone, of the group generation 2, while node-a runs the one before, which holds phone and names the
-// group generation 1, as a node that the controller cannot reach forwards on the state that it applied last. Guest and
-// server keep their numbers and admin, the group of phone, is retired: a claim of guest is still taken, a claim of admin
-// made on the state before is ignored, and one that names the group generation 2 is an unknown group.
-static void GpTestRetired(GPTEST_CTX *ctx)
+// The tag mode in which node-b judges the packets of node-a over the link of kind in the tag mode trusted-underlay: session
+// for the records of the Noise session, trusted-underlay for the datagrams of vxlan and geneve
+static UINT GpTestModeOf(UINT kind)
+{
+	return (kind == CONTROL_LINK_NOISE ? CONTROL_TAG_MODE_SESSION : CONTROL_TAG_MODE_TRUSTED);
+}
+
+// The controller deletes Device phone, over the link of kind: its Generation goes in at node-b, whose state then holds no
+// phone and gives node-a guest alone, of the group generation 2, while node-a runs the one before, which holds phone and
+// names the group generation 1, as a node that the controller cannot reach forwards on the state that it applied last.
+// Guest and server keep their numbers and admin, the group of phone, is retired: a claim of guest is still taken, a claim
+// of admin made on the state before is ignored, and over noise and geneve one that names the group generation 2 is an
+// unknown group. The group policy extension of VXLAN names no group generation.
+static void GpTestRetired(GPTEST_CTX *ctx, UINT kind)
 {
 	GPTEST_NODE *a = &ctx->Nodes[GPTEST_A];
 	GPTEST_NODE *b = &ctx->Nodes[GPTEST_B];
+	UINT mode = GpTestModeOf(kind);
 	char what[MAX_SIZE];
 
-	Print("[the controller deletes Device phone, whose group admin is retired: node-b runs that Generation, node-a the one before, over noise]\n");
+	Print("[the controller deletes Device phone, whose group admin is retired: node-b runs that Generation, node-a the one before, over %s]\n", gptest_kind_names[kind]);
 	b->NoPhone = true;
 	b->Since = GPTEST_SINCE_NO_PHONE;
-	bool applied = GpTestApply(ctx, GPTEST_B, CONTROL_LINK_NOISE, CONTROL_TAG_MODE_TRUSTED, true, 0, 0) &&
-		GpTestApply(ctx, GPTEST_A, CONTROL_LINK_NOISE, CONTROL_TAG_MODE_TRUSTED, true, GPTEST_GUEST, GPTEST_GUEST_TAGS) && GpTestWaitLinks(ctx);
-	if (GpTestCheck(ctx, applied, "The link of red is noise; the state of node-b holds no phone and gives node-a guest alone, of the group generation 2, and the state of node-a holds phone still, of the group generation 1",
-		"not within %u ms", GPTEST_BOUND))
+	bool applied = GpTestApply(ctx, GPTEST_B, kind, CONTROL_TAG_MODE_TRUSTED, true, 0, 0) &&
+		GpTestApply(ctx, GPTEST_A, kind, CONTROL_TAG_MODE_TRUSTED, true, GPTEST_GUEST, GPTEST_GUEST_TAGS) && GpTestWaitLinks(ctx);
+	Format(what, sizeof(what), "The link of red is %s; the state of node-b holds no phone and gives node-a guest alone, of the group generation 2, and the state of node-a holds phone still, of the group generation 1",
+		gptest_kind_names[kind]);
+	if (GpTestCheck(ctx, applied, what, "not within %u ms", GPTEST_BOUND))
 	{
-		GpTestCases(ctx, CONTROL_LINK_NOISE, CONTROL_TAG_MODE_SESSION, gptest_kept, sizeof(gptest_kept) / sizeof(gptest_kept[0]));
+		GpTestCases(ctx, kind, mode, gptest_kept, sizeof(gptest_kept) / sizeof(gptest_kept[0]));
 
-		Format(what, sizeof(what), "  noise: node-a stamps admin, the retired group of phone, on the packets of its own address, of the group generation 1, one Generation of node-a");
-		if (GpTestCheck(ctx, GpTestApplyA(ctx, CONTROL_LINK_NOISE, CONTROL_TAG_MODE_TRUSTED, true, GPTEST_ADMIN, GPTEST_ADMIN_TAGS), what, "not within %u ms", GPTEST_BOUND))
+		Format(what, sizeof(what), "  %s: node-a stamps admin, the retired group of phone, on the packets of its own address, of the group generation 1, one Generation of node-a",
+			gptest_kind_names[kind]);
+		if (GpTestCheck(ctx, GpTestApplyA(ctx, kind, CONTROL_TAG_MODE_TRUSTED, true, GPTEST_ADMIN, GPTEST_ADMIN_TAGS), what, "not within %u ms", GPTEST_BOUND))
 		{
-			GpTestCases(ctx, CONTROL_LINK_NOISE, CONTROL_TAG_MODE_SESSION, gptest_retired, sizeof(gptest_retired) / sizeof(gptest_retired[0]));
+			GpTestCases(ctx, kind, mode, gptest_retired, sizeof(gptest_retired) / sizeof(gptest_retired[0]));
 		}
 
 		// A claim that names the group generation of node-b's state, for a group that node-a may not assert in it
-		a->Since = GPTEST_SINCE_NO_PHONE;
-		Format(what, sizeof(what), "  noise: node-a stamps admin with the group generation 2 that node-b's state gives it, one Generation of node-a");
-		if (GpTestCheck(ctx, GpTestApplyA(ctx, CONTROL_LINK_NOISE, CONTROL_TAG_MODE_TRUSTED, true, GPTEST_ADMIN, GPTEST_ADMIN_TAGS), what, "not within %u ms", GPTEST_BOUND))
+		if (kind != CONTROL_LINK_VXLAN)
 		{
-			GpTestCases(ctx, CONTROL_LINK_NOISE, CONTROL_TAG_MODE_SESSION, gptest_forged, sizeof(gptest_forged) / sizeof(gptest_forged[0]));
+			a->Since = GPTEST_SINCE_NO_PHONE;
+			Format(what, sizeof(what), "  %s: node-a stamps admin with the group generation 2 that node-b's state gives it, one Generation of node-a", gptest_kind_names[kind]);
+			if (GpTestCheck(ctx, GpTestApplyA(ctx, kind, CONTROL_TAG_MODE_TRUSTED, true, GPTEST_ADMIN, GPTEST_ADMIN_TAGS), what, "not within %u ms", GPTEST_BOUND))
+			{
+				GpTestCases(ctx, kind, mode, gptest_forged, sizeof(gptest_forged) / sizeof(gptest_forged[0]));
+			}
 		}
 	}
 	b->NoPhone = false;
@@ -1189,35 +1263,83 @@ static void GpTestRetired(GPTEST_CTX *ctx)
 	b->Since = GPTEST_SINCE;
 }
 
-// The other way round, over noise: node-a runs the Generation that deletes Device phone, of the group generation 2, while
-// node-b runs the one before, which holds phone and gives node-a the group generation 1. Guest keeps its number, so node-b
-// takes the claim of guest as guest. Then node-a runs a Generation in which its tags are ops, of the group generation 3,
-// with phone: node-b ignores the claim of ops, which its state does not give node-a, and takes the claim of admin of phone.
-static void GpTestAhead(GPTEST_CTX *ctx)
+// The other way round, over the link of kind: node-a runs the Generation that deletes Device phone, of the group generation
+// 2, while node-b runs the one before, which holds phone and gives node-a the group generation 1. Guest keeps its number,
+// so node-b takes the claim of guest as guest. Then node-a runs a Generation in which its tags are ops, of the group
+// generation 3, with phone: node-b ignores the claim of ops, a group that its state does not know, and takes the claim of
+// admin of phone.
+static void GpTestAhead(GPTEST_CTX *ctx, UINT kind)
 {
 	GPTEST_NODE *a = &ctx->Nodes[GPTEST_A];
+	UINT mode = GpTestModeOf(kind);
 	char what[MAX_SIZE];
 
-	Print("[the controller deletes Device phone: node-a runs that Generation, node-b the one before, over noise]\n");
+	Print("[the controller deletes Device phone: node-a runs that Generation, node-b the one before, over %s]\n", gptest_kind_names[kind]);
 	a->NoPhone = true;
 	a->Since = GPTEST_SINCE_NO_PHONE;
-	bool applied = GpTestApply(ctx, GPTEST_B, CONTROL_LINK_NOISE, CONTROL_TAG_MODE_TRUSTED, true, 0, 0) &&
-		GpTestApply(ctx, GPTEST_A, CONTROL_LINK_NOISE, CONTROL_TAG_MODE_TRUSTED, true, GPTEST_GUEST, GPTEST_GUEST_TAGS) && GpTestWaitLinks(ctx);
-	if (GpTestCheck(ctx, applied, "The link of red is noise; the state of node-a holds no phone, of the group generation 2, and the state of node-b holds phone still and gives node-a the group generation 1",
-		"not within %u ms", GPTEST_BOUND))
+	bool applied = GpTestApply(ctx, GPTEST_B, kind, CONTROL_TAG_MODE_TRUSTED, true, 0, 0) &&
+		GpTestApply(ctx, GPTEST_A, kind, CONTROL_TAG_MODE_TRUSTED, true, GPTEST_GUEST, GPTEST_GUEST_TAGS) && GpTestWaitLinks(ctx);
+	Format(what, sizeof(what), "The link of red is %s; the state of node-a holds no phone, of the group generation 2, and the state of node-b holds phone still and gives node-a the group generation 1",
+		gptest_kind_names[kind]);
+	if (GpTestCheck(ctx, applied, what, "not within %u ms", GPTEST_BOUND))
 	{
-		GpTestCases(ctx, CONTROL_LINK_NOISE, CONTROL_TAG_MODE_SESSION, gptest_ahead, sizeof(gptest_ahead) / sizeof(gptest_ahead[0]));
+		GpTestCases(ctx, kind, mode, gptest_ahead, sizeof(gptest_ahead) / sizeof(gptest_ahead[0]));
 
 		a->NoPhone = false;
 		a->Since = GPTEST_SINCE_OPS;
-		Format(what, sizeof(what), "  noise: node-a runs a Generation in which its tags are ops, of the group generation 3, with phone, one Generation of node-a");
-		if (GpTestCheck(ctx, GpTestApplyA(ctx, CONTROL_LINK_NOISE, CONTROL_TAG_MODE_TRUSTED, true, GPTEST_OPS, GPTEST_OPS_TAGS), what, "not within %u ms", GPTEST_BOUND))
+		Format(what, sizeof(what), "  %s: node-a runs a Generation in which its tags are ops, of the group generation 3, with phone, one Generation of node-a", gptest_kind_names[kind]);
+		if (GpTestCheck(ctx, GpTestApplyA(ctx, kind, CONTROL_TAG_MODE_TRUSTED, true, GPTEST_OPS, GPTEST_OPS_TAGS), what, "not within %u ms", GPTEST_BOUND))
 		{
-			GpTestCases(ctx, CONTROL_LINK_NOISE, CONTROL_TAG_MODE_SESSION, gptest_ahead_ops, sizeof(gptest_ahead_ops) / sizeof(gptest_ahead_ops[0]));
+			GpTestCases(ctx, kind, mode, gptest_ahead_ops, sizeof(gptest_ahead_ops) / sizeof(gptest_ahead_ops[0]));
 		}
 	}
 	a->NoPhone = false;
 	a->Since = GPTEST_SINCE;
+}
+
+// The Groups of the owner of phone change, over the link of kind, so that the tags of phone are admin and ops, whose group
+// ID 5 comes after the largest one of red, and node-a may assert another set of groups, of the group generation 4. First
+// node-a runs that Generation and node-b the one before: node-a stamps 5 on the packets of phone, which node-b's state does
+// not know, and node-b ignores the claim. Then node-b runs it and node-a the one before: node-a stamps admin, which it
+// could assert before, and node-b ignores the claim. Either way the map of node-b judges the packet as phone, which
+// admin-in allows: honest packets go while the Generations roll out, over vxlan too, whose claims name no group generation.
+static void GpTestRegroup(GPTEST_CTX *ctx, UINT kind)
+{
+	GPTEST_NODE *a = &ctx->Nodes[GPTEST_A];
+	GPTEST_NODE *b = &ctx->Nodes[GPTEST_B];
+	UINT mode = GpTestModeOf(kind);
+	char what[MAX_SIZE];
+
+	Print("[the Groups of the owner of phone change, so that its tags are admin and ops: one node runs that Generation, the other the one before, over %s]\n", gptest_kind_names[kind]);
+	bool applied = GpTestApply(ctx, GPTEST_B, kind, CONTROL_TAG_MODE_TRUSTED, true, 0, 0) &&
+		GpTestApply(ctx, GPTEST_A, kind, CONTROL_TAG_MODE_TRUSTED, true, GPTEST_GUEST, GPTEST_GUEST_TAGS) && GpTestWaitLinks(ctx);
+	Format(what, sizeof(what), "The link of red is %s; one Generation of each node, which agree, node-b first", gptest_kind_names[kind]);
+	if (GpTestCheck(ctx, applied, what, "not within %u ms", GPTEST_BOUND))
+	{
+		a->AdminOps = true;
+		a->Since = GPTEST_SINCE_ADMIN_OPS;
+		Format(what, sizeof(what), "  %s: node-a runs the Generation in which phone is admin and ops, group 5, of the group generation 4, and node-b the one before", gptest_kind_names[kind]);
+		if (GpTestCheck(ctx, GpTestApplyA(ctx, kind, CONTROL_TAG_MODE_TRUSTED, true, GPTEST_GUEST, GPTEST_GUEST_TAGS), what, "not within %u ms", GPTEST_BOUND))
+		{
+			GpTestCases(ctx, kind, mode, gptest_regroup_ahead, sizeof(gptest_regroup_ahead) / sizeof(gptest_regroup_ahead[0]));
+		}
+
+		a->AdminOps = false;
+		a->Since = GPTEST_SINCE;
+		b->AdminOps = true;
+		b->Since = GPTEST_SINCE_ADMIN_OPS;
+		applied = GpTestApply(ctx, GPTEST_B, kind, CONTROL_TAG_MODE_TRUSTED, true, 0, 0) &&
+			GpTestApply(ctx, GPTEST_A, kind, CONTROL_TAG_MODE_TRUSTED, true, GPTEST_GUEST, GPTEST_GUEST_TAGS) && GpTestWaitLinks(ctx);
+		Format(what, sizeof(what), "  %s: node-b runs the Generation in which phone is admin and ops and gives node-a the group generation 4, and node-a the one before", gptest_kind_names[kind]);
+		if (GpTestCheck(ctx, applied, what, "not within %u ms", GPTEST_BOUND))
+		{
+			GpTestCases(ctx, kind, mode, gptest_regroup_behind, sizeof(gptest_regroup_behind) / sizeof(gptest_regroup_behind[0]));
+		}
+	}
+	a->AdminOps = false;
+	b->AdminOps = false;
+	a->Since = GPTEST_SINCE;
+	b->Since = GPTEST_SINCE;
 }
 
 // Add the route of the pool of red, 10.0.0.0/24, to the routes of the Peer p: a spoke reaches every other address of red
@@ -1309,7 +1431,7 @@ static bool GpTestApplyHub(GPTEST_CTX *ctx, UINT i, UINT own_group, UINT64 own_t
 	// The Device phone, whose gateway node-a is
 	if (i != GPTEST_C)
 	{
-		GpTestPhone(phone, i == GPTEST_A, true);
+		GpTestPhone(phone, i == GPTEST_A, true, false);
 		st->NumDevices = 1;
 		st->Devices = phone;
 	}
@@ -1614,8 +1736,9 @@ static void GpTestClose(GPTEST_CTX *ctx)
 	}
 }
 
-// The cases over noise, vxlan and geneve, each in a Generation of its own of both nodes, then the retired group of phone
-// both ways, the rollout of the Generations, the records of frame version 0, the EVPN gateway and the hub
+// The cases over noise, vxlan and geneve, each in a Generation of its own of both nodes, then over each the retired group of
+// phone both ways and the new group of phone both ways, the rollout of the Generations, the records of frame version 0, the
+// EVPN gateway and the hub
 static void GpTestRun(GPTEST_CTX *ctx)
 {
 	UINT kinds[3] = {CONTROL_LINK_NOISE, CONTROL_LINK_VXLAN, CONTROL_LINK_GENEVE};
@@ -1637,9 +1760,14 @@ static void GpTestRun(GPTEST_CTX *ctx)
 		}
 	}
 
-	// The Generation that deletes Device phone at node-b, and the one before at node-a; then the other way round
-	GpTestRetired(ctx);
-	GpTestAhead(ctx);
+	// Over each kind of link: the Generation that deletes Device phone at node-b, and the one before at node-a; then the
+	// other way round; then the Generation in which the Groups of the owner of phone change, at one node before the other
+	for (UINT k = 0;k < 3;k++)
+	{
+		GpTestRetired(ctx, kinds[k]);
+		GpTestAhead(ctx, kinds[k]);
+		GpTestRegroup(ctx, kinds[k]);
+	}
 
 	// One Generation of each node: node-b's without the groups of node-a, node-a's that stamps admin
 	Print("[the Generations roll out: node-a stamps its records before node-b knows its groups, over noise]\n");
@@ -1665,7 +1793,7 @@ static void GpTestRun(GPTEST_CTX *ctx)
 }
 
 // grouppolicy: the policy of a VRF by the source group that a packet carries
-RANZ_TEST_TAGS("grouppolicy", grouppolicy_test, "core", "Source group policy (SDN-87): between two nodes, a rule written by tag allows or denies a packet by the source group that it carries, over noise, vxlan and geneve; a claim of a group that the sending node may not assert is dropped, counted and logged; a packet without one is judged by the map of address to group; trusted-underlay honours a forged group and off ignores it; a node on a stale state takes the claims of the groups that it knows and ignores the others, made on another state of the peer; a node ignores the claims of a peer whose groups it does not know yet; a node of frame version 0 still gets through; an EVPN gateway judges the source group of a packet of a peer that it hands to the fabric; the hub of a VRF of topology hub-and-spoke judges the source group of a packet that it sends on from one spoke to another.");
+RANZ_TEST_TAGS("grouppolicy", grouppolicy_test, "core", "Source group policy (SDN-87): between two nodes, a rule written by tag allows or denies a packet by the source group that it carries, over noise, vxlan and geneve; a claim of a group that the sending node may not assert is dropped, counted and logged, whatever group generation it names; a packet without one is judged by the map of address to group; trusted-underlay honours a forged group and off ignores it; over each kind of link a node on a stale state takes the claims of the groups that the peer may assert, and ignores a claim of a group that the peer could assert before or of a group ID that its state does not know; a node ignores the claims of a peer whose groups it does not know yet; a node of frame version 0 still gets through; an EVPN gateway judges the source group of a packet of a peer that it hands to the fabric; the hub of a VRF of topology hub-and-spoke judges the source group of a packet that it sends on from one spoke to another.");
 void grouppolicy_test(UINT num, char **arg)
 {
 	GPTEST_CTX *ctx = ZeroMalloc(sizeof(GPTEST_CTX));

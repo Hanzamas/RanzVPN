@@ -42,23 +42,27 @@ import (
 // assert in a VRF hold the same group generation for it. A Node takes the claim of a group that its state
 // lets the peer assert, whatever group generation the claim names, as the numbers mean the same in every
 // Generation. It takes the claim of another group for an unknown group, which it drops, counts and logs,
-// when the claim names the group generation that its state gives the peer, or none, as the group policy
-// extension of VXLAN has no room for one. A claim of another group generation was made on another state of
-// the peer, the one before or the one after the Node's own: the Node judges its packet by the map of address
-// to group, as it judges a packet without a claim, and counts it as ignored (Cedar/NodeSourceGroup.c). The
-// map gives the packet no more than its address gives it, so a claim that the Node ignores gains nothing.
+// whatever group generation the claim names, unless a rollout of the Generations explains it, as the
+// claim was made on another state of the peer, the one before or the one after the Node's own: a group
+// that the peer could assert before the Generation of the Node that last changed its groups, or a group
+// ID that the state of the Node does not know at all, as a new set of tags takes the group ID after the
+// largest one. That holds for the group policy extension of VXLAN too, which has no room for the group
+// generation. The Node judges the packet of such a claim by the map of address to group, as it judges a
+// packet without a claim, and counts it as ignored (Cedar/NodeSourceGroup.c); a claim that names the group
+// generation that its state gives the peer was made on that state, and no rollout explains it. The map
+// gives the packet no more than its address gives it, so a claim that the Node ignores gains nothing.
 //
 // A Node that reports the Capability tags gets its own group in each of its VRFs (NodeConfig.groups)
 // and the group of each Device of its state (Device.group, Device.tag_set), and of each peer that
 // reports it too the group of the peer in each VRF that they share (Peer.groups). Those groups, and the
 // groups of the Devices whose gateway a peer is, are the groups that the peer may assert: the Node takes
-// another claim of the peer as an unknown group, which it drops. The records of the Noise sessions that
-// the Node sends such a peer are of frame version FrameVersion (Peer.frame_version), which carry the
-// source group before the packet. A Node that does not report the Capability gets its state as Compile
-// made it, and so does a peer of it for it: a Node of an older release skips the fields that it does not
-// know and gets no record of frame version 1. The tag mode of the Networks of a VRF (intent/tagmode.go)
-// goes in its Vrf object for every Node (Vrf.tag_mode), unspecified for off, so that a VRF in off is the
-// one it was before the source groups.
+// another claim of the peer, which no rollout explains, as an unknown group, which it drops. The records
+// of the Noise sessions that the Node sends such a peer are of frame version FrameVersion
+// (Peer.frame_version), which carry the source group before the packet. A Node that does not report the
+// Capability gets its state as Compile made it, and so does a peer of it for it: a Node of an older
+// release skips the fields that it does not know and gets no record of frame version 1. The tag mode of
+// the Networks of a VRF (intent/tagmode.go) goes in its Vrf object for every Node (Vrf.tag_mode),
+// unspecified for off, so that a VRF in off is the one it was before the source groups.
 
 // MaxTagBits is the number of the tags of a VRF that a tag set carries: the first ones that the VRF gave
 // a bit.

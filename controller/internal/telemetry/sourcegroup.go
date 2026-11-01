@@ -26,9 +26,11 @@ const (
 
 // SourceGroupCounters are the packets of the peers that a node judged in one tag mode since the node
 // started: Carried by the source group that they carried; Missing carried none and Ignored carried one
-// that the node ignores, in the mode off or of a peer whose groups it does not know yet, both judged by
-// the map of address to group; Refused claimed a group that the sending node may not assert, and were
-// dropped as an unknown group.
+// that the node ignores, in the mode off, of a peer whose groups it does not know yet, or a claim that
+// a rollout of the Generations explains (a group that the peer could assert before, or a group ID that
+// the node's state does not know), both judged by the map of address to group; Refused claimed a group
+// that the sending node may not assert, whatever group generation the claim names, and were dropped as
+// an unknown group.
 type SourceGroupCounters struct {
 	Mode    string `json:"mode"`
 	Carried uint64 `json:"carried"`

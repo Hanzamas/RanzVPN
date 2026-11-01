@@ -30,10 +30,13 @@ import (
 // What a Node may assert in a VRF changes with the intent, though, and the Generations of two Nodes go in
 // at different times. So each group of a Node carries its group generation in the VRF, the Generation of
 // its state from which on it may assert what it asserts there, in its NodeConfig and in its Peer object
-// at the other Nodes, and its claims name it: a Node takes the claim of a group that the sender may not
-// assert by its state for an unknown group only when the claim names the group generation that its state
-// gives the sender, and judges the packet by the map of address to group otherwise. The group generation
-// comes from the Generations that the store holds with the states, so it survives a restart too.
+// at the other Nodes, and its claims name it. A Node takes the claim of a group that the sender may not
+// assert by its state for an unknown group, whatever group generation it names, unless a rollout of the
+// Generations explains it: a group that the sender could assert before, or a group ID that the state of
+// the Node does not know, whose packet it judges by the map of address to group; a claim that names the
+// group generation that its state gives the sender has no such excuse (Cedar/NodeSourceGroup.c). The
+// group generation comes from the Generations that the store holds with the states, so it survives a
+// restart too.
 
 // groupState is what the controller keeps for the source groups beside the intent.
 type groupState struct {
