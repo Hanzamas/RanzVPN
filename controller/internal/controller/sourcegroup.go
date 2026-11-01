@@ -37,12 +37,24 @@ import (
 // group generation that its state gives the sender has no such excuse (Cedar/NodeSourceGroup.c). The
 // group generation comes from the Generations that the store holds with the states, so it survives a
 // restart too.
+//
+// A claim of a group ID that the state of the Node gives another endpoint has no excuse either, though a
+// sender whose tags moved into its set of tags makes it honestly. So a compilation holds the groups of a
+// Node in a VRF while a peer runs a state that would drop one of them, the one that the peer acknowledged
+// last or the one in flight to it (desired.HoldGroups), and notes the peers that each hold waits for. The
+// acknowledgement of such a peer recompiles the intent once it was the last that a hold waited for
+// (releaseGroups): the Node gets its next Generation without the hold. The holds come from the states and
+// the acknowledgements that the store holds, so the first compilation after a restart makes them again.
 
-// groupState is what the controller keeps for the source groups beside the intent.
+// groupState is what the controller keeps for the source groups beside the intent. Controller.mu guards it.
 type groupState struct {
-	// numbers are the numbers of the source groups that the store holds, by VRF id. Controller.mu guards them, as it
-	// does the intent that they are compiled with.
+	// numbers are the numbers of the source groups that the store holds, by VRF id, which the intent is compiled with.
 	numbers desired.GroupNumbers
+	// pending are the peers that the source groups held by each Node wait for (desired.HoldGroups), by that Node. A
+	// compilation adds the ones that it finds, and the acknowledgement of a peer takes it away once it no longer runs a
+	// state that would drop a held group (releaseGroups). One that a compilation adds and commit does not store goes with
+	// the first acknowledgement of its peer.
+	pending map[string]map[string]bool
 }
 
 // loadGroupNumbers reads the numbers of the source groups from the store.
@@ -64,7 +76,9 @@ func (c *Controller) loadGroupNumbers(ctx context.Context) error {
 // tags of in that have none take now, which it returns for commit to store. Each group of a Node carries
 // the group generation of the Node in its VRF, which the claims of the Node name (desired.GroupGenerations):
 // the Generation that commit gives its state, the one after the Generation of its state now, when the
-// groups that it may assert there change, and the one of its state now otherwise. c.mu is held.
+// groups that it may assert there change, and the one of its state now otherwise. The own group of a Node
+// is held in a VRF while a peer runs a state that would drop one of its groups there (desired.HoldGroups),
+// and the peers that the holds wait for go into c.groups.pending. c.mu is held.
 func (c *Controller) withSourceGroups(in intent.Intent, states map[string]desired.State) desired.GroupNumbers {
 	added := desired.NumberGroups(in, c.groups.numbers)
 	desired.SourceGroups(in, states, c.groups.numbers.With(added), func(node string) bool {
@@ -86,7 +100,92 @@ func (c *Controller) withSourceGroups(in intent.Intent, states map[string]desire
 		gens[name] = desired.GroupGenerations(st, prev, name, next)
 	}
 	desired.WithGroupGenerations(states, gens)
+	// A Node holds its groups in a VRF while a peer runs a state that would drop one of them as an unknown group
+	holds := desired.HoldGroups(states, func(node string) desired.State {
+		if n := c.nodes[node]; n != nil {
+			return n.state
+		}
+		return nil
+	}, c.runs)
+	for node, peers := range holds {
+		if c.groups.pending == nil {
+			c.groups.pending = map[string]map[string]bool{}
+		}
+		if c.groups.pending[node] == nil {
+			c.groups.pending[node] = map[string]bool{}
+		}
+		for _, p := range peers {
+			c.groups.pending[node][p] = true
+		}
+	}
 	return added
+}
+
+// runs returns the states that the Node name may run before the one that it is to get: the one that it acknowledged last
+// and the one in flight to it on its stream, nil where it has none. c.mu is held.
+func (c *Controller) runs(name string) []desired.State {
+	n := c.nodes[name]
+	if n == nil {
+		return nil
+	}
+	out := []desired.State{n.acked}
+	if s := n.stream; s != nil && s.inflight != 0 {
+		out = append(out, s.sent)
+	}
+	return out
+}
+
+// releaseGroups takes the Node name away from the peers that the holds of source groups wait for, once it acknowledged a
+// Generation, where it no longer runs a state that would drop a held group (desired.Refuses). When it was the last peer of
+// a hold, the intent is compiled again, and each Node whose hold goes gets its next Generation; a hold whose release
+// could not be stored waits for the next acknowledgement of name. c.mu is held.
+func (c *Controller) releaseGroups(name string) {
+	var released []string
+	for node, peers := range c.groups.pending {
+		if !peers[name] {
+			continue
+		}
+		var st desired.State
+		if n := c.nodes[node]; n != nil {
+			st = n.state
+		}
+		if desired.Refuses(c.runs(name), node, st) {
+			continue
+		}
+		delete(peers, name)
+		if len(peers) == 0 {
+			delete(c.groups.pending, node)
+			released = append(released, node)
+		}
+	}
+	if len(released) == 0 || c.closed {
+		return
+	}
+	cp, err := c.compile(c.intent, c.lic)
+	if err == nil {
+		changed := false
+		for node, st := range cp.states {
+			if n := c.nodes[node]; n == nil || !desired.Equal(n.state, st) {
+				changed = true
+				break
+			}
+		}
+		if !changed {
+			return
+		}
+		_, err = c.commit(context.Background(), c.intent, cp, store.Changes{})
+	}
+	if err != nil {
+		c.log.Error("releasing the source groups that waited for a node", "node", name, "held", released, "err", err)
+		for _, node := range released {
+			if c.groups.pending[node] == nil {
+				c.groups.pending[node] = map[string]bool{}
+			}
+			c.groups.pending[node][name] = true
+		}
+		return
+	}
+	c.log.Info("source groups released", "node", name, "held", released)
 }
 
 // saveGroupNumbers stores the numbers of the source groups that a compilation gave (withSourceGroups),

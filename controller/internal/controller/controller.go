@@ -1324,6 +1324,8 @@ func (c *Controller) saveAck(name string, n *node, gen uint64, state desired.Sta
 	if err := c.store.SaveAck(ctx, name, gen, desired.Full(state, gen)); err != nil {
 		c.log.Error("storing an acknowledgement", "node", name, "generation", gen, "err", err)
 	}
+	// The source groups that a Node held until this node runs a state that lets it assert them (sourcegroup.go; SDN-87)
+	c.releaseGroups(name)
 }
 
 // writeLoop sends the node of s the Signals of other nodes for it, and the updates it lacks, one

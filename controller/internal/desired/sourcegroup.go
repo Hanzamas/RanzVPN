@@ -50,7 +50,10 @@ import (
 // generation. The Node judges the packet of such a claim by the map of address to group, as it judges a
 // packet without a claim, and counts it as ignored (Cedar/NodeSourceGroup.c); a claim that names the group
 // generation that its state gives the peer was made on that state, and no rollout explains it. The map
-// gives the packet no more than its address gives it, so a claim that the Node ignores gains nothing.
+// gives the packet no more than its address gives it, so a claim that the Node ignores gains nothing. Nor
+// does a rollout explain a group ID that the state of the Node gives another endpoint, which a peer whose
+// tags moved into its set of tags would claim: the Controller holds the groups of such a peer instead,
+// until the Node runs a state that lets the peer assert them (HoldGroups, sourcegrouphold.go).
 //
 // A Node that reports the Capability tags gets its own group in each of its VRFs (NodeConfig.groups)
 // and the group of each Device of its state (Device.group, Device.tag_set), and of each peer that
@@ -234,15 +237,8 @@ func (g GroupNumbers) group(id uint32, tags []string) *controlpb.SourceGroup {
 // of the Devices of st whose gateway it is, as text: each group ID with its tag set, in order, each once.
 func asserted(st State, name string, id uint32) string {
 	var groups []string
-	for _, g := range st[Key{controlpb.Kind_KIND_NODE, name}].GetNode().GetGroups() {
-		if g.GetVrfId() == id {
-			groups = append(groups, fmt.Sprintf("%d/%#x", g.GetGroup(), g.GetTagSet()))
-		}
-	}
-	for k, o := range st {
-		if d := o.GetDevice(); k.Kind == controlpb.Kind_KIND_DEVICE && d.GetGateway() == name && d.GetVrfId() == id && d.GetGroup() != 0 {
-			groups = append(groups, fmt.Sprintf("%d/%#x", d.GetGroup(), d.GetTagSet()))
-		}
+	for _, g := range stamped(st, name, id) {
+		groups = append(groups, fmt.Sprintf("%d/%#x", g.group, g.tags))
 	}
 	slices.Sort(groups)
 	return strings.Join(slices.Compact(groups), " ")
