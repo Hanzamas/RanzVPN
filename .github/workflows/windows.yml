@@ -640,12 +640,18 @@ jobs:
   # Builds with -DRANZ_ASAN=ON -DRANZ_FUZZ=ON (cmake/RanzSanitizers.cmake), runs the vpntest
   # smoke test script on that build, replays the seed corpora (deterministic), then runs every
   # fuzz target of src/fuzz for a fixed time. Any of the three failing fails the job.
+  #
+  # The job takes 44 to 45 minutes on integration (2026-11-01): the setup and the build 4, the smoke test 8, coretest 3 and
+  # the fuzz of 29 targets for 60 s each 30. A timeout of 45 minutes left no room for a start that takes a little longer: on
+  # PR 588 (CORE-P2-4, #95) the Go cache of its go.sum is 516 MB, whose restore takes 40 s more than the 15 MB of the cache of
+  # integration, and two runs of its head were cancelled at exactly 45 minutes, after "All fuzz targets passed". The 10
+  # minutes above that are for such a start.
   fuzz-asan:
     needs: plan
     if: needs.plan.outputs.full == 'true'
     runs-on: windows-latest
     name: fuzz-asan
-    timeout-minutes: 45
+    timeout-minutes: 55
     steps:
     - uses: actions/checkout@v4
       with:
