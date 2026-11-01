@@ -1628,6 +1628,12 @@ jobs:
   # that a downgrade is refused; that each MSI is refused on the wrong architecture and installs nothing,
   # and that a failed ranz install rolls the package back. The version of the package is the run number,
   # the build that ranz version prints. .github/scripts/msi-install.ps1.
+  #
+  # Every msiexec call of the script has a bound of 300 s and fails with the evidence (CI-FLAKE-6, #593). The step has a
+  # timeout of 10 minutes (the bound, the longest normal step, 77 s, and 3 minutes for the evidence) and the job one of 20 (the
+  # step, the step of the planted hang, the setup and the upload): they are the second line, for a hang that the bound cannot
+  # catch. The old ones, 30 and 45 minutes, ended nothing: three jobs hung in the step, which was still running when the
+  # service cancelled each job after 55 minutes, the 45 of the job and 10 more.
   msi:
     needs: sign_and_integrity
     strategy:
@@ -1639,7 +1645,7 @@ jobs:
         ]
     name: msi (${{ matrix.platform.ARCHITECTURE }})
     runs-on: ${{ matrix.platform.RUNNER }}
-    timeout-minutes: 45
+    timeout-minutes: 20
     steps:
     - uses: actions/checkout@v4
     - name: Download the MSIs of this architecture
@@ -1668,12 +1674,21 @@ jobs:
         Write-Host "trusted $($cer.FullName) as a root"
     - name: The MSI, checked from outside
       shell: pwsh
-      timeout-minutes: 30
+      timeout-minutes: 10
       env:
         NODE_SHA256: ${{ needs.sign_and_integrity.outputs[format('node-sha256-{0}', matrix.platform.ARCHITECTURE)] }}
         ARCHITECTURE: ${{ matrix.platform.ARCHITECTURE }}
       run: |
         . .github/scripts/msi-install.ps1 -Architecture $env:ARCHITECTURE -Dir artifacts\msi -OtherDir artifacts\msi-other -LogDir (Join-Path $env:RUNNER_TEMP 'msi-logs') -NodeSha256 $env:NODE_SHA256
+    # The bound of every msiexec call of the step above, on a planted hang: a stand-in for msiexec.exe that never ends must fail
+    # within its bound, with the evidence, and its process tree must be ended (CI-FLAKE-6, #593). It runs whatever the step above
+    # did, and it runs the real msiexec.exe once, on a package that is not there.
+    - name: The bound of a msiexec call, on a planted hang
+      if: ${{ !cancelled() }}
+      shell: pwsh
+      timeout-minutes: 3
+      run: |
+        . .github/scripts/msi-install.ps1 -SelfTest
     - uses: actions/upload-artifact@v4
       if: ${{ !cancelled() }}
       with:

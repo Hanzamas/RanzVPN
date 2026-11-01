@@ -143,13 +143,24 @@ function Stop-MsiexecCall([System.Diagnostics.Process] $call) {
 	if (-not $call.WaitForExit(10000)) { Write-Host "the process $($call.Id) is still there 10 s after it was ended" }
 }
 
-# A msiexec run: its exit code and the path of its verbose log
+# A msiexec run: its exit code and the path of its verbose log. A call that is not done after $msiexecSeconds is a hang: it prints the
+# evidence and keeps it in a file of the log folder, ends the process tree of the call and fails with a message that names the call.
 function Invoke-Msiexec([string] $verb, [string] $package, [string] $step) {
 	$log = Join-Path $LogDir "$step.log"
-	$p = Start-Process -FilePath $msiexecFile -ArgumentList ($msiexecPrefix + @($verb, "`"$package`"", '/qn', '/norestart', '/l*v', "`"$log`"")) -Wait -PassThru
+	$call = Start-Process -FilePath $msiexecFile -ArgumentList ($msiexecPrefix + @($verb, "`"$package`"", '/qn', '/norestart', '/l*v', "`"$log`"")) -PassThru
 	$script:lastLog = $log
-	Write-Host "msiexec $verb $(Split-Path -Leaf $package): exit code $($p.ExitCode) (log $log)"
-	return [pscustomobject]@{ Code = $p.ExitCode; Log = $log }
+	if (-not $call.WaitForExit($msiexecSeconds * 1000)) {
+		$what = "msiexec $verb $(Split-Path -Leaf $package)"
+		Write-Host "$what did not end within $msiexecSeconds s (step $step, process $($call.Id)). What the computer shows:"
+		$evidence = @(Get-MsiexecEvidence $call.Id $log)
+		$evidence | ForEach-Object { Write-Host $_ }
+		Set-Content -LiteralPath (Join-Path $LogDir "$step-evidence.txt") -Value $evidence
+		Stop-MsiexecCall $call
+		$script:msiexecHang = "$what did not end within $msiexecSeconds s (step $step): its process tree was ended, the evidence is above and in $step-evidence.txt, and the verbose log is $log"
+		throw $script:msiexecHang
+	}
+	Write-Host "msiexec $verb $(Split-Path -Leaf $package): exit code $($call.ExitCode) (log $log)"
+	return [pscustomobject]@{ Code = $call.ExitCode; Log = $log }
 }
 
 # The bound on a planted hang. A bound that no hang has tested proves nothing, so a stand-in for msiexec.exe that never ends, and

@@ -49,6 +49,93 @@ jobs:
       shell: pwsh
       run: Write-Host 'the next step ran'
 
+  # A package whose deferred action, which runs as SYSTEM in the Windows Installer service as the ranz install of the thin MSI
+  # does, never ends: the real msiexec.exe waits for it, and nothing in Windows Installer ends the wait.
+  build:
+    runs-on: windows-latest
+    name: build hang.msi
+    timeout-minutes: 10
+    steps:
+    - uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: '8.0.x'
+    - name: Install WiX
+      shell: pwsh
+      run: |
+        dotnet tool install --global wix --version 5.0.2
+        if ($LASTEXITCODE -ne 0) { throw "dotnet tool install exited with code $LASTEXITCODE" }
+    - name: Build hang.msi
+      shell: pwsh
+      run: |
+        $dir = Join-Path $env:RUNNER_TEMP 'hang'
+        New-Item -ItemType Directory -Force -Path $dir | Out-Null
+        Set-Content -LiteralPath (Join-Path $dir 'hang.txt') -Value 'hang'
+        Set-Content -LiteralPath (Join-Path $dir 'hang.wxs') -Value @'
+        <Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+          <Package Name="Hang 593" Manufacturer="Test" Version="1.0.0" UpgradeCode="{6F1B3D5E-8A2C-4E7B-9D10-1A2B3C4D5E6F}" Scope="perMachine" Language="1033">
+            <MediaTemplate EmbedCab="yes" />
+            <StandardDirectory Id="ProgramFilesFolder">
+              <Directory Id="HangFolder" Name="Hang593" />
+            </StandardDirectory>
+            <Feature Id="Main" Level="1">
+              <Component Id="HangFile" Directory="HangFolder" Guid="*">
+                <File Id="HangTxt" Source="hang.txt" KeyPath="yes" />
+              </Component>
+            </Feature>
+            <CustomAction Id="Hang" Directory="HangFolder" ExeCommand="cmd.exe /c ping -n 3600 127.0.0.1" Execute="deferred" Impersonate="no" Return="check" />
+            <InstallExecuteSequence>
+              <Custom Action="Hang" After="InstallFiles" Condition="NOT Installed" />
+            </InstallExecuteSequence>
+          </Package>
+        </Wix>
+        '@
+        Push-Location $dir
+        try {
+          & (Join-Path $env:USERPROFILE '.dotnet\tools\wix.exe') build -arch x86 -sval -o hang.msi hang.wxs
+          if ($LASTEXITCODE -ne 0) { throw "wix build exited with code $LASTEXITCODE" }
+        } finally {
+          Pop-Location
+        }
+    - uses: actions/upload-artifact@v4
+      with:
+        name: hang-msi
+        path: ${{ runner.temp }}/hang/hang.msi
+
+  realhang:
+    needs: build
+    strategy:
+      fail-fast: false
+      matrix:
+        platform: [
+          { ARCHITECTURE: x64, RUNNER: "windows-latest" },
+          { ARCHITECTURE: arm64, RUNNER: "windows-11-arm" }
+        ]
+    name: real hang (${{ matrix.platform.ARCHITECTURE }})
+    runs-on: ${{ matrix.platform.RUNNER }}
+    timeout-minutes: 5
+    steps:
+    - uses: actions/download-artifact@v4
+      with:
+        name: hang-msi
+        path: hang
+    - name: msiexec on it, as the old msi-install.ps1 called it, in a step with a timeout of 1 minute
+      shell: pwsh
+      timeout-minutes: 1
+      run: |
+        $msi = (Resolve-Path 'hang\hang.msi').Path
+        $log = Join-Path $env:RUNNER_TEMP 'hang.log'
+        $began = Get-Date
+        Write-Host "start $($began.ToString('o'))"
+        Start-Process -FilePath 'msiexec.exe' -ArgumentList @('/i', "`"$msi`"", '/qn', '/norestart', '/l*v', "`"$log`"") -Wait
+        Write-Host "the wait ended after $([int] ((Get-Date) - $began).TotalSeconds) s"
+    - name: The step after it
+      if: ${{ !cancelled() }}
+      shell: pwsh
+      run: |
+        Write-Host 'the next step ran'
+        Get-CimInstance Win32_Process | Where-Object { $_.Name -in 'msiexec.exe', 'cmd.exe', 'PING.EXE' } | Sort-Object ProcessId | ForEach-Object { Write-Host "process $($_.ProcessId) $($_.Name), parent $($_.ParentProcessId): $($_.CommandLine)" }
+        Get-Content -LiteralPath (Join-Path $env:RUNNER_TEMP 'hang.log') -Tail 20 -ErrorAction SilentlyContinue | ForEach-Object { Write-Host "  $_" }
+
   selftest:
     strategy:
       fail-fast: false
