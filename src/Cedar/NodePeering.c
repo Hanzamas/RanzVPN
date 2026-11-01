@@ -181,6 +181,7 @@ struct NODE_PEERING {
 	UINT FailCopies;               // A test's (NodePeeringFailNext): the copies of the state for a rebuild that fail next ...
 	UINT FailRebuilds;             // ... and then the rebuilds that fail
 	UINT FailSettles;              // ... and the copies of the state for a settle that fail
+	LIST *Said;                    // A test's (NodePeeringSay): the lines that the worker sends the sidecar next, as if the node said them
 	UINT NumUnsent;                // The sidecars ended because a message did not reach them
 	UINT NumHung;                  // The sidecars ended because they did not answer a ping
 	UINT NumOld;                   // The sidecars ended because their protocol is older than NODE_PEERING_PROTOCOL
@@ -1546,6 +1547,29 @@ static void NodePeeringSettle(NODE_PEERING *p) {
 	NodePeeringReap(p);
 }
 
+// The lines that a test had the node say (NodePeeringSay) go to the sidecar that runs, in the order of the calls, from the worker, the
+// one writer of the pipe, as the lines of the node do: one that does not reach the sidecar ends it. They go nowhere while no sidecar runs.
+static void NodePeeringSaid(NODE_PEERING *p) {
+	LIST *said = NULL;
+
+	Lock(p->Lock);
+	{
+		if (LIST_NUM(p->Said) != 0) {
+			said = p->Said;
+			p->Said = NewListFast(NULL);
+		}
+	}
+	Unlock(p->Lock);
+
+	if (said == NULL)
+		return;
+
+	for (UINT i = 0; i < LIST_NUM(said) && p->Sidecar != NULL; i++)
+		NodePeeringSendLine(p, p->Sidecar, LIST_DATA(said, i));
+
+	FreeListItems(said);
+}
+
 // Whether the sidecar runs (protocol 4): NODE_PEERING_PING after its last answer the worker asks it again (ping), and the sidecar
 // answers once GoBGP answered it too (pong). A sidecar that does not answer within NODE_PEERING_ANSWER hangs: the worker ends it
 // (NodePeeringEnd), so the routes that it learned go, and another starts, as for one that ends by itself (SDN-77-R1, #531).
@@ -1719,10 +1743,10 @@ static DWORD NodePeeringWait(NODE_PEERING *p) {
 
 	Lock(p->Lock);
 	{
-		if (p->Changed && p->State != NULL && p->Sidecar == NULL)
-			due = MIN(due, p->NextStart);
-		if (p->Changed && p->State != NULL && p->Sidecar != NULL)
-			due = MIN(due, p->NextSettle);
+		// A sidecar that has to start waits for the tick of its start, and for the one of the next settle after a settle whose
+		// copy of the state failed, as a sidecar that runs does: the worker does not pass until then for nothing
+		if (p->Changed && p->State != NULL)
+			due = MIN(due, (p->Sidecar == NULL ? MAX(p->NextStart, p->NextSettle) : p->NextSettle));
 		if (p->Dirty && p->State != NULL)
 			due = MIN(due, p->NextRebuild);
 		if (p->Sidecar != NULL && p->Sidecar->Dead == false && p->Exited == false)
@@ -1754,6 +1778,7 @@ static DWORD WINAPI NodePeeringWorker(void *param) {
 			break;
 
 		NodePeeringSettle(p);
+		NodePeeringSaid(p);
 		NodePeeringCheck(p);
 		NodePeeringRebuild(p);
 		NodePeeringUpdateReport(p);
@@ -1782,6 +1807,7 @@ CONTROL_PEERING_REPORT *NodePeeringStart(NODE *n) {
 	p->Peers = NewListFast(NULL);
 	p->Routes = NewListFast(NULL);
 	p->Announced = NewListFast(NULL);
+	p->Said = NewListFast(NULL);
 	p->Report = ControlNewPeeringReport();
 	p->Wake = CreateEventW(NULL, FALSE, FALSE, NULL);
 	p->Halt = CreateEventW(NULL, TRUE, FALSE, NULL);
@@ -1842,6 +1868,7 @@ void NodePeeringFree(NODE *n) {
 	FreeListItems(p->Peers);
 	FreeListItems(p->Routes);
 	FreeListItems(p->Announced);
+	FreeListItems(p->Said);
 	if (p->Wake != NULL)
 		CloseHandle(p->Wake);
 	if (p->Halt != NULL)
@@ -2074,4 +2101,19 @@ void NodePeeringFeed(NODE *n, const char *line) {
 
 	if (p != NULL && line != NULL)
 		NodePeeringOnMessage(p, line);
+}
+
+// A test has the node say the line to its sidecar, as a node that announces what the Controller did not give it would: the worker sends it
+// on its next pass, after the lines of the node and the lines that a test had it say before (NodePeeringSaid; SDN-77-R3, #570)
+void NodePeeringSay(NODE *n, const char *line) {
+	NODE_PEERING *p = (n != NULL ? n->Peering : NULL);
+
+	if (p == NULL || line == NULL)
+		return;
+
+	Lock(p->Lock);
+	Add(p->Said, CopyStr(line));
+	Unlock(p->Lock);
+
+	SetEvent(p->Wake);
 }

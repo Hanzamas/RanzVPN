@@ -61,6 +61,7 @@ UINT NodePeeringGetPeers(NODE *n, struct CONTROL_PEERING_PEER *list, UINT max);
 struct CONTROL_PEERING_REPORT *NodePeeringGetReport(NODE *n);
 void NodePeeringFailNext(NODE *n, UINT copies, UINT rebuilds, UINT settles);
 void NodePeeringFeed(NODE *n, const char *line);
+void NodePeeringSay(NODE *n, const char *line);
 
 // NodeOverlay.c
 UINT NodeOverlayRebuild(NODE *n, const struct CONTROL_STATE *with);
