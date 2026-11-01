@@ -19,22 +19,6 @@
 #include <stdlib.h>
 #include "ServerInternal.h"
 
-static volatile UINT global_server_flags[NUM_GLOBAL_SERVER_FLAGS] = {0};
-
-void SetGlobalServerFlag(UINT index, UINT value) {
-	if (index >= NUM_GLOBAL_SERVER_FLAGS)
-		return;
-
-	global_server_flags[index] = value;
-}
-
-UINT GetGlobalServerFlag(UINT index) {
-	if (index >= NUM_GLOBAL_SERVER_FLAGS)
-		return 0;
-
-	return global_server_flags[index];
-}
-
 void GetServerCapsMain(SERVER *s, CAPSLIST *t) {
 	if (s == NULL || t == NULL)
 		return;

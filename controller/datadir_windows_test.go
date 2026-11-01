@@ -147,6 +147,28 @@ func wantDataDirRefused(t *testing.T, what, dir string, err error) {
 	}
 }
 
+// wantSafeAdvice checks what the message said of a refusal says to do with path, the file or folder that an untrusted
+// account owns: to remove it and then to do what then says, and to give it to the Administrators only when an administrator
+// made it, once, and together with a reset of its access list (icacls /reset /T). takeown alone changes only the owner, so
+// an entry that a user put on the list of what it made would stay, and the install, which looks only at owners, would then
+// take it (finding B2 of the second read-only review of PR 541, and finding 2 of the third for a data directory that a user
+// owns).
+func wantSafeAdvice(t *testing.T, said, path, then string) {
+	t.Helper()
+	for _, want := range []string{
+		"remove it, and " + then,
+		"Only when an administrator made it",
+		`takeown /F "` + path + `" /A /R /D Y, then icacls "` + path + `" /reset /T`,
+	} {
+		if !strings.Contains(said, want) {
+			t.Errorf("the message %q does not say %q", said, want)
+		}
+	}
+	if n := strings.Count(said, "takeown /F"); n != 1 {
+		t.Errorf("the message %q offers takeown %d times, want once, together with the reset of the access list", said, n)
+	}
+}
+
 // The install makes the data directory for the Administrators when it is not there.
 func TestInstallMakesTheDataDirForTheAdministrators(t *testing.T) {
 	requireAdministrator(t)
@@ -205,7 +227,10 @@ func TestInstallTakesOverAnEmptyDataDirOfAStandardUser(t *testing.T) {
 
 // A data directory that a standard user made and filled is refused with a message, and left as it was:
 // what it holds, a store with a token that the user knows or an rqlited.exe of its own, would run as the
-// service.
+// service. The message says to remove it, and offers takeown only for what an administrator made, with a
+// reset of its access list: after takeown alone the look of the next install, which reads only owners, would
+// pass the folder, and an entry that the user put on the list of payload\ would stay and pass down to the
+// rqlited.exe that the service writes there (finding 2 of the third read-only review of PR 541).
 func TestInstallRefusesADataDirOfAStandardUserThatHoldsFiles(t *testing.T) {
 	requireAdministrator(t)
 	dir := filepath.Join(t.TempDir(), "controller")
@@ -215,8 +240,11 @@ func TestInstallRefusesADataDirOfAStandardUserThatHoldsFiles(t *testing.T) {
 	before := securityOf(t, dir)
 	err := takeOverDataDir(dir)
 	wantDataDirRefused(t, "the install", dir, err)
-	if err != nil && !strings.Contains(err.Error(), "not empty") {
-		t.Errorf("the message %q does not say that the directory is not empty", err)
+	if err != nil {
+		if !strings.Contains(err.Error(), "not empty") {
+			t.Errorf("the message %q does not say that the directory is not empty", err)
+		}
+		wantSafeAdvice(t, err.Error(), dir, "run the install again")
 	}
 	if after := securityOf(t, dir); after != before {
 		t.Errorf("the refused install changed the security of the directory from %s to %s", before, after)
@@ -295,7 +323,10 @@ func TestInstallRefusesALinkAsTheDataDir(t *testing.T) {
 
 // The service, and the commands that run on the host of the controller, do not use a data directory that a
 // standard user owns, which is how a directory that a user put in the place of the real one is kept out:
-// the start of the service ends before it makes a file in it.
+// the start of the service ends before it makes a file in it. The message says to remove it, and offers
+// takeown only for what an administrator made, with a reset of its access list and the service registered
+// again before it starts: the start does not set the list of a folder that is there, and the reset leaves it
+// the list of the folder above it, which the install replaces (finding 2 of the third read-only review of PR 541).
 func TestControllerRefusesADataDirOfAStandardUser(t *testing.T) {
 	requireAdministrator(t)
 	dir := filepath.Join(t.TempDir(), "controller")
@@ -310,7 +341,14 @@ func TestControllerRefusesADataDirOfAStandardUser(t *testing.T) {
 	allowed := func() error { return nil }
 	file := filepath.Join(t.TempDir(), "store.backup")
 
-	wantDataDirRefused(t, "makeDataDir", dir, makeDataDir(dir))
+	err = makeDataDir(dir)
+	wantDataDirRefused(t, "makeDataDir", dir, err)
+	if err != nil {
+		wantSafeAdvice(t, err.Error(), dir, "start again")
+		if !strings.Contains(err.Error(), "ranz controller uninstall, then ranz controller install") {
+			t.Errorf("the message %q does not say to register the service again over the folder before it starts", err)
+		}
+	}
 	_, err = (&service{cfg: cfg}).openLog()
 	wantDataDirRefused(t, "the start of the service", dir, err)
 	wantDataDirRefused(t, "run", dir, run(ctx, cfg, log, io.Discard, hooks{}))
