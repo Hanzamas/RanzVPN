@@ -240,6 +240,8 @@ func (s *session) setPeers(ctx context.Context, m Message) error {
 		}
 		s.log.Info("peer added", "address", addr, "asn", next[addr].asn, "vrfs", len(next[addr].vrfs))
 	}
+	// The maximum of paths of a route reflector that stays follows the nodes of its VRFs (reflector.go; SDN-79 #359)
+	s.updateReflectorLimits(ctx, prev, next)
 	// What the peers may announce changed, so what the node learns may have changed too
 	s.kick()
 	return nil

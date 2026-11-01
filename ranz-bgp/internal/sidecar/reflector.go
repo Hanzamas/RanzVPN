@@ -27,12 +27,21 @@ package sidecar
 // whose accept list it checks again (NodePeering.c). A reflector never sends a copy into another VRF: a
 // copy keeps the route distinguisher and the route target of the VRF of the client's path, and goes only to
 // the clients of that VRF.
+//
+// The filters against a peer that announces what it may not (peerfilter.go; SDN-77-R3 #570) see a reflector
+// as what it is: the import policy takes from a reflector the prefixes that the other nodes of its VRFs may
+// announce (importable), a copy that a reflector holds is no prefix that its node announces (isCopy), and the
+// most paths that a reflector may make a client hold follows the nodes of its VRFs (reflectorMaxPaths): a
+// reflector passes on the paths of all of them, so a fixed maximum would end its sessions in a VRF of many
+// nodes, which is what the reflectors are for. A node raises that maximum in place when its VRFs grow, without
+// a new session, and never lowers it while the session lasts (updateReflectorLimits).
 
 import (
 	"cmp"
 	"context"
 	"fmt"
 	"maps"
+	"math"
 	"net/netip"
 	"slices"
 	"sync/atomic"
@@ -83,6 +92,10 @@ type reflector struct {
 	// copies goroutine's
 	copies map[copyKey]heldCopy
 	nextID uint32
+
+	// The most paths of an address family that GoBGP lets each reflector of a VRF of the node make it hold, by
+	// the address of the reflector: the read loop's (reflectorPeer, updateReflectorLimits)
+	limits map[netip.Addr]uint32
 }
 
 // exportState is what the export policy of a reflector holds in GoBGP.
@@ -161,10 +174,148 @@ func (s *session) reflectorPeer(peer *api.Peer, p peerConfig) *api.Peer {
 	if client {
 		config.SendMax = reflectorSendMax
 	}
+	// ... and a reflector may make the node hold what the other nodes of its VRFs may announce there
+	var limit uint32
+	if reflects {
+		s.mu.Lock()
+		limit = reflectorMaxPaths(s.nodes, p.address)
+		s.mu.Unlock()
+		s.reflector.limits[p.address] = limit
+	}
 	for _, a := range peer.AfiSafis {
 		a.AddPaths = &api.AddPaths{Config: config}
+		if reflects && a.PrefixLimits != nil {
+			a.PrefixLimits.MaxPrefixes = limit
+		}
 	}
 	return peer
+}
+
+// importable is the Ranz node at addr of peers as the import policy of the peering sees it (setImport in
+// peerfilter.go): a route reflector of a VRF of the node may announce there, besides its own prefixes, what
+// the other nodes of that VRF may, which it passes on (reflects). Any other node may announce its own alone.
+func importable(peers map[netip.Addr]peerConfig, addr netip.Addr) peerConfig {
+	p := peers[addr]
+	if !p.hasRole(RoleReflector) {
+		return p
+	}
+	vrfs := make(map[uint32][]netip.Prefix, len(p.vrfs))
+	for id, accept := range p.vrfs {
+		vrfs[id] = slices.Clone(accept)
+		if p.roles[id] != RoleReflector {
+			continue
+		}
+		for _, other := range slices.SortedFunc(maps.Keys(peers), netip.Addr.Compare) {
+			if other != addr {
+				vrfs[id] = append(vrfs[id], peers[other].vrfs[id]...)
+			}
+		}
+	}
+	p.vrfs = vrfs
+	return p
+}
+
+// reflectorMaxPaths is the most paths of an address family that the Ranz node at addr of peers may make the
+// node hold in the Adj-RIB-In of the sidecar (PrefixLimits of nodePeer): peerMaxPaths (peerfilter.go), and for
+// a route reflector of a VRF of the node besides that peerMaxPaths for the paths of the node itself, which come
+// back to it as copies and count though GoBGP drops them, and twice what the other nodes of those VRFs may
+// announce there, which the reflector passes on, for the paths of a Generation that goes out and one that comes
+// in as peerMaxPaths does. So the maximum bounds what a reflector can make the node hold by what the Controller
+// says that its VRFs hold.
+func reflectorMaxPaths(peers map[netip.Addr]peerConfig, addr netip.Addr) uint32 {
+	p := peers[addr]
+	if !p.hasRole(RoleReflector) {
+		return peerMaxPaths
+	}
+	n := uint64(2 * peerMaxPaths)
+	for id, role := range p.roles {
+		if role != RoleReflector {
+			continue
+		}
+		for other, q := range peers {
+			if other != addr {
+				n += 2 * uint64(len(q.vrfs[id]))
+			}
+		}
+	}
+	return uint32(min(n, math.MaxUint32))
+}
+
+// updateReflectorLimits gives each route reflector of a VRF of the node that stays a peer with the same settings
+// the maximum of paths that the nodes of its VRFs ask for now (reflectorMaxPaths), when it is higher than the
+// one that it has: GoBGP changes the maximum of a peer in place, without a new session (UpdatePeer). A maximum
+// is never lowered while the session lasts, so that a client that hears first of nodes that leave its VRF does
+// not end the session of a reflector that still passes on their paths. A reflector whose session a maximum
+// ended comes again with the higher one: a reflector that is ahead of the node passed on the paths of nodes that
+// the node did not know yet. A new or changed peer comes with its maximum (setPeers).
+func (s *session) updateReflectorLimits(ctx context.Context, prev, next map[netip.Addr]peerConfig) {
+	r := s.reflector
+	if r == nil {
+		return
+	}
+	for addr := range r.limits {
+		if !next[addr].hasRole(RoleReflector) {
+			delete(r.limits, addr)
+		}
+	}
+	for _, addr := range slices.SortedFunc(maps.Keys(next), netip.Addr.Compare) {
+		p := next[addr]
+		old, ok := prev[addr]
+		if !ok || !old.equal(p) || !p.session() || !p.hasRole(RoleReflector) {
+			continue
+		}
+		limit, was := reflectorMaxPaths(next, addr), r.limits[addr]
+		if limit <= was {
+			continue
+		}
+		capped := s.prefixCapped(ctx, addr)
+		// peerRequest gives the peer the maximum of the peers in force (reflectorPeer), which is limit
+		if _, err := s.bgp.UpdatePeer(ctx, &api.UpdatePeerRequest{Peer: s.peerRequest(p)}); err != nil {
+			r.limits[addr] = was
+			s.send(Message{Type: TypeError, Peer: addr.String(), Error: fmt.Sprintf("peer %s: the maximum of paths of a route reflector: %v", addr, err)})
+			continue
+		}
+		s.log.Info("route reflector: its maximum of paths is higher", "peer", addr, "maximum", limit)
+		if !capped {
+			continue
+		}
+		if err := s.bgp.EnablePeer(ctx, &api.EnablePeerRequest{Address: addr.String()}); err != nil {
+			s.send(Message{Type: TypeError, Peer: addr.String(), Error: fmt.Sprintf("peer %s: the session that a lower maximum of paths ended: %v", addr, err)})
+			continue
+		}
+		s.log.Info("route reflector: the session that a lower maximum of paths ended starts again", "peer", addr, "maximum", limit)
+	}
+}
+
+// prefixCapped reports whether GoBGP ended the session of the peer at addr because it announced more paths than its
+// maximum: the session stays down until the peer comes again.
+func (s *session) prefixCapped(ctx context.Context, addr netip.Addr) bool {
+	capped := false
+	err := s.bgp.ListPeer(ctx, &api.ListPeerRequest{Address: addr.String()}, func(p *api.Peer) {
+		capped = p.GetState().GetAdminState() == api.PeerState_ADMIN_STATE_PFX_CT
+	})
+	return err == nil && capped
+}
+
+// isCopy reports whether p is a copy that the route reflector of the sidecar holds (copyPath): a path of the node
+// itself with the large community that marks a copy. A copy is no prefix that the node announces (vpnRoutes in
+// peerfilter.go), so the reflector learns the route of the client that its copy holds.
+func (r *reflector) isCopy(p *apiutil.Path) bool {
+	if r == nil || p.PeerAddress.IsValid() {
+		return false
+	}
+	for _, a := range p.Attrs {
+		c, ok := a.(*bgp.PathAttributeLargeCommunities)
+		if !ok {
+			continue
+		}
+		for _, v := range c.Values {
+			if v.ASN == r.asn && v.LocalData1 == reflectorMark && v.LocalData2 == 1 {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // reflects reports whether the node p, a reflector of the VRF vrf, may pass on the prefix there: another
@@ -199,7 +350,7 @@ func (s *session) clientMay(client netip.Addr, key routeKey) bool {
 // whenever a path, a best path or a session changes, until ctx ends. It holds no copy until a peers message
 // names a client.
 func (s *session) startReflector(ctx context.Context, asn uint32, routerID netip.Addr) error {
-	r := &reflector{asn: asn, clusterID: routerID, kicks: make(chan struct{}, 1), copies: make(map[copyKey]heldCopy)}
+	r := &reflector{asn: asn, clusterID: routerID, kicks: make(chan struct{}, 1), copies: make(map[copyKey]heldCopy), limits: make(map[netip.Addr]uint32)}
 	s.reflector = r
 	kick := func([]*apiutil.Path, time.Time) { r.kick() }
 	err := s.bgp.WatchEvent(ctx, server.WatchEventMessageCallbacks{
