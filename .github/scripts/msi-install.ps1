@@ -51,20 +51,6 @@ $PSNativeCommandUseErrorActionPreference = $false
 # hang the same way. -SelfTest plants such a hang and checks all of that on any computer with PowerShell 7: quality-gates-test.py
 # runs it on Linux, and the msi job runs it on x64 and arm64.
 
-$nodeService = 'ranzvpnserver'
-$controllerService = 'ranz-controller'
-$nodeAccount = "NT SERVICE\$nodeService"
-$productName = 'Ranz VPN'
-$installDir = Join-Path $env:ProgramFiles 'Ranz VPN'
-$installedRanz = Join-Path $installDir 'ranz.exe'
-$installedNode = Join-Path $installDir 'ranz-node.exe'
-$dataDir = Join-Path $env:ProgramData 'Hanzcodes\Ranz VPN'
-$store = Join-Path $dataDir 'ranz_node.db'
-$nodeLogDir = Join-Path $dataDir 'node_log'
-$canary = Join-Path $dataDir 'msi-canary.txt'
-$standInDir = Join-Path $env:ProgramData 'Ranz MSI stand-in'
-$calls = Join-Path $standInDir 'calls.log'
-
 # The bound of a msiexec call, in seconds. The green runs of 2026-10-31 (five of each architecture, from the pushes to integration)
 # took 36 s at the most for the slowest call, the install of the previous package on x64 (23 s on arm64), and 5 s at the most for
 # every other call, so 300 s is more than eight times the slowest. The program that a call runs and the arguments before its verb
@@ -239,10 +225,25 @@ Start-Sleep -Seconds 120
 	}
 }
 
+# The self-test needs no package and no Windows folder, so it runs before the lines that read them
 if ($SelfTest) {
 	Invoke-SelfTest
 	exit 0
 }
+
+$nodeService = 'ranzvpnserver'
+$controllerService = 'ranz-controller'
+$nodeAccount = "NT SERVICE\$nodeService"
+$productName = 'Ranz VPN'
+$installDir = Join-Path $env:ProgramFiles 'Ranz VPN'
+$installedRanz = Join-Path $installDir 'ranz.exe'
+$installedNode = Join-Path $installDir 'ranz-node.exe'
+$dataDir = Join-Path $env:ProgramData 'Hanzcodes\Ranz VPN'
+$store = Join-Path $dataDir 'ranz_node.db'
+$nodeLogDir = Join-Path $dataDir 'node_log'
+$canary = Join-Path $dataDir 'msi-canary.txt'
+$standInDir = Join-Path $env:ProgramData 'Ranz MSI stand-in'
+$calls = Join-Path $standInDir 'calls.log'
 
 if ($Architecture -notin 'x64', 'arm64') { throw "-Architecture is '$Architecture', not x64 or arm64" }
 $other = if ($Architecture -eq 'x64') { 'arm64' } else { 'x64' }
