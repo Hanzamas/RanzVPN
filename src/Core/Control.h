@@ -63,6 +63,10 @@
 #define CONTROL_PATH_REPORT  1000  // ms between two reports of the Upgrades and the Fallbacks of the Paths of a node, at least ...
 #define CONTROL_PATH_REFRESH 15000 // ... and at most, while they stay the same: the controller drops a counter that its node does not report again
 
+// The EVPN of a gateway (SDN-25-R3, #571)
+#define CONTROL_EVPN_REPORT  CONTROL_PATH_REPORT  // ms between two reports of the counters of the EVPN of a gateway, at least ...
+#define CONTROL_EVPN_REFRESH CONTROL_PATH_REFRESH // ... and at most, while they stay the same, as for the Paths
+
 // The TLS fingerprints of the certificate of the Controller that a state names (SDN-92, #397)
 #define CONTROL_TLS_PINS     4  // The fingerprints of a state (NodeConfig.controller_tls of control.options)
 #define CONTROL_TLS_PIN_SIZE 65 // A fingerprint: 64 hex digits and the terminating NUL
@@ -492,6 +496,24 @@ typedef struct CONTROL_SIGNALS CONTROL_SIGNALS;
 // CORE-S5-6, #412), ControlPath.c
 typedef struct CONTROL_PATHS CONTROL_PATHS;
 
+// The counters of the EVPN of a gateway that a client reports to the controller (CONTROL_CONFIG.Evpn; SDN-25-R3, #571),
+// ControlEvpn.c
+typedef struct CONTROL_EVPN CONTROL_EVPN;
+
+// The frames of the EVPN of a gateway with the fabric since its sidecar started, as NODE_EVPN_STATUS of Cedar/NodeEvpn.h counts
+// them (EvpnCounters of the control protocol)
+typedef struct CONTROL_EVPN_COUNTERS {
+	UINT64 Sent;        // Packets of the overlay sent to a VTEP of the fabric
+	UINT64 Failed;      // ... that could not go
+	UINT64 Delivered;   // Packets of the fabric that the overlay took
+	UINT64 Undelivered; // ... that it did not take
+	UINT64 UnknownVtep; // Frames of an L3 VNI from an address that is no VTEP that the gateway knows for their VRF
+	UINT64 Strangers;   // Packets of a known VTEP from a source that no IP prefix route of their VRF holds
+	UINT64 NotOurs;     // Frames of a known VTEP to another MAC address than the router MAC of the gateway
+	UINT64 UnknownVni;  // Datagrams on a VNI of no EVPN VRF, from any address
+	UINT64 Malformed;   // Datagrams of no VXLAN frame, from any address, and frames of a known VTEP without an IP packet
+} CONTROL_EVPN_COUNTERS;
+
 // The desired state that the client applied, as its owner takes it (CONTROL_STATE_PROC). The
 // Networks of the state stay in the client until a module of the node needs them: the DHCP
 // responders of the Networks are the first (SDN-43, #236). The Relays go to the peer agent of the
@@ -734,6 +756,10 @@ typedef struct CONTROL_CONFIG {
 	// must outlive the client (CORE-S5-6, #412)
 	CONTROL_PATHS *Paths;
 
+	// The counters of the EVPN of a gateway that the client reports, NULL for none: the owner's, which must outlive the client
+	// (SDN-25-R3, #571)
+	CONTROL_EVPN *Evpn;
+
 	// Does the live operations of the Controller on the tables of the L2 Networks, NULL for none: the Hello then reports no
 	// Capability operations (SDN-50-N, #492) ...
 	CONTROL_OPERATION_PROC *OperationProc;
@@ -852,5 +878,17 @@ void ControlFreePaths(CONTROL_PATHS *p);
 void ControlSetPaths(CONTROL_PATHS *p, UINT64 upgrades, UINT64 fallbacks);
 void ControlSetPunches(CONTROL_PATHS *p, UINT64 attempts, UINT64 successes, UINT64 failures);
 bool ControlWritePaths(CONTROL_PATHS *p, TRANSPORT_STREAM *s);
+
+// The EVPN of a gateway (SDN-25-R3, #571), ControlEvpn.c. NewEvpn makes the report that a client sends (CONTROL_CONFIG.Evpn),
+// FreeEvpn frees it once no client uses it. SetEvpn puts the counters of the EVPN of the node in place of the ones before, or
+// none for NULL while no EVPN runs: the client sends them in one Telemetry message after each Hello while they are set,
+// whenever they changed, at most every CONTROL_EVPN_REPORT ms, and again every CONTROL_EVPN_REFRESH ms while they stay the
+// same, as the controller drops a counter that its node did not report for a while (5 minutes). GetEvpn copies the counters
+// that are set into c: false while none are. WriteEvpn writes that message when it is due, as the client does on its stream.
+CONTROL_EVPN *ControlNewEvpn();
+void ControlFreeEvpn(CONTROL_EVPN *e);
+void ControlSetEvpn(CONTROL_EVPN *e, const CONTROL_EVPN_COUNTERS *c);
+bool ControlGetEvpn(CONTROL_EVPN *e, CONTROL_EVPN_COUNTERS *c);
+bool ControlWriteEvpn(CONTROL_EVPN *e, TRANSPORT_STREAM *s);
 
 #endif // CORE_CONTROL_H

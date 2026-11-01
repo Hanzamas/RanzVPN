@@ -111,12 +111,22 @@ type session struct {
 	address   netip.Addr                // the node's own address in the peering of the standard mode, as in config
 	announced map[routeKey]uuid.UUID    // the read loop only
 	pending   []Peer                    // the read loop only: the peers of the peers messages with more so far
-	learned   map[routeKey]learnedRoute // the watch goroutine only
+	learned   map[routeKey]learnedRoute // the watch goroutine, and in the peering the routes goroutine (peerfilter.go)
 
 	// The Ranz nodes among the peers in the peering of the standard mode, by address, which the read
 	// loop sets and the watch goroutine reads (peering.go)
 	mu    sync.Mutex
 	nodes map[netip.Addr]peerConfig
+
+	// The filters of the peering (peerfilter.go): the generation of the last import policy and what it holds in GoBGP, both the
+	// read loop's; the channel that kicks the routes goroutine, nil outside the peering; the peers whose session GoBGP closed
+	// for the number of their paths, the watch goroutine's; and the paths that the last read of the table did not take, the
+	// routes goroutine's
+	generation uint32
+	imported   *importState
+	resync     chan struct{}
+	capped     map[netip.Addr]bool
+	notTaken   int
 }
 
 // Run serves one node on conn until the node closes it or ctx ends: it reads start, runs BGP with
@@ -313,6 +323,10 @@ func startSession(ctx context.Context, cfg config, w *Writer, log *slog.Logger, 
 		announced: make(map[routeKey]uuid.UUID),
 		learned:   make(map[routeKey]learnedRoute),
 		nodes:     make(map[netip.Addr]peerConfig),
+		capped:    make(map[netip.Addr]bool),
+	}
+	if cfg.address.IsValid() {
+		s.resync = make(chan struct{}, 1)
 	}
 	for _, p := range cfg.peers {
 		if p.vrfs != nil {
@@ -344,10 +358,16 @@ func startSession(ctx context.Context, cfg config, w *Writer, log *slog.Logger, 
 		err = s.setPolicies(ctx, cfg.accept)
 	}
 	if err == nil {
-		err = b.WatchEvent(sctx, server.WatchEventMessageCallbacks{
-			OnBestPath:   s.onBestPath,
-			OnPeerUpdate: s.onPeer,
-		}, server.WatchBestPath(true), server.WatchPeer())
+		callbacks := server.WatchEventMessageCallbacks{OnBestPath: s.onBestPath, OnPeerUpdate: s.onPeer}
+		opts := []server.WatchOption{server.WatchBestPath(true), server.WatchPeer()}
+		if s.resync != nil {
+			// The peering reads the table whenever a path that the import policy took changes, besides the best paths and the
+			// sessions (peerfilter.go)
+			callbacks.OnPathUpdate = s.onUpdate
+			opts = append(opts, server.WatchPostUpdate(false, "", ""))
+			go s.watchRoutes(sctx)
+		}
+		err = b.WatchEvent(sctx, callbacks, opts...)
 	}
 	if err != nil {
 		s.stop()
@@ -391,10 +411,11 @@ func (s *session) setPolicies(ctx context.Context, accept []netip.Prefix) error 
 		return err
 	}
 
-	// The peering of the standard mode takes every path of the Ranz nodes, and reports to the node only
-	// the ones that the peer may announce in the VRF of the path (onBestPath, accepts in peering.go)
+	// The peering of the standard mode takes the paths of each Ranz node whose exact prefix its accept lists hold, and
+	// reports to the node only the ones that the peer may announce in the VRF of the path (setImport, syncRoutes and accepts in
+	// peerfilter.go and peering.go; SDN-77-R3 #570)
 	if s.address.IsValid() {
-		return nil
+		return s.setImport(ctx, s.nodes)
 	}
 
 	// A prefix set holds one address family: one set and one statement for each.
@@ -528,6 +549,8 @@ func (s *session) announce(m Message) error {
 	// A prefix announced again replaces its path, under a new UUID.
 	s.announced[routeKey{vrf: m.VRF, prefix: prefix}] = resp[0].UUID
 	s.log.Info("prefix announced", "vrf", m.VRF, "prefix", prefix, "nextHop", pathNextHop(path))
+	// A prefix that the node announces is none that it learns (peerfilter.go)
+	s.kick()
 	return nil
 }
 
@@ -594,6 +617,7 @@ func (s *session) withdraw(m Message) error {
 	}
 	delete(s.announced, key)
 	s.log.Info("prefix withdrawn", "vrf", m.VRF, "prefix", prefix)
+	s.kick()
 	return nil
 }
 
@@ -608,22 +632,26 @@ func (s *session) onPeer(ev *apiutil.WatchEventMessage_PeerEvent, _ time.Time) {
 	}
 	addr := ev.Peer.Conf.NeighborAddress.String()
 	s.log.Info("peer state", "peer", addr, "state", state)
+	s.noteCapped(ev.Peer)
 	s.send(Message{Type: TypePeer, Peer: addr, ASN: ev.Peer.Conf.PeerASN, State: state})
+	// The routes of a session that ended go, and those of one that came may arrive (peerfilter.go)
+	s.kick()
 }
 
 // onBestPath tells the node about the best paths that changed: a best path learned from a peer
 // is a learned route, and a prefix whose best path is withdrawn, or is now the node's own, is
 // withdrawn. The paths of one call are applied in order, so a best path that moves from one
-// peer to another ends as the later one, without a withdrawn message between. In the peering of
-// the standard mode a prefix is one of the VRF of its path, and a path that its Ranz node may not
-// announce there counts as none (accepts in peering.go); one log line counts those of a call, so
-// that a peer that announces many of them does not fill the log.
+// peer to another ends as the later one, without a withdrawn message between. The peering of the
+// standard mode does not take the best path: it may be one that its peer may not announce, so
+// the routes goroutine reads the table itself (syncRoutes in peerfilter.go), and a best path only
+// asks it to.
 func (s *session) onBestPath(paths []*apiutil.Path, _ time.Time) {
+	if s.resync != nil {
+		s.kick()
+		return
+	}
 	next := make(map[routeKey]*learnedRoute)
 	var order []routeKey
-	var refused int
-	var firstRefused routeKey
-	var refusedPeer netip.Addr
 	for _, p := range paths {
 		key, ok := pathKey(p)
 		if !ok {
@@ -642,23 +670,7 @@ func (s *session) onBestPath(paths []*apiutil.Path, _ time.Time) {
 			next[key] = nil
 			continue
 		}
-		if key.vrf != 0 {
-			// The next hop of an IPv6 route over an IPv4 session comes as an IPv4-mapped address
-			nh = nh.Unmap()
-			if !s.accepts(p.PeerAddress, key) {
-				if refused == 0 {
-					firstRefused, refusedPeer = key, p.PeerAddress
-				}
-				refused++
-				next[key] = nil
-				continue
-			}
-		}
 		next[key] = &learnedRoute{nextHop: nh.String(), peer: p.PeerAddress.Unmap().String()}
-	}
-	if refused > 0 {
-		s.log.Warn("learned paths not taken: their peer may not announce them in their VRF", "paths", refused,
-			"vrf", firstRefused.vrf, "prefix", firstRefused.prefix, "peer", refusedPeer)
 	}
 	for _, key := range order {
 		old, had := s.learned[key]

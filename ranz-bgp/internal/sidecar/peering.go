@@ -11,8 +11,9 @@ package sidecar
 // learns there; the sidecar reports a learned route only when the peer may announce it in that VRF
 // (accepts): exactly a prefix of its accept list, so a peer that announces more specific prefixes,
 // as many as it likes, fills the node with none of them (SDN-77-R1 #531). A path that a node may not
-// announce is never reported, though it may hide the path of another node for the same prefix: the
-// nodes of a VRF are trusted not to announce one. Of two nodes,
+// announce takes no part in the choice of the best path either, so it hides no path of another node,
+// whatever its route distinguisher and LOCAL_PREF, and a node that announces more paths than the
+// maximum loses its session (SDN-77-R3 #570; peerfilter.go). Of two nodes,
 // the one of the lower address connects and the other waits, so the two never race for the session.
 // GoBGP refuses a session from an address that no peer has, and the sidecar tells the node about each
 // one (refused).
@@ -23,6 +24,7 @@ import (
 	"fmt"
 	"log/slog"
 	"maps"
+	"math"
 	"net/netip"
 	"slices"
 	"time"
@@ -158,11 +160,13 @@ func nodePeer(p peerConfig, local netip.Addr) *api.Peer {
 	}
 }
 
+// vpn is the VPN family of afi with the maximum of paths that a Ranz node may hold in it (peerMaxPaths, peerfilter.go).
 func vpn(afi api.Family_Afi) *api.AfiSafi {
-	return &api.AfiSafi{Config: &api.AfiSafiConfig{
-		Family:  &api.Family{Afi: afi, Safi: api.Family_SAFI_MPLS_VPN},
-		Enabled: true,
-	}}
+	family := &api.Family{Afi: afi, Safi: api.Family_SAFI_MPLS_VPN}
+	return &api.AfiSafi{
+		Config:       &api.AfiSafiConfig{Family: family, Enabled: true},
+		PrefixLimits: &api.PrefixLimit{Family: family, MaxPrefixes: peerMaxPaths},
+	}
 }
 
 // setPeers applies a peers message: its Ranz nodes take the place of the ones before. A node that
@@ -192,6 +196,12 @@ func (s *session) setPeers(ctx context.Context, m Message) error {
 		}
 		next[pc.address] = pc
 		order = append(order, pc.address)
+	}
+
+	// The import policy of the new peers is in place before a session of them starts, and the peers that went leave it before
+	// their session ends (peerfilter.go; SDN-77-R3 #570)
+	if err := s.setImport(ctx, next); err != nil {
+		return fmt.Errorf("peers: %w", err)
 	}
 
 	s.mu.Lock()
@@ -230,11 +240,16 @@ func (s *session) setPeers(ctx context.Context, m Message) error {
 		}
 		s.log.Info("peer added", "address", addr, "asn", next[addr].asn, "vrfs", len(next[addr].vrfs))
 	}
+	// What the peers may announce changed, so what the node learns may have changed too
+	s.kick()
 	return nil
 }
 
 // vpnPath is the path of an announce message with a VRF: a VPN route of prefix in that VRF via next,
 // the node's own address when it is empty, whose route distinguisher and route target hold the VRF id.
+// Its LOCAL_PREF is the highest there is, so that no path that the node learned ranks above it in GoBGP: a
+// prefix that the node announces stays announced to its peers, whatever another node announces for it
+// (SDN-77-R3 #570).
 func (s *session) vpnPath(vrf uint32, prefix netip.Prefix, next string) (*apiutil.Path, error) {
 	if !s.address.IsValid() {
 		return nil, fmt.Errorf("vrf %d: the sidecar runs no peering of the standard mode, which only a start with an address runs", vrf)
@@ -263,6 +278,7 @@ func (s *session) vpnPath(vrf uint32, prefix netip.Prefix, next string) (*apiuti
 		bgp.NewPathAttributeOrigin(bgp.BGP_ORIGIN_ATTR_TYPE_IGP),
 		reach,
 		bgp.NewPathAttributeExtendedCommunities([]bgp.ExtendedCommunityInterface{target}),
+		bgp.NewPathAttributeLocalPref(math.MaxUint32),
 	}
 	return &apiutil.Path{Family: family, Nlri: nlri, Attrs: attrs, Age: time.Now().Unix()}, nil
 }
