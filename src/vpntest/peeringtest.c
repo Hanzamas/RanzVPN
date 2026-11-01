@@ -51,8 +51,9 @@
 // - A hostile peer: node-b announces more specific prefixes of its LAN in red, which no accept list holds, and the exact LAN of
 //   node-c in red, which node-c announces and no accept list of node-b holds; no node learns any of them, and every other route of
 //   every peer and VRF is learned, the LAN of node-c at node-a too, where the router id of node-b is lower than that of node-c, so
-//   that the best path of GoBGP for that LAN would be the path of node-b (SDN-77-R3, #570). The flood that goes past the old limit
-//   of 4096 learned routes is a case of its own below.
+//   that the best path of GoBGP for that LAN would be the path of node-b (SDN-77-R3, #570); node-a keeps that route all through a
+//   watch longer than the paths of node-b take to reach it. The flood that goes past the old limit of 4096 learned routes is a case
+//   of its own below.
 // - A failed send and a large mesh: the sidecar of node-a stops answering, and a Generation gives node-a 200 more peers, whose
 //   peers messages fill its pipe, a new extra LAN to announce and an extra LAN to withdraw. The send fails, node-a ends the sidecar
 //   and starts another, which has the peers, the announced prefixes and not the withdrawn one of the Generation in force; node-a
@@ -113,6 +114,7 @@
 #define	PEERINGTEST_ASN			4200000000U	// The AS of the overlay, one for every node (intent.PeeringASN)
 #define	PEERINGTEST_HOLD		9			// The BGP hold time of the sessions in s, as the VRFs of the Intent name it
 #define	PEERINGTEST_GRACE		1000		// What the sidecar and the node take past the hold time to remove the routes (ms)
+#define	PEERINGTEST_WATCH		3000		// A route that has to stay is watched this long: longer than a path of one sidecar takes to reach another node (ms)
 #define	PEERINGTEST_PORT		179			// The BGP port of the sidecars
 #define	PEERINGTEST_STRANGER	"127.0.0.9"	// An address that the Controller did not name
 #define	PEERINGTEST_RED			101			// The id of VRF red ...
@@ -2427,9 +2429,13 @@ static UINT PeeringTestNumLearned(PEERINGTEST_CTX *ctx, UINT i)
 // red, which no accept list of node-b holds (Generation 9). No node learns any of them, and every other route of every peer in red and
 // in blue is learned, the LAN of node-c at node-a among them, whose best path in GoBGP would be the one of node-b without the filters
 // of the sidecar (SDN-77-R3, #570): the reports, the forwarding tables and the adapters of the hosts are the ones of the mesh, and each
-// node holds exactly the routes that its peers may announce.
+// node holds exactly the routes that its peers may announce. The paths of node-b may reach node-a only after the mesh of the Generation
+// looks converged, so node-a has to keep the LAN of node-c, learned from node-c, all through PEERINGTEST_WATCH: a path of node-b that
+// took its place as the best path would have done it by then, as on the sidecar before SDN-77-R3, which then withdrew the route.
 static void PeeringTestHostile(PEERINGTEST_CTX *ctx)
 {
+	PEERINGTEST_NODE *a = &ctx->Nodes[PEERINGTEST_A];
+	PEERINGTEST_MEMBER *victim = PeeringTestMember(PEERINGTEST_C, PEERINGTEST_RED);
 	char what[MAX_SIZE * 2];
 
 	Print("[Generation 9: node-b announces %u more specific prefixes of its LAN in red and the exact LAN of node-c, which no accept list of node-b holds]\n", (UINT)PEERINGTEST_HOSTILE);
@@ -2437,6 +2443,24 @@ static void PeeringTestHostile(PEERINGTEST_CTX *ctx)
 	ctx->Announced[PEERINGTEST_EXTRA_B] = false;
 	ctx->Hostile = true;
 	PeeringTestConverge(ctx, PeeringTestApply(ctx, 9, true));
+
+	UINT64 end = Tick64() + PEERINGTEST_WATCH;
+	UINT hop = PeeringTestHop(PEERINGTEST_A, PEERINGTEST_C);
+	bool learned = true;
+	while (Tick64() < end)
+	{
+		hop = PeeringTestLookup(a, PEERINGTEST_RED, victim->LanHost);
+		learned = PeeringTestHasLearned(a, PEERINGTEST_C, victim->Lan);
+		if (hop != PeeringTestHop(PEERINGTEST_A, PEERINGTEST_C) || learned == false)
+		{
+			break;
+		}
+		SleepThread(PEERINGTEST_POLL);
+	}
+	Format(what, sizeof(what), "  Node-a keeps the LAN %s/%u of node-c, learned from node-c, all through %u ms while node-b announces it too", victim->Lan, (UINT)PEERINGTEST_LENGTH,
+		(UINT)PEERINGTEST_WATCH);
+	PeeringTestCheck(ctx, hop == PeeringTestHop(PEERINGTEST_A, PEERINGTEST_C) && learned, what, "the table of red at node-a leads %s to %s, learned from node-c %u", victim->LanHost,
+		PeeringTestHopName(PEERINGTEST_A, hop), (UINT)learned);
 
 	for (UINT i = 0;i < PEERINGTEST_NODES;i++)
 	{

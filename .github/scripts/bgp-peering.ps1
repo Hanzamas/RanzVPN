@@ -56,7 +56,9 @@ try {
 	& $thisRanz version
 	$old = (Write-Output "q\n" | & (Join-Path $build 'vpntest.exe') peering | Out-String)
 	Write-Host ((($old -split '\r?\n') | Where-Object { $_ -match '^\[' -or $_ -match '\[FAIL\]' }) -join "`n")
-	$hostile = ($old -cmatch '\[FAIL\]\s+node-a holds the \d+ routes that its peers may announce')
+	# What the node log and the sidecar log of each node, which the test prints after a failed check, say of the LAN of node-c
+	Write-Host ((($old -split '\r?\n') | Where-Object { $_ -match '192\.168\.3\.0/24' -and $_ -match 'BGP peering: route|not taken' } | Select-Object -First 40) -join "`n")
+	$hostile = ($old -cmatch '\[FAIL\]\s+Node-a keeps the LAN 192\.168\.3\.0/24 of node-c')
 	$flood = ($old -cmatch '\[FAIL\]\s+The sidecar of node-a ends its session with node-b')
 	Write-Host "vpntest peering with the ranz.exe of integration: the hostile peer failed $hostile, the flood failed $flood"
 	if (-not $hostile -or -not $flood) {
