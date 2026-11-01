@@ -10,6 +10,9 @@
 //   - G and H start their handshakes at the same time; the two end in one session that carries traffic both ways.
 //   - G replaces the keys after a number of datagrams and on a schedule, with no datagram lost, and a session whose
 //     peer is silent is dropped; the next datagram starts a new one.
+//   - The timers of a session at a clock older than an initiation or keys of it, as a tick that read its clock before
+//     another thread made them would see them, on two peer layers that hand their datagrams to each other: nothing is
+//     sent again, dropped or replaced, and at their times the timers run (CORE-S5-6-R3 #574).
 //   - The cost of the protection per datagram, measured on two peer layers that hand their datagrams to each other.
 //   - The cases of the review of PR 429 (CORE-H2-R1 #436), on nodes whose datagrams the test hands on itself, in the
 //     order that each case needs: the records under keys that the peer had not confirmed yet, which the peer's next
@@ -572,6 +575,111 @@ static void ps_bench_recv(PEER_AGENT *a, void *param, const UCHAR *src, UINT pat
 	InterlockedIncrement((volatile LONG *)param);
 }
 
+// The timers of a session at a clock older than the times that they compare it with, as a tick that read its clock before
+// another thread sent an initiation or made keys would see them (CORE-S5-6-R3 #574), on two peer layers that hand their
+// datagrams to each other as for the measurement: X's initiation does not go again before PEER_SESSION_RETRY, the keys of
+// X and Y are neither dropped nor replaced and no keepalive goes, and at their times the timers run. X's first initiation
+// is lost: Y drops it, as X is no peer of Y yet.
+static void ps_clock() {
+	PEER_KEY kx, ky;
+	PS_LINK lx, ly;
+	PEER_INFO p;
+	PEER_ADDR ax, ay;
+	PEER_STATUS sx, sy;
+	PEER_STATS st;
+	volatile LONG got = 0;
+
+	coretest_fixed_key(&kx, 1);
+	coretest_fixed_key(&ky, 33);
+	PeerAddrSetV4(&ax, 198, 51, 100, 23, 5000);
+	PeerAddrSetV4(&ay, 198, 51, 100, 24, 5000);
+	ZeroMemory(&lx, sizeof(lx));
+	ZeroMemory(&ly, sizeof(ly));
+	lx.From = ax;
+	ly.From = ay;
+
+	PEER_AGENT *x = PeerNew(&kx, NULL, ps_link_send, &lx, ps_bench_recv, (void *)&got);
+	PEER_AGENT *y = PeerNew(&ky, NULL, ps_link_send, &ly, ps_bench_recv, (void *)&got);
+	if (coretest_check(x != NULL && y != NULL, "X and Y, two peer layers that hand their datagrams to each other, start") == false) {
+		PeerFree(x);
+		PeerFree(y);
+		PeerKeyClose(&kx);
+		PeerKeyClose(&ky);
+		return;
+	}
+
+	lx.To = y;
+	ly.To = x;
+	ZeroMemory(&p, sizeof(p));
+	strcpy_s(p.Name, sizeof(p.Name), "y");
+	CopyMemory(p.Key, ky.Public, PEER_KEY_SIZE);
+	p.NumVrfs = 1;
+	p.VrfIds[0] = 10;
+	PeerSetPeers(x, &p, 1);
+	PeerSetDirect(x, ky.Public, &ay);
+
+	// X's first datagram waits for the handshake, whose initiation is lost
+	ULONGLONG t0 = GetTickCount64();
+	bool queued = PeerSend(x, ky.Public, "first", 5);
+	ULONGLONG t1 = GetTickCount64();
+	PeerGetStats(x, &st);
+	UINT64 first = st.Sent;
+
+	// A tick at a clock that the initiation was sent after, as one that read its clock before PeerSend wrote the initiation
+	// would, then one 1 ms short of PEER_SESSION_RETRY after the initiation
+	PeerSessionTickAt(x, t0 - 1);
+	PeerGetStats(x, &st);
+	UINT64 older = st.Sent;
+	PeerSessionTickAt(x, t0 + PEER_SESSION_RETRY - 1);
+	PeerGetStats(x, &st);
+	PeerGetStatus(x, ky.Public, &sx);
+	coretest_check(queued && first == 1 && older == 1 && st.Sent == 1 && sx.Session == PEER_SESSION_HANDSHAKE,
+	               "A tick of X at a clock that its initiation was sent after, as when the tick read its clock before PeerSend wrote the initiation, does not send the initiation again, nor does one 1 ms short of PEER_SESSION_RETRY after it");
+
+	// Y knows X now: PEER_SESSION_RETRY after the initiation the tick sends it again, and Y answers
+	strcpy_s(p.Name, sizeof(p.Name), "x");
+	CopyMemory(p.Key, kx.Public, PEER_KEY_SIZE);
+	PeerSetPeers(y, &p, 1);
+	PeerSetDirect(y, kx.Public, &ax);
+	ULONGLONG t2 = GetTickCount64();
+	PeerSessionTickAt(x, t1 + PEER_SESSION_RETRY);
+	ULONGLONG t3 = GetTickCount64();
+	PeerGetStatus(x, ky.Public, &sx);
+	coretest_check(got == 1 && sx.Session == PEER_SESSION_UP && sx.Handshakes == 1,
+	               "PEER_SESSION_RETRY after the initiation the tick of X sends it again: Y answers, and the datagram that waited arrives");
+
+	// Ticks at a clock older than the keys, as ticks that read their clocks before the handshake made the keys would: Y
+	// took a record with a payload and sent none, so only the order of the clocks keeps its keepalive back
+	PeerGetStats(x, &st);
+	UINT64 x_sent = st.Sent;
+	PeerGetStats(y, &st);
+	UINT64 y_sent = st.Sent;
+	PeerSessionTickAt(x, t2 - 1);
+	PeerSessionTickAt(y, t2 - 1);
+	PeerGetStatus(x, ky.Public, &sx);
+	PeerGetStatus(y, kx.Public, &sy);
+	PeerGetStats(x, &st);
+	bool x_quiet = (st.Sent == x_sent);
+	PeerGetStats(y, &st);
+	coretest_check(x_quiet && st.Sent == y_sent && sx.Session == PEER_SESSION_UP && sy.Session == PEER_SESSION_UP && sx.Handshakes == 1 && sy.Handshakes == 1,
+	               "Ticks of X and Y at a clock older than their keys, as when the ticks read their clocks before the handshake made the keys, neither drop nor replace the keys, and send nothing");
+
+	// Y sent X no record: X keeps the keys 1 ms short of PEER_DEFAULT_SESSION_TIMEOUT after the handshake, and drops them
+	// at it
+	PeerSessionTickAt(x, t2 + PEER_DEFAULT_SESSION_TIMEOUT - 1);
+	PeerGetStatus(x, ky.Public, &sx);
+	bool kept = (sx.Session == PEER_SESSION_UP);
+	PeerSessionTickAt(x, t3 + PEER_DEFAULT_SESSION_TIMEOUT);
+	PeerGetStatus(x, ky.Public, &sx);
+	coretest_check(kept && sx.Session == PEER_SESSION_NONE,
+	               "Y sent X no record: the tick of X keeps the keys 1 ms short of PEER_DEFAULT_SESSION_TIMEOUT after the handshake, and drops them at it");
+
+	PeerFree(x);
+	PeerFree(y);
+	PeerKeyClose(&kx);
+	PeerKeyClose(&ky);
+}
+
 // The cost of the protection per datagram: a record sealed, handed over and opened, of 1400 bytes
 static void ps_bench() {
 	PEER_KEY kx, ky;
@@ -995,6 +1103,8 @@ void peersession_test() {
 		ps_rekey(&w);
 	}
 	ps_world_stop(&w);
+
+	ps_clock();
 
 	ps_bench();
 

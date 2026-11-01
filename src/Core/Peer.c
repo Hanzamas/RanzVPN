@@ -1186,8 +1186,8 @@ bool PeerSend(PEER_AGENT *a, const UCHAR *dst, const void *data, UINT size) {
 }
 
 // The timers of the peer sessions (PeerSessionTick): an initiation again, a rekey or a keepalive, sent on the path of
-// each peer
-static void PeerSessionTimers(PEER_AGENT *a) {
+// each peer. Each session reads the clock once it holds its lock, or takes at when it is not NULL (PeerSessionTickAt).
+static void PeerSessionTimers(PEER_AGENT *a, const UINT64 *at) {
 	UCHAR buf[PEER_MAX_DATAGRAM];
 	UCHAR key[PEER_KEY_SIZE];
 
@@ -1200,7 +1200,7 @@ static void PeerSessionTimers(PEER_AGENT *a) {
 			more = (i < a->NumPeers);
 			if (more) {
 				CopyMemory(key, a->Peers[i].Info.Key, PEER_KEY_SIZE);
-				len = PeerSessionTick(a, &a->Peers[i], buf);
+				len = PeerSessionTick(a, &a->Peers[i], buf, at);
 			}
 		}
 		ReleaseSRWLockShared(&a->Lock);
@@ -1241,9 +1241,19 @@ void PeerTick(PEER_AGENT *a) {
 
 	PeerBindWanted(a);
 	PeerPunchTick(a);
-	PeerSessionTimers(a);
+	PeerSessionTimers(a, NULL);
 	if (a->Config.Ice)
 		PeerIceTick(a);
+}
+
+// The timers of the peer sessions at the clock now (ms, the clock of PeerNow) in place of the one that each session
+// reads: a test gives it a clock that is older than an initiation or keys of a session, as a tick that read its clock
+// before another thread sent the initiation or made the keys would see them (CORE-S5-6-R3, #574)
+void PeerSessionTickAt(PEER_AGENT *a, UINT64 now) {
+	if (a == NULL)
+		return;
+
+	PeerSessionTimers(a, &now);
 }
 
 // How the node reaches the peer of key; false when key is no peer
