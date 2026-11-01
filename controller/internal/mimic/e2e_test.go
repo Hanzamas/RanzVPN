@@ -489,7 +489,10 @@ func TestStatsAndUnknownMessages(t *testing.T) {
 	defer conn.Close()
 	st := data.next(t)
 	defer st.conn.Close()
-	if m := srv.counters(); m.Accepted != 1 || m.Streams != 1 {
+	// The node has the stream, and the sidecar counts it just after it wrote the binding, so the node asks until the
+	// stream is counted. The check is as it was: one stream, and a count that does not come fails it
+	m := srv.countersUntil(func(c Message) bool { return c.Accepted >= 1 && c.Streams >= 1 })
+	if m.Accepted != 1 || m.Streams != 1 {
 		t.Errorf("the counters after one stream are %+v", m)
 	}
 }
