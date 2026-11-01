@@ -217,7 +217,7 @@ void NodeCapsPeering(NODE *n, CONTROL_CAPS *caps) {
 	// The peering is in this release (NodePeering.c); what it needs besides is the sidecar, which NodePeeringStartSidecar looks for
 	// in the same place and with the same check, so a node that reports it can start one
 	caps->BgpPeering = (n != NULL && IsFileExistsW(n->BgpSidecar));
-	// ... and so are its route reflectors, which the same sidecar runs (protocol 5; SDN-79, #359)
+	// ... and so are its route reflectors, which the same sidecar runs (protocol 6, NODE_PEERING_PROTOCOL; SDN-79, #359)
 	caps->BgpReflection = caps->BgpPeering;
 }
 

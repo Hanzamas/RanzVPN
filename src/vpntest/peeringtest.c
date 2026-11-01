@@ -65,8 +65,9 @@
 // - A failed copy for a settle: node-a announces its extra LAN 192.168.6.0/24 (Generation 13) while the next copy of the state that its
 //   worker takes to settle its sidecar on a Generation fails (NodePeeringFailNext). Node-a logs and counts it, keeps the change and
 //   tries again, so that its sidecar announces the LAN and the mesh converges, and not only at the next Generation.
-// - A sidecar of protocol 3: a stand-in of such a sidecar sends node-c its ready (NodePeeringFeed). Node-c needs protocol 4: it ends
-//   the sidecar and says so with the version in its log, and the sidecar that starts after it brings the mesh back.
+// - A sidecar of protocol 3: a stand-in of such a sidecar sends node-c its ready (NodePeeringFeed). Node-c needs a later protocol
+//   (NODE_PEERING_PROTOCOL, 6 since the route reflectors of SDN-79, #359): it ends the sidecar and says so with the version in its
+//   log, and the sidecar that starts after it brings the mesh back.
 // - The refusal line: the node log of node-a names the router of the operator that dials the tunnel endpoint among the sessions
 //   that the sidecar refuses, with the session from 127.0.0.9.
 // - A flood: node-b has its sidecar announce 4200 host routes, 1400 in each of red, blue and VRF 103, which no node is a member of:
@@ -2717,7 +2718,7 @@ static void PeeringTestSettle(PEERINGTEST_CTX *ctx)
 
 // A sidecar of an older protocol: the stand-in of a sidecar of protocol 3 sends node-c its ready (NodePeeringFeed), as the sidecar that
 // node-c started would if ranz.exe next to it were older than the node. A protocol 3 sidecar drops the more of a peers message, so that a
-// list of several lines would collapse to its last, and answers a ping with an error. Node-c needs protocol 4: it ends the sidecar,
+// list of several lines would collapse to its last, and answers a ping with an error. Node-c needs protocol NODE_PEERING_PROTOCOL: it ends the sidecar,
 // and its node log, which PeeringTestClose reads, names the version of the sidecar; the sidecar that starts after NODE_PEERING_RESTART
 // is the real one, and the mesh converges again (SDN-77-R3, #570).
 static void PeeringTestOld(PEERINGTEST_CTX *ctx)
@@ -2742,7 +2743,7 @@ static void PeeringTestOld(PEERINGTEST_CTX *ctx)
 		}
 		SleepThread(PEERINGTEST_POLL);
 	}
-	PeeringTestCheck(ctx, replaced, "  Node-c ends a sidecar whose ready names protocol 3, older than the protocol 4 that it needs, and starts another",
+	PeeringTestCheck(ctx, replaced, "  Node-c ends a sidecar whose ready names protocol 3, older than the protocol that it needs, and starts another",
 		"%u old sidecars before and %u after, %u sidecars started before and %u after, running %u, process %u before and %u after", before.NumOld, after.NumOld, before.NumStarts,
 		after.NumStarts, (UINT)after.Running, before.ProcessId, after.ProcessId);
 	if (replaced)
@@ -3059,9 +3060,12 @@ static void PeeringTestClose(PEERINGTEST_CTX *ctx)
 	if (ctx->Old)
 	{
 		char *old_log = PeeringTestReadLog(ctx->Nodes[PEERINGTEST_C].Dir, NULL);
-		bool said = (old_log != NULL && SearchStrEx(old_log, "GoBGP v3 (stand-in)\" speaks protocol 3 of its pipe, and the node needs protocol 4 or later, so the node ends it", 0, true) != INFINITE);
+		char line[MAX_SIZE];
 
-		PeeringTestCheck(ctx, said, "The node log of node-c names the version of the sidecar that it ended, and says that the node needs protocol 4", "%s", old_log == NULL ? "there is no log" : "no such line");
+		Format(line, sizeof(line), "GoBGP v3 (stand-in)\" speaks protocol 3 of its pipe, and the node needs protocol %u or later, so the node ends it", (UINT)NODE_PEERING_PROTOCOL);
+		bool said = (old_log != NULL && SearchStrEx(old_log, line, 0, true) != INFINITE);
+
+		PeeringTestCheck(ctx, said, "The node log of node-c names the version of the sidecar that it ended, and says which protocol the node needs", "%s", old_log == NULL ? "there is no log" : "no such line");
 		Free(old_log);
 	}
 

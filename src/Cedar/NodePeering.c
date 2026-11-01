@@ -25,12 +25,14 @@
 //
 // The route reflectors of the standard mode (SDN-79, #359): in a VRF whose Intent names route reflectors, the Peer object of each
 // peer gives its role there (CONTROL_PEER_PEERING.ReflectorVrfIds, ClientVrfIds and ReflectedVrfIds), which the node passes on to
-// its sidecar with the peer (protocol 5). A client has a session with each reflector of the VRF and with no other client: its
+// its sidecar with the peer (protocol 6). A client has a session with each reflector of the VRF and with no other client: its
 // sidecar knows another client only for what that client may announce, refuses a session from it, and the node does not count it
 // among the peers of its sidecar. A reflector passes on the routes of each client to the other clients of the VRF, each with the
 // client as its next hop, and never into another VRF. The node takes such a route, while the peer that passed it on is a reflector
 // of its VRF, as a route of the node of its next hop, whose accept list it checks: the links of the VRF stay a full mesh, so a route
-// that a reflector passed on never leads through the reflector.
+// that a reflector passed on never leads through the reflector. A sidecar of protocol 4 or 5 would ignore the roles without an
+// error, so that a client of it took no route that a reflector passed on and a reflector of it passed on none: the node needs
+// protocol 6 (NODE_PEERING_PROTOCOL) and ends an older sidecar on its ready, as it ends one of protocol 3 (SDN-77-R3, below).
 //
 // What the review of SDN-77 asked of the node (SDN-77-R1, #531):
 // - No change of the learned routes is lost: the worker never waits for an apply of the overlay, whose lock it only tries. A
@@ -1072,7 +1074,7 @@ static bool NodePeeringLaunch(NODE *n, NODE_PEERING_SIDECAR *s, HANDLE halt) {
 
 // The peers of the state for the sidecar, as the JSON array of the protocol: each peer that the sidecar takes
 // (NodePeeringTakes), in the AS of the node, with the hold time of the session and its VRFs, each with what the peer may
-// announce there and, in a VRF whose Intent names route reflectors, the role of the peer there (protocol 5; SDN-79, #359). A
+// announce there and, in a VRF whose Intent names route reflectors, the role of the peer there (protocol 6; SDN-79, #359). A
 // peer whose routes come through the reflectors goes too: the sidecar has no session with it, and checks with what it may
 // announce the routes of the reflectors that lead to it.
 static cJSON *NodePeeringPeersJson(const CONTROL_STATE *st) {
