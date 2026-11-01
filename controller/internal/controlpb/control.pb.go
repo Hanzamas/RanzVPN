@@ -120,6 +120,10 @@
 // the node that last changed its groups, or a group ID that the node's state does not know, which the
 // node ignores, and it judges the packet by the map of address to group. A claim that names the group
 // generation that the node's state gives the peer was made on that state, so no rollout explains it.
+// No rollout explains a group ID that the peer's state gives another endpoint, so a node stamps no
+// source group in a VRF whose own group the controller marks held (SourceGroup.held): a peer that
+// judges its claims runs a state that would drop one of them as an unknown group, until that peer
+// acknowledges a Generation that lets the node assert it, and the peer judges its packets by the map.
 // The node reports the packets that it judged by their source group in its Telemetry
 // (SourceGroupCounters). No schema version changes with them: a node of an older release skips the
 // fields it does not know, reports no Capability tags and gets no record of version 1.
@@ -2048,7 +2052,7 @@ type NodeConfig struct {
 	// The BGP peering of the node (SDN-77 #357), absent while no VRF of the node peers by BGP
 	Peering *NodePeering `protobuf:"bytes,14,opt,name=peering,proto3" json:"peering,omitempty"`
 	// The source group of the node in each of its VRFs (SDN-87 #386), ordered by VRF id; none for a node
-	// that does not report the Capability tags
+	// that does not report the Capability tags. The node stamps none in a VRF whose group is held.
 	Groups []*SourceGroup `protobuf:"bytes,15,rep,name=groups,proto3" json:"groups,omitempty"`
 	// The session profile that the node runs under as a device of a User (SDN-40 #233), absent for a node
 	// that has no owner or whose owner runs under none: the node enforces its flags on itself.
@@ -3286,7 +3290,13 @@ type SourceGroup struct {
 	// other node: the Generation of the node's state from which on it may assert the groups that it
 	// may assert there, this one and those of the Devices whose gateway it is. It changes only when
 	// those change. The node names it in each claim that it sends, its 32 low bits on the wire.
-	Generation    uint64 `protobuf:"varint,4,opt,name=generation,proto3" json:"generation,omitempty"`
+	Generation uint64 `protobuf:"varint,4,opt,name=generation,proto3" json:"generation,omitempty"`
+	// Only in the NodeConfig: the node stamps no source group on a packet of the VRF, neither this one nor
+	// the group of a Device whose gateway it is. A peer that judges its claims runs a state, the one that
+	// it acknowledged last or the one in flight to it, that does not let the node assert one of them and
+	// gives its group ID to another endpoint of the VRF, so it would drop the packet as of an unknown
+	// group. The controller clears it once no such peer is left.
+	Held          bool `protobuf:"varint,5,opt,name=held,proto3" json:"held,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -3347,6 +3357,13 @@ func (x *SourceGroup) GetGeneration() uint64 {
 		return x.Generation
 	}
 	return 0
+}
+
+func (x *SourceGroup) GetHeld() bool {
+	if x != nil {
+		return x.Held
+	}
+	return false
 }
 
 // The zone of a VRF (SDN-11 #187, ADR-0028 decisions 6 and 7). The stub resolver of a node
@@ -6686,14 +6703,15 @@ const file_ranz_control_v1_control_proto_rawDesc = "" +
 	" \x01(\x0e2\x18.ranz.control.v1.TagModeR\atagMode\x12\x10\n" +
 	"\x03hub\x18\v \x01(\tR\x03hub\x12\x12\n" +
 	"\x04ecmp\x18\f \x01(\bR\x04ecmp\x122\n" +
-	"\apeering\x18\r \x01(\x0e2\x18.ranz.control.v1.PeeringR\apeering\"s\n" +
+	"\apeering\x18\r \x01(\x0e2\x18.ranz.control.v1.PeeringR\apeering\"\x87\x01\n" +
 	"\vSourceGroup\x12\x15\n" +
 	"\x06vrf_id\x18\x01 \x01(\rR\x05vrfId\x12\x14\n" +
 	"\x05group\x18\x02 \x01(\rR\x05group\x12\x17\n" +
 	"\atag_set\x18\x03 \x01(\x04R\x06tagSet\x12\x1e\n" +
 	"\n" +
 	"generation\x18\x04 \x01(\x04R\n" +
-	"generation\"W\n" +
+	"generation\x12\x12\n" +
+	"\x04held\x18\x05 \x01(\bR\x04held\"W\n" +
 	"\aDnsZone\x12\x16\n" +
 	"\x06suffix\x18\x01 \x01(\tR\x06suffix\x124\n" +
 	"\arecords\x18\x02 \x03(\v2\x1a.ranz.control.v1.DnsRecordR\arecords\"=\n" +
