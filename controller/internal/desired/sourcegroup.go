@@ -41,10 +41,12 @@ import (
 // the sender's Peer object (WithGroupGenerations), so two Nodes whose states agree on what the sender may
 // assert in a VRF hold the same group generation for it. A Node takes the claim of a group that its state
 // lets the peer assert, whatever group generation the claim names, as the numbers mean the same in every
-// Generation, and refuses any other claim as an unknown group, whatever group generation it names: the
-// sender chooses that number, so it exempts nothing. The Node logs the group generation of a refused claim
-// beside the one that its state gives the peer, which tells a claim made on another state of the peer,
-// while two Generations roll out, from a forged one.
+// Generation. It takes the claim of another group for an unknown group, which it drops, counts and logs,
+// when the claim names the group generation that its state gives the peer, or none, as the group policy
+// extension of VXLAN has no room for one. A claim of another group generation was made on another state of
+// the peer, the one before or the one after the Node's own: the Node judges its packet by the map of address
+// to group, as it judges a packet without a claim, and counts it as ignored (Cedar/NodeSourceGroup.c). The
+// map gives the packet no more than its address gives it, so a claim that the Node ignores gains nothing.
 //
 // A Node that reports the Capability tags gets its own group in each of its VRFs (NodeConfig.groups)
 // and the group of each Device of its state (Device.group, Device.tag_set), and of each peer that
