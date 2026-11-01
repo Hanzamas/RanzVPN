@@ -47,6 +47,15 @@
 // The session ends when the node closes the pipe: the sidecar then stops BGP, which tells the
 // peers with a Cease notification, and exits.
 //
+// A VRF of a peer may have a role (SDN-79 #359, reflector.go), for a VRF whose nodes peer through
+// route reflectors: client, the peer is a client of the node there, and the node reflects the
+// routes of the peer there to the other clients of the VRF and theirs to the peer; reflector, the
+// peer is a route reflector of the VRF, and the node takes from it the routes there of any node
+// of the VRF that the sidecar knows, with that node as the next hop; reflected, both are clients
+// there, and the routes of the peer there come through the reflectors. A peer whose every VRF is
+// reflected has no session: the sidecar refuses one from it, and knows it only for the routes
+// that the reflectors pass on.
+//
 // A start with evpn makes the node an EVPN gateway to a data-centre fabric (evpn.go; SDN-25 #201),
 // and has no address: its peers are the routers of the fabric, not Ranz nodes. evpn names the VTEP
 // of the node, its router_mac and its vrfs (vrf, the L3 vni, the rd, the
@@ -70,8 +79,8 @@ import (
 
 // ProtocolVersion is the version of the protocol that ready reports: 2 adds the peering of the
 // standard mode and the refused message, 3 the EVPN of a gateway, 4 the more of a peers message,
-// ping and pong.
-const ProtocolVersion = 4
+// ping and pong, 5 the role of a VRF of a peer (the route reflector).
+const ProtocolVersion = 5
 
 // MaxLine is the size of one message at most, with its newline.
 const MaxLine = 64 * 1024
@@ -161,6 +170,9 @@ type Peer struct {
 type PeerVRF struct {
 	ID     uint32   `json:"id"`
 	Accept []string `json:"accept,omitempty"`
+	// Role is the role of the peer in the VRF when its nodes peer through route reflectors
+	// (reflector.go): RoleClient, RoleReflector or RoleReflected; empty in a full mesh
+	Role string `json:"role,omitempty"`
 }
 
 // ErrLineTooLong is returned by Reader.Read for a message longer than MaxLine.
