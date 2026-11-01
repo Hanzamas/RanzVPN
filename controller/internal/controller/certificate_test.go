@@ -403,9 +403,10 @@ func TestCertificateReplacementReachesPinnedNodes(t *testing.T) {
 	// A Node that pinned the old fingerprint reconnects: it keeps the ones the Controller sent. One that was never
 	// told is refused at the TLS session, before it sends anything.
 	b1.halt()
+	// The Controller lists the stream that just ended as connected until it reads its end: wait until it lists branch-1 as
+	// gone, and then for the Hello of the new stream, so that the connected branch-1 below is the one with the new Hello
+	certWait(t, "the Controller to list branch-1 as gone", func() bool { return !h.nodes()["branch-1"].Connected })
 	b1.serve()
-	// The Controller still shows the stream that just ended as connected until it reads its end, so the Hello of the
-	// new stream is what says that the Node is back: waiting for the status alone can count the streams before it
 	certWait(t, "branch-1 to open a new stream", func() bool { return b1.hellos() > hellos["branch-1"] })
 	h.waitConnected("branch-1")
 	if b1.hellos() != hellos["branch-1"]+1 {
