@@ -1,8 +1,9 @@
 # Fixtures for the scripts of the ADR-0040 quality gates: fuzz-registry.py, run_fuzzers.ps1 (its lines
 # "// fuzz-reach:" and the coverage report of libFuzzer that it reads for them, with PowerShell 7),
-# coverage-floor.py, bench-gate.py, static-findings.py and govulncheck-gate.py; and for the guards of the start of
+# coverage-floor.py, bench-gate.py, static-findings.py and govulncheck-gate.py; for the guards of the start of
 # ranz-node in service-eventlog.ps1 (the source scan of the VBScript firewall path and the checks of the firewall
-# rules and of the script hosts, with PowerShell 7).
+# rules and of the script hosts, with PowerShell 7); and for the bound of every msiexec call of msi-install.ps1 (a
+# planted hang, with PowerShell 7).
 #
 # Each gate runs on a throwaway tree or input made here and must pass what it should pass and fail
 # what it should fail: a new parser without a fuzz target, a stale registry line, a fuzz target that
@@ -560,6 +561,35 @@ def test_service_eventlog():
            'ok: the check fails on a trace that holds no start of the program')
 
 
+def test_msi_install():
+    # msi-install.ps1 (CI-FLAKE-6, #593) gives every msiexec call a bound: a call that never ends fails its step after 300 s with the
+    # evidence, and its process tree is ended, where it held the job for 55 minutes in three runs. -SelfTest plants the hang: a
+    # stand-in for msiexec.exe that never ends and starts a child that never ends either, run through Invoke-Msiexec with a bound of
+    # 20 s. The call must fail within it, naming the verb and the package, with the evidence printed and kept, and both processes
+    # must be ended; a call with no bound returns after the 120 s that the stand-in sleeps, and the fixture fails on that. The same
+    # check runs on Windows, on x64 and arm64, in the msi jobs of windows.yml, with the real msiexec.exe and the process list of
+    # the evidence. PowerShell 7 runs the script here, on Linux.
+    pwsh = shutil.which('pwsh')
+    if pwsh is None:
+        failures.append('msi-install: no pwsh on the PATH, which the self-test of msi-install.ps1 needs')
+        print('FAIL', 'msi-install: no pwsh')
+        return
+    script = os.path.join(HERE, 'msi-install.ps1')
+    try:
+        p = subprocess.run([pwsh, '-NoProfile', '-NonInteractive', '-File', script, '-SelfTest'], stdout=subprocess.PIPE,
+                           stderr=subprocess.STDOUT, timeout=300)
+        result = (p.returncode, p.stdout.decode('utf-8', errors='replace'))
+    except subprocess.TimeoutExpired as e:
+        result = (-1, (e.stdout or b'').decode('utf-8', errors='replace') + '\nthe self-test did not end within 300 s')
+    expect('msi-install: a msiexec that never ends fails within its bound, with the evidence, and its process tree is ended', result, 0,
+           'ok: a call that ends gives its exit code, and leaves no evidence of a hang',
+           'ok: a msiexec that never ends fails within its bound (20 s, after ',
+           'and the failure names the verb and the package',
+           'ok: the evidence holds the processes, the end of the verbose log, the events of Windows Installer and the state of msiserver, and is kept in a file',
+           'ok: the process tree of the call is ended: the stand-in and its child',
+           'ok: no other call starts after a call that did not end')
+
+
 if __name__ == '__main__':
     test_fuzz_registry()
     test_run_fuzzers()
@@ -569,6 +599,7 @@ if __name__ == '__main__':
     test_govulncheck_gate()
     test_one_binary()
     test_service_eventlog()
+    test_msi_install()
     if failures:
         print('\n\n'.join(failures))
         print('%d fixtures failed' % len(failures))
