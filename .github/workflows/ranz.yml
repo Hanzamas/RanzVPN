@@ -171,7 +171,8 @@ jobs:
     # CI-SPEED-1 #547; about 10 minutes before), and the fuzz step runs each target of fuzz-targets.txt for 20 s,
     # one after the other, about 14 minutes now: a job of 25 minutes was cancelled in its static analysis, the last step,
     # with every step before it done
-    timeout-minutes: 40
+    # TEMPORARY (CI-FLAKE-4, #581): 100 minutes for the stress step at the end, 40 again in the last commit of this pull request
+    timeout-minutes: 100
     steps:
     - uses: actions/checkout@v4
     - uses: actions/setup-go@v5
@@ -495,6 +496,81 @@ jobs:
         "$RUNNER_TEMP/gobin/govulncheck" -format json ./... > "$RUNNER_TEMP/govulncheck-linux.json"
         GOOS=windows "$RUNNER_TEMP/gobin/govulncheck" -format json ./... > "$RUNNER_TEMP/govulncheck-windows.json"
         python .github/scripts/govulncheck-gate.py --accepted .github/quality/govulncheck-accepted.txt "$RUNNER_TEMP/govulncheck-linux.json" "$RUNNER_TEMP/govulncheck-windows.json"
+    # TEMPORARY, removed in the last commit of this pull request (CI-FLAKE-4, #581): the two tests of the sightings and the
+    # package of the helper again and again under -race, while a program opens and closes thousands of connections, each of
+    # which takes a source port of the runner. go test runs 5 times at a time (the package once), until the runs or the
+    # minutes of the call are over, and the step fails at the first test that fails.
+    - name: 'Stress, temporary (CI-FLAKE-4, #581)'
+      if: ${{ !cancelled() }}
+      timeout-minutes: 60
+      run: |
+        mkdir -p "$RUNNER_TEMP/churn"
+        cat > "$RUNNER_TEMP/churn/main.go" <<'EOF'
+        package main
+
+        import (
+            "io"
+            "net"
+            "time"
+        )
+
+        func main() {
+            srv, err := net.Listen("tcp", "127.0.0.1:0")
+            if err != nil {
+                panic(err)
+            }
+            go func() {
+                for {
+                    c, err := srv.Accept()
+                    if err != nil {
+                        return
+                    }
+                    go func() {
+                        io.Copy(io.Discard, c)
+                        c.Close()
+                    }()
+                }
+            }()
+            addr := srv.Addr().String()
+            for range 4 {
+                go func() {
+                    for {
+                        var open []*net.TCPConn
+                        for range 500 {
+                            c, err := net.DialTimeout("tcp", addr, time.Second)
+                            if err != nil {
+                                break
+                            }
+                            open = append(open, c.(*net.TCPConn))
+                        }
+                        time.Sleep(200 * time.Millisecond)
+                        for _, c := range open {
+                            c.SetLinger(0)
+                            c.Close()
+                        }
+                    }
+                }()
+            }
+            select {}
+        }
+        EOF
+        (cd "$RUNNER_TEMP/churn" && go build -o churn main.go)
+        "$RUNNER_TEMP/churn/churn" &
+        churn=$!
+        trap 'kill "$churn" 2>/dev/null || true' EXIT
+        # stress <minutes> <runs> <batch> <name> <go test arguments>
+        stress() {
+          local end=$((SECONDS + $1 * 60)) want=$2 batch=$3 name=$4 runs=0
+          shift 4
+          while [ "$runs" -lt "$want" ] && [ "$SECONDS" -lt "$end" ]; do
+            go test -race -count="$batch" -failfast -timeout 20m "$@"
+            runs=$((runs + batch))
+            echo "$name: $runs runs in a row passed with the connections open, after $SECONDS s"
+          done
+        }
+        stress 22 100 5 TestRunServesTheCertificateOfItsSetting -run '^TestRunServesTheCertificateOfItsSetting$' ./controller
+        stress 12 100 1 TestRollingUpgrade -run '^TestRollingUpgrade$' ./controller
+        stress 8 100 1 controller/internal/controller ./controller/internal/controller
     - uses: actions/upload-artifact@v4
       if: failure()
       with:
@@ -513,7 +589,8 @@ jobs:
         platform: ${{ fromJSON(needs.plan.outputs.ranz_windows_matrix) }}
     name: ranz (Windows ${{ matrix.platform.ARCHITECTURE }})
     runs-on: ${{ matrix.platform.RUNNER }}
-    timeout-minutes: 40
+    # TEMPORARY (CI-FLAKE-5, #592): 100 minutes for the stress step at the end, 40 again in the last commit of this pull request
+    timeout-minutes: 100
     env:
       # The Go code builds without cgo; the gcc of the arm64 runner builds x64 code only
       CGO_ENABLED: '0'
@@ -738,6 +815,61 @@ jobs:
       timeout-minutes: 10
       run: |
         . .github/scripts/controller-service.ps1 -BinDir build\ranz
+    # TEMPORARY, removed in the last commit of this pull request (CI-FLAKE-5, #592): the three tests of the sightings again
+    # and again while a program keeps every core of the runner busy. go test runs 5 times at a time, until the 20 runs or the
+    # minutes of the test are over, and the step fails at the first test that fails. The three packages then run once with
+    # the load.
+    - name: 'Stress, temporary (CI-FLAKE-5, #592)'
+      if: ${{ !cancelled() && matrix.platform.ARCHITECTURE == 'x64' }}
+      shell: pwsh
+      timeout-minutes: 60
+      run: |
+        $dir = Join-Path $env:RUNNER_TEMP 'burn'
+        New-Item -ItemType Directory -Force -Path $dir | Out-Null
+        @'
+        package main
+
+        import "runtime"
+
+        func main() {
+            for range runtime.NumCPU() {
+                go func() {
+                    for {
+                    }
+                }()
+            }
+            select {}
+        }
+        '@ | Set-Content -Path (Join-Path $dir 'main.go')
+        Push-Location $dir
+        go build -o burn.exe main.go
+        if ($LASTEXITCODE -ne 0) { throw "go build of burn exited with code $LASTEXITCODE" }
+        Pop-Location
+        $burn = Start-Process -FilePath (Join-Path $dir 'burn.exe') -PassThru -WindowStyle Hidden
+        try {
+          $tests = @(
+            @{ Name = 'TestTheUIWorksThroughTheAPI'; Package = './controller/internal/webui'; Minutes = 10 },
+            @{ Name = 'TestRqliteNeedsTheCredential'; Package = './controller'; Minutes = 12 },
+            @{ Name = 'TestARestoredKeyThatDoesNotOpenIsShown'; Package = './controller/internal/controller'; Minutes = 6 }
+          )
+          foreach ($t in $tests) {
+            $name = $t.Name
+            $package = $t.Package
+            $pattern = '^' + $name + '$'
+            $end = (Get-Date).AddMinutes($t.Minutes)
+            $runs = 0
+            while ($runs -lt 20 -and (Get-Date) -lt $end) {
+              go test -count=5 -failfast -timeout 20m -run $pattern $package
+              if ($LASTEXITCODE -ne 0) { throw "$name failed after $runs runs in a row with every core busy" }
+              $runs += 5
+              Write-Host "$name : $runs runs in a row passed with every core busy"
+            }
+          }
+          go test -count=1 -timeout 20m ./controller/internal/webui ./controller ./controller/internal/controller
+          if ($LASTEXITCODE -ne 0) { throw "the packages failed with every core busy" }
+        } finally {
+          Stop-Process -Id $burn.Id -Force
+        }
 
   # The EVPN of a gateway against FRR, the reference BGP speaker of a data-centre fabric (SDN-25 #201; ADR-0032). FRR runs
   # in a container of its own on a bridge of this runner, which stands in for the second host (ADR-0002 amendment of
