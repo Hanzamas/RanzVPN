@@ -157,6 +157,13 @@
 // release reports no Capability bgp_peering either, so the controller refuses to make it a member of
 // such a VRF (SDN-77-R2, #532): it would ignore these settings and lose the LAN subnets of the VRF,
 // which the controller no longer gives it, without an error.
+//
+// Route reflectors of the standard mode (SDN-79, #359): in a VRF whose Intent names route reflectors,
+// the other nodes are their clients, and a client has a session with each reflector and with no other
+// client. The Peer object gives the role of the peer in each VRF of the peering
+// (PeerPeering.reflector_vrf_ids, client_vrf_ids and reflected_vrf_ids). A node of an older release
+// skips those fields and would peer in a full mesh that its peers refuse, so it reports no Capability
+// bgp_reflection, and the controller refuses to make it a member of such a VRF.
 syntax = "proto3";
 
 package ranz.control.v1;
@@ -392,6 +399,15 @@ message PeerPeering {
   // What the peer may announce in them, with their more specific ones: its addresses and its LAN
   // subnets there, ordered by VRF id, then prefix. The node takes nothing else from it.
   repeated Route accept = 4;
+  // The route reflectors of the standard mode (SDN-79 #359), in a VRF of vrf_ids whose Intent names
+  // reflectors, ascending: the VRFs in which the peer is a route reflector, so that the node takes from
+  // it the routes there of the other nodes of the VRF; those in which it is a client of this node, a
+  // reflector there, which passes on its routes to the other clients and theirs to it; and those in which
+  // both are clients, whose routes come through the reflectors. A peer all of whose VRFs are reflected has
+  // no session with the node, which knows what it may announce only to check the routes of the reflectors.
+  repeated uint32 reflector_vrf_ids = 5;
+  repeated uint32 client_vrf_ids = 6;
+  repeated uint32 reflected_vrf_ids = 7;
 }
 
 // The kind of the links between the nodes of a VRF (SDN-76 #356). A link of kind noise is the Noise
@@ -552,6 +568,9 @@ message Vrf {
   bool ecmp = 12;
   // How the nodes of the VRF exchange their routes (SDN-77 #357)
   Peering peering = 13;
+  // The route reflectors of a VRF whose nodes peer by BGP (SDN-79 #359), in name order: every other node of
+  // the VRF is a client of each. Empty for a full mesh.
+  repeated string reflectors = 14;
 }
 
 // The zone of a VRF (SDN-11 #187, ADR-0028 decisions 6 and 7). The stub resolver of a node
@@ -802,6 +821,10 @@ message Capabilities {
   // The node can be the gateway of a Stretch (SDN-63 #290, ADR-0032 amendment of 2026-10-22): its host is a Windows Server and
   // the VXLAN module of the node runs. 13 and 14 are the fields that SDN-87 (#386) and SDN-77-R2 (#532) take, so this is 15.
   bool evpn = 15;
+  // The node runs the route reflectors of the BGP peering of the standard mode (SDN-79 #359), as a reflector and as a client: its
+  // release has them, and ranz.exe is next to it. A node that does not report it is refused as a member of a VRF whose Intent
+  // names reflectors.
+  bool bgp_reflection = 16;
 }
 
 // The Windows edition of a node's host.

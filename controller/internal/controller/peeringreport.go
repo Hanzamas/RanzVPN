@@ -52,7 +52,8 @@ type PeeringStatus struct {
 	Node string `json:"node"`
 	// ASN is the AS of the Nodes in the BGP peering, 0 while no VRF of the Node peers by BGP.
 	ASN uint32 `json:"asn,omitempty"`
-	// Expected are the Nodes that share a VRF that peers by BGP with the Node, in name order.
+	// Expected are the Nodes that share a VRF that peers by BGP with the Node, in name order, but for
+	// the other clients of the route reflectors of such a VRF, with which it has no session (SDN-79).
 	Expected []string `json:"expected"`
 	// Reported is when the Node reported its peering last, zero while it reported none since the
 	// controller started.
@@ -156,14 +157,9 @@ func (c *Controller) Peering(name string) (PeeringStatus, error) {
 		if a, err := intent.ParseVTEPAddress(o.VTEP.Address); err == nil {
 			vteps[a.Unmap()] = other
 		}
-		if other == name {
-			continue
-		}
-		for _, v := range in.PeeringVRFs(o) {
-			if slices.Contains(mine, v) {
-				st.Expected = append(st.Expected, other)
-				break
-			}
+		// A client of route reflectors has a session with them and with no other client of theirs (SDN-79)
+		if in.PeeringSession(name, other) {
+			st.Expected = append(st.Expected, other)
 		}
 	}
 	vrfs := map[uint32]string{}

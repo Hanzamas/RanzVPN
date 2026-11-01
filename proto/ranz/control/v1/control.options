@@ -204,6 +204,13 @@ ranz.control.v1.NodePeering.announce max_count:16
 ranz.control.v1.PeerPeering.address max_size:16
 ranz.control.v1.PeerPeering.vrf_ids max_count:16
 ranz.control.v1.PeerPeering.accept max_count:32
+# The route reflectors of a VRF (SDN-79): two node names at most (controller/internal/intent
+# MaxReflectors), and the roles of each peer, each a part of the VRFs of the peering, 16 at most. They
+# make a Vrf about 130 bytes larger and a Peer about 200 bytes.
+ranz.control.v1.Vrf.reflectors max_count:2 max_size:64
+ranz.control.v1.PeerPeering.reflector_vrf_ids max_count:16
+ranz.control.v1.PeerPeering.client_vrf_ids max_count:16
+ranz.control.v1.PeerPeering.reflected_vrf_ids max_count:16
 # What a node reports of the peering in its Telemetry (SDN-77): the peers of its sidecar, at most one
 # for each of its 64 Peer objects, each with the address of its sidecar, the state of its session,
 # a word of at most 11 letters, and the prefixes that the node learned from it, at most what the
