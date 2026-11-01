@@ -31,7 +31,6 @@ void Format(char *buf, UINT size, const char *fmt, ...) RANZ_PRINTF_FORMAT(3, 4)
 void Print(const char *fmt, ...) RANZ_PRINTF_FORMAT(1, 2);
 void Debug(const char *fmt, ...) RANZ_PRINTF_FORMAT(1, 2);
 UINT ToInt(const char *str);
-int ToInti(const char *str);
 void ToStr(char *str, UINT i);
 void TrimCrlf(char *str);
 void Trim(char *str);
