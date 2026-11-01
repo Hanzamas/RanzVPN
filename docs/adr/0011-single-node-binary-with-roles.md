@@ -1,6 +1,6 @@
 # ADR-0011: One node binary with roles instead of separate vpnserver and vpnclient
 
-**Status:** Accepted (2026-10-11), as part of the dual-mode decision (ADR-0014: "one node binary with both backends"). Hilmi stated the intent himself: "emang murni gw bikin server yang bisa jadi client, gimana itu?"; the concrete consequence for the slim fork is ADR-0012 (Accepted, ticket #23). Amended 2026-10-20 (the controller leaves the node binary, SDN spec #176), 2026-10-21 (stock SoftEther peers return through `ranz-compat` in the Legacy phase) and 2026-10-22 (the product ships as one `ranz.exe`).
+**Status:** Accepted (2026-10-11), as part of the dual-mode decision (ADR-0014: "one node binary with both backends"). Hilmi stated the intent himself: "emang murni gw bikin server yang bisa jadi client, gimana itu?"; the concrete consequence for the slim fork is ADR-0012 (Accepted, ticket #23). Amended 2026-10-20 (the controller leaves the node binary, SDN spec #176), 2026-10-21 (stock SoftEther peers return through `ranz-compat` in the Legacy phase), 2026-10-22 (the product ships as one `ranz.exe`) and 2026-10-31 (the Roles of a Node are declared in its Node resource).
 
 ## Context
 
@@ -56,3 +56,7 @@ Consequences
 - An update replaces one signed file, and its payload is extracted and checked again (SDN-59, #252).
 - The "optional MSI feature" RanzBgp of ADR-0022 is replaced by the subcommand `ranz bgp`. The MSI becomes a thin wrapper that runs `ranz install` (ONE-5, #314; ADR-0020 amendment of the same date). The XDP install path of ADR-0018 changes with it.
 - Tickets ONE-1 to ONE-5 (#310 to #314) sit under #224. New terms for CONTEXT.md: `ranz.exe`, Payload.
+
+## Amendment 2026-10-31: the Roles of a Node are declared in its Node resource (SDN-63)
+
+Recorded by SDN-63 (#290). The Roles of this ADR (`server`, `client`, `bridge` and `relay`) come from the configuration of the node and the control plane, and the Hello of a node carries its Capabilities and no Roles, so the Controller cannot learn them from the node. The Node resource of the Intent has `roles` (the resource model of ADR-0031), which the administrator declares for the checks of the Controller. So far only `bridge` matters: the amendment of ADR-0032 of 2026-10-22 refuses an intent in which a Network has a Stretch and also a Node with the Role `bridge`, unless that Node is a gateway of the Stretch, and the Controller makes that check from the declared Roles. Every Node of the VRF of the Network counts as a Node of the Network, since a Network has no list of members of its own. The Controller does not compare the declared Roles with the Roles that a node runs.
