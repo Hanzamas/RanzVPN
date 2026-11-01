@@ -4,7 +4,8 @@ param(
 	[string] $OtherDir,     # The folder that holds ranz-<other>.msi, the package of the other architecture
 	[string] $LogDir,       # Where the Windows Installer logs go
 	[string] $NodeSha256,   # The SHA-256 of the signed ranz-node.exe that the ranz.exe of the packages carries as its Payload
-	[switch] $StandIn       # The packages carry a stand-in ranz.exe (.github/msi/standin-ranz.go), which a job without the C build runs
+	[switch] $StandIn,      # The packages carry a stand-in ranz.exe (.github/msi/standin-ranz.go), which a job without the C build runs
+	[switch] $SelfTest      # Checks the bound of a msiexec call on a planted hang alone, with no package: no other parameter is read
 )
 
 $ErrorActionPreference = 'Stop'
@@ -43,6 +44,12 @@ $PSNativeCommandUseErrorActionPreference = $false
 #
 # Every step runs, and a failed step prints what it needs to be read from the log, then the next independent
 # step runs; the job fails at the end with the list of the steps that failed.
+#
+# Every msiexec call has a bound (Invoke-Msiexec, $msiexecSeconds): Windows Installer has none, and a call that never ended held
+# this script for 55 minutes in three runs (CI-FLAKE-6, #593). A call that is not done in time prints what a person needs to see
+# the cause, ends its process tree and fails its step with the verb and the package, and the run stops there: the next call would
+# hang the same way. -SelfTest plants such a hang and checks all of that on any computer with PowerShell 7: quality-gates-test.py
+# runs it on Linux, and the msi job runs it on x64 and arm64.
 
 $nodeService = 'ranzvpnserver'
 $controllerService = 'ranz-controller'
@@ -57,6 +64,185 @@ $nodeLogDir = Join-Path $dataDir 'node_log'
 $canary = Join-Path $dataDir 'msi-canary.txt'
 $standInDir = Join-Path $env:ProgramData 'Ranz MSI stand-in'
 $calls = Join-Path $standInDir 'calls.log'
+
+# The bound of a msiexec call, in seconds. The green runs of 2026-10-31 (five of each architecture, from the pushes to integration)
+# took 36 s at the most for the slowest call, the install of the previous package on x64 (23 s on arm64), and 5 s at the most for
+# every other call, so 300 s is more than eight times the slowest. The program that a call runs and the arguments before its verb
+# are msiexec.exe and none; -SelfTest puts a stand-in there.
+$msiexecSeconds = 300
+$msiexecFile = 'msiexec.exe'
+$msiexecPrefix = @()
+# The message of the call that reached its bound, once one did: Step stops the run there, and no other call starts
+$script:msiexecHang = $null
+
+function Test-ProcessAlive([int] $id) {
+	$process = Get-Process -Id $id -ErrorAction SilentlyContinue
+	return ($null -ne $process -and -not $process.HasExited)
+}
+
+# What a person needs to see why a msiexec call does not end, one line each: the msiexec processes and the tree of the call with the
+# parent, the time and the command line of each, the end of the verbose log of the call, the events of Windows Installer of the last
+# 15 minutes and the state of its service. A part that the computer cannot give says why, so that it never hides the others.
+function Get-MsiexecEvidence([int] $callId, [string] $log) {
+	$lines = [System.Collections.Generic.List[string]]::new()
+	$lines.Add("msiexec processes, and the tree of the call (process $callId), each with its parent and its command line:")
+	try {
+		if (-not (Get-Command Get-CimInstance -ErrorAction SilentlyContinue)) { throw 'this computer has no Get-CimInstance' }
+		$all = @(Get-CimInstance Win32_Process)
+		$shown = [System.Collections.Generic.HashSet[int]]::new()
+		$queue = [System.Collections.Generic.Queue[int]]::new()
+		foreach ($id in @($callId) + @($all | Where-Object { $_.Name -eq 'msiexec.exe' } | ForEach-Object { [int] $_.ProcessId })) {
+			if ($shown.Add($id)) { $queue.Enqueue($id) }
+		}
+		while ($queue.Count -gt 0) {
+			$parentId = $queue.Dequeue()
+			foreach ($child in @($all | Where-Object { [int] $_.ParentProcessId -eq $parentId })) {
+				if ($shown.Add([int] $child.ProcessId)) { $queue.Enqueue([int] $child.ProcessId) }
+			}
+		}
+		foreach ($process in @($all | Where-Object { $shown.Contains([int] $_.ProcessId) } | Sort-Object ProcessId)) {
+			$parent = @($all | Where-Object { $_.ProcessId -eq $process.ParentProcessId })[0]
+			$parentName = if ($parent) { $parent.Name } else { 'gone' }
+			$cpu = ([double] $process.KernelModeTime + [double] $process.UserModeTime) / 1e7
+			$lines.Add(('  process {0} {1}, parent {2} {3}, {4} threads, {5:N1} s of cpu, started {6:u}: {7}' -f $process.ProcessId, $process.Name, $process.ParentProcessId, $parentName, $process.ThreadCount, $cpu, $process.CreationDate, $process.CommandLine))
+		}
+	} catch {
+		$lines.Add("  not read: $($_.Exception.Message)")
+	}
+
+	$lines.Add("the verbose log ${log}:")
+	try {
+		if (Test-Path -LiteralPath $log) {
+			$item = Get-Item -LiteralPath $log
+			$lines.Add(('  {0} bytes, last written {1:u}, and its last lines:' -f $item.Length, $item.LastWriteTime))
+			Get-Content -LiteralPath $log -Tail 40 | ForEach-Object { $lines.Add("  $_") }
+		} else {
+			$lines.Add('  the log is not there')
+		}
+	} catch {
+		$lines.Add("  not read: $($_.Exception.Message)")
+	}
+
+	$lines.Add('events of Windows Installer (provider MsiInstaller, log Application) of the last 15 minutes, the last 60 of them:')
+	try {
+		$events = @(Get-WinEvent -FilterHashtable @{ LogName = 'Application'; ProviderName = 'MsiInstaller'; StartTime = (Get-Date).AddMinutes(-15) } -ErrorAction SilentlyContinue)
+		if ($events.Count -eq 0) { $lines.Add('  none') }
+		foreach ($record in @($events | Sort-Object RecordId | Select-Object -Last 60)) {
+			$lines.Add(('  {0:u} id {1}: {2}' -f $record.TimeCreated, $record.Id, ($record.Message -replace '\s+', ' ')))
+		}
+	} catch {
+		$lines.Add("  not read: $($_.Exception.Message)")
+	}
+
+	try {
+		$service = Get-CimInstance Win32_Service -Filter "Name='msiserver'"
+		if ($service) {
+			$lines.Add("service msiserver: $($service.State), process $($service.ProcessId), start mode $($service.StartMode), status $($service.Status), exit code $($service.ExitCode)")
+		} else {
+			$lines.Add('service msiserver: not installed')
+		}
+	} catch {
+		$lines.Add("service msiserver: not read ($($_.Exception.Message))")
+	}
+	return $lines.ToArray()
+}
+
+# Ends the process of a call and every process that it started
+function Stop-MsiexecCall([System.Diagnostics.Process] $call) {
+	try {
+		$call.Kill($true)
+	} catch {
+		Write-Host "the process $($call.Id) could not be ended: $($_.Exception.Message)"
+	}
+	if (-not $call.WaitForExit(10000)) { Write-Host "the process $($call.Id) is still there 10 s after it was ended" }
+}
+
+# A msiexec run: its exit code and the path of its verbose log
+function Invoke-Msiexec([string] $verb, [string] $package, [string] $step) {
+	$log = Join-Path $LogDir "$step.log"
+	$p = Start-Process -FilePath $msiexecFile -ArgumentList ($msiexecPrefix + @($verb, "`"$package`"", '/qn', '/norestart', '/l*v', "`"$log`"")) -Wait -PassThru
+	$script:lastLog = $log
+	Write-Host "msiexec $verb $(Split-Path -Leaf $package): exit code $($p.ExitCode) (log $log)"
+	return [pscustomobject]@{ Code = $p.ExitCode; Log = $log }
+}
+
+# The bound on a planted hang. A bound that no hang has tested proves nothing, so a stand-in for msiexec.exe that never ends, and
+# starts a child that never ends either, runs through Invoke-Msiexec with a bound of 20 s. The call must fail within it, with a
+# message that names the verb and the package; the evidence must be printed and kept; both processes must be ended. The stand-in
+# sleeps for 120 s, so a call with no bound returns after 120 s with no failure, and the check fails on that. A stand-in that exits
+# at once checks that a call that ends is left alone, and on Windows a package that is not there checks the real msiexec.exe.
+function Invoke-SelfTest {
+	$bound = 20
+	$work = Join-Path ([System.IO.Path]::GetTempPath()) "msi-install-selftest-$([guid]::NewGuid().ToString('N'))"
+	New-Item -ItemType Directory -Force -Path $work | Out-Null
+	$standIn = Join-Path $work 'standin-msiexec.ps1'
+	Set-Content -LiteralPath $standIn -Value @'
+# A stand-in for msiexec.exe (the self-test of msi-install.ps1): refused.msi exits with 23 at once, any other package hangs. The
+# stand-in writes its verbose log, starts a child that does not end either, writes both process ids next to the log and sleeps.
+$package = $args[1]
+$log = $args[[array]::IndexOf($args, '/l*v') + 1]
+if ((Split-Path -Leaf $package) -eq 'refused.msi') { exit 23 }
+Set-Content -LiteralPath $log -Value @('planted verbose log, line 1', 'planted verbose log, line 2: the last line')
+$child = Start-Process -FilePath (Get-Process -Id $PID).Path -ArgumentList @('-NoProfile', '-NonInteractive', '-Command', 'Start-Sleep -Seconds 120') -PassThru
+Set-Content -LiteralPath "$log.pids" -Value "$PID $($child.Id)"
+Start-Sleep -Seconds 120
+'@
+	try {
+		$script:LogDir = $work
+		$script:msiexecSeconds = $bound
+		if ($IsWindows) {
+			$real = Invoke-Msiexec '/i' (Join-Path $work 'not-there.msi') 'planted-not-there'
+			if ($real.Code -isnot [int] -or $real.Code -eq 0) { throw "the real msiexec.exe gave the exit code '$($real.Code)' for a package that is not there" }
+			Write-Host 'ok: the real msiexec.exe gives its exit code for a package that is not there'
+		}
+		$script:msiexecFile = (Get-Process -Id $PID).Path
+		$script:msiexecPrefix = @('-NoProfile', '-NonInteractive', '-File', "`"$standIn`"")
+
+		$refused = Invoke-Msiexec '/i' (Join-Path $work 'refused.msi') 'planted-refused'
+		if ($refused.Code -ne 23) { throw "a call that ends gave the exit code $($refused.Code), not 23" }
+		if (Test-Path -LiteralPath (Join-Path $work 'planted-refused-evidence.txt')) { throw 'a call that ended left the evidence of a hang' }
+		Write-Host 'ok: a call that ends gives its exit code, and leaves no evidence of a hang'
+
+		$thrown = $null
+		$watch = [System.Diagnostics.Stopwatch]::StartNew()
+		try {
+			$hung = Invoke-Msiexec '/i' (Join-Path $work 'hang.msi') 'planted-hang'
+		} catch {
+			$thrown = $_.Exception.Message
+		}
+		$seconds = $watch.Elapsed.TotalSeconds
+		if (-not $thrown) { throw "a msiexec that never ends was not bounded: the call returned after $([int] $seconds) s with the exit code $($hung.Code) and no failure, and its bound is $bound s" }
+		if ($seconds -lt $bound -or $seconds -gt $bound + 60) { throw "the call failed after $([int] $seconds) s, not within its bound of $bound s (and 60 s for the evidence)" }
+		if ($thrown -notlike "msiexec /i hang.msi did not end within $bound s*") { throw "the failure does not name the verb and the package: $thrown" }
+		if ($thrown -ne $script:msiexecHang) { throw "Step stops the run at the message in msiexecHang, which is '$script:msiexecHang', not '$thrown'" }
+		Write-Host "ok: a msiexec that never ends fails within its bound ($bound s, after $([int] $seconds) s), and the failure names the verb and the package"
+
+		$evidenceFile = Join-Path $work 'planted-hang-evidence.txt'
+		if (-not (Test-Path -LiteralPath $evidenceFile)) { throw 'the call that did not end kept no evidence in a file' }
+		$evidence = Get-Content -LiteralPath $evidenceFile -Raw
+		$ids = @((Get-Content -LiteralPath (Join-Path $work 'planted-hang.log.pids')) -split '\s+' | Where-Object { $_ })
+		if ($ids.Count -ne 2) { throw "the stand-in wrote $($ids.Count) process ids, not two: its own and its child's" }
+		$parts = @('msiexec processes', 'planted verbose log, line 2: the last line', 'events of Windows Installer', 'service msiserver')
+		if ($IsWindows) { $parts += @($ids | ForEach-Object { "  process $_ " }) }
+		foreach ($part in $parts) {
+			if (-not $evidence.Contains($part)) { throw "the evidence of the call that did not end has no '$part':`n$evidence" }
+		}
+		Write-Host 'ok: the evidence holds the processes, the end of the verbose log, the events of Windows Installer and the state of msiserver, and is kept in a file'
+
+		$deadline = (Get-Date).AddSeconds(15)
+		while (@($ids | Where-Object { Test-ProcessAlive ([int] $_) }).Count -gt 0 -and (Get-Date) -lt $deadline) { Start-Sleep -Milliseconds 250 }
+		$alive = @($ids | Where-Object { Test-ProcessAlive ([int] $_) })
+		if ($alive.Count -gt 0) { throw "the process tree of the call is still there after its failure: process $($alive -join ', ')" }
+		Write-Host 'ok: the process tree of the call is ended: the stand-in and its child'
+	} finally {
+		Remove-Item -LiteralPath $work -Recurse -Force -ErrorAction SilentlyContinue
+	}
+}
+
+if ($SelfTest) {
+	Invoke-SelfTest
+	exit 0
+}
 
 if ($Architecture -notin 'x64', 'arm64') { throw "-Architecture is '$Architecture', not x64 or arm64" }
 $other = if ($Architecture -eq 'x64') { 'arm64' } else { 'x64' }
@@ -111,15 +297,6 @@ if (-not $StandIn) {
 	if ($previousVersion -ne $expectedPrevious) { throw "the previous package is at $previousVersion, not $expectedPrevious, one build below $version" }
 }
 Write-Host "package $version ($Architecture), previous package $previousVersion, upgrade code $upgradeCode"
-
-# A msiexec run: its exit code and the path of its verbose log
-function Invoke-Msiexec([string] $verb, [string] $package, [string] $step) {
-	$log = Join-Path $LogDir "$step.log"
-	$p = Start-Process -FilePath 'msiexec.exe' -ArgumentList @($verb, "`"$package`"", '/qn', '/norestart', '/l*v', "`"$log`"") -Wait -PassThru
-	$script:lastLog = $log
-	Write-Host "msiexec $verb $(Split-Path -Leaf $package): exit code $($p.ExitCode) (log $log)"
-	return [pscustomobject]@{ Code = $p.ExitCode; Log = $log }
-}
 
 # The text of a Windows Installer log, whatever its encoding
 function Read-MsiLog([string] $path) {
@@ -297,8 +474,9 @@ function Assert-DataKept {
 function Remove-InstalledState {
 	# The products of Windows Installer first, then what is left of the services and the folder
 	foreach ($entry in @(Get-ArpEntries)) {
-		if ($entry.Key -match '^\{[0-9A-Fa-f-]+\}$') {
-			Start-Process -FilePath 'msiexec.exe' -ArgumentList @('/x', $entry.Key, '/qn', '/norestart') -Wait | Out-Null
+		# After a call that did not end, Windows Installer is in a state that nobody knows: no other call starts
+		if ($entry.Key -match '^\{[0-9A-Fa-f-]+\}$' -and -not $script:msiexecHang) {
+			[void](Invoke-Msiexec '/x' $entry.Key "remove-$($entry.Key.Trim('{', '}'))")
 		}
 	}
 	foreach ($name in @($nodeService, $controllerService)) {
@@ -373,6 +551,11 @@ function Step([string] $name, [scriptblock] $body) {
 		try { Show-Diagnostics } catch { Write-Host "the diagnostics failed: $($_.Exception.Message)" }
 	}
 	Write-Host '::endgroup::'
+	# A call that did not end left Windows Installer in a state that nobody knows, and the next call would hang the same way
+	if ($script:msiexecHang) {
+		Write-Host "the run stops after '$name': $script:msiexecHang"
+		throw $script:msiexecHang
+	}
 	return $passed
 }
 
@@ -516,6 +699,11 @@ try {
 			break
 		}
 	}
+} catch {
+	# A call that did not end: the run stopped at the step that made it, and the summary below names the call. Any other
+	# error is the script's own.
+	if (-not $script:msiexecHang) { throw }
+	if (@($failures | Where-Object { $_.EndsWith($script:msiexecHang) }).Count -eq 0) { $failures.Add("clean-up: $script:msiexecHang") }
 } finally {
 	Remove-InstalledState
 }

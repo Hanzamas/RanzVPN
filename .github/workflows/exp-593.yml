@@ -1,0 +1,69 @@
+# TEMPORARY, removed before the pull request of CI-FLAKE-6 (#593) is done. The ticket asks why the timeouts of the msi job ended
+# none of three hangs. This asks the runner, on both architectures: what does a step with a timeout of 1 minute do when it waits
+# for a process that never ends, as the old msi-install.ps1 waited for msiexec (Start-Process -Wait)? And it runs the self-test
+# of msi-install.ps1 on real Windows.
+name: exp-593
+
+on:
+  pull_request:
+    paths:
+    - '.github/workflows/exp-593.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  hang:
+    strategy:
+      fail-fast: false
+      matrix:
+        platform: [
+          { ARCHITECTURE: x64, RUNNER: "windows-latest" },
+          { ARCHITECTURE: arm64, RUNNER: "windows-11-arm" }
+        ]
+        mode: [child, orphan]
+    name: hang ${{ matrix.mode }} (${{ matrix.platform.ARCHITECTURE }})
+    runs-on: ${{ matrix.platform.RUNNER }}
+    timeout-minutes: 5
+    steps:
+    - name: A step with a timeout of 1 minute that waits for a process that never ends
+      shell: pwsh
+      timeout-minutes: 1
+      env:
+        MODE: ${{ matrix.mode }}
+      run: |
+        $pwsh = (Get-Process -Id $PID).Path
+        $began = Get-Date
+        Write-Host "start $($began.ToString('o')), mode $env:MODE, pwsh $pwsh"
+        if ($env:MODE -eq 'child') {
+          # the child never ends, as msiexec did
+          Start-Process -FilePath $pwsh -ArgumentList @('-NoProfile', '-Command', 'Start-Sleep -Seconds 3600') -Wait
+        } else {
+          # the child ends at once and leaves a process of its own that never ends
+          $inner = "Start-Process -FilePath '$pwsh' -ArgumentList '-NoProfile','-Command','Start-Sleep -Seconds 3600'"
+          Start-Process -FilePath $pwsh -ArgumentList @('-NoProfile', '-Command', "`"$inner`"") -Wait
+        }
+        Write-Host "the wait ended after $([int] ((Get-Date) - $began).TotalSeconds) s"
+    - name: The step after it
+      if: ${{ !cancelled() }}
+      shell: pwsh
+      run: Write-Host 'the next step ran'
+
+  selftest:
+    strategy:
+      fail-fast: false
+      matrix:
+        platform: [
+          { ARCHITECTURE: x64, RUNNER: "windows-latest" },
+          { ARCHITECTURE: arm64, RUNNER: "windows-11-arm" }
+        ]
+    name: selftest (${{ matrix.platform.ARCHITECTURE }})
+    runs-on: ${{ matrix.platform.RUNNER }}
+    timeout-minutes: 8
+    steps:
+    - uses: actions/checkout@v4
+    - name: The self-test of msi-install.ps1
+      shell: pwsh
+      timeout-minutes: 5
+      run: |
+        . .github/scripts/msi-install.ps1 -SelfTest
