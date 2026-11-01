@@ -1721,13 +1721,19 @@ jobs:
   # and that a failed ranz install rolls the package back. The version of the package is the run number,
   # the build that ranz version prints. .github/scripts/msi-install.ps1.
   #
-  # Every msiexec call of the script has a bound of 300 s and fails with the evidence (CI-FLAKE-6, #593). The step has a
-  # timeout of 10 minutes (the bound, the longest normal step, 77 s, and 3 minutes for the evidence) and the job one of 20 (the
-  # step, the step of the planted hang, the setup and the upload): they are the second line, for a hang that the bound cannot
-  # catch. The old ones, 30 and 45 minutes, ended nothing in three jobs: the step was still running when the service cancelled
-  # each job after 55 minutes, the 45 of the job and 10 more. A msiexec that hangs does not do that by itself, since the runner
-  # ends such a step at its timeout (the pull request of #593 has the runs), so the runner or the computer did not answer; the
-  # evidence that the bound prints is there to tell which.
+  # Every msiexec call of the script has a bound of 300 s and fails with the evidence (CI-FLAKE-6, #593). The evidence is collected
+  # in a process of its own under a bound of 60 s, and then the call and the process of the service msiserver, where an install
+  # usually hangs, are ended and the failure lists what was ended and what was not (CI-FLAKE-6-R1, #596). The wait for the Node to
+  # stop and to start and ranz.exe version have a bound of 60 s too, with the state of the service and the processes printed when
+  # it is reached. The step has a timeout of 10 minutes (the bound, the longest normal step, 77 s, and the evidence and the end of
+  # a hang, about 2 minutes at the most) and the job one of 20 (the step, the step of the planted hangs, the setup and the upload):
+  # they are the second line, for a hang that the bounds cannot catch. The old ones, 30 and 45 minutes, ended nothing in three
+  # jobs: the step was still running when the service cancelled each job after 55 minutes, the 45 of the job and 10 more. A msiexec
+  # that hangs does not do that by itself, since the runner ends such a step at its timeout (the pull request of #593 has the
+  # runs), so the runner or the computer did not answer; the evidence that the bound prints is there to tell which. The fourth
+  # sighting (the push to integration at fe400338, job 124903044920, 2026-11-01) had the bound and the timeouts of #593 and was
+  # cancelled at 25 minutes (the 20 of the job and 5 more) with the step in progress; its log is gone too, so it is not known
+  # whether a call reached its bound and the evidence, which had no bound then, stalled, or the runner did not answer.
   msi:
     needs: sign_and_integrity
     strategy:
@@ -1774,13 +1780,17 @@ jobs:
         ARCHITECTURE: ${{ matrix.platform.ARCHITECTURE }}
       run: |
         . .github/scripts/msi-install.ps1 -Architecture $env:ARCHITECTURE -Dir artifacts\msi -OtherDir artifacts\msi-other -LogDir (Join-Path $env:RUNNER_TEMP 'msi-logs') -NodeSha256 $env:NODE_SHA256
-    # The bound of every msiexec call of the step above, on a planted hang: a stand-in for msiexec.exe that never ends must fail
-    # within its bound, with the evidence, and its process tree must be ended (CI-FLAKE-6, #593). It runs whatever the step above
-    # did, and it runs the real msiexec.exe once, on a package that is not there.
+    # The bounds of the step above, on planted hangs: a stand-in for msiexec.exe that never ends must fail within its bound, with the
+    # evidence, and its process tree and the process of the service msiserver must be ended, and the failure must list what was ended
+    # (CI-FLAKE-6, #593; CI-FLAKE-6-R1, #596). The evidence is checked for each part: the event of the planted call, the state of the
+    # real service, the processes and the tail of the log. A stall in the evidence, a Node that does not stop or start and a ranz.exe
+    # that never prints each fail within their bounds, and the main flow on a planted hang ends with an error. It runs whatever the
+    # step above did, and it runs the real msiexec.exe once, on a package that is not there. The timeout is 5 minutes: the planted
+    # hangs take about 100 s.
     - name: The bound of a msiexec call, on a planted hang
       if: ${{ !cancelled() }}
       shell: pwsh
-      timeout-minutes: 3
+      timeout-minutes: 5
       run: |
         . .github/scripts/msi-install.ps1 -SelfTest
     - uses: actions/upload-artifact@v4
