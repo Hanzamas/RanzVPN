@@ -40,6 +40,15 @@
 //   0.0.0.0/0 and ::/0 of its red, which gw takes in red: of two default routes the one of red wins, for the packets of gw and
 //   of peer, while 172.16.1.0/24 of the fabric still wins over both. In Generation 3 red has no exit again, and the default
 //   routes of the fabric take what no route of red holds, as before.
+// - The source port (SDN-25-R3, #571): a frame of red from 127.0.0.2, the VTEP of the routes, sent from another UDP port than
+//   the fabric_port of gw, reaches the host of gw: the address alone names a VTEP, which sends from any source port.
+// - A second leaf (SDN-25-R3, #571): the node leaf, a VTEP of the fabric on 127.0.0.4 whose sidecar dials the one of gw on ::1,
+//   announces 172.16.1.0/24 of its red too, so its route loses to the one of the fabric, and it has no prefix of its own in
+//   red. The sidecar of gw names the next hops of both routes (vteps), so a frame of red from 127.0.0.4 reaches the host of gw,
+//   and one from 127.0.0.3 is still dropped and counted; once the leaf withdraws its route, a frame from it is dropped too.
+// - The operator (SDN-25-R3, #571): of a burst of frames from 127.0.0.3 within a second, more than 10 s after the frame of an
+//   unknown VTEP before, the node log of gw names the first in one line and none of the others, and the answer of the admin
+//   pipe of gw to state, which ranz node state prints, has the frames of unknown VTEPs of its EVPN.
 // Print "EVPN TEST OK" only when every check passes. .github/scripts/bgp-spike.ps1 runs it, with ranz.exe next to vpntest.
 
 #include "harness_int.h"
@@ -85,6 +94,9 @@
 #define	EVPNTEST_OTHER_VNI		999			// A VNI of no VRF
 #define	EVPNTEST_WEB			80			// The TCP port that the Mirror of gw copies, of the server of peer
 #define	EVPNTEST_CLIENT			5000		// ... and the port of the client of peer
+#define	EVPNTEST_LOG_GAP		12000		// More than NODE_EVPN_LOG_WAIT: the next frame of an unknown VTEP has a line of the node log (ms)
+#define	EVPNTEST_BURST			10			// The frames of an unknown VTEP of a burst, which the node log names in one line
+#define	EVPNTEST_REPLY			65536		// Bytes of an answer of the admin pipe at most (NODE_ADMIN_REPLY)
 
 // The nodes
 #define	EVPNTEST_GW				0
@@ -100,11 +112,11 @@ static const UCHAR evpntest_fabric_mac[6] = {0x02, 0x00, 0x5E, 0x10, 0x00, 0x01}
 static const UCHAR evpntest_other_mac[6] = {0x02, 0x00, 0x5E, 0x99, 0x99, 0x99};
 
 // The Bgp setting of gw (its BGP port, the UDP port of its VTEP and of the VTEPs of the fabric): its sidecar listens on
-// 127.0.0.1 for the fabric, which dials it; red and blue hand the same prefixes of the overlay to the fabric, each on its L3
-// VNI and its route target. Red takes every prefix of the fabric, its default routes among them (SDN-25-R2, #550), and blue
-// takes 172.16.0.0/12 and fd16::/48.
-#define	EVPNTEST_GW_BGP	"{\"asn\":65001,\"router_id\":\"192.0.2.1\",\"listen_port\":%u,\"listen_addresses\":[\"127.0.0.1\"]," \
-	"\"peers\":[{\"address\":\"127.0.0.1\",\"asn\":65010,\"passive\":true}]," \
+// 127.0.0.1 for the fabric, which dials it, and on ::1 for the second leaf (SDN-25-R3, #571); red and blue hand the same
+// prefixes of the overlay to the fabric, each on its L3 VNI and its route target. Red takes every prefix of the fabric, its
+// default routes among them (SDN-25-R2, #550), and blue takes 172.16.0.0/12 and fd16::/48.
+#define	EVPNTEST_GW_BGP	"{\"asn\":65001,\"router_id\":\"192.0.2.1\",\"listen_port\":%u,\"listen_addresses\":[\"127.0.0.1\",\"::1\"]," \
+	"\"peers\":[{\"address\":\"127.0.0.1\",\"asn\":65010,\"passive\":true},{\"address\":\"::1\",\"asn\":65011,\"passive\":true}]," \
 	"\"evpn\":{\"vtep\":\"127.0.0.1\",\"port\":%u,\"fabric_port\":%u,\"vrfs\":[" \
 	"{\"vrf\":101,\"vni\":10101,\"import\":[\"65000:10101\"],\"export\":[\"65000:10101\"],\"accept\":[\"0.0.0.0/0\",\"::/0\"]}," \
 	"{\"vrf\":102,\"vni\":10102,\"import\":[\"65000:10102\"],\"export\":[\"65000:10102\"],\"accept\":[\"172.16.0.0/12\",\"fd16::/48\"]}]}," \
@@ -118,6 +130,16 @@ static const UCHAR evpntest_other_mac[6] = {0x02, 0x00, 0x5E, 0x99, 0x99, 0x99};
 	"{\"vrf\":201,\"vni\":10101,\"import\":[\"65000:10101\"],\"export\":[\"65000:10101\"],\"accept\":[\"10.10.0.0/16\",\"fd10::/48\"]}," \
 	"{\"vrf\":202,\"vni\":10102,\"import\":[\"65000:10102\"],\"export\":[\"65000:10102\"],\"accept\":[\"10.10.0.0/16\",\"fd10::/48\"]}]}," \
 	"\"announce\":[{\"prefix\":\"172.16.1.0/24\",\"vrf\":201},{\"prefix\":\"172.16.1.0/24\",\"vrf\":202},{\"prefix\":\"fd16::/64\",\"vrf\":201}]}"
+
+// The Bgp setting of the node leaf, a second leaf of the fabric (the BGP port of gw, the UDP port of its own VTEP and of gw's;
+// SDN-25-R3, #571): its sidecar dials gw on ::1, the one address that names it apart from the fabric, and announces
+// 172.16.1.0/24 of its red under its own route distinguisher (its router id and VRF 201), which the route of the fabric already
+// holds at gw: its route loses, and it has no prefix of its own in red
+#define	EVPNTEST_LEAF_BGP	"{\"asn\":65011,\"router_id\":\"192.0.2.11\",\"listen_port\":-1," \
+	"\"peers\":[{\"address\":\"::1\",\"asn\":65001,\"port\":%u}]," \
+	"\"evpn\":{\"vtep\":\"127.0.0.4\",\"router_mac\":\"02:00:5e:10:00:02\",\"port\":%u,\"fabric_port\":%u,\"vrfs\":[" \
+	"{\"vrf\":201,\"vni\":10101,\"import\":[\"65000:10101\"],\"export\":[\"65000:10101\"],\"accept\":[\"10.10.0.0/16\"]}]}," \
+	"\"announce\":[{\"prefix\":\"172.16.1.0/24\",\"vrf\":201}]}"
 
 // One node and the fake adapter of its host, which keeps the last packet that the host took
 typedef struct EVPNTEST_NODE
@@ -147,6 +169,10 @@ typedef struct EVPNTEST_CTX
 	SOCKET Sensor;						// The sensor of the Mirror of gw, on 127.0.0.1 ...
 	USHORT SensorPort;					// ... and its UDP port
 	bool Overlays;						// The overlays of gw and peer run
+	wchar_t GwPipe[MAX_SIZE];			// The admin pipe of gw, which answers state (SDN-25-R3, #571)
+	UINT64 LastUnknown;					// When the test sent a frame of an unknown VTEP last (Tick64)
+	bool Burst;							// The burst of EvpnTestOperator went ...
+	UINT64 BurstBase;					// ... after this many frames of unknown VTEPs
 } EVPNTEST_CTX;
 
 // A packet that a host sends to the fabric: the node and the VRF of the host, the two ends of an UDP packet, and the VNI
@@ -927,6 +953,9 @@ static bool EvpnTestOpen(EVPNTEST_CTX *ctx, TRANSPORT *loopback)
 	EvpnTestNewDir(ctx->Nodes[EVPNTEST_GW].Dir, sizeof(ctx->Nodes[EVPNTEST_GW].Dir), "gw", bgp);
 	ctx->Nodes[EVPNTEST_GW].Node = NewNode(ctx->Nodes[EVPNTEST_GW].Dir);
 	ok = EvpnTestCheck(ctx, IsFileExistsW(ctx->Nodes[EVPNTEST_GW].Node->BgpSidecar), "ranz.exe is next to vpntest.exe", "%S is missing", ctx->Nodes[EVPNTEST_GW].Node->BgpSidecar) && ok;
+	// An admin pipe of its own, which the operator asks for the state of gw (EvpnTestOperator)
+	UniFormat(ctx->GwPipe, sizeof(ctx->GwPipe), L"ranz-evpntest-%u", Rand32() & 0xFFFF);
+	UniStrCpy(ctx->Nodes[EVPNTEST_GW].Node->AdminPipe, sizeof(ctx->Nodes[EVPNTEST_GW].Node->AdminPipe), ctx->GwPipe);
 	NodeStart(ctx->Nodes[EVPNTEST_GW].Node);
 
 	NODE_EVPN_STATUS es;
@@ -972,6 +1001,41 @@ static bool EvpnTestOpen(EVPNTEST_CTX *ctx, TRANSPORT *loopback)
 	ok = EvpnTestCheck(ctx, applied, what, "started %u, applied and linked %u", (UINT)started, (UINT)applied) && ok;
 
 	return ok;
+}
+
+// The node log of gw names the frames of unknown VTEPs once every 10 s at most (SDN-25-R3, #571), each line with the number of
+// such frames since the EVPN started: of the burst of EvpnTestOperator, which went more than 10 s after the frame of an unknown
+// VTEP before, the first frame has a line, and the others none
+static void EvpnTestLogRate(EVPNTEST_CTX *ctx, char *log)
+{
+	char *marker = "the address of no VTEP that the gateway knows for the VRF: ";
+	UINT lines = 0;
+	UINT first = 0;
+	UINT others = 0;
+
+	if (ctx->Burst == false)
+	{
+		return;
+	}
+
+	for (UINT pos = SearchStrEx(log, marker, 0, true);log != NULL && pos != INFINITE;pos = SearchStrEx(log, marker, pos + 1, true))
+	{
+		UINT64 num = ToInt64(log + pos + StrLen(marker));
+
+		lines++;
+		if (num == ctx->BurstBase + 1)
+		{
+			first++;
+		}
+		else if (num > ctx->BurstBase + 1 && num <= ctx->BurstBase + EVPNTEST_BURST)
+		{
+			others++;
+		}
+	}
+
+	EvpnTestCheck(ctx, first == 1 && others == 0,
+		"The node log of gw names the first frame of the burst from 127.0.0.3 in a line, with the number of such frames so far, and none of the 9 after it",
+		"%u lines of frames of unknown VTEPs, %u at the first frame of the burst, %u at the others", lines, first, others);
 }
 
 // The nodes first, whose overlays and sidecars stop with every thread joined, then the harness VTEP and the sensor. The node
@@ -1023,6 +1087,8 @@ static void EvpnTestClose(EVPNTEST_CTX *ctx)
 			"EVPN route 172.16.1.0/24 of VRF 101 learned: via the VTEP 127.0.0.2, VNI 10101, router MAC 02:00:5e:10:00:01, from 127.0.0.1",
 			"EVPN route 172.16.1.0/24 of VRF 102 learned: via the VTEP 127.0.0.2, VNI 10102, router MAC 02:00:5e:10:00:01, from 127.0.0.1",
 			"EVPN route 172.16.1.0/24 of VRF 101 withdrawn by 127.0.0.1",
+			// The route of the fabric with the VTEP of the second leaf among the VTEPs that offer it (SDN-25-R3, #571)
+			"EVPN route 172.16.1.0/24 of VRF 101 learned: via the VTEP 127.0.0.2, VNI 10101, router MAC 02:00:5e:10:00:01, from 127.0.0.1; VTEPs that offer it: 2",
 			"EVPN stopped:",
 		};
 		char missing[MAX_SIZE * 2];
@@ -1040,6 +1106,7 @@ static void EvpnTestClose(EVPNTEST_CTX *ctx)
 			}
 		}
 		EvpnTestCheck(ctx, all, "The node log of gw names its EVPN, the prefixes it announces in each VRF and the routes of the fabric it learned and lost", "missing:%s", missing);
+		EvpnTestLogRate(ctx, log);
 		Free(log);
 
 		if (ctx->NumFailed != 0)
@@ -1520,6 +1587,307 @@ static void EvpnTestExit(EVPNTEST_CTX *ctx)
 		"sent %I64u and failed %I64u before, sent %I64u and failed %I64u after", before.Sent, before.Failed, after.Sent, after.Failed);
 }
 
+// Whether the frame of red of a UDP packet from src to dst with the data seq, to the router MAC of gw, sent from the socket s,
+// reaches the host of gw in VRF 101 as it was sent
+static bool EvpnTestReachesFrom(EVPNTEST_CTX *ctx, SOCKET s, char *src, char *dst, UINT seq)
+{
+	EVPNTEST_NODE *gw = &ctx->Nodes[EVPNTEST_GW];
+	UCHAR packet[EVPNTEST_SIZE];
+	UINT size = EvpnTestPacket(packet, src, dst, seq);
+	LONG arrivals = InterlockedCompareExchange(&gw->Arrivals, 0, 0);
+	bool sent = (size != 0 && EvpnTestInjectFrom(ctx, s, EVPNTEST_VNI_RED, evpntest_gw_mac, packet, size));
+	bool arrived = sent && EvpnTestArrived(gw, arrivals + 1, EVPNTEST_WAIT);
+	bool same = false;
+
+	AcquireSRWLockShared(&gw->Lock);
+	{
+		same = (arrived && gw->LastVrf == EVPNTEST_RED && gw->LastSize == size && Cmp(gw->Last, packet, size) == 0);
+	}
+	ReleaseSRWLockShared(&gw->Lock);
+
+	return same;
+}
+
+// The source port of a frame of the fabric (SDN-25-R3, #571): the address alone names a VTEP, which sends from a source port that
+// hashes the inner flow (RFC 7348 section 5). A frame of red from 127.0.0.2, the VTEP of the routes of the fabric, sent from
+// another UDP port than the one of the harness VTEP, which is the UDP port of the VTEPs of the fabric for gw (fabric_port),
+// reaches the host of gw; a gateway that compared the source port would drop it as the frame of an unknown VTEP.
+static void EvpnTestSourcePort(EVPNTEST_CTX *ctx)
+{
+	EVPNTEST_NODE *gw = &ctx->Nodes[EVPNTEST_GW];
+	NODE_EVPN_STATUS before, after;
+	SOCKET other = INVALID_SOCKET;
+
+	Print("[the source port of a frame of the fabric]\n");
+
+	USHORT port = EvpnTestBind(&other, 0x7F000002);
+	NodeEvpnGetStatus(gw->Node, &before);
+	bool same = (port != 0 && port != ctx->VtepPort && EvpnTestReachesFrom(ctx, other, "172.16.1.10", "10.10.0.1", 850));
+	NodeEvpnGetStatus(gw->Node, &after);
+	EvpnTestCheck(ctx, same && before.FabricPort == ctx->VtepPort && after.UnknownVtep == before.UnknownVtep,
+		"A frame of red from 127.0.0.2, the VTEP of the routes, sent from another UDP port than the fabric_port of gw, reaches the host of gw in VRF 101 as it was sent",
+		"port %u, fabric_port %u, reached %u, unknown VTEP %I64u to %I64u", (UINT)port, (UINT)before.FabricPort, (UINT)same, before.UnknownVtep, after.UnknownVtep);
+
+	if (other != INVALID_SOCKET)
+	{
+		closesocket(other);
+	}
+}
+
+// Whether the route of the fabric to prefix in the VRF vrf_id that node t holds names the address vtep among its VTEPs, the
+// next hops of every route that the peers offer for the prefix (SDN-25-R3, #571), as known says, within EVPNTEST_BOUND
+static bool EvpnTestWaitVtep(EVPNTEST_NODE *t, UINT vrf_id, char *prefix, char *vtep, bool known)
+{
+	UCHAR addr[16], ip[16];
+	UINT64 end = Tick64() + EVPNTEST_BOUND;
+	NODE_EVPN_ROUTE *list = ZeroMalloc(sizeof(NODE_EVPN_ROUTE) * 16);
+	bool ok = false;
+
+	// The address as the route holds it: an IPv4 address as an IPv4-mapped one
+	Zero(ip, sizeof(ip));
+	if (EvpnTestAddress(addr, vtep) == 4)
+	{
+		ip[10] = 0xFF;
+		ip[11] = 0xFF;
+		Copy(ip + 12, addr, 4);
+	}
+	else
+	{
+		Copy(ip, addr, 16);
+	}
+
+	while (ok == false)
+	{
+		UINT num = NodeEvpnGetRoutes(t->Node, list, 16);
+		bool found = false;
+
+		for (UINT i = 0;i < num && i < 16;i++)
+		{
+			NODE_EVPN_ROUTE *r = &list[i];
+
+			for (UINT j = 0;r->VrfId == vrf_id && StrCmpi(r->Prefix, prefix) == 0 && j < r->NumVteps && j < NODE_EVPN_MAX_OFFERS;j++)
+			{
+				found = (found || Cmp(r->Vteps[j], ip, sizeof(ip)) == 0);
+			}
+		}
+
+		ok = (found == known);
+		if (ok || Tick64() >= end)
+		{
+			break;
+		}
+		SleepThread(EVPNTEST_POLL * 5);
+	}
+
+	Free(list);
+
+	return ok;
+}
+
+// A second leaf of the fabric (SDN-25-R3, #571): the node leaf, the VTEP 127.0.0.4, announces 172.16.1.0/24 of its red too, which
+// the route of the fabric already holds at gw: its route loses, and it has no prefix of its own in red. The sidecar of gw names
+// the next hops of both routes in the vteps of its learned message, so gw knows 127.0.0.4 for red, and a frame of red from it
+// reaches the host of gw, while a frame of red from 127.0.0.3, the VTEP of no route that a peer offers, is still dropped and
+// counted. Once the leaf withdraws its route, gw knows 127.0.0.4 no more, and drops its frame too.
+static void EvpnTestTwoLeaves(EVPNTEST_CTX *ctx)
+{
+	EVPNTEST_NODE *gw = &ctx->Nodes[EVPNTEST_GW];
+	EVPNTEST_NODE *leaf = ZeroMalloc(sizeof(EVPNTEST_NODE));
+	SOCKET leaf_vtep = INVALID_SOCKET;
+	SOCKET stranger = INVALID_SOCKET;
+	char bgp[MAX_SIZE * 4];
+	wchar_t log_dir[MAX_PATH];
+	UINT failed = ctx->NumFailed;
+
+	Print("[a second leaf whose route of a shared prefix lost]\n");
+
+	// The leaf, whose sidecar dials gw on ::1, and the data plane of the leaf on 127.0.0.4 and of a stranger on 127.0.0.3
+	USHORT leaf_port = EvpnTestFreePort(false);
+	USHORT vtep_port = EvpnTestBind(&leaf_vtep, 0x7F000004);
+	USHORT stranger_port = EvpnTestBind(&stranger, 0x7F000003);
+	Format(bgp, sizeof(bgp), EVPNTEST_LEAF_BGP, (UINT)ctx->BgpPort, (UINT)leaf_port, (UINT)ctx->GwPort);
+	EvpnTestNewDir(leaf->Dir, sizeof(leaf->Dir), "leaf", bgp);
+	leaf->Node = NewNode(leaf->Dir);
+	NodeStart(leaf->Node);
+
+	bool established = (leaf_port != 0 && vtep_port != 0 && stranger_port != 0 && EvpnTestWaitBgp(leaf, true));
+	bool known = established && EvpnTestWaitVtep(gw, EVPNTEST_RED, "172.16.1.0/24", "127.0.0.4", true);
+	EvpnTestCheck(ctx, known && EvpnTestHasRoute(gw, EVPNTEST_RED, "172.16.1.0/24", "127.0.0.2", EVPNTEST_VNI_RED, evpntest_fabric_mac),
+		"The sidecar of leaf, the VTEP 127.0.0.4, dials gw on ::1 and announces 172.16.1.0/24 of its red: the route of gw stays via 127.0.0.2, with 127.0.0.4 among its VTEPs",
+		"ports %u, %u and %u, established %u, known %u", (UINT)leaf_port, (UINT)vtep_port, (UINT)stranger_port, (UINT)established, (UINT)known);
+
+	EvpnTestCheck(ctx, known && EvpnTestReachesFrom(ctx, leaf_vtep, "172.16.1.30", "10.10.0.1", 900),
+		"A frame of red from 127.0.0.4, the leaf whose route lost and which has no prefix of its own in red, reaches the host of gw in VRF 101 as it was sent",
+		"known %u, see the line above", (UINT)known);
+
+	EvpnTestDropFrom(ctx, stranger, "A frame of red from 127.0.0.3, the VTEP of no route that a peer offers, is still dropped and counted", EVPNTEST_VNI_RED,
+		evpntest_gw_mac, "172.16.1.10", "10.10.0.1", EvpnTestUnknownVtep);
+	ctx->LastUnknown = Tick64();
+
+	// The leaf withdraws its route: the one of the fabric stays, without the VTEP of the leaf
+	bool withdrawn = established && NodeBgpWithdrawVrf(leaf->Node, EVPNTEST_FABRIC_RED, "172.16.1.0/24") &&
+		EvpnTestWaitVtep(gw, EVPNTEST_RED, "172.16.1.0/24", "127.0.0.4", false);
+	EvpnTestCheck(ctx, withdrawn && EvpnTestHasRoute(gw, EVPNTEST_RED, "172.16.1.0/24", "127.0.0.2", EVPNTEST_VNI_RED, evpntest_fabric_mac),
+		"The leaf withdraws its route of 172.16.1.0/24: the route of gw stays via 127.0.0.2, without 127.0.0.4 among its VTEPs", "withdrawn %u", (UINT)withdrawn);
+	EvpnTestDropFrom(ctx, leaf_vtep, "A frame of red from 127.0.0.4 is dropped and counted now, as gw knows the leaf no more", EVPNTEST_VNI_RED, evpntest_gw_mac,
+		"172.16.1.30", "10.10.0.1", EvpnTestUnknownVtep);
+	ctx->LastUnknown = Tick64();
+
+	// The leaf goes, with its sidecar and its data directory
+	NodeStop(leaf->Node);
+	if (ctx->NumFailed != failed)
+	{
+		EvpnTestPrintSidecarLog(leaf, "leaf");
+	}
+	FreeNode(leaf->Node);
+	ConbinePathW(log_dir, sizeof(log_dir), leaf->Dir, NODE_LOG_DIR_NAME);
+	EvpnTestDeleteFiles(log_dir);
+	EvpnTestDeleteFiles(leaf->Dir);
+	Free(leaf);
+
+	if (leaf_vtep != INVALID_SOCKET)
+	{
+		closesocket(leaf_vtep);
+	}
+	if (stranger != INVALID_SOCKET)
+	{
+		closesocket(stranger);
+	}
+}
+
+// One command on the admin pipe pipe, as ranz node sends it, and its answer line into reply, without its newline: false when the
+// pipe does not answer within EVPNTEST_WAIT
+static bool EvpnTestAsk(wchar_t *pipe, char *command, char *reply, UINT size)
+{
+	wchar_t path[MAX_PATH];
+	char line[MAX_SIZE];
+	HANDLE h = INVALID_HANDLE_VALUE;
+	DWORD n = 0;
+	UINT used = 0;
+
+	StrCpy(reply, size, "");
+	UniFormat(path, sizeof(path), L"\\\\.\\pipe\\%s", pipe);
+	for (UINT64 end = Tick64() + EVPNTEST_WAIT;h == INVALID_HANDLE_VALUE && Tick64() < end;)
+	{
+		h = CreateFileW(path, GENERIC_READ | GENERIC_WRITE, 0, NULL, OPEN_EXISTING, 0, NULL);
+		if (h == INVALID_HANDLE_VALUE && GetLastError() != ERROR_PIPE_BUSY)
+		{
+			break;
+		}
+		if (h == INVALID_HANDLE_VALUE)
+		{
+			WaitNamedPipeW(path, EVPNTEST_POLL);
+		}
+	}
+	if (h == INVALID_HANDLE_VALUE)
+	{
+		return false;
+	}
+
+	Format(line, sizeof(line), "%s\n", command);
+	bool ok = (WriteFile(h, line, StrLen(line), &n, NULL) && n == StrLen(line));
+	while (ok && used < size - 1 && InStr(reply, "\n") == false)
+	{
+		ok = (ReadFile(h, reply + used, size - 1 - used, &n, NULL) && n != 0);
+		used += (ok ? n : 0);
+		reply[used] = 0;
+	}
+	CloseHandle(h);
+
+	TrimCrlf(reply);
+	return (ok && IsEmptyStr(reply) == false);
+}
+
+// Whether the frames of unknown VTEPs that gw counted reach target within EVPNTEST_WAIT, with its status into *st
+static bool EvpnTestWaitUnknown(EVPNTEST_NODE *gw, UINT64 target, NODE_EVPN_STATUS *st)
+{
+	UINT64 end = Tick64() + EVPNTEST_WAIT;
+
+	while (true)
+	{
+		NodeEvpnGetStatus(gw->Node, st);
+		if (st->UnknownVtep == target)
+		{
+			return true;
+		}
+		if (Tick64() >= end)
+		{
+			return false;
+		}
+		SleepThread(EVPNTEST_POLL);
+	}
+}
+
+// The frames of unknown VTEPs as an operator sees them (SDN-25-R3, #571): a burst of frames of red from 127.0.0.3 within a second,
+// more than 10 s after the frame of an unknown VTEP before, which gw drops and counts, each; the node log names the first in a
+// line and none of the others (EvpnTestLogRate, once the log is written). The answer of the admin pipe of gw to state, which
+// ranz node state prints, has the EVPN of gw with the frames of unknown VTEPs that it counted, and the report of its control
+// stream, which the Controller exports as metrics, has them too.
+static void EvpnTestOperator(EVPNTEST_CTX *ctx)
+{
+	EVPNTEST_NODE *gw = &ctx->Nodes[EVPNTEST_GW];
+	NODE_EVPN_STATUS before, after;
+	CONTROL_EVPN_COUNTERS report;
+	UCHAR packet[EVPNTEST_SIZE];
+	SOCKET stranger = INVALID_SOCKET;
+	char *reply = ZeroMalloc(EVPNTEST_REPLY);
+	char running[MAX_SIZE];
+	char unknown[MAX_SIZE];
+
+	Print("[the frames of unknown VTEPs as an operator sees them]\n");
+
+	Zero(&after, sizeof(after));
+	Zero(&report, sizeof(report));
+
+	// The line of the node log before came at a frame of an unknown VTEP at the latest, so 10 s after it the next has a line
+	while (Tick64() < ctx->LastUnknown + EVPNTEST_LOG_GAP)
+	{
+		SleepThread(EVPNTEST_POLL * 10);
+	}
+
+	USHORT port = EvpnTestBind(&stranger, 0x7F000003);
+	UINT size = EvpnTestPacket(packet, "172.16.1.10", "10.10.0.1", 950);
+	NodeEvpnGetStatus(gw->Node, &before);
+	bool sent = (port != 0 && size != 0);
+	for (UINT i = 0;sent && i < EVPNTEST_BURST;i++)
+	{
+		sent = EvpnTestInjectFrom(ctx, stranger, EVPNTEST_VNI_RED, evpntest_gw_mac, packet, size);
+	}
+	bool counted = sent && EvpnTestWaitUnknown(gw, before.UnknownVtep + EVPNTEST_BURST, &after);
+	ctx->Burst = counted;
+	ctx->BurstBase = before.UnknownVtep;
+	EvpnTestCheck(ctx, counted, "A burst of 10 frames of red from 127.0.0.3 within a second: gw drops and counts each as the frame of an unknown VTEP",
+		"sent %u, unknown VTEP %I64u to %I64u", (UINT)sent, before.UnknownVtep, after.UnknownVtep);
+
+	// The state, as ranz node state asks it
+	bool asked = EvpnTestAsk(ctx->GwPipe, "state", reply, EVPNTEST_REPLY);
+	Format(running, sizeof(running), "\"evpn\":{\"running\":true,\"udpPort\":%u,\"fabricPort\":%u,\"vrfs\":2,", (UINT)ctx->GwPort, (UINT)ctx->VtepPort);
+	Format(unknown, sizeof(unknown), "\"unknownVtep\":%I64u,", after.UnknownVtep);
+	EvpnTestCheck(ctx, asked && EvpnTestHas(reply, running) && EvpnTestHas(reply, unknown),
+		"The answer of the admin pipe of gw to state, which ranz node state prints, has its EVPN with the frames of unknown VTEPs that it counted",
+		"asked %u, the answer is %s", (UINT)asked, reply);
+
+	// The report of the control stream, which the timer of the EVPN of gw fills every second
+	UINT64 end = Tick64() + EVPNTEST_WAIT;
+	bool reported = false;
+	while (reported == false && Tick64() < end)
+	{
+		reported = (ControlGetEvpn(gw->Node->EvpnReport, &report) && report.UnknownVtep == after.UnknownVtep && report.UnknownVni == after.UnknownVni);
+		if (reported == false)
+		{
+			SleepThread(EVPNTEST_POLL * 5);
+		}
+	}
+	EvpnTestCheck(ctx, reported, "The report of the control stream of gw, which the Controller exports as metrics, has the frames of unknown VTEPs that it counted",
+		"unknown VTEP %I64u in the report, %I64u counted", report.UnknownVtep, after.UnknownVtep);
+
+	Free(reply);
+	if (stranger != INVALID_SOCKET)
+	{
+		closesocket(stranger);
+	}
+}
+
 // evpn: the EVPN of a gateway against a fabric
 RANZ_TEST("evpn", evpn_test, "EVPN gateway: a node hands two VRFs of the overlay with the same prefixes to a fabric as EVPN type-5 routes through ranz bgp (ranz.exe next to vpntest), and both ways of VXLAN reach the hosts of the overlay and the VTEP of the fabric in the VRF of their VNI; in a VRF with an internet exit a route of the fabric wins over its default route, and of two default routes the one of the VRF wins.");
 void evpn_test(UINT num, char **arg)
@@ -1544,6 +1912,10 @@ void evpn_test(UINT num, char **arg)
 		EvpnTestProfile(ctx);
 		EvpnTestOverlap(ctx);
 		EvpnTestExit(ctx);
+		// SDN-25-R3 (#571): the source port, a second leaf, and the frames of unknown VTEPs as an operator sees them
+		EvpnTestSourcePort(ctx);
+		EvpnTestTwoLeaves(ctx);
+		EvpnTestOperator(ctx);
 	}
 
 	EvpnTestClose(ctx);

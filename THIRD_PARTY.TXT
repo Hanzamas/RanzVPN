@@ -86,6 +86,47 @@ Licence: all of them are permissive, except github.com/juju/ratelimit: the GNU L
            the library out, or a REALITY without that import, which is a fork whose modified files are then
            published under the Mozilla Public License.
 
+
+Hysteria 2 (github.com/apernet/hysteria)
+----------------------------------------
+
+What:    the library of the Hysteria mode of `ranz mimic` (controller/internal/mimic/hysteria.go,
+         hysteriaserver.go and hysteriaclient.go; CORE-P2-4, #95, the ADR-0023 amendment of 2026-10-15): the
+         protocol of Hysteria 2 over QUIC and HTTP/3 with its congestion control Brutal, its client and its
+         server, from the module github.com/apernet/hysteria/core/v2, and the Salamander obfuscation, the
+         package obfs of the module github.com/apernet/hysteria/extras/v2. The mode is off by default: a server
+         takes it with the hysteria part of its MimicServer setting, and a link with the hysteria part of its
+         entry in the MimicClient setting. Brutal sends at the fixed rate that a link names and does not back
+         off when packets are lost, so it is opt-in for each link, with an explicit rate, and it is unfair to
+         the other traffic of the link (docs/ports.md).
+
+Pinned:  github.com/apernet/hysteria/core/v2 v2.13.0 and github.com/apernet/hysteria/extras/v2 v2.13.0,
+         releases, never a branch or a pseudo-version (go.mod, and the hashes of go.sum). The QUIC and the
+         HTTP/3 of Hysteria are its fork of quic-go,
+         github.com/apernet/quic-go v0.63.1-0.20261004180939-a10df75c260c, the commit that core/v2 v2.13.0
+         requires, with the QPACK of github.com/quic-go/qpack v0.6.0. The sidecar uses the libraries as the
+         modules have them: no replace directive, no copy, no patch. A new version changes go.mod, go.sum and
+         this file together: TestThirdPartyNamesThePinsOfTheMimicryLibraries (controller/cmd/ranz) fails until
+         they agree.
+
+Licence: the MIT License: the file LICENSE.md of each module of Hysteria, LICENSE of the fork of quic-go and
+         LICENSE.md of qpack, whose texts the NOTICE holds word for word. In short:
+         - the copyright notice and the permission notice go with every copy: the NOTICE has them;
+         - it comes without warranty and without liability.
+
+
+Libraries that Hysteria brings with it
+--------------------------------------
+
+What:    the server package of Hysteria ships the test doubles of its interfaces (its files mock_*.go) in the
+         package itself, so ranz.exe links github.com/stretchr/testify v1.12.1 (MIT, with copies of go-spew,
+         ISC, and go-difflib, BSD 3-Clause, inside it), github.com/stretchr/objx v0.5.3 (MIT) and
+         go.yaml.in/yaml/v3 v3.0.5 (MIT and Apache-2.0) as well, though no code of Ranz VPN calls them; and
+         golang.org/x/exp v0.0.0-20260908205506-85c1c2202aba (BSD 3-Clause, the Go authors), whose package
+         constraints the BBR of Hysteria uses.
+
+Licence: all of them are permissive, as the libraries that REALITY and uTLS bring with them.
+
 NOTICE rules for every package that carries ranz.exe with `ranz mimic` (ONE-2 and later):
          1. The NOTICE of the package holds the licence texts above word for word. The test
             TestNoticeHasTheLicencesOfTheMimicryLibraries compares them with the files of the modules that
@@ -94,8 +135,8 @@ NOTICE rules for every package that carries ranz.exe with `ranz mimic` (ONE-2 an
             never copied into the tree. A patched REALITY would have to publish its modified files.
          3. The sidecar is a process of its own that the Node starts (`ranz.exe mimic -pipe NAME`), and it
             links nothing of the Node: the named pipe is the boundary (ADR-0023).
-         4. Ranz VPN names REALITY, uTLS and the browsers whose ClientHello it sends only to say what it
-            carries and what it sends, never to promote itself.
+         4. Ranz VPN names REALITY, uTLS, Hysteria and the browsers whose ClientHello it sends only to say
+            what it carries and what it sends, never to promote itself.
 
 
 Binaries that the node loads at run time

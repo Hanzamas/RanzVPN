@@ -32,3 +32,18 @@ if (-not $ok -or -not $leak) {
 	throw "vpntest mimic failed (exit code $code, MIMIC TEST OK $ok, NO MEMORY LEAKS $leak)"
 }
 Write-Host 'Mimic transport: ok'
+
+# vpntest hysteria: the Hysteria mode of the mimic transport (CORE-P2-4 #95) between two nodes, each with its sidecar ranz
+# mimic, on a lossy link that the test makes on 127.0.0.1 (10% loss each way, 150 ms round trip, 20 Mbit/s), against the QUIC
+# transport of the core, msquic with BBR, on the same link (src/vpntest/hysteriatest.c). It must print "HYSTERIA TEST OK" and
+# "NO MEMORY LEAKS"; its goodput lines go into the job log.
+$full = (Write-Output "q\n" | & (Join-Path $build 'vpntest.exe') hysteria | Out-String)
+$code = $LASTEXITCODE
+Write-Host $full
+
+$ok = ($full -cmatch '(?m)^HYSTERIA TEST OK\r?$')
+$leak = ($full -cmatch 'NO MEMORY LEAKS')
+if (-not $ok -or -not $leak) {
+	throw "vpntest hysteria failed (exit code $code, HYSTERIA TEST OK $ok, NO MEMORY LEAKS $leak)"
+}
+Write-Host 'Hysteria mode: ok'

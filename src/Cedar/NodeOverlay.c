@@ -937,6 +937,8 @@ bool NodeOverlayStart(NODE *n, NODE_OVERLAY_CONFIG *cfg) {
 	cc.SignalParam = n;
 	// ... and the Upgrades and the Fallbacks of its Paths, which the Controller exports (NodeAgent.c; CORE-S5-6, #412)
 	cc.Paths = NodeAgentPaths(n);
+	// The counters of the EVPN of a gateway, which the Controller exports too (NodeEvpn.c; SDN-25-R3, #571)
+	cc.Evpn = n->EvpnReport;
 	// The BGP peering of the standard mode, whose report goes on the control stream (NodePeering.c; SDN-77, #357)
 	cc.Peering = NodePeeringStart(n);
 	// The live operations of the Controller read and clear the tables of the switches of the L2 Networks, and the Hello reports
