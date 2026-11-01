@@ -1236,3 +1236,166 @@ static void HarnessBenchPackNames()
 	}
 	Free(b.Names);
 }
+
+////////////////////////////
+// ParsePacket and IP table benchmarks
+
+// IPv4 frame from 10.0.0.1 (harness_mac_a) to 10.0.0.2 (harness_mac_b): a TCP header (PSH+ACK) or a UDP header
+// from port 49152, then the payload, with valid IPv4, TCP and UDP checksums. Returns the size, 0 if it does not fit
+static UINT HarnessBuildIpFrame(UCHAR *buf, UINT buf_size, UCHAR protocol, USHORT dst_port, UCHAR *payload, UINT payload_size)
+{
+	UINT l4_header = (protocol == IP_PROTO_TCP ? 20 : 8);
+	UINT l4_size = l4_header + payload_size;
+	UINT ip_size = 20 + l4_size;
+	UINT size = 14 + ip_size;
+	UCHAR *ip = buf + 14;
+	UCHAR *l4 = ip + 20;
+	UINT src_ip, dst_ip;
+
+	if (size > buf_size)
+	{
+		return 0;
+	}
+
+	Zero(buf, size);
+
+	Copy(buf, harness_mac_b, 6);
+	Copy(buf + 6, harness_mac_a, 6);
+	buf[12] = 0x08;								// IPv4
+	buf[13] = 0x00;
+
+	ip[0] = 0x45;								// Version 4, 20-byte header
+	ip[2] = (UCHAR)(ip_size >> 8);
+	ip[3] = (UCHAR)(ip_size & 0xFF);
+	ip[4] = 0x12;								// Identification
+	ip[5] = 0x34;
+	ip[6] = 0x40;								// Don't fragment
+	ip[8] = 64;									// TTL
+	ip[9] = protocol;
+	ip[12] = 10;
+	ip[15] = 1;
+	ip[16] = 10;
+	ip[19] = 2;
+	USHORT sum = IpChecksum(ip, 20);
+	Copy(ip + 10, &sum, sizeof(USHORT));
+
+	l4[0] = 0xC0;								// Source port 49152
+	l4[2] = (UCHAR)(dst_port >> 8);
+	l4[3] = (UCHAR)(dst_port & 0xFF);
+
+	if (protocol == IP_PROTO_TCP)
+	{
+		l4[5] = 0x01;							// Sequence number
+		l4[9] = 0x02;							// Acknowledgment number
+		l4[12] = 0x50;							// 20-byte header
+		l4[13] = TCP_PSH | TCP_ACK;
+		l4[14] = 0xFA;							// Window 64240
+		l4[15] = 0xF0;
+	}
+	else
+	{
+		l4[4] = (UCHAR)(l4_size >> 8);
+		l4[5] = (UCHAR)(l4_size & 0xFF);
+	}
+
+	Copy(l4 + l4_header, payload, payload_size);
+
+	Copy(&src_ip, ip + 12, sizeof(UINT));
+	Copy(&dst_ip, ip + 16, sizeof(UINT));
+	sum = CalcChecksumForIPv4(src_ip, dst_ip, protocol, l4, l4_size, 0);
+	Copy(l4 + (protocol == IP_PROTO_TCP ? 16 : 6), &sum, sizeof(USHORT));
+
+	return size;
+}
+
+// TLS ClientHello with one cipher suite and only the server_name extension (the part GetSniNameFromSslPacket reads).
+// Returns the size, 0 if it does not fit
+static UINT HarnessBuildClientHello(UCHAR *buf, UINT buf_size, const char *host)
+{
+	UINT name_len = StrLen(host);
+	UINT ext_data = 2 + 1 + 2 + name_len;		// server_name_list length, name type, name length, name
+	UINT ext_len = 4 + ext_data;				// Extension type and length, then its data
+	UINT body = 43 + ext_len;					// Version 2, random 32, session id 1, ciphers 4, compression 2, extensions length 2
+	UINT size = 5 + 4 + body;					// Record header, handshake header, ClientHello body
+	UCHAR *p = buf;
+
+	if (size > buf_size)
+	{
+		return 0;
+	}
+
+	*p++ = 0x16;								// Handshake record, record version TLS 1.0
+	*p++ = 0x03;
+	*p++ = 0x01;
+	*p++ = (UCHAR)((4 + body) >> 8);
+	*p++ = (UCHAR)((4 + body) & 0xFF);
+	*p++ = 0x01;								// ClientHello, 24-bit length
+	*p++ = 0x00;
+	*p++ = (UCHAR)(body >> 8);
+	*p++ = (UCHAR)(body & 0xFF);
+	*p++ = 0x03;								// Client version TLS 1.2
+	*p++ = 0x03;
+	for (UINT i = 0;i < 32;i++)
+	{
+		*p++ = (UCHAR)(i * 11 + 1);				// Random
+	}
+	*p++ = 0x00;								// No session id
+	*p++ = 0x00;								// One cipher suite: TLS_AES_128_GCM_SHA256
+	*p++ = 0x02;
+	*p++ = 0x13;
+	*p++ = 0x01;
+	*p++ = 0x01;								// Null compression only
+	*p++ = 0x00;
+	*p++ = (UCHAR)(ext_len >> 8);
+	*p++ = (UCHAR)(ext_len & 0xFF);
+	*p++ = 0x00;								// server_name extension
+	*p++ = 0x00;
+	*p++ = (UCHAR)(ext_data >> 8);
+	*p++ = (UCHAR)(ext_data & 0xFF);
+	*p++ = (UCHAR)((3 + name_len) >> 8);
+	*p++ = (UCHAR)((3 + name_len) & 0xFF);
+	*p++ = 0x00;								// host_name
+	*p++ = (UCHAR)(name_len >> 8);
+	*p++ = (UCHAR)(name_len & 0xFF);
+	Copy(p, host, name_len);
+	p += name_len;
+
+	return (UINT)(p - buf);
+}
+
+// DNS query (recursion desired, one question, type A, class IN). Returns the size, 0 if it does not fit
+static UINT HarnessBuildDnsQuery(UCHAR *buf, UINT buf_size, char *host)
+{
+	UINT len = StrLen(host);
+	UINT start = 0;
+
+	if ((12 + len + 2 + 4) > buf_size)
+	{
+		return 0;
+	}
+
+	Zero(buf, 12);
+	buf[0] = 0x52;								// Transaction id
+	buf[1] = 0x41;
+	buf[2] = 0x01;								// Recursion desired
+	buf[5] = 0x01;								// One question
+
+	UCHAR *p = buf + 12;
+	for (UINT i = 0;i <= len;i++)
+	{
+		if (i == len || host[i] == '.')
+		{
+			*p++ = (UCHAR)(i - start);
+			Copy(p, host + start, i - start);
+			p += i - start;
+			start = i + 1;
+		}
+	}
+	*p++ = 0x00;								// Root label
+	*p++ = 0x00;								// Type A
+	*p++ = 0x01;
+	*p++ = 0x00;								// Class IN
+	*p++ = 0x01;
+
+	return (UINT)(p - buf);
+}
