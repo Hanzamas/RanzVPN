@@ -1786,7 +1786,7 @@ jobs:
     # real service, the processes and the tail of the log. A stall in the evidence, a Node that does not stop or start and a ranz.exe
     # that never prints each fail within their bounds, and the main flow on a planted hang ends with an error. It runs whatever the
     # step above did, and it runs the real msiexec.exe once, on a package that is not there. The timeout is 5 minutes: the planted
-    # hangs take about 100 s.
+    # hangs take about 80 s.
     - name: The bound of a msiexec call, on a planted hang
       if: ${{ !cancelled() }}
       shell: pwsh

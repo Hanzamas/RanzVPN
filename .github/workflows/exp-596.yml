@@ -1,7 +1,9 @@
 # TEMPORARY, removed before the pull request of CI-FLAKE-6-R1 (#596) is opened. The loop of the changes of msi-install.ps1: the pull
-# request runs its checks in 50 minutes and more (the msi jobs follow the C build), and this runs the two that the change needs in a
-# few minutes, on every push of its branch: the fixtures of msi-install.ps1 on Linux (quality-gates-test.py), and the self-test on
-# Windows, x64 and arm64, as the step of the msi job runs it (dot-sourced, in pwsh).
+# request runs its checks in 50 minutes and more (the msi jobs follow the C build), and this runs what the change needs in a few
+# minutes, on every push of its branch: the fixtures of msi-install.ps1 on Linux (quality-gates-test.py), the self-test on Windows,
+# x64 and arm64, as the step of the msi job runs it, a real service stopped and started with the waits of the script, the real
+# msiexec.exe and the real Windows Installer service on a package whose action never ends (what PR 594 showed), and the whole main
+# flow on the packages with the stand-in ranz.exe (the jobs msi_standin_build and msi_standin of windows.yml).
 name: exp-596
 
 on:
@@ -10,6 +12,9 @@ on:
 
 permissions:
   contents: read
+
+env:
+  GO_VERSION: '1.27.3'
 
 jobs:
   linux:
@@ -48,18 +53,234 @@ jobs:
     timeout-minutes: 12
     steps:
     - uses: actions/checkout@v4
-    - name: Does the script parse
-      shell: pwsh
-      run: |
-        Write-Host "PowerShell $($PSVersionTable.PSVersion)"
-        $errors = $null
-        $tokens = $null
-        $ast = [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path '.github/scripts/msi-install.ps1').Path, [ref] $tokens, [ref] $errors)
-        foreach ($e in $errors) { Write-Host "line $($e.Extent.StartLineNumber) column $($e.Extent.StartColumnNumber): $($e.Message)" }
-        if ($errors.Count -gt 0) { throw "$($errors.Count) parse errors" }
-        Write-Host 'the script parses'
     - name: The bound of a msiexec call, on a planted hang
       shell: pwsh
       timeout-minutes: 6
       run: |
         . .github/scripts/msi-install.ps1 -SelfTest
+    # The waits of the script on a service that is really there: Request-ServiceState and Wait-ServiceState on a real service, and the
+    # evidence of a wait that reaches its bound, with the real CIM and the real Get-Service
+    - name: A real service, stopped and started with the waits of the script
+      if: ${{ !cancelled() }}
+      shell: pwsh
+      timeout-minutes: 4
+      run: |
+        $path = (Resolve-Path '.github/scripts/msi-install.ps1').Path
+        $tokens = $null
+        $errors = $null
+        $ast = [System.Management.Automation.Language.Parser]::ParseFile($path, [ref] $tokens, [ref] $errors)
+        foreach ($f in $ast.FindAll({ param($n) $n -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $n.Parent.Parent -eq $ast }, $false)) { Invoke-Expression $f.Extent.Text }
+        $pwshPath = (Get-Process -Id $PID).Path
+        $name = $null
+        foreach ($candidate in 'Spooler', 'BITS', 'W32Time', 'Themes', 'Schedule', 'wuauserv') {
+          $svc = Get-Service -Name $candidate -ErrorAction SilentlyContinue
+          if ($svc) {
+            Write-Host "$candidate is $($svc.Status), start type $($svc.StartType), can stop $($svc.CanStop)"
+            if (-not $name -and $svc.Status -eq 'Running' -and $svc.CanStop) { $name = $candidate }
+          } else {
+            Write-Host "$candidate is not there"
+          }
+        }
+        if (-not $name) { throw 'no running service that can be stopped' }
+        $nodeService = $name
+        $began = Get-Date
+        Request-ServiceState $name 'Stopped'
+        Wait-ServiceState $name 'Stopped' 60
+        Write-Host "$name stopped after $([int] ((Get-Date) - $began).TotalSeconds) s"
+        Request-ServiceState $name 'Running'
+        Wait-ServiceState $name 'Running' 60
+        Write-Host "$name running again after $([int] ((Get-Date) - $began).TotalSeconds) s"
+        Write-Host (Format-ServiceLine $name (Get-ServiceDetails $name))
+        Write-Host 'The wait of a service that is running, for it to be stopped, with a bound of 2 s:'
+        try { Wait-ServiceState $name 'Stopped' 2 } catch { Write-Host "it failed as it should: $($_.Exception.Message)" }
+
+  hang_build:
+    runs-on: windows-latest
+    name: build hang.msi
+    timeout-minutes: 10
+    steps:
+    - uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: '8.0.x'
+    - name: Install WiX
+      shell: pwsh
+      run: |
+        dotnet tool install --global wix --version 5.0.2
+        if ($LASTEXITCODE -ne 0) { throw "dotnet tool install exited with code $LASTEXITCODE" }
+    # A package whose deferred action, which runs as SYSTEM in the Windows Installer service as the ranz install of the thin MSI
+    # does, never ends: the real msiexec.exe waits for it, and nothing in Windows Installer ends the wait.
+    - name: Build hang.msi
+      shell: pwsh
+      run: |
+        $dir = Join-Path $env:RUNNER_TEMP 'hang'
+        New-Item -ItemType Directory -Force -Path $dir | Out-Null
+        Set-Content -LiteralPath (Join-Path $dir 'hang.txt') -Value 'hang'
+        Set-Content -LiteralPath (Join-Path $dir 'hang.wxs') -Value @'
+        <Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+          <Package Name="Hang 596" Manufacturer="Test" Version="1.0.0" UpgradeCode="{6F1B3D5E-8A2C-4E7B-9D10-1A2B3C4D5E70}" Scope="perMachine" Language="1033">
+            <MediaTemplate EmbedCab="yes" />
+            <StandardDirectory Id="ProgramFilesFolder">
+              <Directory Id="HangFolder" Name="Hang596" />
+            </StandardDirectory>
+            <Feature Id="Main" Level="1">
+              <Component Id="HangFile" Directory="HangFolder" Guid="*">
+                <File Id="HangTxt" Source="hang.txt" KeyPath="yes" />
+              </Component>
+            </Feature>
+            <CustomAction Id="Hang" Directory="HangFolder" ExeCommand="cmd.exe /c ping -n 3600 127.0.0.1" Execute="deferred" Impersonate="no" Return="check" />
+            <InstallExecuteSequence>
+              <Custom Action="Hang" After="InstallFiles" Condition="NOT Installed" />
+            </InstallExecuteSequence>
+          </Package>
+        </Wix>
+        '@
+        Push-Location $dir
+        try {
+          & (Join-Path $env:USERPROFILE '.dotnet\tools\wix.exe') build -arch x86 -o hang.msi hang.wxs
+          if ($LASTEXITCODE -ne 0) { throw "wix build exited with code $LASTEXITCODE" }
+        } finally {
+          Pop-Location
+        }
+    - uses: actions/upload-artifact@v4
+      with:
+        name: hang-msi
+        path: ${{ runner.temp }}/hang/hang.msi
+
+  real_hang:
+    needs: hang_build
+    strategy:
+      fail-fast: false
+      matrix:
+        platform: [
+          { ARCHITECTURE: x64, RUNNER: "windows-latest" },
+          { ARCHITECTURE: arm64, RUNNER: "windows-11-arm" }
+        ]
+    name: real hang (${{ matrix.platform.ARCHITECTURE }})
+    runs-on: ${{ matrix.platform.RUNNER }}
+    timeout-minutes: 10
+    steps:
+    - uses: actions/checkout@v4
+    - uses: actions/download-artifact@v4
+      with:
+        name: hang-msi
+        path: hang
+    # The functions of the script (taken from the file by the parser, so that the real Invoke-Msiexec runs) on the real msiexec.exe, the
+    # real Windows Installer service and the action that never ends
+    - name: The real Invoke-Msiexec on a package whose action never ends
+      shell: pwsh
+      timeout-minutes: 6
+      run: |
+        $path = (Resolve-Path '.github/scripts/msi-install.ps1').Path
+        $tokens = $null
+        $errors = $null
+        $ast = [System.Management.Automation.Language.Parser]::ParseFile($path, [ref] $tokens, [ref] $errors)
+        foreach ($f in $ast.FindAll({ param($n) $n -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $n.Parent.Parent -eq $ast }, $false)) { Invoke-Expression $f.Extent.Text }
+        $msiexecSeconds = 30
+        $msiexecFile = 'msiexec.exe'
+        $msiexecPrefix = @()
+        $evidenceSeconds = 60
+        $evidenceStall = 0
+        $waitSeconds = 60
+        $msiInstallScript = $path
+        $pwshPath = (Get-Process -Id $PID).Path
+        $LogDir = Join-Path $env:RUNNER_TEMP 'real-hang'
+        New-Item -ItemType Directory -Force -Path $LogDir | Out-Null
+        $script:msiexecHang = $null
+        $msi = (Resolve-Path 'hang\hang.msi').Path
+        $began = Get-Date
+        $failure = $null
+        try { [void](Invoke-Msiexec '/i' $msi 'real-hang') } catch { $failure = $_.Exception.Message }
+        Write-Host "the call failed after $([int] ((Get-Date) - $began).TotalSeconds) s: $failure"
+        Write-Host 'the processes of the install and of the service, afterwards:'
+        Get-CimInstance Win32_Process | Where-Object { $_.Name -in 'msiexec.exe', 'cmd.exe', 'PING.EXE' } | Sort-Object ProcessId | ForEach-Object { Write-Host "  process $($_.ProcessId) $($_.Name), parent $($_.ParentProcessId): $($_.CommandLine)" }
+        $svc = Get-Service -Name msiserver
+        Write-Host "msiserver is $($svc.Status)"
+        if (-not $failure) { throw 'the call did not fail' }
+        $left = @(Get-CimInstance Win32_Process | Where-Object { $_.Name -eq 'PING.EXE' -and $_.CommandLine -match '3600' })
+        if ($left.Count -gt 0) { throw "the action of the install, ping -n 3600, is still running in process $($left[0].ProcessId)" }
+        Write-Host 'ok: the action of the install is gone'
+    - uses: actions/upload-artifact@v4
+      if: ${{ !cancelled() }}
+      with:
+        name: real-hang-logs-${{ matrix.platform.ARCHITECTURE }}
+        if-no-files-found: warn
+        path: ${{ runner.temp }}/real-hang
+
+  standin_build:
+    runs-on: windows-latest
+    name: MSI with a stand-in ranz.exe (build)
+    timeout-minutes: 15
+    steps:
+    - uses: actions/checkout@v4
+    - uses: actions/setup-go@v5
+      with:
+        go-version: ${{ env.GO_VERSION }}
+        cache-dependency-path: go.sum
+    - uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: '8.0.x'
+    - name: Install WiX
+      shell: pwsh
+      run: |
+        dotnet tool install --global wix --version 5.0.2
+        if ($LASTEXITCODE -ne 0) { throw "dotnet tool install exited with code $LASTEXITCODE" }
+        $tools = Join-Path $env:USERPROFILE '.dotnet\tools'
+        $tools | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+        & (Join-Path $tools 'wix.exe') --version
+    - name: Build the stand-in ranz.exe and the MSIs that carry it
+      shell: pwsh
+      run: |
+        $work = Join-Path $env:RUNNER_TEMP 'standin'
+        $env:GOOS = 'windows'
+        $env:CGO_ENABLED = '0'
+        foreach ($arch in @(@{ Name = 'x64'; Goarch = 'amd64' }, @{ Name = 'arm64'; Goarch = 'arm64' })) {
+          $env:GOARCH = $arch.Goarch
+          foreach ($id in 'prev', 'cur') {
+            $dir = Join-Path $work "$($arch.Name)-$id"
+            New-Item -ItemType Directory -Force -Path $dir | Out-Null
+            go build -ldflags "-X main.id=$id" -o (Join-Path $dir 'ranz.exe') .github/msi/standin-ranz.go
+            if ($LASTEXITCODE -ne 0) { throw "go build of the stand-in ($($arch.Name), $id) exited with code $LASTEXITCODE" }
+          }
+        }
+        Remove-Item Env:\GOOS, Env:\GOARCH, Env:\CGO_ENABLED
+        .github/scripts/msi-build.ps1 -Wxs .github/msi/ranz.wxs -OutDir build/msi-standin `
+          -X64 (Join-Path $work 'x64-cur\ranz.exe') -Arm64 (Join-Path $work 'arm64-cur\ranz.exe') `
+          -X64Previous (Join-Path $work 'x64-prev\ranz.exe') -Arm64Previous (Join-Path $work 'arm64-prev\ranz.exe') `
+          -Version 0.1.2 -PreviousVersion 0.1.1
+    - uses: actions/upload-artifact@v4
+      with:
+        name: msi-standin
+        if-no-files-found: warn
+        path: build/msi-standin/
+
+  standin:
+    needs: standin_build
+    strategy:
+      fail-fast: false
+      matrix:
+        platform: [
+          { ARCHITECTURE: x64, RUNNER: "windows-latest" },
+          { ARCHITECTURE: arm64, RUNNER: "windows-11-arm" }
+        ]
+    name: MSI with a stand-in ranz.exe (${{ matrix.platform.ARCHITECTURE }})
+    runs-on: ${{ matrix.platform.RUNNER }}
+    timeout-minutes: 20
+    steps:
+    - uses: actions/checkout@v4
+    - name: Download the MSIs
+      uses: actions/download-artifact@v4
+      with:
+        name: msi-standin
+        path: artifacts/msi
+    - name: The MSI, checked from outside
+      shell: pwsh
+      env:
+        ARCHITECTURE: ${{ matrix.platform.ARCHITECTURE }}
+      run: |
+        . .github/scripts/msi-install.ps1 -StandIn -Architecture $env:ARCHITECTURE -Dir artifacts\msi -OtherDir artifacts\msi -LogDir (Join-Path $env:RUNNER_TEMP 'msi-logs')
+    - uses: actions/upload-artifact@v4
+      if: ${{ !cancelled() }}
+      with:
+        name: msi-standin-logs-${{ matrix.platform.ARCHITECTURE }}
+        if-no-files-found: warn
+        path: ${{ runner.temp }}/msi-logs

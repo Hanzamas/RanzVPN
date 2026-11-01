@@ -620,7 +620,7 @@ def test_msi_install():
            'ok: the check of the evidence fails on events that could not be read',
            'ok: the check of the evidence fails on events without the one of the planted call',
            'ok: no other call starts after a call that did not end',
-           'ok: a stall in the evidence still ends the call and its processes and fails the step within its bound (15 s and the 5 s of the evidence, after ',
+           'ok: a stall in the evidence still ends the call and its processes and fails the step within its bound (15 s and the 10 s of the evidence, after ',
            'and the failure names the bound',
            'ok: a Node that does not stop fails the wait within its bound (3 s, after ',
            'ok: a Node that does not start fails the wait within its bound (3 s, after ',

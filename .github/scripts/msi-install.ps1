@@ -713,6 +713,9 @@ function Get-EvidenceFaults($parts, $want) {
 
 # The bound of the msiexec call of the planted flow, in seconds
 $flowBound = 10
+# The bound of the evidence in the planted stall, in seconds: the process that collects it needs a few seconds to start on a runner
+# before it has a part to write, and the check is that the parts before the stall are kept
+$stallBound = 10
 
 function Invoke-SelfTest {
 	$bound = 15
@@ -853,10 +856,10 @@ function Invoke-SelfTest {
 		if (-not $after) { throw 'a call started after a call that did not end' }
 		Write-Host 'ok: no other call starts after a call that did not end'
 
-		# A stall in the collection of the evidence: the query of the events sleeps for 120 s, the evidence has a bound of 5 s, and the call
-		# is still ended and failed, with the bound in the message and the parts that were found before the stall
+		# A stall in the collection of the evidence: the query of the events sleeps for 120 s, the evidence has a bound of $stallBound s, and
+		# the call is still ended and failed, with the bound in the message and the parts that were found before the stall
 		$script:msiexecHang = $null
-		$script:evidenceSeconds = 5
+		$script:evidenceSeconds = $stallBound
 		$script:evidenceStall = 120
 		$service2 = $null
 		if (-not $IsWindows) {
@@ -874,9 +877,9 @@ function Invoke-SelfTest {
 		$script:evidenceSeconds = 60
 		$script:evidenceStall = 0
 		if (-not $thrown) { throw 'a call whose evidence stalls was not failed' }
-		if ($seconds -lt $bound -or $seconds -gt $bound + 5 + 60) { throw "the call whose evidence stalls failed after $([int] $seconds) s, not within its bound of $bound s and the 5 s of the evidence (and 60 s to end the processes)" }
+		if ($seconds -lt $bound -or $seconds -gt $bound + $stallBound + 60) { throw "the call whose evidence stalls failed after $([int] $seconds) s, not within its bound of $bound s and the $stallBound s of the evidence (and 60 s to end the processes)" }
 		if ($thrown -notlike "msiexec /i hang.msi did not end within $bound s*") { throw "the failure of the call whose evidence stalls does not name the verb and the package: $thrown" }
-		if ($thrown -notlike '*Evidence: * stopped at its bound of 5 s*') { throw "the failure of the call whose evidence stalls does not name the bound of the evidence, 5 s: $thrown" }
+		if ($thrown -notlike "*Evidence: * stopped at its bound of $stallBound s*") { throw "the failure of the call whose evidence stalls does not name the bound of the evidence, $stallBound s: $thrown" }
 		if (-not ($thrown -match 'Ended: (?<ended>.*?)\. Not ended: ') -or $Matches['ended'] -notmatch 'the evidence collection') { throw "the failure does not list the process that collected the evidence as ended: $thrown" }
 		$ids2 = @(Read-Pids (Join-Path $work 'planted-stall.log.pids'))
 		$tree2 = @($ids2)
@@ -887,7 +890,7 @@ function Invoke-SelfTest {
 		if ($ids2.Count -ne 2 -or $alive.Count -gt 0) { throw "after the stall the call (process ids '$($ids2 -join ' ')') or the stand-in for the service is still there: process $($alive -join ', ')" }
 		$parts2 = Split-Evidence (Read-MsiLog (Join-Path $work 'planted-stall-evidence.txt'))
 		if ($null -eq $parts2.Processes -or $null -ne $parts2.Events) { throw 'the evidence of the call whose collection stalled does not hold the parts before the stall and none after it' }
-		Write-Host "ok: a stall in the evidence still ends the call and its processes and fails the step within its bound ($bound s and the 5 s of the evidence, after $([int] $seconds) s), and the failure names the bound"
+		Write-Host "ok: a stall in the evidence still ends the call and its processes and fails the step within its bound ($bound s and the $stallBound s of the evidence, after $([int] $seconds) s), and the failure names the bound"
 		$script:msiexecHang = $null
 
 		Invoke-SelfTestWaits $work
@@ -1036,7 +1039,10 @@ if ($EvidenceRequest) {
 if ($CheckLaunches) {
 	$launches = @(Get-MsiexecLaunches $CheckLaunches)
 	foreach ($launch in $launches) { Write-Host "  $CheckLaunches`:$launch" }
-	if ($launches.Count -gt 0) { throw "$($launches.Count) commands of $CheckLaunches start msiexec outside Invoke-Msiexec, where a call has its bound" }
+	if ($launches.Count -gt 0) {
+		Write-Host "$($launches.Count) commands of $CheckLaunches start msiexec outside Invoke-Msiexec, where a call has its bound"
+		throw 'msiexec is started outside Invoke-Msiexec'
+	}
 	Write-Host "ok: $CheckLaunches starts msiexec in Invoke-Msiexec and nowhere else"
 	exit 0
 }
