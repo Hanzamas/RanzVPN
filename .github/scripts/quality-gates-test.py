@@ -1,5 +1,5 @@
 # Fixtures for the scripts of the ADR-0040 quality gates: fuzz-registry.py, run_fuzzers.ps1 (its lines
-# "// fuzz-reach:" and the coverage report of libFuzzer that it reads for them, with PowerShell 7),
+# "// fuzz-reach:" and the coverage report of libFuzzer that it reads for them, and its -Parallel, with PowerShell 7),
 # coverage-floor.py, bench-gate.py, static-findings.py and govulncheck-gate.py; for the guards of the start of
 # ranz-node in service-eventlog.ps1 (the source scan of the VBScript firewall path and the checks of the firewall
 # rules and of the script hosts, with PowerShell 7); and for the bound of every msiexec call of msi-install.ps1 (a
@@ -240,6 +240,93 @@ def test_run_fuzzers():
     bare = '#!/bin/sh\necho "COVERED_FUNC: hits: 1 edges: 1/2 XDecode x.c:1" >&2\necho "NO MEMORY LEAKS"\n'
     check('a replay without the report of libFuzzer', 1, ['libFuzzer printed no coverage of the seeds', 'no seed reaches XDecode (fuzz-reach)'],
           '// fuzz-reach: XDecode\n', absent=['the seeds reach XDecode', 'All fuzz targets passed'], target=bare)
+
+
+def test_run_fuzzers_parallel():
+    # run_fuzzers.ps1 -Parallel (CI-FLAKE-7, #605) on three stand-ins for libFuzzer targets, which are shell scripts: the job fuzz-asan
+    # of windows.yml runs its 29 targets three at a time, where one after the other they took 29m40s of the 30 minutes of the step,
+    # and the step must still fail, and name the target, for any target that fails. The stand-ins must meet: each waits, in its fuzz
+    # run, until all three are running at the same time and fails if they never are, so three at a time that is not three at a time
+    # fails here. Each must be given the same -max_total_time and -seed as one after the other, every target must run, and a target
+    # that fails, in its replay or in its fuzz run, must fail the run after the others ran, with the same words as one at a time.
+    if os.name == 'nt':
+        print('skip run_fuzzers -Parallel: the stand-ins of the targets are shell scripts')
+        return
+    pwsh = shutil.which('pwsh')
+    if pwsh is None:
+        failures.append('run_fuzzers -Parallel: no pwsh on the PATH, which the fixtures of run_fuzzers.ps1 need')
+        print('FAIL', 'run_fuzzers -Parallel: no pwsh')
+        return
+    with open(os.path.join(ROOT, 'src', 'fuzz', 'run_fuzzers.ps1'), encoding='utf-8') as f:
+        script = f.read()
+    # What a target that passes prints: the replay (-runs=0) the verdict of Mayaqua; the fuzz run its name and its arguments in a line
+    # that run_fuzzers.ps1 shows (stat::), and the verdict
+    passes = ('#!/bin/sh\ncase "$*" in\n*-runs=0*) ;;\n*) echo "stat::$(basename "$0") $*" ;;\nesac\necho "NO MEMORY LEAKS"\n')
+    # A target that meets the other two: in its fuzz run it waits for up to 10 s until the three of them are running
+    meets = ('#!/bin/sh\ncase "$*" in\n*-runs=0*) echo "NO MEMORY LEAKS"; exit 0 ;;\nesac\n'
+             'here="$(dirname "$0")/running"\nmkdir -p "$here"\n: > "$here/$(basename "$0")"\ni=0\n'
+             'while [ "$(ls "$here" | wc -l)" -lt 3 ] && [ "$i" -lt 100 ]; do\n\tsleep 0.1\n\ti=$((i + 1))\ndone\n'
+             'if [ "$(ls "$here" | wc -l)" -lt 3 ]; then\n\techo "==1==ERROR: AddressSanitizer: this target ran alone" >&2\n\texit 77\nfi\n'
+             'echo "stat::$(basename "$0") $*"\necho "NO MEMORY LEAKS"\n')
+    # A target with an AddressSanitizer report in its fuzz run, and one whose replay has no verdict of Mayaqua
+    crashes = ('#!/bin/sh\ncase "$*" in\n*-runs=0*) echo "NO MEMORY LEAKS"; exit 0 ;;\nesac\n'
+               'echo "==1==ERROR: AddressSanitizer: heap-buffer-overflow on address 0x1" >&2\nexit 77\n')
+    silent = '#!/bin/sh\ncase "$*" in\n*-runs=0*) exit 0 ;;\nesac\necho "stat::$(basename "$0") $*"\necho "NO MEMORY LEAKS"\n'
+
+    def run(name, code, texts, standins, parallel, seconds='1', absent=(), lines=None, logs=()):
+        # standins: the text of build/<target>.exe of each target, None for none; lines: text appended to a target's source
+        with tempfile.TemporaryDirectory() as root:
+            write(root, 'src/fuzz/run_fuzzers.ps1', script)
+            for target, text in standins.items():
+                write(root, 'src/fuzz/%s.c' % target, FUZZ_C + (lines or {}).get(target, ''))
+                write(root, 'src/fuzz/corpus/%s/seed.bin' % target, 'x')
+                if text is not None:
+                    write(root, 'build/%s.exe' % target, text)
+                    os.chmod(os.path.join(root, 'build', target + '.exe'), 0o755)
+            try:
+                p = subprocess.run([pwsh, '-NoProfile', '-NonInteractive', '-File', os.path.join(root, 'src', 'fuzz', 'run_fuzzers.ps1'),
+                                    '-BuildDir', os.path.join(root, 'build'), '-Seconds', seconds, '-Seed', '7', '-Parallel', parallel],
+                                   stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=120)
+                result = (p.returncode, p.stdout.decode('utf-8', errors='replace'))
+            except subprocess.TimeoutExpired as e:
+                result = (-1, (e.stdout or b'').decode('utf-8', errors='replace') + '\nrun_fuzzers.ps1 did not end within 120 s')
+            expect('run_fuzzers -Parallel %s: %s' % (parallel, name), result, code, *texts, absent=absent)
+            # The log of each run is kept, as the artifact of the job holds it
+            for log in logs:
+                if not os.path.isfile(os.path.join(root, 'build', 'fuzz-logs', log)):
+                    failures.append('run_fuzzers -Parallel %s: %s: no build/fuzz-logs/%s' % (parallel, name, log))
+                    print('FAIL', name, log)
+
+    three = {'fuzz_a': passes, 'fuzz_b': passes, 'fuzz_c': passes}
+    args = '-max_total_time=1 -seed=7 -print_final_stats=1'
+    run('three targets that meet run at the same time, each with the seconds and the seed that it was given', 0,
+        ['Running 3 targets, 3 at a time', 'All fuzz targets passed', '[fuzz_a] passed in', '[fuzz_b] passed in', '[fuzz_c] passed in',
+         'stat::fuzz_a.exe', 'stat::fuzz_b.exe', 'stat::fuzz_c.exe', args, '[fuzz_a] fuzz 1 s, seed 7', '3 targets, 3 at a time:'],
+        {t: meets for t in three}, '3', absent=['FAILED', 'ran alone'],
+        logs=['fuzz_a-replay.log', 'fuzz_a-fuzz.log', 'fuzz_b-fuzz.log', 'fuzz_c-fuzz.log'])
+    # The same verdicts one after the other, and three at a time
+    for parallel in ('1', '3'):
+        run('an AddressSanitizer report in one target fails the run and names it, the others run', 1,
+            ['::error::fuzz_b fuzz: exit code 77, AddressSanitizer report', 'FAILED: fuzz_b fuzz', 'heap-buffer-overflow',
+             'stat::fuzz_a.exe', 'stat::fuzz_c.exe'],
+            {'fuzz_a': passes, 'fuzz_b': crashes, 'fuzz_c': passes}, parallel,
+            absent=['All fuzz targets passed', 'FAILED: fuzz_a', 'FAILED: fuzz_c', 'fuzz_a fuzz', 'fuzz_c fuzz'],
+            logs=['fuzz_a-fuzz.log', 'fuzz_b-fuzz.log', 'fuzz_c-fuzz.log'])
+        run('a replay without the verdict of Mayaqua fails the run and names the target, the others run', 1,
+            ['::error::fuzz_b replay: no "NO MEMORY LEAKS" verdict', 'FAILED: fuzz_b replay', 'stat::fuzz_a.exe', 'stat::fuzz_c.exe'],
+            {'fuzz_a': passes, 'fuzz_b': silent, 'fuzz_c': passes}, parallel,
+            absent=['All fuzz targets passed', 'stat::fuzz_b.exe', 'fuzz_a replay', 'fuzz_c replay'], logs=['fuzz_b-replay.log'])
+        run('every target fails: every one is named', 1, ['FAILED: fuzz_a fuzz, fuzz_b fuzz, fuzz_c fuzz'] if parallel == '1' else
+            ['FAILED: ', 'fuzz_a fuzz', 'fuzz_b fuzz', 'fuzz_c fuzz'], {t: crashes for t in three}, parallel, absent=['All fuzz targets passed'])
+    # A source or an executable that stops the run one after the other stops it before any target runs three at a time
+    run('a fuzz-reach line that names no function stops the run before any target runs', 1,
+        ["fuzz_b.c:9: '// fuzz-reach: XDecode()' is not a line '// fuzz-reach: <function>'"], three, '3',
+        lines={'fuzz_b': '// fuzz-reach: XDecode()\n'}, absent=['Running 3 targets', '[fuzz_a] replay', 'All fuzz targets passed'])
+    run('a target without its executable stops the run before any target runs', 1, ['fuzz_c.exe not found'],
+        {'fuzz_a': passes, 'fuzz_b': passes, 'fuzz_c': None}, '3', absent=['Running 3 targets', '[fuzz_a] replay', 'All fuzz targets passed'])
+    # The replay alone (-Seconds 0) runs every target too
+    run('the replay alone runs every target', 0, ['[fuzz_a] replay', '[fuzz_b] replay', '[fuzz_c] replay', 'All fuzz targets passed'],
+        three, '3', seconds='0', absent=['stat::', 'fuzz 0 s'])
 
 
 def test_coverage_floor():
@@ -593,6 +680,7 @@ def test_msi_install():
 if __name__ == '__main__':
     test_fuzz_registry()
     test_run_fuzzers()
+    test_run_fuzzers_parallel()
     test_coverage_floor()
     test_bench_gate()
     test_static_findings()

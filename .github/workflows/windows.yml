@@ -639,7 +639,7 @@ jobs:
   # AddressSanitizer + libFuzzer (x64 only: Microsoft documents ASan on Windows for x86 and x64).
   # Builds with -DRANZ_ASAN=ON -DRANZ_FUZZ=ON (cmake/RanzSanitizers.cmake), runs the vpntest
   # smoke test script on that build, replays the seed corpora (deterministic), then runs every
-  # fuzz target of src/fuzz for a fixed time. Any of the three failing fails the job.
+  # fuzz target of src/fuzz for a fixed time, three at a time. Any of the three failing fails the job.
   fuzz-asan:
     needs: plan
     if: needs.plan.outputs.full == 'true'
@@ -775,7 +775,11 @@ jobs:
       shell: pwsh
       timeout-minutes: 30
       run: |
-        ./src/fuzz/run_fuzzers.ps1 -BuildDir build -Seconds 60 -Seed 1
+        # Every target runs 60 s with the seed 1, three at a time: the runner has 4 cores and a libFuzzer process uses one.
+        # One after the other the 29 targets took 29m40s of the 30 minutes of this step (CI-FLAKE-7, #605), so the next
+        # target would have failed the job for a reason that no pull request caused; three at a time a target adds 20 s.
+        # The limits of the step and of the job are as they were: a longer limit hides the next target, a shorter run is the margin.
+        ./src/fuzz/run_fuzzers.ps1 -BuildDir build -Seconds 60 -Seed 1 -Parallel 3
     - uses: actions/upload-artifact@v4
       if: always()
       with:
