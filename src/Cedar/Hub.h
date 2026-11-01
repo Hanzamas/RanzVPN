@@ -8,6 +8,8 @@
 #include "HubLog.h"
 #include "LogWriter.h"
 
+#define SERVER_DEFAULT_HUB_NAME "DEFAULT"
+
 #define ACCESS_LIST_INCLUDED_PREFIX "include:"
 #define ACCESS_LIST_EXCLUDED_PREFIX "exclude:"
 
@@ -365,6 +367,7 @@ void HubOptionStructToData(RPC_ADMIN_OPTION *ao, HUB_OPTION *o, char *hub_name);
 UINT GetHubOptionField(HUB_OPTION *o, HUB_OPTION_FIELD *f);
 void SetHubOptionField(HUB_OPTION *o, HUB_OPTION_FIELD *f, UINT value);
 void DataToHubOptionStruct(HUB_OPTION *o, RPC_ADMIN_OPTION *ao);
+void SiSetDefaultHubOption(HUB_OPTION *o);
 bool IsURLMsg(wchar_t *str, char *url, UINT url_size);
 void DeleteAllUserListCache(LIST *o);
 bool CheckMaxLoggedPacketsPerMinute(SESSION *s, UINT max_packets, UINT64 now);

@@ -208,8 +208,9 @@ void ConnectionSend(CONNECTION *c, UINT64 now) {
 			TCPSOCK *tss;
 			QUEUE *q;
 
+			// The UDP Acceleration of the session goes through the hooks of the SE-VPN code (SEVPN_HOOKS, Cedar.h)
 			if (s->UdpAccel != NULL)
-				UdpAccelSetTick(s->UdpAccel, now);
+				SeVpnHooks.UdpAccelSetTick(s->UdpAccel, now);
 
 			for (UINT j = 0; j < 2; j++) {
 				if (j == 0) {
@@ -233,9 +234,9 @@ void ConnectionSend(CONNECTION *c, UINT64 now) {
 								FreeBlock(b);
 							}
 						}
-					} else if (s->UseUdpAcceleration && s->UdpAccel != NULL && UdpAccelIsSendReady(s->UdpAccel, true)) {
+					} else if (s->UseUdpAcceleration && s->UdpAccel != NULL && SeVpnHooks.UdpAccelIsSendReady(s->UdpAccel, true)) {
 						while (b = GetNext(q)) {
-							UdpAccelSendBlock(s->UdpAccel, b);
+							SeVpnHooks.UdpAccelSendBlock(s->UdpAccel, b);
 
 							s->TotalSendSize += b->Size;
 							s->TotalSendSizeReal += b->Size;
@@ -272,7 +273,7 @@ void ConnectionSend(CONNECTION *c, UINT64 now) {
 							FreeBlock(b);
 						}
 
-						if (s->UseUdpAcceleration && s->UdpAccel != NULL && UdpAccelIsSendReady(s->UdpAccel, false))
+						if (s->UseUdpAcceleration && s->UdpAccel != NULL && SeVpnHooks.UdpAccelIsSendReady(s->UdpAccel, false))
 							update_keepalive_timer = false;
 
 						if (update_keepalive_timer)
@@ -447,7 +448,7 @@ void ConnectionReceive(CONNECTION *c, CANCEL *c1, CANCEL *c2) {
 		time = SELECT_TIME;
 		next_delay_packet_diff = GetNextDelayedPacketTickDiff(s);
 		time = MIN(time, next_delay_packet_diff);
-		if (s->UseUdpAcceleration && UdpAccelIsRecvBudgetSpent(s->UdpAccel)) {
+		if (s->UseUdpAcceleration && s->UdpAccel != NULL && SeVpnHooks.UdpAccelIsRecvBudgetSpent(s->UdpAccel)) {
 			// The per-tick receive budget is spent and no read re-arms the socket event:
 			// come back on the next tick instead of after SELECT_TIME
 			time = MIN(time, 1);
@@ -469,11 +470,11 @@ void ConnectionReceive(CONNECTION *c, CANCEL *c1, CANCEL *c2) {
 
 
 		if (s->UseUdpAcceleration && s->UdpAccel != NULL) {
-			UdpAccelSetTick(s->UdpAccel, now);
-			UdpAccelPoll(s->UdpAccel);
+			SeVpnHooks.UdpAccelSetTick(s->UdpAccel, now);
+			SeVpnHooks.UdpAccelPoll(s->UdpAccel);
 
 			if (s->UdpAccelMss == 0)
-				s->UdpAccelMss = UdpAccelCalcMss(s->UdpAccel);
+				s->UdpAccelMss = SeVpnHooks.UdpAccelCalcMss(s->UdpAccel);
 
 			while (true) {
 				BLOCK *b = GetNext(s->UdpAccel->RecvBlockQueue);
@@ -485,7 +486,7 @@ void ConnectionReceive(CONNECTION *c, CANCEL *c1, CANCEL *c2) {
 			}
 		}
 
-		s->IsUsingUdpAcceleration = UdpAccelIsSendReady(s->UdpAccel, true);
+		s->IsUsingUdpAcceleration = (s->UdpAccel != NULL && SeVpnHooks.UdpAccelIsSendReady(s->UdpAccel, true));
 
 		for (i = 0; i < num; i++) {
 			TCPSOCK *ts = tcpsocks[i];
@@ -817,18 +818,6 @@ void StartTunnelingMode(CONNECTION *c) {
 	}
 }
 
-static UINT GetMachineRand() {
-	char pcname[MAX_SIZE];
-	UCHAR hash[SHA1_SIZE];
-
-	Zero(pcname, sizeof(pcname));
-	GetMachineName(pcname, sizeof(pcname));
-
-	Sha1(hash, pcname, StrLen(pcname));
-
-	return READ_UINT(hash);
-}
-
 // The Cedar error of a TLS_ERR_* result of StartSSLEx3 or StartSSLServer (ERR_NO_ERROR for TLS_ERR_NONE)
 UINT TlsErrToCedarErr(UINT tls_err) {
 	switch (tls_err) {
@@ -847,62 +836,6 @@ UINT TlsErrToCedarErr(UINT tls_err) {
 	default:
 		return ERR_SSL_HANDSHAKE;
 	}
-}
-
-void ConnectionAccept(CONNECTION *c) {
-	SOCK *s;
-	struct ssl_ctx_st *ssl_ctx;
-	char tmp[128];
-	UINT initial_timeout = CONNECTING_TIMEOUT;
-	SERVER_LOGIN login;
-
-	if (c == NULL)
-		return;
-
-	s = c->FirstSock;
-	AddRef(s->ref);
-
-	Dec(c->Cedar->AcceptingSockets);
-
-	IPToStr(tmp, sizeof(tmp), &s->RemoteIP);
-
-	SLog(c->Cedar, "LS_CONNECTION_START_1", tmp, s->RemoteHostname, s->RemotePort, c->Name);
-
-	initial_timeout += GetMachineRand() % (CONNECTING_TIMEOUT / 2);
-	SetTimeout(s, initial_timeout);
-
-	// One server context for every connection: certificate, key, chain, cipher list and settings are in it
-	ssl_ctx = GetCedarServerSslCtx(c->Cedar);
-
-	UINT ssl_err = TLS_ERR_NONE;
-	if (StartSSLServer(s, ssl_ctx, &ssl_err) == false) {
-		UINT err = TlsErrToCedarErr(ssl_err);
-
-		FreeSSLCtx(ssl_ctx);
-
-		AddNoSsl(c->Cedar, &s->RemoteIP);
-		if (err != ERR_NO_ERROR)
-			SLog(c->Cedar, "LS_SSL_START_ERROR", c->Name, GetUniErrorStr(err), err);
-
-		goto FINAL;
-	}
-
-	FreeSSLCtx(ssl_ctx);
-
-	SLog(c->Cedar, "LS_SSL_START", c->Name, s->SslVersion, s->CipherName);
-
-	Zero(&login, sizeof(login));
-	if (ServerAccept(c, &login)) {
-		// A logged-in session: run it until it ends, then give its hub slot back
-		ServerRunSession(c, &login);
-	}
-
-FINAL:
-	if (c->flag1 == false)
-		Disconnect(s);
-
-	DelConnection(c->Cedar, c);
-	ReleaseSock(s);
 }
 
 void StopAllAdditionalConnectThread(CONNECTION *c) {
@@ -1212,4 +1145,11 @@ void ConnectionGetInfo(CONNECTION *c, CONNECTION_INFO *info) {
 		info->ClientBuild = c->ClientBuild;
 	}
 	Unlock(c->lock);
+}
+
+void GetServerProductName(SERVER *s, char *name, UINT size) {
+	if (s == NULL || name == NULL)
+		return;
+
+	StrCpy(name, size, CEDAR_SERVER_STR " (64 bit)");
 }

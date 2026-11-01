@@ -51,6 +51,7 @@ SENSITIVE = [
     (r'tests/formal/', 'the formal model of the handshake'),
     (r'\.github/scripts/formal\.py$', 'the script that checks and runs the formal model'),
     (r'\.github/workflows/formal\.yml$', 'the workflow of the formal model'),
+    (r'compat/', 'the build of ranz-compat from the frozen Cedar'),
 ]
 
 X64 = {'ARCHITECTURE': 'x64', 'VCPKG_TRIPLET': 'x64-windows-static', 'RUNNER': 'windows-latest'}
