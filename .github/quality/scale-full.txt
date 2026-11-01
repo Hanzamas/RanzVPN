@@ -1,0 +1,5 @@
+# The recorded medians of the scale test at the scale target of ADR-0026 decision 7 (ADR-0040 item 5, SDN-18 #194): the scenario
+# of controller/internal/nodesim/scale.go with 10,000 nodes, 1,000 VRFs and 100,000 routes, as .github/scripts/bench-gate.py reads
+# them: <case> <median> <unit> <margin %>.
+# The step Performance regression gate of the job scale in ranz.yml compares the BENCH lines of each run of the full set with them.
+# bench-gate.py record makes this file from the scale-bench*.txt files of the artifact ranz-scale-full of several CI runs.
