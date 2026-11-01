@@ -181,7 +181,8 @@ jobs:
     # CI-SPEED-1 #547; about 10 minutes before), and the fuzz step runs each target of fuzz-targets.txt for 20 s,
     # one after the other, about 14 minutes now: a job of 25 minutes was cancelled in its static analysis, the last step,
     # with every step before it done
-    timeout-minutes: 40
+    # TEMPORARY (CI-FLAKE-8, #610): 75 minutes for the stress step at the end, 40 again in the last commit of this pull request
+    timeout-minutes: 75
     steps:
     - uses: actions/checkout@v4
     - uses: actions/setup-go@v5
@@ -505,6 +506,52 @@ jobs:
         "$RUNNER_TEMP/gobin/govulncheck" -format json ./... > "$RUNNER_TEMP/govulncheck-linux.json"
         GOOS=windows "$RUNNER_TEMP/gobin/govulncheck" -format json ./... > "$RUNNER_TEMP/govulncheck-windows.json"
         python .github/scripts/govulncheck-gate.py --accepted .github/quality/govulncheck-accepted.txt "$RUNNER_TEMP/govulncheck-linux.json" "$RUNNER_TEMP/govulncheck-windows.json"
+    # TEMPORARY, removed in the last commit of this pull request (CI-FLAKE-8, #610): the tests that stop a simulated node and
+    # start it again with other Capabilities, 50 runs in a row under -race, alone and then with two busy loops on every core of
+    # the runner. The control runs the same tests under the same load without the line that waits for the Controller to list the
+    # node as gone: it is meant to fail now and then, and it never fails the step; every other run fails it.
+    - name: 'Stress, temporary (CI-FLAKE-8, #610)'
+      if: ${{ !cancelled() }}
+      timeout-minutes: 50
+      run: |
+        pkg=./controller/internal/controller
+        dir=controller/internal/controller
+        tests='^(TestPeeringNeedsTheCapability|TestLinkSwitchIsOneGeneration|TestStretchRefusals|TestCertificateReplacementReachesPinnedNodes)$'
+
+        # stress <name> <runs> <limit> <tests>: the tests <runs> times in a row under -race, in at most <limit>. It says how many
+        # runs of each passed and how many failed, and shows the first failure.
+        stress() {
+          local name=$1 runs=$2 limit=$3 pattern=$4 out="$RUNNER_TEMP/stress-$1.log" code=0 t
+          go test -race -v -count="$runs" -timeout "$limit" -run "$pattern" "$pkg" > "$out" 2>&1 || code=$?
+          for t in $(echo "$pattern" | tr -d '^()$' | tr '|' ' '); do
+            echo "$name: $t passed $(grep -c "^--- PASS: $t " "$out") of $runs runs and failed $(grep -c "^--- FAIL: $t " "$out")"
+          done
+          if [ "$code" -ne 0 ]; then
+            echo "$name: go test exited with code $code, and this is the first failure:"
+            grep -m1 -A60 '^--- FAIL' "$out" || tail -n 60 "$out"
+          fi
+          return "$code"
+        }
+
+        busy=()
+        trap 'kill "${busy[@]}" 2>/dev/null || true; git checkout -- "$dir"' EXIT
+
+        stress alone 50 15m "$tests"
+
+        # Two busy loops on every core of the runner, until the step ends
+        for _ in $(seq $(($(nproc) * 2))); do
+          (while :; do :; done) &
+          busy+=("$!")
+        done
+        stress loaded 50 25m "$tests"
+
+        # The control: the same tests under the same load without the line that waits for the Controller to list the node as
+        # gone, which the tests did not have before this ticket
+        sed -i -E '/^[[:space:]]*h\.waitNode\("gw-1", 1, false\)$/d' "$dir/peering_test.go" "$dir/stretch_test.go"
+        sed -i -E '/^[[:space:]]*h\.waitNode\("db", 1, false\)$/d' "$dir/link_test.go"
+        sed -i -E '/^[[:space:]]*certWait\(t, "the Controller to list branch-1 as gone", .*\)$/d' "$dir/certificate_test.go"
+        git diff --stat
+        stress control 50 20m "$tests" || true
     - uses: actions/upload-artifact@v4
       if: failure()
       with:
