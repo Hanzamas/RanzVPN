@@ -56,6 +56,11 @@
 //   them. The test binds an external switch of that name to a KM-TEST adapter of its own with the cmdlets of Hyper-V
 //   (New-VMSwitch -NetAdapterName, with a vNIC of the host), so that the runner's NIC stays as it is: NodeL2BridgeIndex
 //   refuses the adapter, which it took before, and names the host vNIC of the switch, which NodeL2HyperVIndex finds.
+// The stand-in is a new interface of the host in each run, and Windows Firewall quarantines a new interface until it has
+// categorized its network: in that time it drops every new inbound connection, whatever its rules say, and it dropped
+// the datagrams of the member so for seconds now and then (CI-FLAKE-3, #569). So before the stand-in takes part, the test
+// waits until its address is preferred and its host stack takes a datagram that the SeLow device of its adapter hands
+// it, without a bridge; and the datagrams of the member must then all reach the socket of the device, 5 of 5.
 // Prints "NICBRIDGE TEST OK" only when every check passes.
 
 #include "harness_int.h"
@@ -80,6 +85,11 @@
 
 #include <stdio.h>
 
+// The GUIDs of the conditions of the filter engine are defined here, as NodeWireGuardFilter.c defines them: the test reads
+// the drops that the engine recorded of datagrams that did not reach a socket (CI-FLAKE-3, #569)
+#include <initguid.h>
+#include <fwpmu.h>
+
 #define	NICBRIDGE_BUDGET		480000		// The whole test ends within this time, or the watchdog ends the process (ms)
 #define	NICBRIDGE_BOUND			15000		// A bounded wait on observable state (ms)
 #define	NICBRIDGE_ANSWER		5000		// ms that an answer of the host may take
@@ -103,6 +113,12 @@
 #define	NICBRIDGE_NPF			"\\Device\\NPF_"	// What the device of a handle of Npcap begins with, before the GUID of the adapter
 #define	NICBRIDGE_PS_WAIT		120000		// ms that a command of PowerShell may take
 #define	NICBRIDGE_PS_OUTPUT		65536		// Bytes of the pipe of its output, more than it writes
+#define	NICBRIDGE_LATE			20000		// ms that the record of a lost datagram waits at most for one that arrives (#569)
+#define	NICBRIDGE_DROPS			64			// Net events of the filter engine that one read of the record of dropped datagrams takes
+#define	NICBRIDGE_FILTERS		8			// Filters that the record of dropped datagrams names at most
+#define	NICBRIDGE_READY_PORT	5569		// UDP port of the socket of the stand-in that takes the datagrams of the wait for its host stack
+#define	NICBRIDGE_READY_EVERY	100			// ms between two of those datagrams
+#define	NICBRIDGE_QUARANTINE	60000		// ms that the host stack of the stand-in may take to take datagrams from the segment (#569)
 
 // The checks of the test
 typedef struct NICBRIDGE_CTX
@@ -139,6 +155,7 @@ typedef struct NICBRIDGE_PORT
 	UINT Gateway;						// The IPv4 address of its default gateway, in network byte order; 0 for none
 	bool Wire;							// The device's frames reach the bridge from below its interface, through a Hyper-V switch
 	NODE_KMTEST *KmTest;				// The KM-TEST adapter of the stand-in, NULL for the others
+	UINT64 Made;						// ... the tick at which it was made, 0 for the others
 	UINT64 SeLow[NICBRIDGE_RATES];		// The rates of SeLow's benchmark on it in this run, for the backends after it (frames/s)
 	bool HaveSeLow;						// ... measured
 } NICBRIDGE_PORT;
@@ -170,6 +187,16 @@ typedef struct NICBRIDGE_PCAP
 	NODE_L2_PCAP_HEADER Header;
 	char Error[MAX_SIZE];
 } NICBRIDGE_PCAP;
+
+// The drops of datagrams that the filter engine recorded for one of its filters, in the record of dropped datagrams (#569)
+typedef struct NICBRIDGE_DROP
+{
+	UINT64 FilterId;
+	UINT Layer;							// The layer of the filter engine where it dropped them
+	UINT Count;							// The drops, which can be more than the datagrams
+	UINT64 First;						// ms after the start of the record that it dropped the first of them
+	UINT64 Last;						// ... and the last
+} NICBRIDGE_DROP;
 
 // The MAC addresses of the test, derived as NodeL2Mac derives those of adapters: the stand-in, the member of the overlay,
 // another address of the segment and the KM-TEST adapter that is the NIC of an external switch
@@ -402,15 +429,38 @@ static void NicBridgeMemberSend(void *param, UINT port, const UCHAR *frame, UINT
 	}
 }
 
+// The id of the SeLow device of the adapter of the GUID g, which SuOpenAdapter opens, into id
+static void NicBridgeSeLowId(char *id, UINT size, const GUID *g)
+{
+	Format(id, size, SL_ADAPTER_ID_PREFIX "{%08X-%04X-%04X-%02X%02X-%02X%02X%02X%02X%02X%02X}", (UINT)g->Data1, (UINT)g->Data2, (UINT)g->Data3, (UINT)g->Data4[0],
+		(UINT)g->Data4[1], (UINT)g->Data4[2], (UINT)g->Data4[3], (UINT)g->Data4[4], (UINT)g->Data4[5], (UINT)g->Data4[6], (UINT)g->Data4[7]);
+}
+
+// One frame through the exchange buffer of the SeLow device su, which hands it to the host as the selow backend's frames;
+// whether the device took it
+static bool NicBridgeSeLowPut(SU_ADAPTER *su, const UCHAR *frame, UINT size)
+{
+	UCHAR *buf = su->PutBuffer;
+
+	if (size < SL_MIN_PACKET_SIZE || size > SL_MAX_PACKET_SIZE)
+	{
+		return false;
+	}
+
+	SL_NUM_PACKET(buf) = 1;
+	SL_SIZE_OF_PACKET(buf, 0) = size;
+	Copy(SL_ADDR_OF_PACKET(buf, 0), frame, size);
+
+	return SuPutPacketsToDriver(su);
+}
+
 // What holds the NIC of a bridge in promiscuous mode for the XDP backend in the xdp mode: the device of SeLow on the
 // interface, which sets the mode when it is opened. The product takes Npcap (NodeL2NpcapHold), as the npcap mode does.
 static bool NicBridgeHold(NODE_L2 *a, void **hold, char *error, UINT error_size)
 {
 	char id[MAX_SIZE];
-	const GUID *g = &a->Guid;
 
-	Format(id, sizeof(id), SL_ADAPTER_ID_PREFIX "{%08X-%04X-%04X-%02X%02X-%02X%02X%02X%02X%02X%02X}", (UINT)g->Data1, (UINT)g->Data2, (UINT)g->Data3, (UINT)g->Data4[0],
-		(UINT)g->Data4[1], (UINT)g->Data4[2], (UINT)g->Data4[3], (UINT)g->Data4[4], (UINT)g->Data4[5], (UINT)g->Data4[6], (UINT)g->Data4[7]);
+	NicBridgeSeLowId(id, sizeof(id), &a->Guid);
 
 	SU_ADAPTER *su = SuOpenAdapter(id);
 	if (su == NULL)
@@ -520,18 +570,8 @@ static int NicBridgePcapNextEx(void *h, NODE_L2_PCAP_HEADER **header, const UCHA
 static int NicBridgePcapSendPacket(void *h, const UCHAR *data, int size)
 {
 	NICBRIDGE_PCAP *p = (NICBRIDGE_PCAP *)h;
-	UCHAR *buf = p->Su->PutBuffer;
 
-	if (size < SL_MIN_PACKET_SIZE || size > SL_MAX_PACKET_SIZE)
-	{
-		return -1;
-	}
-
-	SL_NUM_PACKET(buf) = 1;
-	SL_SIZE_OF_PACKET(buf, 0) = (UINT)size;
-	Copy(SL_ADDR_OF_PACKET(buf, 0), data, (UINT)size);
-
-	return (SuPutPacketsToDriver(p->Su) ? 0 : -1);
+	return ((size > 0 && NicBridgeSeLowPut(p->Su, data, (UINT)size)) ? 0 : -1);
 }
 
 static HANDLE NicBridgePcapGetEvent(void *h)
@@ -638,14 +678,17 @@ static bool NicBridgeFromMember(NICBRIDGE_NET *net, const UCHAR *frame, UINT siz
 // The host's stack
 //
 
-// A UDP socket bound to the address addr and port port (0 for any)
-static SOCKET NicBridgeSocket(UINT addr, USHORT port)
+// A UDP socket bound to the address addr and port port (0 for any). INVALID_SOCKET when it cannot be made or bound, with
+// the error of Winsock in *error, which is 0 for a socket that was made and bound.
+static SOCKET NicBridgeSocket(UINT addr, USHORT port, int *error)
 {
 	SOCKADDR_IN sa;
 	SOCKET s = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
 
+	*error = 0;
 	if (s == INVALID_SOCKET)
 	{
+		*error = WSAGetLastError();
 		return s;
 	}
 
@@ -655,6 +698,7 @@ static SOCKET NicBridgeSocket(UINT addr, USHORT port)
 	sa.sin_port = htons(port);
 	if (bind(s, (SOCKADDR *)&sa, sizeof(sa)) != 0)
 	{
+		*error = WSAGetLastError();
 		closesocket(s);
 		return INVALID_SOCKET;
 	}
@@ -883,10 +927,35 @@ static bool NicBridgeTcp()
 	return ok;
 }
 
-// Give the interface luid the IPv4 address addr/length, and wait until it is preferred; false when it did not take it
-static bool NicBridgeAddAddress(UINT64 luid, UINT addr, UINT length, DWORD *error)
+// The state of duplicate address detection of the IPv4 address addr of the interface luid, in words into s: true when the
+// address is preferred, the one state in which the host takes datagrams to it
+static bool NicBridgeAddressState(UINT64 luid, UINT addr, char *s, UINT size)
 {
 	MIB_UNICASTIPADDRESS_ROW row;
+	char *names[] = {"invalid", "tentative", "duplicate", "deprecated", "preferred"};
+
+	InitializeUnicastIpAddressEntry(&row);
+	row.InterfaceLuid.Value = luid;
+	row.Address.Ipv4.sin_family = AF_INET;
+	row.Address.Ipv4.sin_addr.s_addr = addr;
+	DWORD err = GetUnicastIpAddressEntry(&row);
+	if (err != NO_ERROR)
+	{
+		Format(s, size, "not on the interface (GetUnicastIpAddressEntry: error %u)", (UINT)err);
+		return false;
+	}
+
+	Format(s, size, "%s", (UINT)row.DadState < sizeof(names) / sizeof(names[0]) ? names[row.DadState] : "in an unknown state");
+
+	return (row.DadState == IpDadStatePreferred);
+}
+
+// Give the interface luid the IPv4 address addr/length, and wait up to NICBRIDGE_BOUND ms until it is preferred: false,
+// with what went wrong in error, when the interface did not take it or it did not become preferred in that time
+static bool NicBridgeAddAddress(UINT64 luid, UINT addr, UINT length, char *error, UINT error_size)
+{
+	MIB_UNICASTIPADDRESS_ROW row;
+	char state[MAX_SIZE];
 
 	InitializeUnicastIpAddressEntry(&row);
 	row.InterfaceLuid.Value = luid;
@@ -894,24 +963,27 @@ static bool NicBridgeAddAddress(UINT64 luid, UINT addr, UINT length, DWORD *erro
 	row.Address.Ipv4.sin_addr.s_addr = addr;
 	row.OnLinkPrefixLength = (UCHAR)length;
 	row.DadState = IpDadStatePreferred;
-	*error = CreateUnicastIpAddressEntry(&row);
-	bool ok = (*error == NO_ERROR || *error == ERROR_OBJECT_ALREADY_EXISTS);
-
-	for (UINT64 end = GetTickCount64() + NICBRIDGE_BOUND;ok && GetTickCount64() < end;Sleep(100))
+	DWORD err = CreateUnicastIpAddressEntry(&row);
+	if (err != NO_ERROR && err != ERROR_OBJECT_ALREADY_EXISTS)
 	{
-		MIB_UNICASTIPADDRESS_ROW r;
-
-		InitializeUnicastIpAddressEntry(&r);
-		r.InterfaceLuid.Value = luid;
-		r.Address.Ipv4.sin_family = AF_INET;
-		r.Address.Ipv4.sin_addr.s_addr = addr;
-		if (GetUnicastIpAddressEntry(&r) == NO_ERROR && r.DadState == IpDadStatePreferred)
-		{
-			break;
-		}
+		Format(error, error_size, "CreateUnicastIpAddressEntry: error %u", (UINT)err);
+		return false;
 	}
 
-	return ok;
+	UINT64 end = GetTickCount64() + NICBRIDGE_BOUND;
+	while (NicBridgeAddressState(luid, addr, state, sizeof(state)) == false)
+	{
+		if (GetTickCount64() >= end)
+		{
+			Format(error, error_size, "the address is %s, not preferred, %u ms after it was given", state, (UINT)NICBRIDGE_BOUND);
+			return false;
+		}
+		Sleep(NICBRIDGE_POLL);
+	}
+
+	StrCpy(error, error_size, "");
+
+	return true;
 }
 
 // Take the IPv4 address addr off the interface luid again
@@ -924,6 +996,295 @@ static void NicBridgeDelAddress(UINT64 luid, UINT addr)
 	row.Address.Ipv4.sin_family = AF_INET;
 	row.Address.Ipv4.sin_addr.s_addr = addr;
 	DeleteUnicastIpAddressEntry(&row);
+}
+
+// What the test finds of the device of p before the member sends it datagrams, into s: whether the socket of the device
+// bound to its address and the port port (bind_error is the error of Winsock when it did not), the state of the address,
+// and the interface of the host stack that holds it, with its index, its MAC address and whether it is up; for the
+// stand-in also the time since its adapter was made (CI-FLAKE-3, #569)
+static void NicBridgeHostState(NICBRIDGE_PORT *p, USHORT port, int bind_error, char *s, UINT size)
+{
+	MIB_IF_ROW2 row;
+	MIB_IPINTERFACE_ROW ip;
+	char socket_text[MAX_SIZE];
+	char address[MAX_SIZE];
+	char state[MAX_SIZE];
+	char made[MAX_SIZE];
+
+	if (bind_error == 0)
+	{
+		Format(socket_text, sizeof(socket_text), "the socket of the device bound to %u.%u.%u.%u:%u", p->Address & 0xFF, (p->Address >> 8) & 0xFF, (p->Address >> 16) & 0xFF,
+			p->Address >> 24, (UINT)port);
+	}
+	else
+	{
+		Format(socket_text, sizeof(socket_text), "the socket of the device did not bind to %u.%u.%u.%u:%u (Winsock error %d)", p->Address & 0xFF, (p->Address >> 8) & 0xFF,
+			(p->Address >> 16) & 0xFF, p->Address >> 24, (UINT)port, bind_error);
+	}
+
+	NicBridgeAddressState(p->HostLuid, p->Address, address, sizeof(address));
+
+	Zero(&row, sizeof(row));
+	row.InterfaceLuid.Value = p->HostLuid;
+	DWORD err = GetIfEntry2(&row);
+	if (err == NO_ERROR)
+	{
+		InitializeIpInterfaceEntry(&ip);
+		ip.Family = AF_INET;
+		ip.InterfaceLuid.Value = p->HostLuid;
+		bool ipv4 = (GetIpInterfaceEntry(&ip) == NO_ERROR && ip.Connected);
+
+		Format(state, sizeof(state), "interface %u, MAC %02X-%02X-%02X-%02X-%02X-%02X, %s, media %s, IPv4 %s", (UINT)row.InterfaceIndex, (UINT)row.PhysicalAddress[0],
+			(UINT)row.PhysicalAddress[1], (UINT)row.PhysicalAddress[2], (UINT)row.PhysicalAddress[3], (UINT)row.PhysicalAddress[4], (UINT)row.PhysicalAddress[5],
+			row.OperStatus == IfOperStatusUp ? "up" : "not up",
+			row.MediaConnectState == MediaConnectStateConnected ? "connected" : (row.MediaConnectState == MediaConnectStateDisconnected ? "disconnected" : "unknown"),
+			ipv4 ? "connected" : "not connected");
+	}
+	else
+	{
+		Format(state, sizeof(state), "its interface cannot be read (GetIfEntry2: error %u)", (UINT)err);
+	}
+
+	StrCpy(made, sizeof(made), "");
+	if (p->Made != 0)
+	{
+		Format(made, sizeof(made), ", %I64u ms after the adapter was made", GetTickCount64() - p->Made);
+	}
+
+	Format(s, size, "%s, the address %s, %s%s", socket_text, address, state, made);
+}
+
+// The drops of datagrams to the UDP port port of this host that the filter engine recorded since the time since, for the
+// record (CI-FLAKE-3, #569): a NICBRIDGE DIAG line of who for each filter that dropped them, with how many drops it
+// recorded, its name and the name of its sublayer, then one with how many drops were recorded in all, which it returns.
+// The engine can record more than one drop of one datagram (2 to 4 in the logs of #569), so the count is of drops, not of
+// datagrams. The name of the filter with the most drops goes into filter, "" for none. The engine keeps such net events
+// while its option FWPM_ENGINE_COLLECT_NET_EVENTS is on.
+static UINT NicBridgeDrops(char *who, USHORT port, const FILETIME *since, char *filter, UINT filter_size)
+{
+	FWPM_SESSION0 session;
+	FWPM_NET_EVENT_ENUM_TEMPLATE0 t;
+	FWPM_FILTER_CONDITION0 c;
+	FWP_VALUE0 *collect = NULL;
+	NICBRIDGE_DROP list[NICBRIDGE_FILTERS];
+	HANDLE engine = NULL;
+	HANDLE en = NULL;
+	UINT num_list = 0;
+	UINT drops = 0;
+	UINT most = 0;
+
+	Zero(filter, filter_size);
+	Zero(list, sizeof(list));
+	Zero(&session, sizeof(session));
+	DWORD err = FwpmEngineOpen0(NULL, RPC_C_AUTHN_WINNT, NULL, &session, &engine);
+	if (err != ERROR_SUCCESS)
+	{
+		Print("NICBRIDGE DIAG %s wfp: the filter engine cannot be opened (error 0x%x)\n", who, (UINT)err);
+		return 0;
+	}
+
+	bool on = (FwpmEngineGetOption0(engine, FWPM_ENGINE_COLLECT_NET_EVENTS, &collect) == ERROR_SUCCESS && collect != NULL && collect->type == FWP_UINT32 && collect->uint32 != 0);
+	if (collect != NULL)
+	{
+		FwpmFreeMemory0((void **)&collect);
+	}
+
+	Zero(&c, sizeof(c));
+	c.fieldKey = FWPM_CONDITION_IP_LOCAL_PORT;
+	c.matchType = FWP_MATCH_EQUAL;
+	c.conditionValue.type = FWP_UINT16;
+	c.conditionValue.uint16 = port;
+	Zero(&t, sizeof(t));
+	t.startTime = *since;
+	GetSystemTimeAsFileTime(&t.endTime);
+	t.numFilterConditions = 1;
+	t.filterCondition = &c;
+
+	err = FwpmNetEventCreateEnumHandle0(engine, &t, &en);
+
+	// The events come in reads of NICBRIDGE_DROPS each, and the drops of each filter are counted
+	UINT64 from = ((UINT64)since->dwHighDateTime << 32) | since->dwLowDateTime;
+	UINT32 num = NICBRIDGE_DROPS;
+	while (err == ERROR_SUCCESS && num == NICBRIDGE_DROPS)
+	{
+		FWPM_NET_EVENT0 **events = NULL;
+
+		num = 0;
+		err = FwpmNetEventEnum0(engine, en, NICBRIDGE_DROPS, &events, &num);
+		for (UINT32 i = 0;err == ERROR_SUCCESS && events != NULL && i < num;i++)
+		{
+			FWPM_NET_EVENT0 *e = events[i];
+			UINT j = 0;
+
+			if (e == NULL || e->type != FWPM_NET_EVENT_TYPE_CLASSIFY_DROP || e->classifyDrop == NULL)
+			{
+				continue;
+			}
+			drops++;
+
+			UINT64 at = ((UINT64)e->header.timeStamp.dwHighDateTime << 32) | e->header.timeStamp.dwLowDateTime;
+			at = (at >= from ? (at - from) / 10000 : 0);
+			while (j < num_list && list[j].FilterId != e->classifyDrop->filterId)
+			{
+				j++;
+			}
+			if (j == num_list)
+			{
+				if (num_list == NICBRIDGE_FILTERS)
+				{
+					continue;
+				}
+				list[j].FilterId = e->classifyDrop->filterId;
+				list[j].Layer = (UINT)e->classifyDrop->layerId;
+				list[j].First = at;
+				num_list++;
+			}
+			list[j].Count++;
+			list[j].Last = at;
+		}
+		if (events != NULL)
+		{
+			FwpmFreeMemory0((void **)&events);
+		}
+	}
+
+	for (UINT j = 1;j < num_list;j++)
+	{
+		if (list[j].Count > list[most].Count)
+		{
+			most = j;
+		}
+	}
+	for (UINT j = 0;j < num_list;j++)
+	{
+		FWPM_FILTER0 *f = NULL;
+		FWPM_SUBLAYER0 *sub = NULL;
+
+		if (FwpmFilterGetById0(engine, list[j].FilterId, &f) == ERROR_SUCCESS && f != NULL)
+		{
+			FwpmSubLayerGetByKey0(engine, &f->subLayerKey, &sub);
+		}
+
+		wchar_t *name = ((f != NULL && f->displayData.name != NULL) ? f->displayData.name : L"?");
+		Print("NICBRIDGE DIAG %s wfp: %u drops of datagrams to port %u by filter %I64u '%S' of the sublayer '%S' at layer %u, from %I64u to %I64u ms after the step began\n",
+			who, list[j].Count, (UINT)port, list[j].FilterId, name, (sub != NULL && sub->displayData.name != NULL) ? sub->displayData.name : L"?", list[j].Layer,
+			list[j].First, list[j].Last);
+		if (j == most)
+		{
+			UniToUtf8(filter, filter_size - 1, name);
+		}
+
+		if (sub != NULL)
+		{
+			FwpmFreeMemory0((void **)&sub);
+		}
+		if (f != NULL)
+		{
+			FwpmFreeMemory0((void **)&f);
+		}
+	}
+
+	if (en != NULL)
+	{
+		FwpmNetEventDestroyEnumHandle0(engine, en);
+	}
+	FwpmEngineClose0(engine);
+
+	Print("NICBRIDGE DIAG %s wfp: %u drops of datagrams to port %u recorded since the step began (the engine %s net events; error 0x%x)\n", who, drops, (UINT)port,
+		on ? "collects" : "does not collect", (UINT)err);
+
+	return drops;
+}
+
+// Wait until the host stack of the stand-in p takes datagrams from the segment, NICBRIDGE_QUARANTINE ms at most: its
+// interface up, and out of the quarantine of Windows Firewall. Windows Firewall quarantines an interface that changed, a
+// new one among them, until it has categorized its network, and in that time drops every new inbound connection, whatever
+// its rules say; so it dropped, for seconds now and then, the datagrams of the member that a bridge put into the host
+// stack of a stand-in made a moment before, by its filter 'Quarantine Default Inbound Block' (CI-FLAKE-3, #569). A
+// datagram from another address of the segment goes to a socket of the stand-in every NICBRIDGE_READY_EVERY ms until one
+// arrives, through the SeLow device of the adapter of the GUID guid, which hands frames to the host as the selow backend
+// does, but without a bridge. What the wait found goes into s; false when no datagram arrived.
+static bool NicBridgeHostReady(NICBRIDGE_PORT *p, const GUID *guid, char *s, UINT size)
+{
+	UCHAR frame[NODE_L2_MAX_FRAME];
+	MIB_IF_ROW2 row;
+	FILETIME since;
+	SU_ADAPTER *su = NULL;
+	char buf[2048];
+	char id[MAX_SIZE];
+	char who[MAX_SIZE];
+	char filter[MAX_SIZE];
+	char dropped[MAX_SIZE * 2];
+	int timeout = NICBRIDGE_READY_EVERY;
+	int error = 0;
+	UINT sent = 0;
+	bool up = false;
+	bool opened = false;
+	bool arrived = false;
+
+	NicBridgeSeLowId(id, sizeof(id), guid);
+	GetSystemTimeAsFileTime(&since);
+	UINT64 start = GetTickCount64();
+
+	SOCKET r = NicBridgeSocket(p->Address, NICBRIDGE_READY_PORT, &error);
+	if (r == INVALID_SOCKET)
+	{
+		Format(s, size, "a socket of the stand-in did not bind to %u.%u.%u.%u:%u (Winsock error %d)", p->Address & 0xFF, (p->Address >> 8) & 0xFF, (p->Address >> 16) & 0xFF,
+			p->Address >> 24, (UINT)NICBRIDGE_READY_PORT, error);
+		return false;
+	}
+	setsockopt(r, SOL_SOCKET, SO_RCVTIMEO, (char *)&timeout, sizeof(timeout));
+
+	UINT fsize = NicBridgeUdpFrame(frame, p->HostMac, nicbridge_other_mac, NicBridgeAddr(198, 18, NICBRIDGE_NETWORK, 3), p->Address, 40000, NICBRIDGE_READY_PORT, 32);
+	while (arrived == false && GetTickCount64() < start + NICBRIDGE_QUARANTINE)
+	{
+		// The interface is up, and SeLow has bound to its adapter, which gives the device
+		Zero(&row, sizeof(row));
+		row.InterfaceLuid.Value = p->HostLuid;
+		up = (GetIfEntry2(&row) == NO_ERROR && row.OperStatus == IfOperStatusUp);
+		if (up && su == NULL)
+		{
+			su = SuOpenAdapter(id);
+			opened = (su != NULL);
+		}
+		if (up == false || su == NULL)
+		{
+			Sleep(NICBRIDGE_POLL);
+			continue;
+		}
+
+		sent += (NicBridgeSeLowPut(su, frame, fsize) ? 1 : 0);
+		arrived = (recv(r, buf, sizeof(buf), 0) > 0);
+	}
+	UINT64 now = GetTickCount64();
+	closesocket(r);
+	if (su != NULL)
+	{
+		SuCloseAdapter(su);
+	}
+
+	// The record of the datagrams that did not arrive
+	UINT drops = 0;
+	StrCpy(dropped, sizeof(dropped), "");
+	if (sent > (arrived ? 1u : 0u))
+	{
+		Format(who, sizeof(who), "%s ready", p->Tag);
+		drops = NicBridgeDrops(who, NICBRIDGE_READY_PORT, &since, filter, sizeof(filter));
+		Format(dropped, sizeof(dropped), ", the filter engine recorded %u drops of them%s%s%s", drops, IsEmptyStr(filter) ? "" : ", the most by its filter '", filter,
+			IsEmptyStr(filter) ? "" : "'");
+	}
+
+	if (arrived)
+	{
+		Format(s, size, "the stand-in's host stack takes datagrams from the segment %I64u ms after the adapter was made, after %I64u ms of the wait: datagram %u reached its socket%s",
+			now - p->Made, now - start, sent, dropped);
+		return true;
+	}
+
+	Format(s, size, "no datagram from the segment reached a socket of the stand-in within %u ms, %I64u ms after the adapter was made: its interface %s, the SeLow device of its adapter %s, %u datagrams written to it%s",
+		(UINT)NICBRIDGE_QUARANTINE, now - p->Made, up ? "up" : "not up", opened ? "opened" : "not opened", sent, dropped);
+
+	return false;
 }
 
 // The sink of the benchmark: counts the datagrams that reach it
@@ -1155,13 +1516,15 @@ static bool NicBridgeNic(NICBRIDGE_CTX *ctx, NICBRIDGE_PORT *p)
 }
 
 // The stand-in of a Hyper-V switch: a KM-TEST adapter of the node with its IPv4 address, whose host stack plays the
-// devices on the switch, found by its alias as the owner of a bridge names it
+// devices on the switch, found by its alias as the owner of a bridge names it. It takes part once its address is preferred
+// and its host stack takes datagrams from the segment, which Windows Firewall lets through once it has taken the new
+// interface out of quarantine (#569).
 static bool NicBridgeStandIn(NICBRIDGE_CTX *ctx, NICBRIDGE_PORT *p, NODE *n)
 {
 	MIB_IF_ROW2 row;
 	char alias[MAX_SIZE];
 	char error[MAX_SIZE * 2];
-	DWORD err = NO_ERROR;
+	char ready[MAX_SIZE * 2];
 
 	Zero(p, sizeof(NICBRIDGE_PORT));
 	p->Name = "the stand-in of a Hyper-V switch";
@@ -1172,6 +1535,7 @@ static bool NicBridgeStandIn(NICBRIDGE_CTX *ctx, NICBRIDGE_PORT *p, NODE *n)
 	p->Member = NicBridgeAddr(198, 18, NICBRIDGE_NETWORK, 2);
 
 	p->KmTest = NodeKmTestNew(n, p->Mac);
+	p->Made = GetTickCount64();
 	UINT index = NodeKmTestIndex(p->KmTest);
 	Zero(&row, sizeof(row));
 	row.InterfaceIndex = index;
@@ -1191,12 +1555,29 @@ static bool NicBridgeStandIn(NICBRIDGE_CTX *ctx, NICBRIDGE_PORT *p, NODE *n)
 	p->Luid = row.InterfaceLuid.Value;
 	p->HostLuid = p->Luid;
 
-	bool ok = NicBridgeAddAddress(p->Luid, p->Address, NICBRIDGE_LENGTH, &err);
+	UINT64 given = GetTickCount64();
+	bool ok = NicBridgeAddAddress(p->Luid, p->Address, NICBRIDGE_LENGTH, error, sizeof(error));
+	UINT64 now = GetTickCount64();
+	char state[MAX_SIZE];
+	NicBridgeAddressState(p->Luid, p->Address, state, sizeof(state));
 
 	Print("  the stand-in: interface %u, '%s', MAC %02X-%02X-%02X-%02X-%02X-%02X, 198.18.%u.1/%u, the member at 198.18.%u.2\n", p->IfIndex, alias, (UINT)p->Mac[0],
 		(UINT)p->Mac[1], (UINT)p->Mac[2], (UINT)p->Mac[3], (UINT)p->Mac[4], (UINT)p->Mac[5], (UINT)NICBRIDGE_NETWORK, (UINT)NICBRIDGE_LENGTH, (UINT)NICBRIDGE_NETWORK);
+	Print("  the stand-in's address is %s %I64u ms after it was given, %I64u ms after the adapter was made\n", state, now - given, now - p->Made);
 
-	return NicBridgeCheck(ctx, ok, "the stand-in takes its IPv4 address", "CreateUnicastIpAddressEntry: error %u", (UINT)err);
+	if (NicBridgeCheck(ctx, ok, "the stand-in takes its IPv4 address", "%s", error) == false)
+	{
+		return false;
+	}
+
+	// The datagrams of the member reach the stand-in only once Windows Firewall has taken the new interface out of quarantine
+	bool taken = NicBridgeHostReady(p, &row.InterfaceGuid, ready, sizeof(ready));
+	if (taken)
+	{
+		Print("  %s\n", ready);
+	}
+
+	return NicBridgeCheck(ctx, taken, "the stand-in's host stack takes datagrams from the segment once Windows Firewall has taken the new interface out of quarantine", "%s", ready);
 }
 
 // The Hyper-V switch of the runner that the job made, named sw_name: the bridge takes the host vNIC of the switch, found by
@@ -1207,7 +1588,6 @@ static bool NicBridgeHyperV(NICBRIDGE_CTX *ctx, NICBRIDGE_PORT *p, char *sw_name
 	MIB_IF_ROW2 row;
 	char alias[MAX_SIZE];
 	char error[MAX_SIZE * 2];
-	DWORD err = NO_ERROR;
 
 	Zero(p, sizeof(NICBRIDGE_PORT));
 	p->Name = "a Hyper-V switch of the runner";
@@ -1245,13 +1625,13 @@ static bool NicBridgeHyperV(NICBRIDGE_CTX *ctx, NICBRIDGE_PORT *p, char *sw_name
 	p->HostLuid = row.InterfaceLuid.Value;
 	Copy(p->HostMac, row.PhysicalAddress, 6);
 
-	bool ok = NicBridgeAddAddress(p->HostLuid, p->Address, NICBRIDGE_LENGTH, &err);
+	bool ok = NicBridgeAddAddress(p->HostLuid, p->Address, NICBRIDGE_LENGTH, error, sizeof(error));
 
 	Print("  the device: interface %u, '%s', MAC %02X-%02X-%02X-%02X-%02X-%02X, 198.18.%u.2/%u, the member at 198.18.%u.3\n", index, alias, (UINT)p->HostMac[0],
 		(UINT)p->HostMac[1], (UINT)p->HostMac[2], (UINT)p->HostMac[3], (UINT)p->HostMac[4], (UINT)p->HostMac[5], (UINT)NICBRIDGE_NETWORK + 1, (UINT)NICBRIDGE_LENGTH,
 		(UINT)NICBRIDGE_NETWORK + 1);
 
-	return NicBridgeCheck(ctx, ok, "the device on the Hyper-V switch takes its IPv4 address", "CreateUnicastIpAddressEntry: error %u", (UINT)err);
+	return NicBridgeCheck(ctx, ok, "the device on the Hyper-V switch takes its IPv4 address", "%s", error);
 }
 
 //
@@ -1269,6 +1649,7 @@ static void NicBridgeBench(NICBRIDGE_CTX *ctx, NICBRIDGE_PORT *p, NICBRIDGE_NET 
 	NICBRIDGE_SINK sink;
 	int timeout = 100;
 	int rcvbuf = 16 << 20;
+	int error = 0;
 
 	// Onto the segment
 	NodeL2BridgeGetStatus(net->Bridge, &st);
@@ -1289,7 +1670,7 @@ static void NicBridgeBench(NICBRIDGE_CTX *ctx, NICBRIDGE_PORT *p, NICBRIDGE_NET 
 
 	// To the device, into a socket
 	Zero(&sink, sizeof(sink));
-	sink.Sock = NicBridgeSocket(p->Address, NICBRIDGE_BENCH_PORT);
+	sink.Sock = NicBridgeSocket(p->Address, NICBRIDGE_BENCH_PORT, &error);
 	UINT64 host = 0;
 	if (sink.Sock != INVALID_SOCKET)
 	{
@@ -1320,6 +1701,10 @@ static void NicBridgeBench(NICBRIDGE_CTX *ctx, NICBRIDGE_PORT *p, NICBRIDGE_NET 
 		}
 		closesocket(sink.Sock);
 	}
+	else
+	{
+		Print("NICBRIDGE DIAG %s %s: the sink of the benchmark did not bind (Winsock error %d)\n", backend, p->Tag, error);
+	}
 	Print("NICBRIDGE BENCH %s %s to the device: %I64u frames/s taken by the backend, %I64u frames/s delivered to a socket\n", backend, p->Tag, host,
 		(UINT64)sink.Received * 1000 / NICBRIDGE_BENCH_TIME);
 
@@ -1327,7 +1712,7 @@ static void NicBridgeBench(NICBRIDGE_CTX *ctx, NICBRIDGE_PORT *p, NICBRIDGE_NET 
 	UINT64 captured = 0;
 	if (host_sends && NicBridgeNeighbour(p->HostLuid, p->Member, nicbridge_member_mac, true))
 	{
-		SOCKET s = NicBridgeSocket(p->Address, 0);
+		SOCKET s = NicBridgeSocket(p->Address, 0, &error);
 		LONG64 udp = ReadAcquire64(&o->Udp);
 
 		if (s != INVALID_SOCKET)
@@ -1445,6 +1830,89 @@ static void NicBridgeLanDevice(NICBRIDGE_NET *net, NICBRIDGE_PORT *p, NICBRIDGE_
 		answered ? "" : " (the network of a hosted runner takes no frame of a MAC address other than that of its NIC)");
 }
 
+// The connection profile of the interface of the host stack of p, as Windows gives it, with its IPv4 address and IPv4
+// interface, for the record (CI-FLAKE-3, #569): through the cmdlets of PowerShell, which take a few seconds
+static void NicBridgeProfile(NICBRIDGE_PORT *p, char *backend, char *when)
+{
+	NET_LUID luid;
+	NET_IFINDEX index = 0;
+	char command[MAX_SIZE * 3];
+	char out[MAX_SIZE * 4];
+
+	luid.Value = p->HostLuid;
+	ConvertInterfaceLuidToIndex(&luid, &index);
+	Format(command, sizeof(command),
+		"$c = @(Get-NetConnectionProfile -InterfaceIndex %u -ErrorAction SilentlyContinue); if ($c.Count -eq 0) { 'no connection profile' }; "
+		"$c | ForEach-Object { 'connection profile ' + $_.Name + ', ' + $_.NetworkCategory + ', IPv4 ' + $_.IPv4Connectivity }; "
+		"Get-NetIPAddress -InterfaceIndex %u -AddressFamily IPv4 -ErrorAction SilentlyContinue | ForEach-Object { 'address ' + $_.IPAddress + ', ' + $_.AddressState + ', ' + $_.PrefixOrigin }; "
+		"Get-NetIPInterface -InterfaceIndex %u -AddressFamily IPv4 -ErrorAction SilentlyContinue | ForEach-Object { 'IPv4 interface ' + $_.ConnectionState + ', DHCP ' + $_.Dhcp }",
+		(UINT)index, (UINT)index, (UINT)index);
+	bool ok = NicBridgePowerShell(command, out, sizeof(out));
+
+	TOKEN_LIST *t = ParseToken(out, "\r\n");
+	for (UINT i = 0;i < t->NumTokens;i++)
+	{
+		Print("NICBRIDGE DIAG %s %s profile %s: %s\n", backend, p->Tag, when, t->Token[i]);
+	}
+	if (ok == false || t->NumTokens == 0)
+	{
+		Print("NICBRIDGE DIAG %s %s profile %s: PowerShell %s\n", backend, p->Tag, when, ok ? "printed nothing" : "failed");
+	}
+	FreeToken(t);
+}
+
+// For the record, when datagrams of the member did not reach the socket of the device (CI-FLAKE-3, #569): the drops that
+// the filter engine recorded of datagrams to its port since the step began at since (began, as a tick), the connection
+// profile of the host interface, and how long it takes until a datagram of the member does reach the socket, through the
+// same bridge, one every 100 ms for NICBRIDGE_LATE ms at most
+static void NicBridgeLate(NICBRIDGE_NET *net, NICBRIDGE_PORT *p, char *backend, const FILETIME *since, UINT64 began)
+{
+	UCHAR frame[NODE_L2_MAX_FRAME];
+	char buf[2048];
+	char made[MAX_SIZE];
+	char who[MAX_SIZE];
+	char filter[MAX_SIZE];
+	int timeout = 100;
+	int error = 0;
+	UINT sent = 0;
+	bool arrived = false;
+
+	Format(who, sizeof(who), "%s %s", backend, p->Tag);
+	NicBridgeDrops(who, NICBRIDGE_RX_PORT, since, filter, sizeof(filter));
+	NicBridgeProfile(p, backend, "when they were lost");
+
+	SOCKET r = NicBridgeSocket(p->Address, NICBRIDGE_RX_PORT, &error);
+	bool bound = (r != INVALID_SOCKET);
+	UINT64 start = GetTickCount64();
+	if (bound)
+	{
+		setsockopt(r, SOL_SOCKET, SO_RCVTIMEO, (char *)&timeout, sizeof(timeout));
+		while (arrived == false && GetTickCount64() < start + NICBRIDGE_LATE)
+		{
+			UINT usize = NicBridgeUdpFrame(frame, p->HostMac, nicbridge_member_mac, p->Member, p->Address, 40000, NICBRIDGE_RX_PORT, 32);
+			NicBridgeFromMember(net, frame, usize);
+			sent++;
+			arrived = (recv(r, buf, sizeof(buf), 0) > 0);
+		}
+		closesocket(r);
+	}
+
+	UINT64 now = GetTickCount64();
+	StrCpy(made, sizeof(made), "");
+	if (p->Made != 0)
+	{
+		Format(made, sizeof(made), ", %I64u ms after the adapter was made", now - p->Made);
+	}
+	Print("NICBRIDGE DIAG %s %s late: %s, after %u more datagrams of the member in %I64u ms, %I64u ms after the step began%s\n", backend, p->Tag,
+		arrived ? "a datagram of the member reached the socket" : (bound ? "no datagram of the member reached the socket" : "the socket did not bind"), sent, now - start,
+		now - began, made);
+	if (bound == false)
+	{
+		Print("NICBRIDGE DIAG %s %s late: Winsock error %d\n", backend, p->Tag, error);
+	}
+	NicBridgeProfile(p, backend, arrived ? "once one arrived" : "at the end of the wait");
+}
+
 // The spike of ADR-0018 decision 3 for the backend b on the attachment p, through the backend interface: an L2 bridge, the
 // member of a port of the switch of an L2 Network beside the member that the test plays. own_hold: the test's own hold
 // of promiscuous mode for XDP (the SeLow device), else the product's (NodeL2NpcapHold).
@@ -1503,9 +1971,25 @@ static void NicBridgeRun(NICBRIDGE_CTX *ctx, NODE *n, NICBRIDGE_PORT *p, const N
 		Print("NICBRIDGE DIAG %s %s: %I64u frames counted as sent by the bridge's interface\n", b->Name, p->Tag, counted);
 	}
 
-	// Foreign-MAC transmit to the device: datagrams of the member reach a socket of the device
+	// Foreign-MAC transmit to the device: the 5 datagrams of the member reach a socket of the device, every one of them. What
+	// the test finds of the device goes to the log first: whether its socket bound, the state of its address and of its
+	// interface (#569).
 	UINT got = 0;
-	SOCKET r = (p->Address != 0 && p->Member != 0 ? NicBridgeSocket(p->Address, NICBRIDGE_RX_PORT) : INVALID_SOCKET);
+	int bind_error = 0;
+	char host[MAX_SIZE * 2];
+	FILETIME udp_time;
+	UINT64 udp_tick = GetTickCount64();
+	GetSystemTimeAsFileTime(&udp_time);
+	NodeL2BridgeGetStatus(net.Bridge, &st);
+	UINT64 udp_injected = st.Injected;
+	SOCKET r = INVALID_SOCKET;
+	StrCpy(host, sizeof(host), "the attachment has no address of a device");
+	if (p->Address != 0 && p->Member != 0)
+	{
+		r = NicBridgeSocket(p->Address, NICBRIDGE_RX_PORT, &bind_error);
+		NicBridgeHostState(p, NICBRIDGE_RX_PORT, bind_error, host, sizeof(host));
+		Print("NICBRIDGE DIAG %s %s udp: %s\n", b->Name, p->Tag, host);
+	}
 	if (r != INVALID_SOCKET)
 	{
 		setsockopt(r, SOL_SOCKET, SO_RCVTIMEO, (char *)&timeout, sizeof(timeout));
@@ -1526,6 +2010,14 @@ static void NicBridgeRun(NICBRIDGE_CTX *ctx, NODE *n, NICBRIDGE_PORT *p, const N
 			}
 		}
 		closesocket(r);
+	}
+	// The injector adds a batch to its count once the backend has taken it, which can be after the host stack delivered its
+	// datagrams to the socket: so the count is read once it holds each datagram that arrived
+	NicBridgeWaitInjected(net.Bridge, udp_injected + got, &st);
+	UINT64 udp_taken = st.Injected - udp_injected;
+	if (from_host && p->Address != 0 && p->Member != 0 && got < 5)
+	{
+		NicBridgeLate(&net, p, b->Name, &udp_time, udp_tick);
 	}
 
 	// Foreign-MAC transmit and receive: an ARP request of the member for the device's address; the device learns the
@@ -1553,7 +2045,8 @@ static void NicBridgeRun(NICBRIDGE_CTX *ctx, NODE *n, NICBRIDGE_PORT *p, const N
 	if (p->Address != 0 && p->Member != 0 && NicBridgeNeighbour(p->HostLuid, p->Member, nicbridge_member_mac, true))
 	{
 		LONG64 before = ReadAcquire64(&o.Udp);
-		SOCKET s = NicBridgeSocket(p->Address, 0);
+		int error = 0;
+		SOCKET s = NicBridgeSocket(p->Address, 0, &error);
 
 		usent = (s != INVALID_SOCKET ? NicBridgeSendTo(s, p->Member, NICBRIDGE_TX_PORT, 20, 64) : 0);
 		if (s != INVALID_SOCKET)
@@ -1567,14 +2060,14 @@ static void NicBridgeRun(NICBRIDGE_CTX *ctx, NODE *n, NICBRIDGE_PORT *p, const N
 	if (from_host)
 	{
 		Format(what, sizeof(what), "foreign-MAC transmit on %s: the datagrams of the member reach a socket of the device", p->Name);
-		NicBridgeCheck(ctx, got >= 4, what, "%u of 5 received", got);
+		NicBridgeCheck(ctx, got == 5, what, "%u of 5 received, %I64u taken by the backend; %s", got, udp_taken, host);
 		Format(what, sizeof(what), "foreign-MAC transmit and receive on %s: the device answers the ARP request of the member, and its reply reaches the member", p->Name);
 		NicBridgeCheck(ctx, replied, what, "no reply captured; the device %s the member", learnt ? "learnt" : "did not learn");
 		Format(what, sizeof(what), "foreign-MAC receive on %s: the datagrams that the device sends to the member are captured and reach the member", p->Name);
 		NicBridgeCheck(ctx, usent == 20 && captured, what, "%u sent, %I64u captured", usent, (UINT64)ReadAcquire64(&o.Udp));
 	}
-	Print("NICBRIDGE DIAG %s %s: %u of 5 datagrams of the member at the device, the device %s the member, %s its ARP reply, %u of its datagrams to the member, %I64u captured; %I64u frames handed to the member, %I64u to its address\n",
-		b->Name, p->Tag, got, learnt ? "learnt" : "did not learn", replied ? "captured" : "did not capture", usent, (UINT64)ReadAcquire64(&o.Udp),
+	Print("NICBRIDGE DIAG %s %s: %u of 5 datagrams of the member at the device (%I64u taken by the backend), the device %s the member, %s its ARP reply, %u of its datagrams to the member, %I64u captured; %I64u frames handed to the member, %I64u to its address\n",
+		b->Name, p->Tag, got, udp_taken, learnt ? "learnt" : "did not learn", replied ? "captured" : "did not capture", usent, (UINT64)ReadAcquire64(&o.Udp),
 		(UINT64)ReadAcquire64(&o.Frames), (UINT64)ReadAcquire64(&o.ToMember));
 
 	// Coexistence with the host stack, on the runner's NIC: the host's own TCP connection through the NIC works while the

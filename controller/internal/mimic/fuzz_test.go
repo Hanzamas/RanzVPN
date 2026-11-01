@@ -19,6 +19,11 @@ func FuzzRead(f *testing.F) {
 		`","short_ids":[""],"decoy":{"name":"www.example.com","self_signed":true,"page":"<p>x</p>"}}}` + "\r\n\r\n"))
 	f.Add([]byte(`{"type":"start","role":"client","pipe":"p","client":{"links":[{"address":"192.0.2.1:443","server_name":"www.example.com","public_key":"` + testPrivate +
 		`","short_id":"ab","fingerprint":"firefox","padding":{"sizes":[300,1200],"min_gap_ms":5}}]}}`))
+	// The Hysteria mode (hysteria.go): the hysteria part of a server and of a link
+	f.Add([]byte(`{"type":"start","role":"server","pipe":"p","server":{"private_key":"` + testPrivate + `","short_ids":["ab"],"decoy":{"name":"www.example.com","self_signed":true},` +
+		`"hysteria":{"listen":":8443","secrets":["` + testSecret + `"],"salamander":"` + testSalamander + `","max_mbps":100}}}`))
+	f.Add([]byte(`{"type":"start","role":"client","pipe":"p","client":{"links":[{"address":"192.0.2.1:8443","server_name":"www.example.com","hysteria":{"secret":"` + testSecret +
+		`","pin_sha256":"` + testPrivate + `","salamander":"` + testSalamander + `","brutal":{"up_mbps":20,"down_mbps":100}}}]}}`))
 
 	f.Fuzz(func(t *testing.T, b []byte) {
 		r := NewReader(bytes.NewReader(b))
@@ -54,11 +59,21 @@ func FuzzRead(f *testing.F) {
 					default:
 						t.Fatalf("a decoy of the mode %q is accepted", cfg.decoy.mode)
 					}
+					if h := cfg.hysteria; h != nil && (h.listen == "" || len(h.secrets) == 0 || cfg.decoy.mode != DecoyOwn) {
+						t.Fatalf("a hysteria part without a listen, a secret or the own decoy is accepted: %+v", s)
+					}
 				}
 			}
 			if m.Client != nil {
-				if cfg, err := parseClient(m.Client); err == nil && len(cfg.links) == 0 {
-					t.Fatalf("a client without a link is accepted: %+v", m.Client)
+				if cfg, err := parseClient(m.Client); err == nil {
+					if len(cfg.links) == 0 {
+						t.Fatalf("a client without a link is accepted: %+v", m.Client)
+					}
+					for _, l := range cfg.links {
+						if h := l.hysteria; h != nil && (len(h.secret) < 2*minSecret || (h.up == 0) != (h.down == 0)) {
+							t.Fatalf("a hysteria link without a secret, or with Brutal in one direction, is accepted: %+v", m.Client)
+						}
+					}
 				}
 			}
 		}
