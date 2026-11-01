@@ -20,13 +20,15 @@
 //
 // The source group that the node stamps on a packet of its host is the group of the WireGuard Device whose address is the
 // source of the packet, when the node is the gateway of that Device, and the node's own group in the VRF of the packet
-// otherwise. A packet of a route that a VRF of the peer leaks goes into a VRF of which the node has no group, and carries
-// none. The relay role forwards the sealed datagrams of the peer layer as they are. The hub of a VRF of topology
-// hub-and-spoke, the one node that sends the packet of a peer on to another (NodeGateway.c; SDN-19, #195), judges the
-// source group that the packet carried as a destination does (NodeSourceGroupTransit), and its policy judges the packet by
-// it (NodePolicyTransit; SDN-19-R2, #508); then it sends the packet on as a record of frame version 0 or a datagram without
-// a source group, so the other spoke judges it by the map of address to group, as a packet of the hub, whose policy it
-// passed. So no node rewrites the source group of another.
+// otherwise; a Device without a group, whose set of tags the VRF gave no group ID, gets none, and never the node's own. A
+// packet of a route that a VRF of the peer leaks goes into a VRF of which the node has no group, and carries none. Nor
+// does a packet of a VRF whose own group the node holds (CONTROL_SOURCE_GROUP.Held), as below. The relay role forwards the
+// sealed datagrams of the peer layer as they are. The hub of a VRF of topology hub-and-spoke, the one node that sends the
+// packet of a peer on to another (NodeGateway.c; SDN-19, #195), judges the source group that the packet carried as a
+// destination does (NodeSourceGroupTransit), and its policy judges the packet by it (NodePolicyTransit; SDN-19-R2, #508);
+// then it sends the packet on as a record of frame version 0 or a datagram without a source group, so the other spoke
+// judges it by the map of address to group, as a packet of the hub, whose policy it passed. So no node rewrites the source
+// group of another.
 //
 // Each claim names the group generation of its sender in the VRF of the packet (CONTROL_SOURCE_GROUP.Generation): the
 // Generation of the sender's state from which on it may assert the groups that it may assert there, which the controller
@@ -46,10 +48,15 @@
 // may assert in a Generation that the node does not run yet: the controller gives a new set of tags the group ID after the
 // largest one that the VRF gave. The node ignores such a claim and judges the packet by the map of address to group of its
 // own state, so that neither node misjudges an honest packet while their Generations roll out, over every carrier, the
-// group policy extension of VXLAN too, which has no room for the group generation. A claim that names the group generation
-// that the node's state gives the peer was made on the state that the node knows, so no rollout explains it: the node
-// refuses it unless the peer may assert its group. So the group generation that the sender writes can make the node refuse
-// a claim, and never ignore one.
+// group policy extension of VXLAN too, which has no room for the group generation. A peer can also move into a set of tags
+// that has its group ID already, which the node's state gives another endpoint: such a claim the node cannot tell from a
+// forged one, so no honest peer makes it. The controller marks the own group of a node in a VRF held while a peer that
+// judges its claims runs a state, the one that it acknowledged last or the one in flight to it, that would refuse one of
+// the groups that the node stamps there, and clears the mark once no such peer is left (CONTROL_SOURCE_GROUP.Held,
+// controller/internal/desired/sourcegrouphold.go): meanwhile the node stamps none in the VRF, and its peers judge its
+// packets by the map of address to group. A claim that names the group generation that the node's state gives the peer
+// was made on the state that the node knows, so no rollout explains it: the node refuses it unless the peer may assert its
+// group. So the group generation that the sender writes can make the node refuse a claim, and never ignore one.
 //
 // The node judges the claims of a peer only once it knows the groups that the peer may assert, which its state gives with
 // the frame version 1 of the peer once both report the Capability tags. The controller gives both nodes their Generations
@@ -82,12 +89,13 @@
 #define NODE_SOURCE_RESULTS 4
 
 // One source group that a node knows: its VRF, its group ID and its tag set, and the group generation of the node that may
-// assert it in the VRF, its 32 low bits
+// assert it in the VRF, its 32 low bits; of the node's own group, whether it holds it, and stamps no group in the VRF
 typedef struct NODE_SOURCE_GROUP {
 	UINT VrfId;
 	UINT Group;
 	UINT64 Tags;
 	UINT Generation;
+	bool Held;
 } NODE_SOURCE_GROUP;
 
 // One address of a WireGuard Device whose gateway the node is, and the source group that the node stamps on its packets
@@ -361,12 +369,12 @@ static void NodeSourceGroupKnownOf(NODE_SOURCE_GROUP_TABLE *t, const CONTROL_STA
 }
 
 // The source groups of the Generation of st onto its forwarding tables v, before they go in: the tag mode of each VRF, the
-// node's own groups, the addresses of the Devices whose gateway the node is with their groups, and of each peer the frame
-// version of the records that the node sends it and the groups that it may assert: its own and those of the Devices whose
-// gateway it is. Each group holds the group generation of the node that may assert it in its VRF, the node's own or the
-// peer's, which the claims of that node name. Then the groups that each peer could assert before, which the node keeps
-// from its live tables, and every group that the state gives: by them the node tells a claim that a rollout of the
-// Generations explains from an unknown group (NodeSourceGroupJudge).
+// node's own groups, each held or not, the addresses of the Devices whose gateway the node is with their groups, 0 for a
+// Device without one, and of each peer the frame version of the records that the node sends it and the groups that it may
+// assert: its own and those of the Devices whose gateway it is. Each group holds the group generation of the node that may
+// assert it in its VRF, the node's own or the peer's, which the claims of that node name. Then the groups that each peer
+// could assert before, which the node keeps from its live tables, and every group that the state gives: by them the node
+// tells a claim that a rollout of the Generations explains from an unknown group (NodeSourceGroupJudge).
 void NodeSourceGroupAttach(NODE *n, NODE_VRF_TABLES *v, const CONTROL_STATE *st) {
 	if (n == NULL || v == NULL || st == NULL)
 		return;
@@ -386,15 +394,17 @@ void NodeSourceGroupAttach(NODE *n, NODE_VRF_TABLES *v, const CONTROL_STATE *st)
 		g->Group = st->Groups[i].Group;
 		g->Tags = st->Groups[i].TagSet;
 		g->Generation = (UINT)st->Groups[i].Generation;
+		g->Held = st->Groups[i].Held;
 	}
 
-	// The Devices whose gateway the node is, one entry for each of their addresses
+	// The Devices whose gateway the node is, one entry for each of their addresses, a Device without a group too, so that
+	// its packets carry none and never the node's own group
 	UINT num_devices = (st->Devices != NULL ? st->NumDevices : 0);
 	t->Devices = ZeroMalloc(sizeof(NODE_SOURCE_DEVICE) * CONTROL_DEVICE_ADDRESSES * MAX(num_devices, 1));
 	for (UINT i = 0; i < num_devices; i++) {
 		const CONTROL_DEVICE *d = &st->Devices[i];
 
-		if (d->HasKey == false || d->Group == 0 || StrCmp(d->Gateway, st->Name) != 0)
+		if (d->HasKey == false || StrCmp(d->Gateway, st->Name) != 0)
 			continue;
 
 		for (UINT j = 0; j < d->NumAddresses && j < CONTROL_DEVICE_ADDRESSES; j++) {
@@ -472,10 +482,14 @@ void NodeFreeSourceGroupTable(NODE_SOURCE_GROUP_TABLE *t) {
 
 // The source group of a packet of the host in the VRF vrf_id into *g: the group of the WireGuard Device whose address is
 // the source of the packet, when the node is the gateway of that Device, else the node's own group in the VRF. False when
-// the node has neither.
+// the node has neither, when that Device has no group, and when the node holds its own group in the VRF.
 static bool NodeSourceGroupOf(const NODE_SOURCE_GROUP_TABLE *t, UINT vrf_id, const UCHAR *packet, UINT size, NODE_SOURCE_GROUP *g) {
 	const UCHAR *src = NULL;
 	UINT addr_size = 0;
+
+	for (UINT i = 0; i < t->NumOwn; i++)
+		if (t->Own[i].VrfId == vrf_id && t->Own[i].Held)
+			return false;
 
 	if (packet != NULL && size >= 20 && (packet[0] >> 4) == 4) {
 		src = packet + 12;
@@ -490,7 +504,7 @@ static bool NodeSourceGroupOf(const NODE_SOURCE_GROUP_TABLE *t, UINT vrf_id, con
 
 		if (d->Group.VrfId == vrf_id && d->Size == addr_size && Cmp(d->Address, src, addr_size) == 0) {
 			*g = d->Group;
-			return true;
+			return (d->Group.Group != 0);
 		}
 	}
 
