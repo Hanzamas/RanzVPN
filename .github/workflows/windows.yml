@@ -1632,8 +1632,10 @@ jobs:
   # Every msiexec call of the script has a bound of 300 s and fails with the evidence (CI-FLAKE-6, #593). The step has a
   # timeout of 10 minutes (the bound, the longest normal step, 77 s, and 3 minutes for the evidence) and the job one of 20 (the
   # step, the step of the planted hang, the setup and the upload): they are the second line, for a hang that the bound cannot
-  # catch. The old ones, 30 and 45 minutes, ended nothing: three jobs hung in the step, which was still running when the
-  # service cancelled each job after 55 minutes, the 45 of the job and 10 more.
+  # catch. The old ones, 30 and 45 minutes, ended nothing in three jobs: the step was still running when the service cancelled
+  # each job after 55 minutes, the 45 of the job and 10 more. A msiexec that hangs does not do that by itself, since the runner
+  # ends such a step at its timeout (the pull request of #593 has the runs), so the runner or the computer did not answer; the
+  # evidence that the bound prints is there to tell which.
   msi:
     needs: sign_and_integrity
     strategy:
