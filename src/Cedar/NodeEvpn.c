@@ -573,9 +573,10 @@ static void NodeEvpnUnknownVtep(NODE_EVPN *e, UINT vrf_id, const VXLAN_ADDR *fro
 // registers itself as a reader of the tables of the node with its first frame. The module hands it the frames of the VNIs that
 // it carries alone, which are the L3 VNIs of the EVPN VRFs (NodeEvpnStart), so vni names a VRF; a datagram on any other VNI and
 // one that holds no frame it dropped before, whatever their source (VxlanInput). The frame goes into the VRF of the VNI when
-// from is a VTEP that the gateway knows for the VRF, the VTEP of an IP prefix route of the VRF (NodeEvpnHasVtep),
-// NodeEvpnParseFrame takes it and an IP prefix route of the fabric in the VRF holds the source of its packet. Any other frame is
-// dropped and counted, one from another address as UnknownVtep, whatever it holds.
+// from is a VTEP that the gateway knows for the VRF, the VTEP or one of the vteps of an IP prefix route of the VRF
+// (NodeEvpnHasVtep, NodeEvpnKnownVteps), NodeEvpnParseFrame takes it and an IP prefix route of the fabric in the VRF holds the
+// source of its packet. Any other frame is dropped and counted, one from another address as UnknownVtep, whatever it holds,
+// which the node log names once every NODE_EVPN_LOG_WAIT ms at most (NodeEvpnUnknownVtep).
 static void NodeEvpnReceive(VXLAN *x, void *param, UINT vni, const VXLAN_ADDR *from, const UCHAR *frame, UINT size) {
 	NODE_EVPN *e = (NODE_EVPN *)param;
 	NODE_EVPN_FRAME f;
