@@ -284,3 +284,72 @@ jobs:
         name: msi-standin-logs-${{ matrix.platform.ARCHITECTURE }}
         if-no-files-found: warn
         path: ${{ runner.temp }}/msi-logs
+
+  # A regression planted in a copy of the script must turn its self-test red, for the reason that the test is there: the flag of the
+  # log, the end of the service, the bound of the evidence, the final error of the flow, the stop after a hang, and on Windows the
+  # filter of the events and the query of the service
+  mutation:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+        - { name: flag, os: ubuntu-latest, expect: 'the tail of the verbose log does not end with' }
+        - { name: service, os: ubuntu-latest, expect: 'still there after the failure' }
+        - { name: evidence-bound, os: ubuntu-latest, expect: 'not within its bound of' }
+        - { name: summary, os: ubuntu-latest, expect: 'exited with the code 0' }
+        - { name: step-stop, os: ubuntu-latest, expect: 'ran a step after the call that did not end' }
+        - { name: service, os: windows-latest, expect: 'neither as ended nor as not ended' }
+        - { name: events, os: windows-latest, expect: 'hold no event of the planted call' }
+        - { name: servicestate, os: windows-latest, expect: 'has no process in the evidence' }
+    name: mutation ${{ matrix.name }} (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 12
+    steps:
+    - uses: actions/checkout@v4
+    - name: The self-test of a copy with the regression
+      shell: pwsh
+      env:
+        MUTATION: ${{ matrix.name }}
+        EXPECT: ${{ matrix.expect }}
+      run: |
+        $text = Get-Content -LiteralPath '.github/scripts/msi-install.ps1' -Raw
+        $find = @{}
+        $with = @{}
+        $find['flag'] = "'/norestart', '/l*v!',"
+        $with['flag'] = "'/norestart', '/l*v',"
+        $find['service'] = "if (`$service -and [int] `$service.ProcessId -gt 0) { Stop-ProcessTree ([int] `$service.ProcessId) 'the service msiserver' `$table `$ended `$notEnded }"
+        $with['service'] = '$null = 0'
+        $find['evidence-bound'] = '$result.Complete = $collector.WaitForExit($evidenceSeconds * 1000)'
+        $with['evidence-bound'] = '$collector.WaitForExit(); $result.Complete = $true'
+        $find['summary'] = 'throw "$($failures.Count) steps failed:'
+        $with['summary'] = 'Write-Host "$($failures.Count) steps failed:'
+        $find['events'] = "ProviderName = 'MsiInstaller'"
+        $with['events'] = "ProviderName = 'NoSuchProvider'"
+        $find['servicestate'] = 'return Get-CimInstance Win32_Service -Filter "Name=''$name''" -OperationTimeoutSec 30'
+        $with['servicestate'] = 'return Get-CimInstance Win32_Service -Filter "Name=''nosuchservice''" -OperationTimeoutSec 30'
+        $name = $env:MUTATION
+        if ($name -eq 'step-stop') {
+          $mutated = [regex]::Replace($text, '(?s)(the run stops after .*?\r?\n\s*)throw \$script:msiexecHang', '$1Write-Host ''continues''')
+        } else {
+          if (-not $text.Contains($find[$name])) { throw "the text of the mutation $name is not in the script" }
+          $mutated = $text.Replace($find[$name], $with[$name])
+        }
+        if ($mutated -eq $text) { throw "the mutation $name changed nothing" }
+        $dir = Join-Path $env:RUNNER_TEMP "mutation-$name"
+        New-Item -ItemType Directory -Force -Path $dir | Out-Null
+        $copy = Join-Path $dir 'msi-install.ps1'
+        Set-Content -LiteralPath $copy -Value $mutated -NoNewline -Encoding utf8
+        $out = Join-Path $dir 'out.txt'
+        $err = Join-Path $dir 'err.txt'
+        $pwsh = (Get-Process -Id $PID).Path
+        $began = Get-Date
+        $p = Start-Process -FilePath $pwsh -ArgumentList @('-NoProfile', '-NonInteractive', '-File', "`"$copy`"", '-SelfTest') -PassThru -RedirectStandardOutput $out -RedirectStandardError $err
+        if ($IsWindows) { $null = $p.Handle }
+        if (-not $p.WaitForExit(500000)) { $p.Kill($true); throw 'the self-test of the copy did not end within 500 s' }
+        $seconds = [int] ((Get-Date) - $began).TotalSeconds
+        $all = (Get-Content -LiteralPath $out -Raw) + (Get-Content -LiteralPath $err -Raw)
+        Write-Host "the self-test of the copy with the mutation '$name' exited with the code $($p.ExitCode) after $seconds s; its last lines:"
+        ($all -split "`r?`n") | Select-Object -Last 12 | ForEach-Object { Write-Host "  $_" }
+        if ($p.ExitCode -eq 0) { throw "the self-test passed on the regression '$name'" }
+        if (-not $all.Contains($env:EXPECT)) { throw "the self-test failed on the regression '$name', but not with '$($env:EXPECT)'" }
+        Write-Host "ok: the self-test is red on the regression '$name', with '$($env:EXPECT)'"
