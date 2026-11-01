@@ -307,12 +307,13 @@ static bool PeerSessionRekeyDue(PEER_AGENT *a, PEER_SESSION *s, UINT64 now) {
 	if (s->Current.Valid == false)
 		return false;
 
-	return s->SentUnderKey >= PeerRekeyDatagrams(a) || (s->Current.Initiator && now - s->Current.Created >= PeerRekeyTime(a));
+	return s->SentUnderKey >= PeerRekeyDatagrams(a) || (s->Current.Initiator && now >= s->Current.Created + PeerRekeyTime(a));
 }
 
-// Start an initiation unless one is on its way and not yet due again. The caller holds the lock of the session.
+// Start an initiation unless one is on its way and not yet due again. The caller holds the lock of the session, and read
+// now under it.
 static UINT PeerSessionStart(PEER_AGENT *a, PEER *p, PEER_SESSION *s, UCHAR *buf, UINT64 now) {
-	if (s->Pending && now - s->PendingTick < PEER_SESSION_RETRY)
+	if (s->Pending && now < s->PendingTick + PEER_SESSION_RETRY)
 		return 0;
 
 	if (s->Pending == false)
@@ -341,10 +342,12 @@ UINT PeerSessionSeal(PEER_AGENT *a, PEER *p, const void *data, UINT size, UCHAR 
 	if (s == NULL)
 		return 0;
 
-	UINT64 now = PeerNow();
-
 	AcquireSRWLockExclusive(&s->Lock);
 	{
+		// The clock once the lock is held: no initiation or keys that another thread made under it are later
+		// (CORE-S5-6-R3, #574)
+		UINT64 now = PeerNow();
+
 		if (s->Current.Valid) {
 			ret = PeerSessionWriteRecord(a, p, s, data, size, buf);
 			*rekey = (s->Pending == false && PeerSessionRekeyDue(a, s, now));
@@ -657,8 +660,11 @@ UINT PeerSessionFlush(PEER_AGENT *a, PEER *p, bool first, UCHAR *buf) {
 // The timers of the session with the peer p: keys that are too old or whose peer is silent are dropped; an initiation
 // that had no answer goes again, or its queue is dropped after PEER_SESSION_TRIES; the initiator of the keys replaces
 // them on schedule; a record with a payload that had no answer gets a keepalive. Returns the size of the one datagram
-// to send in buf, 0 for none. The caller holds the lock of the layer, shared.
-UINT PeerSessionTick(PEER_AGENT *a, PEER *p, UCHAR *buf) {
+// to send in buf, 0 for none. The clock is read once the lock of the session is held, under which every time that the
+// timers compare it with was taken, so none is later than the clock, whatever the order of the threads; at, when not
+// NULL, is the clock in its place (PeerSessionTickAt). No time is subtracted from the clock, as the difference would
+// wrap for a later time (CORE-S5-6-R3, #574). The caller holds the lock of the layer, shared.
+UINT PeerSessionTick(PEER_AGENT *a, PEER *p, UCHAR *buf, const UINT64 *at) {
 	UINT ret = 0;
 	UINT dropped = 0;
 	PEER_SESSION *s = PeerSessionOf(p, false);
@@ -666,21 +672,21 @@ UINT PeerSessionTick(PEER_AGENT *a, PEER *p, UCHAR *buf) {
 	if (s == NULL)
 		return 0;
 
-	UINT64 now = PeerNow();
-
 	AcquireSRWLockExclusive(&s->Lock);
 	{
+		UINT64 now = (at != NULL ? *at : PeerNow());
+
 		if (s->Current.Valid) {
 			UINT64 last = (s->LastReceived > s->Current.Created ? s->LastReceived : s->Current.Created);
 
-			if (now - last >= PeerSessionTimeout(a) || now - s->Current.Created >= 3 * PeerRekeyTime(a)) {
+			if (now >= last + PeerSessionTimeout(a) || now >= s->Current.Created + 3 * PeerRekeyTime(a)) {
 				PeerSessionClear(s);
 				dropped = s->QueueNum;
 				s->QueueNum = 0;
 			}
 		}
 
-		if (s->Pending && now - s->PendingTick >= PEER_SESSION_RETRY) {
+		if (s->Pending && now >= s->PendingTick + PEER_SESSION_RETRY) {
 			if (s->PendingTries >= PEER_SESSION_TRIES) {
 				NoiseHandshakeFree(&s->Handshake);
 				s->Pending = false;
@@ -690,9 +696,9 @@ UINT PeerSessionTick(PEER_AGENT *a, PEER *p, UCHAR *buf) {
 			} else {
 				ret = PeerSessionStart(a, p, s, buf, now);
 			}
-		} else if (s->Pending == false && s->Current.Valid && s->Current.Initiator && now - s->Current.Created >= PeerRekeyTime(a)) {
+		} else if (s->Pending == false && s->Current.Valid && s->Current.Initiator && now >= s->Current.Created + PeerRekeyTime(a)) {
 			ret = PeerSessionStart(a, p, s, buf, now);
-		} else if (s->Current.Valid && s->LastData > s->LastSent && now - s->LastData >= PeerKeepalive(a)) {
+		} else if (s->Current.Valid && s->LastData > s->LastSent && now >= s->LastData + PeerKeepalive(a)) {
 			ret = PeerSessionWriteRecord(a, p, s, NULL, 0, buf);
 		}
 	}

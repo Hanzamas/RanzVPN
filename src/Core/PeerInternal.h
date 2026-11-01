@@ -57,10 +57,8 @@
 #define PEER_RESPONSE_HEADER  73
 #define PEER_RESPONSE_PAYLOAD 8
 #define PEER_RESPONSE_SIZE    (PEER_RESPONSE_HEADER + NOISE_IK_MESSAGE2_SIZE + PEER_RESPONSE_PAYLOAD)
-#define PEER_SESSION_QUEUE    8    // Datagrams that wait for a handshake, per peer
-#define PEER_SESSION_RETRY    1000 // ms before an initiation that had no answer is sent again
-#define PEER_SESSION_TRIES    10   // ... how many times, before the queue is dropped
-#define PEER_WINDOW_BITS      256  // The sliding window of the counters of the records under one key
+#define PEER_SESSION_QUEUE    8   // Datagrams that wait for a handshake, per peer
+#define PEER_WINDOW_BITS      256 // The sliding window of the counters of the records under one key
 #define PEER_WINDOW_WORDS     (PEER_WINDOW_BITS / 64)
 
 // The keys of a peer session: one handshake's
@@ -299,7 +297,7 @@ UINT PeerSessionSeal(PEER_AGENT *a, PEER *p, const void *data, UINT size, UCHAR 
 UINT PeerSessionInitiate(PEER_AGENT *a, PEER *p, UCHAR *buf);
 UINT PeerSessionInput(PEER_AGENT *a, PEER *p, const PEER_RECORD_INFO *r, const UCHAR *data, UINT size, PEER_SESSION_OUT *o);
 UINT PeerSessionFlush(PEER_AGENT *a, PEER *p, bool first, UCHAR *buf);
-UINT PeerSessionTick(PEER_AGENT *a, PEER *p, UCHAR *buf);
+UINT PeerSessionTick(PEER_AGENT *a, PEER *p, UCHAR *buf, const UINT64 *at);
 void PeerSessionStatus(PEER *p, PEER_STATUS *st);
 
 // PeerChallenge.c
