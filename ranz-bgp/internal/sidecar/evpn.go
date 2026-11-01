@@ -13,8 +13,9 @@ package sidecar
 // evpn: the prefix of a VRF never goes to the peers as a unicast route, where the prefixes of two VRFs would meet in one
 // table. An IP prefix route of a peer goes to each VRF whose
 // import route targets it carries and whose accept list covers its prefix, as a learned message with the vrf, the VTEP
-// of the fabric as the next hop, the VNI and the router MAC of the fabric; when it goes, as a withdrawn message with the
-// vrf and the VNI. The node installs neither into the Windows routing table: its own forwarding of the VRF carries them
+// of the fabric as the next hop, the VNI and the router MAC of the fabric, and the next hops of all the routes that the
+// peers offer for the prefix in the VRF, which the node takes frames from (evpn_vteps.go); when it goes, as a withdrawn
+// message with the vrf and the VNI. The node installs neither into the Windows routing table: its own forwarding of the VRF carries them
 // in VXLAN (src/Cedar/NodeEvpn.c), so two VRFs hand over the same prefix without conflict, each in its own VRF of the
 // fabric.
 //
@@ -114,9 +115,10 @@ type evpnState struct {
 	// The read loop only: the prefixes of the VRFs that the node announces
 	announced map[evpnKey]uuid.UUID
 
-	// The watch goroutine only: the routes of the peers that offer each prefix of a VRF, by their NLRI, and the route
-	// that the node was told about
+	// The watch goroutine only: the routes of the peers that offer each prefix of a VRF, by their NLRI, the next hops
+	// of those routes that the node was told about (offerVTEPs), and the route that it was told about
 	offers   map[evpnKey]map[string]evpnRoute
+	vteps    map[evpnKey][]netip.Addr
 	reported map[evpnKey]evpnRoute
 
 	// The L2 Networks that the gateway stretches (stretch.go; SDN-64 #291), nil for none
@@ -149,6 +151,7 @@ func parseEVPN(e *EVPN, routerID netip.Addr) (*evpnState, error) {
 		byID:      make(map[uint32]*evpnVRF),
 		announced: make(map[evpnKey]uuid.UUID),
 		offers:    make(map[evpnKey]map[string]evpnRoute),
+		vteps:     make(map[evpnKey][]netip.Addr),
 		reported:  make(map[evpnKey]evpnRoute),
 	}
 	vnis := make(map[uint32]uint32)
@@ -540,6 +543,8 @@ func (e *evpnState) drop(key evpnKey, name string) {
 // (one peer under several route distinguishers, or several peers), the node has one: the one it has while a peer still
 // offers it, else the one of the lowest NLRI. A route that moves to another one is one learned message, without a
 // withdrawn message between, and a prefix that none offers any more is a withdrawn message with the VNI of its route.
+// The learned message names the next hops of all the routes that the peers offer for the prefix (offerVTEPs), so that
+// the node takes the frames of a leaf whose route lost too, and it goes again when they change (SDN-25-R3 #571).
 func (s *session) reportEVPN(key evpnKey) {
 	e := s.evpn
 	old, had := e.reported[key]
@@ -557,14 +562,18 @@ func (s *session) reportEVPN(key evpnKey) {
 	if !found && len(offers) != 0 {
 		next, found = offers[slices.Min(slices.Collect(maps.Keys(offers)))], true
 	}
+	vteps := offerVTEPs(offers, next.nextHop)
 	switch {
 	case !found && had:
 		delete(e.reported, key)
+		delete(e.vteps, key)
 		s.log.Info("EVPN route withdrawn", "vrf", key.vrf, "prefix", key.prefix, "peer", old.peer)
 		s.send(Message{Type: TypeWithdrawn, VRF: key.vrf, Prefix: key.prefix.String(), VNI: old.vni, Peer: old.peer.String()})
-	case found && (!had || old != next):
+	case found && (!had || old != next || !slices.Equal(e.vteps[key], vteps)):
 		e.reported[key] = next
-		s.log.Info("EVPN route learned", "vrf", key.vrf, "prefix", key.prefix, "nextHop", next.nextHop, "vni", next.vni, "routerMAC", next.mac, "peer", next.peer)
-		s.send(Message{Type: TypeLearned, VRF: key.vrf, Prefix: key.prefix.String(), NextHop: next.nextHop.String(), VNI: next.vni, RouterMAC: next.mac, Peer: next.peer.String()})
+		e.vteps[key] = vteps
+		s.log.Info("EVPN route learned", "vrf", key.vrf, "prefix", key.prefix, "nextHop", next.nextHop, "vni", next.vni, "routerMAC", next.mac, "peer", next.peer, "vteps", vteps)
+		s.send(Message{Type: TypeLearned, VRF: key.vrf, Prefix: key.prefix.String(), NextHop: next.nextHop.String(), VTEPs: vtepTexts(vteps), VNI: next.vni,
+			RouterMAC: next.mac, Peer: next.peer.String()})
 	}
 }

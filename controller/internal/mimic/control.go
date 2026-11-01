@@ -25,7 +25,8 @@ import (
 //	ready     the sidecar runs with the settings of start: version (of ranz mimic and the libraries
 //	          it embeds) and protocol. The server role adds listen (the address of the REALITY
 //	          listener, with the port the system gave when the settings asked for port 0) and, in
-//	          the own decoy mode, decoy (the address of the decoy site)
+//	          the own decoy mode, decoy (the address of the decoy site), and with the hysteria part of
+//	          its settings, hysteria (the UDP address of the listener of the Hysteria mode, hysteria.go)
 //	accepted  a client of the server role completed the REALITY handshake: peer is its address
 //	probe     a connection that is no Ranz client (a prober, a browser, a client with a wrong key
 //	          or short id) was spliced to the decoy: peer and reason
@@ -42,7 +43,8 @@ import (
 // to accept the next connection on at all times. The client role creates it and listens: the node
 // connects once for each stream it wants. A stream is a byte stream, with a line in front of it that
 // tells the channel binding of the outer TLS session, the TLS exporter of RFC 8446 section 7.5 with
-// the label BindingLabel, 32 bytes as 64 hex digits, or "-" when the sidecar has none:
+// the label BindingLabel, 32 bytes as 64 hex digits, or "-" when the sidecar has none (a stream of the
+// Hysteria mode carries the SHA-256 of the certificate of the server instead, hysteria.go):
 //
 //	server role, the sidecar writes first:  bind <binding>\n
 //	client role, the node writes first:     dial <address>\n    the address of a link of start
@@ -96,6 +98,7 @@ type Message struct {
 	Protocol int    `json:"protocol,omitempty"`
 	Listen   string `json:"listen,omitempty"`
 	Decoy    string `json:"decoy,omitempty"`
+	Hysteria string `json:"hysteria,omitempty"`
 
 	// accepted, probe
 	Peer   string `json:"peer,omitempty"`

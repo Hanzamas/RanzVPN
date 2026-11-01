@@ -12,14 +12,19 @@
 // takes no route. The messages are the rest of the input split at each newline, as the node
 // splits what it reads, each copied into a buffer of its size and its NUL exactly; the frame is the rest of the input, copied
 // into a buffer of its size exactly, so that AddressSanitizer reports a read past either. A route that a message gives has a
-// VRF, a VNI of 24 bits and a prefix of IPv4 or IPv6 whose texts end within their fields, and a learned one a VTEP and the
-// router MAC of one host; the packet of a frame that the parser takes lies behind the Ethernet header to the router MAC, to the
-// end of the frame, and has two ends of one family. The outer source is the VRF of the frame (4 bytes, big-endian) and the
-// address that it came from (16 bytes, an IPv4 address as an IPv4-mapped one), and the messages follow: the VTEPs of the
-// learned routes, sorted and each copied into a buffer of their number exactly, hold the VTEP of each learned route with its
-// VRF once, in order, and the gateway knows the address for the VRF exactly when a learned route of the VRF has it as its VTEP.
+// VRF, a VNI of 24 bits and a prefix of IPv4 or IPv6 whose texts end within their fields, and a learned one a VTEP, the
+// router MAC of one host and NODE_EVPN_MAX_OFFERS vteps at most (SDN-25-R3 #571), a withdrawn one none; the packet of a frame
+// that the parser takes lies behind the Ethernet header to the router MAC, to the end of the frame, and has two ends of one
+// family. The outer source is the VRF of the frame (4 bytes, big-endian) and the address that it came from (16 bytes, an IPv4
+// address as an IPv4-mapped one), and the messages follow: the VTEPs of the learned routes, sorted and each copied into a
+// buffer of their number exactly, hold the VTEP and the vteps of each learned route with its VRF once, in order, and the
+// gateway knows the address for the VRF exactly when a learned route of the VRF has it as its VTEP or among its vteps.
+// The seeds vtep_*.bin reach the sort and the check of the VTEPs, and the replay of run_fuzzers.ps1 fails when they no longer
+// do, by the two reach lines below (SDN-25-R3, #571).
 //
 // fuzz-max-len: 9217
+// fuzz-reach: NodeEvpnSortVteps
+// fuzz-reach: NodeEvpnHasVtep
 
 #include "fuzz_common.h"
 
@@ -32,6 +37,9 @@
 
 // The VRF and the address of the outer source of a frame, in front of the messages
 #define	FUZZ_EVPN_SOURCE		(4 + 16)
+
+// The VTEPs of one learned route at most: its VTEP and its vteps
+#define	FUZZ_EVPN_PER_ROUTE		(1 + NODE_EVPN_MAX_OFFERS)
 
 // The router MAC of the gateway that the frames of the input are for: the default of the node
 static const UCHAR fuzz_evpn_router_mac[6] = {0x02, 0x52, 0x5A, 0x00, 0x00, 0x05};
@@ -69,10 +77,14 @@ static UINT FuzzEvpnLine(const uint8_t *data, size_t size, NODE_EVPN_ROUTE *r)
 	{
 		size_t next_hop = strnlen(r->NextHop, sizeof(r->NextHop));
 
-		if (next_hop == 0 || next_hop >= sizeof(r->NextHop) || (r->RouterMac[0] & 0x01) != 0)
+		if (next_hop == 0 || next_hop >= sizeof(r->NextHop) || (r->RouterMac[0] & 0x01) != 0 || r->NumVteps > NODE_EVPN_MAX_OFFERS)
 		{
 			abort();
 		}
+	}
+	else if (r->NumVteps != 0)
+	{
+		abort();
 	}
 
 	free(line);
@@ -80,8 +92,8 @@ static UINT FuzzEvpnLine(const uint8_t *data, size_t size, NODE_EVPN_ROUTE *r)
 	return what;
 }
 
-// The messages of data, size bytes, split at each newline: the VTEP of each learned route with its VRF into vteps, which has
-// room for one per message, unless it is NULL; their number
+// The messages of data, size bytes, split at each newline: the VTEP and the vteps of each learned route with its VRF into
+// vteps, which has room for FUZZ_EVPN_PER_ROUTE per message, unless it is NULL; their number
 static size_t FuzzEvpnMessages(const uint8_t *data, size_t size, NODE_EVPN_VTEP *vteps)
 {
 	NODE_EVPN_ROUTE *r = malloc(sizeof(NODE_EVPN_ROUTE));
@@ -102,6 +114,12 @@ static size_t FuzzEvpnMessages(const uint8_t *data, size_t size, NODE_EVPN_VTEP 
 				vteps[num].VrfId = r->VrfId;
 				memcpy(vteps[num].Ip, r->Vtep, sizeof(vteps[num].Ip));
 				num++;
+				for (UINT j = 0;j < r->NumVteps;j++)
+				{
+					vteps[num].VrfId = r->VrfId;
+					memcpy(vteps[num].Ip, r->Vteps[j], sizeof(vteps[num].Ip));
+					num++;
+				}
 			}
 			start = i + 1;
 		}
@@ -199,15 +217,15 @@ static void FuzzEvpnVteps(const uint8_t *data, size_t size)
 		}
 	}
 
-	NODE_EVPN_VTEP *learned = malloc(sizeof(NODE_EVPN_VTEP) * lines);
-	NODE_EVPN_VTEP *sorted = malloc(sizeof(NODE_EVPN_VTEP) * lines);
+	NODE_EVPN_VTEP *learned = malloc(sizeof(NODE_EVPN_VTEP) * lines * FUZZ_EVPN_PER_ROUTE);
+	NODE_EVPN_VTEP *sorted = malloc(sizeof(NODE_EVPN_VTEP) * lines * FUZZ_EVPN_PER_ROUTE);
 	if (learned == NULL || sorted == NULL)
 	{
 		abort();
 	}
 
 	size_t num = FuzzEvpnMessages(data + FUZZ_EVPN_SOURCE, size - FUZZ_EVPN_SOURCE, learned);
-	if (num > lines)
+	if (num > lines * FUZZ_EVPN_PER_ROUTE)
 	{
 		abort();
 	}

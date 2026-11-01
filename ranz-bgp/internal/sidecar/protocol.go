@@ -44,6 +44,15 @@
 // more and of the next one without it together, so that a list longer than one line goes in
 // several (SDN-77-R1 #531).
 //
+// A peer that announces what it may not hides no route of another peer (SDN-77-R3 #570,
+// peerfilter.go). The sidecar takes a path of a peer only when its exact prefix is one that the
+// accept lists of that peer hold in some VRF, and a learned message names the first path, in the
+// order of the selection of GoBGP, whose peer may announce that prefix in the VRF of the path. The
+// paths that the node announces have the highest LOCAL_PREF, so no learned path ranks above them. A
+// peer holds at most 64 paths of an address family, the refused ones included: GoBGP closes the
+// session of one that announces more, the sidecar logs it, and the session stays down until a peers
+// message changes that peer.
+//
 // The session ends when the node closes the pipe: the sidecar then stops BGP, which tells the
 // peers with a Cease notification, and exits.
 //
@@ -54,7 +63,10 @@
 // are taken from the fabric into the VRF). An announce or withdraw with the vrf of one of them is
 // an IP prefix route (EVPN type 5) of that VRF, with the VTEP as its next hop, so it has no
 // next_hop; one with any other vrf is refused. A learned message with a vni is an IP prefix route
-// of the fabric in the EVPN VRF vrf: its prefix via the VTEP next_hop of the fabric, with the vni
+// of the fabric in the EVPN VRF vrf, and goes again whenever its route or its vteps change. vteps
+// are the next hops of every route that the peers offer for the prefix in the VRF, next_hop among
+// them, all VTEPs that the node takes the frames of the VRF from, a leaf whose route lost among
+// them (SDN-25-R3 #571). The message holds the prefix via the VTEP next_hop of the fabric, with the vni
 // and the router_mac to send it in VXLAN; a withdrawn message with a vni is one that went. The
 // node installs them into the forwarding of the VRF, never into the Windows routing table.
 //
@@ -78,8 +90,9 @@ import (
 
 // ProtocolVersion is the version of the protocol that ready reports: 2 adds the peering of the
 // standard mode and the refused message, 3 the EVPN of a gateway, 4 the more of a peers message,
-// ping and pong, 5 the stretches of a gateway and the stretch message (SDN-64 #291).
-const ProtocolVersion = 5
+// ping and pong, 5 the vteps of a learned message of an EVPN VRF (SDN-25-R3 #571), 6 the
+// stretches of a gateway and the stretch message (SDN-64 #291).
+const ProtocolVersion = 6
 
 // MaxLine is the size of one message at most, with its newline.
 const MaxLine = 64 * 1024
@@ -134,6 +147,9 @@ type Message struct {
 	// VRF is the VRF id of a route of the peering of the standard mode or of an EVPN VRF (evpn.go),
 	// 0 for none
 	VRF uint32 `json:"vrf,omitempty"`
+	// VTEPs are the next hops of every route that the peers offer for the prefix of a learned message
+	// of an EVPN VRF, NextHop among them, each once and in order (evpn_vteps.go; SDN-25-R3 #571)
+	VTEPs []string `json:"vteps,omitempty"`
 
 	// peer, learned, withdrawn, refused: the address of the peer
 	Peer  string `json:"peer,omitempty"`

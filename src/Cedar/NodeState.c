@@ -4,9 +4,10 @@
 // since when it is connected and the Generation that the overlay runs, or why it is not), its Wintun adapters with their
 // VRFs and the addresses of the node in each VRF, the Noise sessions of its peers with their transport and their age, how it
 // reaches each peer, on its stream session or through a Relay, with the datagrams that went each way there (CORE-S5-5, #411),
-// its datagram path with the Upgrades and the Fallbacks of its Paths and its port mapping (CORE-S5-6, #412), and its
-// listeners (the data transport of the overlay, the front door and QUIC of its Listener, the UDP port of the relay role). The
-// pipe is the local channel: only SYSTEM, the Administrators and the service account may open it.
+// its datagram path with the Upgrades and the Fallbacks of its Paths and its port mapping (CORE-S5-6, #412), the EVPN of a
+// gateway with the counters of its frames, the ones of unknown VTEPs among them (SDN-25-R3, #571), and its listeners (the data
+// transport of the overlay, the front door and QUIC of its Listener, the UDP port of the relay role). The pipe is the local
+// channel: only SYSTEM, the Administrators and the service account may open it.
 
 #include "Node.h"
 
@@ -18,6 +19,7 @@
 #include "Core/Control.h"
 
 #include "NodeAgent.h"
+#include "NodeEvpn.h"
 #include "NodeInternal.h"
 
 #include <cjson/cJSON.h>
@@ -149,6 +151,30 @@ static void NodeStateAgent(NODE *n, cJSON *o) {
 	Free(st);
 }
 
+// The EVPN of a gateway (NodeEvpn.c; SDN-25-R3, #571): whether it runs, the UDP ports of its VTEP and of the VTEPs of the fabric,
+// its EVPN VRFs and the routes of the fabric that it holds, and the frames with the fabric since its sidecar started: the
+// packets that went to the fabric and came from it, and what it dropped, the frames of unknown VTEPs among them
+void NodeEvpnState(NODE *n, cJSON *o) {
+	NODE_EVPN_STATUS st;
+	cJSON *e = cJSON_AddObjectToObject(o, "evpn");
+
+	NodeEvpnGetStatus(n, &st);
+	cJSON_AddBoolToObject(e, "running", st.Running);
+	cJSON_AddNumberToObject(e, "udpPort", st.Port);
+	cJSON_AddNumberToObject(e, "fabricPort", st.FabricPort);
+	cJSON_AddNumberToObject(e, "vrfs", st.NumVrfs);
+	cJSON_AddNumberToObject(e, "routes", st.NumRoutes);
+	cJSON_AddNumberToObject(e, "sent", (double)st.Sent);
+	cJSON_AddNumberToObject(e, "failed", (double)st.Failed);
+	cJSON_AddNumberToObject(e, "delivered", (double)st.Delivered);
+	cJSON_AddNumberToObject(e, "undelivered", (double)st.Undelivered);
+	cJSON_AddNumberToObject(e, "unknownVtep", (double)st.UnknownVtep);
+	cJSON_AddNumberToObject(e, "strangers", (double)st.Strangers);
+	cJSON_AddNumberToObject(e, "notOurs", (double)st.NotOurs);
+	cJSON_AddNumberToObject(e, "unknownVni", (double)st.UnknownVni);
+	cJSON_AddNumberToObject(e, "malformed", (double)st.Malformed);
+}
+
 // What the limits for a source of one listener hold and refused (AUD1-DT-3, #451): the connections that wait for their
 // handshake now, and the refusals by reason since the node started
 static void NodeStateLimits(cJSON *o, const SOURCE_LIMIT_STATS *st) {
@@ -219,6 +245,7 @@ void NodeAdminState(NODE *n, cJSON *o) {
 	NodeStateAdapters(n, os, o);
 	NodeStateSessions(n, now, o, listener, sizeof(listener));
 	NodeStateAgent(n, o);
+	NodeEvpnState(n, o);
 	NodeStateListeners(n, &ns, listener, o);
 
 	Free(os);

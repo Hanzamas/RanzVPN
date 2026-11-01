@@ -56,6 +56,8 @@ type server struct {
 	wg      sync.WaitGroup
 	conns   tracker
 	sem     chan struct{}
+	// The Hysteria mode (hysteriaserver.go); nil without it
+	hy *hyServer
 }
 
 // startServer runs the decoy (the own mode), the listener and the probes of the library, and
@@ -83,6 +85,14 @@ func startServer(ctx context.Context, cfg *serverConfig, pipe string, emit func(
 		return nil, fmt.Errorf("the REALITY listener cannot listen on %s: %w", cfg.listen, err)
 	}
 	s.ln = ln
+
+	// The Hysteria mode beside REALITY, with the own decoy as its masquerade (hysteriaserver.go)
+	if cfg.hysteria != nil {
+		if s.hy, err = startHysteria(ctx, cfg.hysteria, s.decoy, cfg.decoy.page, pipe, emit, count, log, opts); err != nil {
+			s.stop()
+			return nil, err
+		}
+	}
 
 	// The library learns what a real handshake of the decoy looks like after the Finished message, so
 	// that the connections it takes look the same: it probes the decoy once for each server name and
@@ -270,6 +280,9 @@ func (s *server) stop() {
 	s.cancel()
 	if s.ln != nil {
 		s.ln.Close()
+	}
+	if s.hy != nil {
+		s.hy.stop()
 	}
 	s.conns.closeAll()
 	if s.decoy != nil {
