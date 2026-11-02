@@ -73,23 +73,24 @@ l2vni() {
   ns link set "br$1" up
 }
 
-# A host of the fabric behind the bridge of an L2 VNI: the name of its namespace, the VNI, and its MAC address; its address is
-# 10.50.0.10, and the leaf is its first hop
+# A host of the fabric behind the bridge of an L2 VNI: the name of its namespace, the name of its end of the veth pair (the
+# other end, in the bridge, adds -br; an interface name has 15 characters at most), the VNI, and its MAC address; its address
+# is 10.50.0.10, and the leaf is its first hop
 host() {
-  local host="$1" vni="$2" mac="$3"
+  local host="$1" dev="$2" vni="$3" mac="$4"
   sudo ip netns add "$host"
-  sudo ip link add "$host" type veth peer name "$host-br"
-  sudo ip link set "$host" netns "$host"
-  sudo ip link set "$host-br" netns "$pid"
+  sudo ip link add "$dev" type veth peer name "$dev-br"
+  sudo ip link set "$dev" netns "$host"
+  sudo ip link set "$dev-br" netns "$pid"
   sudo ip netns exec "$host" sysctl -qw net.ipv6.conf.all.disable_ipv6=1
   sudo ip netns exec "$host" sysctl -qw net.ipv6.conf.default.disable_ipv6=1
-  sudo ip netns exec "$host" ip link set "$host" address "$mac"
-  sudo ip netns exec "$host" ip addr add 10.50.0.10/24 dev "$host"
+  sudo ip netns exec "$host" ip link set "$dev" address "$mac"
+  sudo ip netns exec "$host" ip addr add 10.50.0.10/24 dev "$dev"
   sudo ip netns exec "$host" ip link set lo up
-  sudo ip netns exec "$host" ip link set "$host" up
+  sudo ip netns exec "$host" ip link set "$dev" up
   sudo ip netns exec "$host" ip route add default via 10.50.0.254
-  ns link set "$host-br" master "br$vni"
-  ns link set "$host-br" up
+  ns link set "$dev-br" master "br$vni"
+  ns link set "$dev-br" up
 }
 
 vrf red 1001 10201 02:00:5e:20:00:01
@@ -97,8 +98,8 @@ vrf blue 1002 10202 02:00:5e:20:00:02
 l2vni 5020 red
 l2vni 5021 blue
 l2vni 5030
-host ranz-irb-red 5020 02:00:5e:50:20:0a
-host ranz-irb-blue 5021 02:00:5e:50:21:0a
+host ranz-irb-red irb-red 5020 02:00:5e:50:20:0a
+host ranz-irb-blue irb-blue 5021 02:00:5e:50:21:0a
 ns -d link show
 ns addr show
 sudo nsenter -t "$pid" -n bridge -d link show
