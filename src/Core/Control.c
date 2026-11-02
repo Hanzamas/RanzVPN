@@ -404,6 +404,8 @@ static void ControlDeliver(CONTROL_CLIENT *c, UINT64 gen) {
 	ControlCopyEndpoints(&st, c->Objects, c->NumObjects);
 	// The kinds of the links of the VRFs and the tunnel endpoints (ControlLink.c; SDN-76, #356)
 	ControlCopyLinks(&st, c->Objects, c->NumObjects);
+	// The source groups of the node, its peers and the Devices, and the tag modes of the VRFs (ControlSourceGroup.c; SDN-87, #386)
+	ControlCopySourceGroups(&st, c->Objects, c->NumObjects);
 	// The security of the L2 Networks (ControlSecurity.c; SDN-41, #234)
 	ControlCopySecurities(&st, c->Objects, c->NumObjects);
 	// The relays that the node may use, its home relay first (ControlSignal.c; CORE-S5-5, #411)
@@ -542,6 +544,8 @@ static void ControlSetCaps(CONTROL_CLIENT *c, ranz_control_v1_Hello *hello) {
 	}
 	// The links of kind vxlan and geneve (SDN-76, #356)
 	hello->capabilities.plain_links = caps.PlainLinks;
+	// The source groups (SDN-87, #386)
+	hello->capabilities.tags = caps.Tags;
 	// The BGP peering of the standard mode (SDN-77-R2, #532)
 	hello->capabilities.bgp_peering = caps.BgpPeering;
 	// The Windows edition and Hyper-V of the host, and the Egress tier that they give the node (SDN-12, #188)
@@ -620,6 +624,8 @@ static void ControlRun(CONTROL_CLIENT *c) {
 	ControlPathsResend(c->Config.Paths);
 	// ... and the counters of the EVPN of a gateway (ControlEvpn.c; SDN-25-R3, #571)
 	ControlEvpnResend(c->Config.Evpn);
+	// ... and the counters of the source groups, once they hold any (ControlSourceGroup.c; SDN-87, #386)
+	ControlSourceGroupsResend(c->Config.SourceGroups);
 
 	while (ok && ControlHalted(c) == false) {
 		ok = ControlWriteLeases(c->Config.Leases, s) && ControlWriteDevices(c->Config.Devices, s);
@@ -633,6 +639,8 @@ static void ControlRun(CONTROL_CLIENT *c) {
 		ok = ok && ControlWritePaths(c->Config.Paths, s);
 		// ... and the counters of the EVPN of a gateway when they changed (ControlEvpn.c; SDN-25-R3, #571)
 		ok = ok && ControlWriteEvpn(c->Config.Evpn, s);
+		// The counters of the source groups when they are due (ControlSourceGroup.c; SDN-87, #386)
+		ok = ok && ControlWriteSourceGroups(c->Config.SourceGroups, s);
 		if (ok == false)
 			break;
 

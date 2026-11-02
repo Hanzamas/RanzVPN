@@ -155,6 +155,9 @@ type Network struct {
 	// DHCP is the DHCP responder of an L2 Network (SDN-43, dhcp.go): a Node that answers DHCP from
 	// the IPv4 pool when the bridged LAN has no DHCP server. Left out, the responder is off.
 	DHCP *DHCP `json:"dhcp,omitempty"`
+	// TagMode is how the Nodes of the VRF trust the source group that a link of kind vxlan or geneve
+	// carries (SDN-87, tagmode.go): off or trusted-underlay. Left out, it is off.
+	TagMode string `json:"tagMode,omitempty"`
 	// Security is the security of an L2 Network (SDN-41, security.go): the protections that its
 	// switch applies to the frames of its clients, and its gateways. Left out, none holds.
 	Security *Security `json:"security,omitempty"`
@@ -921,6 +924,8 @@ func (in Intent) complete(prev Intent, random io.Reader) []error {
 	in.completePeering()
 	// The Stretches of the L2 Networks and the Roles of the Nodes (stretch.go; SDN-63)
 	in.completeStretches()
+	// The tag modes of the Networks (tagmode.go)
+	in.completeTagModes()
 	// The Endpoints (publish.go; SDN-24)
 	in.completeEndpoints()
 	return problems
@@ -1060,6 +1065,8 @@ func (in Intent) validate() []error {
 	problems = append(problems, in.validatePeering()...)
 	// The Stretches of the L2 Networks and the Roles of the Nodes (stretch.go; SDN-63)
 	problems = append(problems, in.validateStretches()...)
+	// The tag modes of the Networks (tagmode.go)
+	problems = append(problems, in.validateTagModes()...)
 	problems = append(problems, in.validateIPAM()...)
 	// The Endpoints, and what they compile to once the rest of the intent is valid (publish.go; SDN-24)
 	return append(problems, in.validatePublished(len(problems) == 0)...)
