@@ -32,6 +32,8 @@
 //   flow is lost. Last, the order that the controller never allows, with admin as node-a's own group, which the map of node-b
 //   does not give 10.0.0.1: node-a sends with a key that node-b does not hold, and node-b counts its packet as unauthenticated
 //   and drops it, as the map judges 10.0.0.1 as guest.
+// - Once the nodes stopped, no file that a node wrote, its node log or a file of its data directory, holds a key of red, as it is,
+//   in hex or in base64: a node gets the key in its state alone.
 // Print "HMACTAGS TEST OK" only when every check passes.
 
 #include "harness_int.h"
@@ -467,6 +469,84 @@ static void HtTestDeleteFiles(wchar_t *dir)
 
 	FreeDir(d);
 	DeleteDirW(dir);
+}
+
+// The first bytes of the keys of red that the states of the test give the nodes (HtTestRotation): keys 1, 2 and 3
+static const UCHAR httest_key_firsts[] = {0x10, 0x20, 0x30};
+
+// Whether a file of the directory dir, which holds no subdirectory, holds the key of CONTROL_TAG_KEY_SIZE bytes at key: as it is,
+// in hex of either case or in base64. The name of the file that holds it goes into found, and the bytes that were read are added
+// to *read.
+static bool HtTestFilesHoldKey(wchar_t *dir, const UCHAR *key, char *found, UINT found_size, UINT *read)
+{
+	char upper[CONTROL_TAG_KEY_SIZE * 2 + 1];
+	char lower[CONTROL_TAG_KEY_SIZE * 2 + 1];
+	char *base64 = Base64FromBin(NULL, key, CONTROL_TAG_KEY_SIZE);
+	DIRLIST *d = EnumDirW(dir);
+	bool held = false;
+
+	BinToStr(upper, sizeof(upper), key, CONTROL_TAG_KEY_SIZE);
+	StrCpy(lower, sizeof(lower), upper);
+	StrLower(lower);
+
+	for (UINT i = 0;d != NULL && i < d->NumFiles && held == false;i++)
+	{
+		wchar_t path[MAX_PATH];
+		BUF *b;
+
+		if (d->File[i]->Folder)
+		{
+			continue;
+		}
+
+		ConbinePathW(path, sizeof(path), dir, d->File[i]->FileNameW);
+		b = ReadDumpW(path);
+		if (b == NULL)
+		{
+			continue;
+		}
+
+		*read += b->Size;
+		held = (SearchBin(b->Buf, b->Size, key, CONTROL_TAG_KEY_SIZE) != INFINITE || SearchBin(b->Buf, b->Size, upper, StrLen(upper)) != INFINITE ||
+			SearchBin(b->Buf, b->Size, lower, StrLen(lower)) != INFINITE || (base64 != NULL && SearchBin(b->Buf, b->Size, base64, StrLen(base64)) != INFINITE));
+		if (held)
+		{
+			UniToStr(found, found_size, d->File[i]->FileNameW);
+		}
+		FreeBuf(b);
+	}
+
+	FreeDir(d);
+	Free(base64);
+
+	return held;
+}
+
+// No file that node i wrote holds a key of red that its states gave it: neither its node log, in log_dir, nor a file of its data
+// directory, the dump of its configuration among them (the third criterion of SDN-88, at a node). The node is stopped, so its log
+// is on disk, and it holds at least the lines of the start and the stop of the node.
+static void HtTestKeysFoundNowhere(HTTEST_CTX *ctx, UINT i, wchar_t *log_dir)
+{
+	HTTEST_NODE *t = &ctx->Nodes[i];
+	char what[MAX_SIZE];
+	char found[MAX_PATH];
+	UINT logged = 0;
+	UINT stored = 0;
+	bool held = false;
+
+	StrCpy(found, sizeof(found), "");
+	for (UINT k = 0;k < sizeof(httest_key_firsts) && held == false;k++)
+	{
+		UCHAR key[CONTROL_TAG_KEY_SIZE];
+
+		HtTestKey(key, httest_key_firsts[k]);
+		held = HtTestFilesHoldKey(log_dir, key, found, sizeof(found), &logged) || HtTestFilesHoldKey(t->Dir, key, found, sizeof(found), &stored);
+		Zero(key, sizeof(key));
+	}
+
+	Format(what, sizeof(what), "%s: its node log and the files of its data directory hold none of the keys of red, as they are, in hex or in base64",
+		httest_names[i]);
+	HtTestCheck(ctx, held == false && logged != 0, what, "%s holds one, or the node log is empty (%u bytes read)", found, logged);
 }
 
 // The fake adapter of a host: it counts the packets that the host takes and keeps the last one. A link delivers on the receive
@@ -908,9 +988,11 @@ static bool HtTestOpen(HTTEST_CTX *ctx, TRANSPORT *loopback)
 		"The link of red is geneve in the tag mode hmac, with key 1: one Generation of each node, node-b first, and the session stays up");
 }
 
-// The nodes first, whose overlays stop with every thread joined, then the injector
+// The nodes first, whose overlays stop with every thread joined, then the injector. Before the files of a node go, the test looks
+// for the keys of red in them.
 static void HtTestClose(HTTEST_CTX *ctx)
 {
+	Print("[the keys of red are in no file that a node wrote]\n");
 	for (UINT i = 0;i < HTTEST_NUM_NODES;i++)
 	{
 		HTTEST_NODE *t = &ctx->Nodes[i];
@@ -923,6 +1005,7 @@ static void HtTestClose(HTTEST_CTX *ctx)
 			FreeNode(t->Node);
 
 			ConbinePathW(log_dir, sizeof(log_dir), t->Dir, NODE_LOG_DIR_NAME);
+			HtTestKeysFoundNowhere(ctx, i, log_dir);
 			HtTestDeleteFiles(log_dir);
 			HtTestDeleteFiles(t->Dir);
 		}
