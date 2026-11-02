@@ -1,5 +1,5 @@
 // tracetest.c
-// Named trace option carrier test of vpntest ("trace" command, SDN-89 #388)
+// Named trace option carrier test of vpntest ("traceoption" command, SDN-89 #388; "trace" is the ETW test of runtime.c)
 //
 // The encoding and the decoding of the trace option, the trace ID of a packet and its ingress node, in each of its
 // carriers: the header of a record of frame version 1 of a Noise session (Cedar/NodeTrace.c: NodeTraceWrite,
@@ -12,8 +12,8 @@
 // option is clear. Then the records and the datagrams that a node drops or reads otherwise. Last, the trace of a Network
 // on and off at the ingress node (NodeTraceOutbound): with the trace of no Network on, no option goes and the record keeps
 // its size; with it on, a packet of the pools of the Network goes with the option, and the node records it. The text
-// matches the golden file tests/golden/trace/trace_carriers.txt (golden family "trace"). Print "TRACE TEST OK" only when
-// every check passes.
+// matches the golden file tests/golden/trace/trace_carriers.txt (golden family "trace"). Print "TRACEOPTION TEST OK" only
+// when every check passes.
 
 #include "harness_int.h"
 #include "testlist.h"
@@ -617,9 +617,9 @@ static void TrTestIngressNode(TRTEST_CTX *ctx)
 	Free(n);
 }
 
-// trace: the trace option in each carrier
-RANZ_TEST_TAGS("trace", trace_test, "core", "Trace option carriers (SDN-89): the trace ID and the ingress node in the header of a record of frame version 1 of a Noise session and in the trace option of Geneve, sent and read back (golden family trace); the critical bit of the option of Geneve is clear and a node that does not know the option takes the record; the VXLAN header has no room for it; with the trace of no Network on no option goes and a record keeps its size.");
-void trace_test(UINT num, char **arg)
+// traceoption: the trace option in each carrier
+RANZ_TEST_TAGS("traceoption", traceoption_test, "core", "Trace option carriers (SDN-89): the trace ID and the ingress node in the header of a record of frame version 1 of a Noise session and in the trace option of Geneve, sent and read back (golden family trace); the critical bit of the option of Geneve is clear and a node that does not know the option takes the record; the VXLAN header has no room for it; with the trace of no Network on no option goes and a record keeps its size.");
+void traceoption_test(UINT num, char **arg)
 {
 	TRTEST_CTX *ctx = ZeroMalloc(sizeof(TRTEST_CTX));
 	char out_dir[MAX_SIZE];
@@ -665,11 +665,11 @@ void trace_test(UINT num, char **arg)
 
 	if (ctx->NumFailed == 0)
 	{
-		Print("TRACE TEST OK\n");
+		Print("TRACEOPTION TEST OK\n");
 	}
 	else
 	{
-		Print("TRACE TEST FAILED (%u of %u checks failed)\n", ctx->NumFailed, ctx->NumChecks);
+		Print("TRACEOPTION TEST FAILED (%u of %u checks failed)\n", ctx->NumFailed, ctx->NumChecks);
 	}
 
 	Free(ctx);

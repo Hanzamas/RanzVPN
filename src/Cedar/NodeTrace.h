@@ -27,10 +27,10 @@
 // What NodeTraceGetStatus reports: the packets that a node traced as their ingress node and the records that it made,
 // since its overlay started, and the records that wait for its control stream
 typedef struct NODE_TRACE_STATUS {
-	UINT64 Traced;                               // The packets that the node traced as their ingress node
-	UINT64 Recorded;                             // The records of traced packets that it made, as their ingress node and as a node that they reached
-	UINT NumRecords;                             // The records that wait for the control stream ...
-	CONTROL_TRACE Records[CONTROL_TRACE_QUEUE];  // ... oldest first
+	UINT64 Traced;                              // The packets that the node traced as their ingress node
+	UINT64 Recorded;                            // The records of traced packets that it made, as their ingress node and as a node that they reached
+	UINT NumRecords;                            // The records that wait for the control stream ...
+	CONTROL_TRACE Records[CONTROL_TRACE_QUEUE]; // ... oldest first
 } NODE_TRACE_STATUS;
 
 typedef struct NODE_TRACE_TABLE NODE_TRACE_TABLE;
