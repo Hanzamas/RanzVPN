@@ -17,6 +17,11 @@ $PSNativeCommandUseErrorActionPreference = $false
 #     peer EVPN type-5 with each other on 127.0.0.1, the one the gateway and the other the BGP speaker of a
 #     fabric, and a harness VTEP of the fabric on 127.0.0.2. It needs no gobgpd, runs after vpntest bgp also
 #     when that failed, and must print "EVPN TEST OK" and "NO MEMORY LEAKS".
+#   - vpntest stretch runs the L2 stretch of a gateway (SDN-64 #291, src/vpntest/stretchtest.c): the sidecar of
+#     the gateway dials the sidecars of two leaves on 127.0.0.2 and 127.0.0.3, which carry the L2 VNI of the
+#     stretched Network with EVPN type-2 and type-3 routes, and a harness VTEP on each address. It needs no
+#     gobgpd, runs after vpntest evpn also when that failed, and must print "STRETCH TEST OK" and "NO MEMORY
+#     LEAKS".
 # The log of gobgpd goes to build/harness-out/gobgpd.log and into the job log.
 
 $build = (Resolve-Path -LiteralPath $BuildDir).Path
@@ -105,10 +110,20 @@ Write-Host $evpn
 $evpnOk = ($evpn -cmatch '(?m)^EVPN TEST OK\r?$')
 $evpnLeak = ($evpn -cmatch 'NO MEMORY LEAKS')
 
+# The L2 stretch of a gateway, with the sidecars of three nodes and no gobgpd
+$stretch = (Write-Output "q\n" | & (Join-Path $build 'vpntest.exe') stretch | Out-String)
+$stretchCode = $LASTEXITCODE
+Write-Host $stretch
+$stretchOk = ($stretch -cmatch '(?m)^STRETCH TEST OK\r?$')
+$stretchLeak = ($stretch -cmatch 'NO MEMORY LEAKS')
+
 if (-not $ok -or -not $leak) {
 	throw "vpntest bgp failed (exit code $code, BGP TEST OK $ok, NO MEMORY LEAKS $leak)"
 }
 if (-not $evpnOk -or -not $evpnLeak) {
 	throw "vpntest evpn failed (exit code $evpnCode, EVPN TEST OK $evpnOk, NO MEMORY LEAKS $evpnLeak)"
 }
-Write-Host 'BGP sidecar spike and EVPN gateway: ok'
+if (-not $stretchOk -or -not $stretchLeak) {
+	throw "vpntest stretch failed (exit code $stretchCode, STRETCH TEST OK $stretchOk, NO MEMORY LEAKS $stretchLeak)"
+}
+Write-Host 'BGP sidecar spike, EVPN gateway and L2 stretch: ok'

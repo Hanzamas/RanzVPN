@@ -214,6 +214,9 @@ func Run(ctx context.Context, conn io.ReadWriteCloser, opts Options) error {
 			err = s.setPeers(ctx, m)
 		case TypePing:
 			err = s.ping(ctx)
+		case TypeStretch:
+			// The type-2 routes of the stretches of a gateway (stretch.go; SDN-64 #291)
+			err = s.stretchMessage(m)
 		case TypeStart:
 			err = errors.New("BGP runs already: start comes once")
 		default:

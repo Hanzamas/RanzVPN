@@ -338,6 +338,9 @@ static void NodeBgpOnMessage(NODE_BGP *b, char *line) {
 	} else if (StrCmp(type, "withdrawn") == 0) {
 		if (NodeEvpnRoute(b->Node, line) == false)
 			NodeBgpWithdrawn(b, NodeBgpJsonStr(m, "prefix"), NodeBgpJsonStr(m, "peer"));
+	} else if (StrCmp(type, "stretch") == 0) {
+		// The type-2 and type-3 routes of the fabric on the L2 VNIs of the stretches of a gateway (NodeStretch.c; SDN-64, #291)
+		NodeStretchMessage(b->Node, line);
 	} else if (StrCmp(type, "error") == 0) {
 		Lock(b->Lock);
 		{
@@ -408,8 +411,10 @@ static DWORD WINAPI NodeBgpReaderThread(void *param) {
 			b->LineSize = 0;
 		}
 
-		// The routes of the EVPN VRFs that the messages of this read changed go in together (NodeEvpn.c; SDN-25, #201)
+		// The routes of the EVPN VRFs that the messages of this read changed go in together (NodeEvpn.c; SDN-25, #201), and so do
+		// the routes of the fabric of the stretches (NodeStretch.c; SDN-64, #291)
 		NodeEvpnCommit(b->Node);
+		NodeStretchCommit(b->Node);
 
 		if (too_long) {
 			NodeLog(b->Node, "BGP sidecar: a message longer than %u bytes, the node stops reading", (UINT)NODE_BGP_MAX_LINE);
@@ -427,16 +432,17 @@ static DWORD WINAPI NodeBgpReaderThread(void *param) {
 		}
 		Unlock(b->Lock);
 
-		// ... and so do the routes of the EVPN VRFs (NodeEvpn.c; SDN-25, #201)
-		UINT num = NodeBgpDeleteAllRoutes(b) + NodeEvpnFlush(b->Node);
+		// ... and so do the routes of the EVPN VRFs (NodeEvpn.c; SDN-25, #201) and of the stretches (NodeStretch.c; SDN-64, #291)
+		UINT num = NodeBgpDeleteAllRoutes(b) + NodeEvpnFlush(b->Node) + NodeStretchFlush(b->Node);
 		NodeLog(b->Node, "BGP sidecar closed the pipe: BGP stopped, %u learned routes removed", num);
 	}
 
 	return 0;
 }
 
-// Send one message to the sidecar; the caller holds the node lock, so the pipe stays open
-static bool NodeBgpSend(NODE_BGP *b, cJSON *m) {
+// Send one message to the sidecar; the caller holds the node lock, or is the thread of the stretch of a gateway, which
+// NodeBgpStop joins first (NodeStretch.c; SDN-64, #291), so the pipe stays open
+bool NodeBgpSend(NODE_BGP *b, cJSON *m) {
 	OVERLAPPED ov;
 	DWORD done = 0;
 	bool ret = false;
@@ -719,6 +725,9 @@ void NodeBgpStart(NODE *n) {
 			n->Bgp = b;
 			NodeLog(n, "BGP sidecar %S bgp started: process %u, %u peers, pipe %S", n->BgpSidecar, b->ProcessId, LIST_NUM(b->Peers), b->PipeName);
 
+			// The thread of the stretch of a gateway, whose first round is a full resync (NodeStretch.c; SDN-64, #291)
+			NodeStretchRun(n, b);
+
 			// A prefix with a vrf is a route of that EVPN VRF
 			for (cJSON *a = (cJSON_IsArray(announce) ? announce->child : NULL); a != NULL; a = a->next) {
 				if (cJSON_IsString(a))
@@ -743,6 +752,9 @@ void NodeBgpStop(NODE *n) {
 
 	n->Bgp = NULL;
 
+	// The thread of the stretch of a gateway sends on the pipe: it ends first (NodeStretch.c; SDN-64, #291)
+	NodeStretchHalt(n);
+
 	SetEvent(b->StopEvent);
 	WaitForSingleObject(b->Reader, INFINITE);
 	CloseHandle(b->Reader);
@@ -765,6 +777,27 @@ void NodeBgpStop(NODE *n) {
 	// The EVPN of the gateway stops with its sidecar, once the reader thread ended (NodeEvpn.c; SDN-25, #201)
 	NodeEvpnStop(n);
 	NodeBgpFree(b);
+}
+
+// Restart the sidecar of a running node: its pipe closes, as NodeBgpStop closes it, and a new sidecar connects to a new pipe with
+// the same Bgp setting (NodeBgpStart). The EVPN of a gateway starts again with it, and the stretch of its L2 Networks sends the
+// new sidecar a full resync (NodeStretch.c; SDN-64, #291). False when the node does not run, or no sidecar runs afterwards.
+bool NodeBgpRestart(NODE *n) {
+	bool ret = false;
+	if (n == NULL)
+		return false;
+
+	Lock(n->Lock);
+	{
+		if (n->Running) {
+			NodeBgpStop(n);
+			NodeBgpStart(n);
+			ret = (n->Bgp != NULL);
+		}
+	}
+	Unlock(n->Lock);
+
+	return ret;
 }
 
 // The prefix of the EVPN VRF vrf_id (0 for none) among the prefixes that the sidecar b announces, NULL for none; the caller

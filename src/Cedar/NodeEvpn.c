@@ -118,6 +118,9 @@ struct NODE_EVPN {
 	volatile LONG64 Strangers;
 	volatile LONG64 NotOurs;
 	volatile LONG64 Malformed;
+	// The stretches of the evpn object, each an L2 Network and its L2 VNI (NodeStretch.c; SDN-64, #291)
+	UINT NumStretches;
+	NODE_STRETCH_SETTING Stretches[NODE_STRETCH_MAX];
 };
 
 //
@@ -137,8 +140,8 @@ static UINT NodeEvpnHex(char c) {
 }
 
 // The six bytes of the MAC address of one host (its group bit clear) of text in the form 02:52:5a:00:00:05, with a colon or a
-// dash between the bytes; false for anything else
-static bool NodeEvpnParseMac(const char *str, UCHAR *mac) {
+// dash between the bytes; false for anything else. The stretch reads the MAC addresses of its routes with it (NodeStretch.c).
+bool NodeEvpnParseMac(const char *str, UCHAR *mac) {
 	if (str == NULL || StrLen(str) != 17)
 		return false;
 
@@ -156,14 +159,14 @@ static bool NodeEvpnParseMac(const char *str, UCHAR *mac) {
 }
 
 // The text of a MAC address, 02:52:5a:00:00:05, into str of size bytes
-static void NodeEvpnMacText(char *str, UINT size, const UCHAR *mac) {
+void NodeEvpnMacText(char *str, UINT size, const UCHAR *mac) {
 	Format(str, size, "%02x:%02x:%02x:%02x:%02x:%02x", (UINT)mac[0], (UINT)mac[1], (UINT)mac[2], (UINT)mac[3], (UINT)mac[4], (UINT)mac[5]);
 }
 
 // An IPv4 or IPv6 address, or with types NET_STRING_IP_NETWORK a prefix and its length into *prefix_len, of text that the
 // sidecar or the evpn object names: its bytes into addr (4 for IPv4, 16 for IPv6, in network byte order) and their number; 0
 // when it is none, or longer than NODE_EVPN_TEXT
-static UINT NodeEvpnParseAddr(const char *str, DWORD types, UCHAR *addr, UINT *prefix_len) {
+UINT NodeEvpnParseAddr(const char *str, DWORD types, UCHAR *addr, UINT *prefix_len) {
 	wchar_t tmp[NODE_EVPN_TEXT];
 	NET_ADDRESS_INFO info;
 	BYTE len = 0;
@@ -583,6 +586,11 @@ static void NodeEvpnUnknownVtep(NODE_EVPN *e, UINT vrf_id, const VXLAN_ADDR *fro
 // which the node log names once every NODE_EVPN_LOG_WAIT ms at most (NodeEvpnUnknownVtep).
 static void NodeEvpnReceive(VXLAN *x, void *param, UINT vni, const VXLAN_ADDR *from, const UCHAR *frame, UINT size) {
 	NODE_EVPN *e = (NODE_EVPN *)param;
+
+	// A frame of the L2 VNI of a stretch goes to the switch of its Network (NodeStretch.c; SDN-64, #291)
+	if (NodeStretchInput(e->Node, vni, from, frame, size))
+		return;
+
 	NODE_EVPN_FRAME f;
 	UINT vrf_id = NodeEvpnVrfOf(e, vni);
 	UINT parsed = NodeEvpnParseFrame(frame, size, e->RouterMac, &f);
@@ -947,10 +955,12 @@ static bool NodeEvpnVrfs(NODE_EVPN *e, cJSON *vrfs, char *error, UINT error_size
 
 // Start the EVPN of a gateway with its BGP sidecar (NodeBgpStart), before the first message of the sidecar, when the Bgp
 // setting cfg has an evpn object: the VTEP of the gateway (vtep), its router MAC (router_mac, NODE_EVPN_ROUTER_MAC without
-// one), the UDP port of its VTEP (port) and of the VTEPs of the fabric (fabric_port), VXLAN_PORT without them, and its EVPN
-// VRFs (vrfs), each with its id (vrf) and its L3 VNI (vni). The sidecar reads the same object, with the route distinguisher,
-// the route targets and the accept list of each VRF. A node whose evpn object is not one runs without EVPN, and the node log
-// says why; the sidecar refuses such an object too. The caller holds the node lock.
+// one), the UDP port of its VTEP (port) and of the VTEPs of the fabric (fabric_port), VXLAN_PORT without them, its EVPN VRFs
+// (vrfs), each with its id (vrf) and its L3 VNI (vni), and the L2 Networks that it stretches into the fabric (stretches), each
+// with its Network (network) and its L2 VNI (vni; NodeStretch.c, SDN-64, #291), one of the two at least. The sidecar reads the
+// same object, with the route distinguisher, the route targets and the accept list of each VRF, and the route distinguisher and
+// the route targets of each stretch. A node whose evpn object is not one runs without EVPN, and the node log says why; the
+// sidecar refuses such an object too. The caller holds the node lock.
 void NodeEvpnStart(NODE *n, struct cJSON *cfg) {
 	cJSON *o = cJSON_GetObjectItemCaseSensitive(cfg, "evpn");
 	cJSON *vrfs = cJSON_GetObjectItemCaseSensitive(o, "vrfs");
@@ -980,10 +990,14 @@ void NodeEvpnStart(NODE *n, struct cJSON *cfg) {
 		StrCpy(error, sizeof(error), "port is not a UDP port");
 	else if (cJSON_GetObjectItemCaseSensitive(o, "fabric_port") != NULL && (NodeEvpnJsonUint(o, "fabric_port", 65535, &fabric_port) == false || fabric_port == 0))
 		StrCpy(error, sizeof(error), "fabric_port is not a UDP port");
-	else if (cJSON_IsArray(vrfs) == false || cJSON_GetArraySize(vrfs) == 0 || cJSON_GetArraySize(vrfs) > NODE_EVPN_MAX_VRFS)
-		Format(error, sizeof(error), "vrfs names no VRF, or more than %u", (UINT)NODE_EVPN_MAX_VRFS);
-	else
-		NodeEvpnVrfs(e, vrfs, error, sizeof(error));
+	else if ((vrfs != NULL && cJSON_IsArray(vrfs) == false) || cJSON_GetArraySize(vrfs) > NODE_EVPN_MAX_VRFS)
+		Format(error, sizeof(error), "vrfs is no array of %u VRFs at most", (UINT)NODE_EVPN_MAX_VRFS);
+	else if (vrfs == NULL || NodeEvpnVrfs(e, vrfs, error, sizeof(error)))
+		// The stretches of the gateway (NodeStretch.c; SDN-64, #291): L2 Networks, each on an L2 VNI that is no L3 VNI of a VRF
+		e->NumStretches = NodeStretchSettings(cJSON_GetObjectItemCaseSensitive(o, "stretches"), e->Vnis, e->NumVrfs, e->Stretches, error, sizeof(error));
+
+	if (IsEmptyStr(error) && e->NumVrfs == 0 && e->NumStretches == 0)
+		StrCpy(error, sizeof(error), "vrfs names no VRF, and stretches no L2 Network");
 
 	if (IsEmptyStr(error)) {
 		StrCpy(e->Vtep, sizeof(e->Vtep), vtep);
@@ -1000,6 +1014,9 @@ void NodeEvpnStart(NODE *n, struct cJSON *cfg) {
 		bool carried = (e->Vxlan != NULL);
 		for (UINT i = 0; carried && i < e->NumVrfs; i++)
 			carried = VxlanSetVni(e->Vxlan, e->Vnis[i], NULL, 0);
+		// ... and the L2 VNI of each stretch, whose flood list the type-3 routes of the fabric fill (NodeStretch.c; SDN-64, #291)
+		for (UINT i = 0; carried && i < e->NumStretches; i++)
+			carried = VxlanSetVni(e->Vxlan, e->Stretches[i].Vni, NULL, 0);
 
 		if (carried == false || VxlanUdpStart(e->Udp, e->Vxlan) == false)
 			StrCpy(error, sizeof(error), "the VXLAN module of its VTEP could not start");
@@ -1015,7 +1032,11 @@ void NodeEvpnStart(NODE *n, struct cJSON *cfg) {
 	// The counters go to the Controller with the report of the control stream (SDN-25-R3, #571)
 	NodeEvpnReportStart(e);
 	NodeEvpnMacText(mac_text, sizeof(mac_text), e->RouterMac);
-	NodeLog(n, "EVPN started: the VTEP %s on UDP port %u, router MAC %s, %u VRFs, the VTEPs of the fabric on UDP port %u", e->Vtep, (UINT)VxlanUdpPort(e->Udp), mac_text, e->NumVrfs, (UINT)e->FabricPort);
+	NodeLog(n, "EVPN started: the VTEP %s on UDP port %u, router MAC %s, %u VRFs, %u stretched L2 Networks, the VTEPs of the fabric on UDP port %u", e->Vtep,
+	        (UINT)VxlanUdpPort(e->Udp), mac_text, e->NumVrfs, e->NumStretches, (UINT)e->FabricPort);
+
+	// The stretches run on the module, and the fabric joins the switch of each of their Networks (NodeStretch.c; SDN-64, #291)
+	NodeStretchBind(n, e->Vxlan, e->FabricPort, e->Stretches, e->NumStretches);
 }
 
 // Stop the EVPN of the gateway with its sidecar (NodeBgpStop), once the reader thread of the sidecar ended: the routes of the
@@ -1027,9 +1048,11 @@ void NodeEvpnStop(NODE *n) {
 	if (e == NULL)
 		return;
 
-	// No reader reaches the module once the snapshot holds no route of it
+	// No reader reaches the module once the snapshot holds no route of it, and no stretch once the fabric left the switches of its
+	// Networks (NodeStretch.c; SDN-64, #291)
 	NodeSwapEvpn(n, NULL);
 	n->Evpn = NULL;
+	NodeStretchUnbind(n);
 
 	NodeLog(n, "EVPN stopped: %u routes of the fabric removed; %I64u packets sent to the fabric, %I64u of the fabric delivered", LIST_NUM(e->Routes), (UINT64)ReadAcquire64(&e->Sent), (UINT64)ReadAcquire64(&e->Delivered));
 	NodeEvpnFree(e);
