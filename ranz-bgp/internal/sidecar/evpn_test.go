@@ -431,8 +431,9 @@ func (n *testNode) hasEVPN(num int) bool {
 	return found >= num
 }
 
-// A start whose evpn is not one, or that has an address too (the peering of the standard mode), is answered with an
-// error, and the session ends.
+// A start whose evpn is not one is answered with an error, and the session ends; so is a start of the peering of the standard
+// mode (with an address) whose evpn is the one of a gateway: its VRFs name accept lists, or its VTEP is not the address of the
+// node (evpnpeering.go; SDN-78 #358).
 func TestEVPNBadStart(t *testing.T) {
 	bad := testEVPN()
 	bad.VRFs[0].VNI = 0
@@ -442,7 +443,8 @@ func TestEVPNBadStart(t *testing.T) {
 		want string
 	}{
 		{"a VRF without a VNI", Message{Type: TypeStart, ASN: 65001, RouterID: "192.0.2.1", ListenPort: -1, Peers: []Peer{{Address: "192.0.2.2", ASN: 65002}}, EVPN: bad}, "evpn: vrf 101"},
-		{"evpn with an address", Message{Type: TypeStart, ASN: 65001, RouterID: "192.0.2.1", ListenPort: -1, Address: "192.0.2.1", EVPN: testEVPN()}, "a start has one of them"},
+		{"the evpn of a gateway with an address", Message{Type: TypeStart, ASN: 65001, RouterID: "192.0.2.1", ListenPort: -1, Address: "192.0.2.1", EVPN: testEVPN()}, "names no accept list"},
+		{"evpn with its VTEP elsewhere than the address", Message{Type: TypeStart, ASN: 65001, RouterID: "192.0.2.1", ListenPort: -1, Address: "192.0.2.5", EVPN: testEVPN()}, "VTEP of the node is that address"},
 	}
 	for _, c := range cases {
 		node := startNode(t, context.Background())
