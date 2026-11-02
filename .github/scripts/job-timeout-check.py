@@ -134,10 +134,12 @@ def main():
     args = ap.parse_args()
     problems, workflows, bounded, reusable = check(os.path.abspath(args.root))
     for path, line, message in problems:
+        text = '%s:%d: %s' % (path, line, message)
         if os.environ.get('GITHUB_ACTIONS'):
-            print('::error file=%s,line=%d::%s' % (path, line, message))
+            # An annotation on the line of the file; the log shows the words of an annotation but not its file, so they name it too
+            print('::error file=%s,line=%d::%s' % (path, line, text))
         else:
-            print('%s:%d: %s' % (path, line, message))
+            print(text)
     if problems:
         print('%s: every job of a workflow has timeout-minutes, or calls a reusable workflow' % plural(len(problems), 'problem'))
         return 1

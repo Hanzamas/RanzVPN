@@ -670,6 +670,14 @@ def test_job_timeouts():
     check('a tree with a folder of workflows that holds none', 1, ['holds no workflow'], {'README.md': 'x\n'})
     with tempfile.TemporaryDirectory() as root:
         expect('job-timeout-check: a tree with no folder of workflows', run('job-timeout-check.py', '--root', root), 1, 'holds no workflow')
+    # Under GitHub Actions a problem is an annotation on its line of its file, and its words in the log name the file and the line
+    # too, since the log does not show the file of an annotation
+    with tempfile.TemporaryDirectory() as root:
+        write(root, '.github/workflows/ci.yml', wf(unbounded)['ci.yml'])
+        p = subprocess.run([sys.executable, '-I', os.path.join(HERE, 'job-timeout-check.py'), '--root', root], stdout=subprocess.PIPE,
+                           stderr=subprocess.STDOUT, env={**os.environ, 'GITHUB_ACTIONS': 'true'})
+        expect('job-timeout-check: under GitHub Actions a problem is an annotation on its line of its file', (p.returncode, p.stdout.decode('utf-8', errors='replace')), 1,
+               '::error file=.github/workflows/ci.yml,line=6::.github/workflows/ci.yml:6: the job lint has no timeout-minutes')
 
 
 def test_service_eventlog():
