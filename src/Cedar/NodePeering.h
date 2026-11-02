@@ -11,7 +11,7 @@
 #define NODE_PEERING_RESTART  5000                    // ms before a sidecar that ended, or did not start, starts again
 #define NODE_PEERING_PING     5000                    // ms after the last answer of the sidecar before the node asks it again whether it runs
 #define NODE_PEERING_ANSWER   10000                   // ms within which the sidecar answers that question, or it hangs and the node ends it
-#define NODE_PEERING_PROTOCOL 4                       // The protocol of the pipe that the node needs from its sidecar, and ends one of an older protocol (SDN-77-R3, #570)
+#define NODE_PEERING_PROTOCOL 6                       // The protocol of the pipe that the node needs from its sidecar, and ends one of an older protocol (SDN-77-R3, #570): 6 has the roles of the route reflectors (SDN-79, #359)
 
 typedef struct NODE_PEERING NODE_PEERING;
 

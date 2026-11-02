@@ -3,8 +3,9 @@
 // nodes exchange their routes by BGP says so (CONTROL_VRF.Peering), the NodeConfig carries the settings of the sidecar ranz bgp
 // of the node and the LAN subnets that it announces (CONTROL_STATE.Peering), and the Peer object of each peer that shares such
 // a VRF with the node carries the address of the sidecar of the peer, the hold time of their session, its VRFs and what the
-// peer may announce there (CONTROL_PEER.Peering). They go with the state, as the owner takes it (ControlCopyPeerings). The
-// controller writes nothing else: the routes go between the sidecars.
+// peer may announce there (CONTROL_PEER.Peering), with the role of the peer in each VRF of route reflectors (SDN-79, #359).
+// They go with the state, as the owner takes it (ControlCopyPeerings). The controller writes nothing else: the routes go
+// between the sidecars.
 //
 // The node reports the peers of its sidecar, the state of each session and the prefixes that it learned from each, with the
 // sessions that the sidecar refused (ControlSetPeeringReport): the client sends them as the peering of a Telemetry message of
@@ -25,6 +26,9 @@ _Static_assert(CONTROL_MAX_ACCEPT == sizeof(((ranz_control_v1_PeerPeering *)0)->
 _Static_assert(CONTROL_MAX_PEERING_PEERS == sizeof(((ranz_control_v1_PeeringReport *)0)->peers) / sizeof(((ranz_control_v1_PeeringReport *)0)->peers[0]), "a PeeringReport holds CONTROL_MAX_PEERING_PEERS peers");
 _Static_assert(CONTROL_MAX_LEARNED == sizeof(((ranz_control_v1_PeeringPeer *)0)->learned) / sizeof(((ranz_control_v1_PeeringPeer *)0)->learned[0]), "a PeeringPeer holds CONTROL_MAX_LEARNED prefixes");
 _Static_assert(CONTROL_PEERING_STATE_SIZE == sizeof(((ranz_control_v1_PeeringPeer *)0)->state), "the state of a PeeringPeer has CONTROL_PEERING_STATE_SIZE bytes");
+_Static_assert(CONTROL_MAX_VRFS == sizeof(((ranz_control_v1_PeerPeering *)0)->reflector_vrf_ids) / sizeof(((ranz_control_v1_PeerPeering *)0)->reflector_vrf_ids[0]), "a PeerPeering names CONTROL_MAX_VRFS VRFs of each role");
+_Static_assert(CONTROL_MAX_VRFS == sizeof(((ranz_control_v1_PeerPeering *)0)->client_vrf_ids) / sizeof(((ranz_control_v1_PeerPeering *)0)->client_vrf_ids[0]), "a PeerPeering names CONTROL_MAX_VRFS VRFs of each role");
+_Static_assert(CONTROL_MAX_VRFS == sizeof(((ranz_control_v1_PeerPeering *)0)->reflected_vrf_ids) / sizeof(((ranz_control_v1_PeerPeering *)0)->reflected_vrf_ids[0]), "a PeerPeering names CONTROL_MAX_VRFS VRFs of each role");
 
 // The report that a client sends
 struct CONTROL_PEERING_REPORT {
@@ -128,6 +132,14 @@ static CONTROL_PEER_PEERING *ControlPeerPeering(const ranz_control_v1_PeerPeerin
 	for (pb_size_t i = 0; i < src->accept_count && i < ARRAYSIZE(src->accept) && p->NumAccept < CONTROL_MAX_ACCEPT; i++)
 		if (ControlPeeringRoute(&p->Accept[p->NumAccept], &src->accept[i]))
 			p->NumAccept++;
+
+	// The roles of the peer in the VRFs of route reflectors (SDN-79, #359)
+	for (pb_size_t i = 0; i < src->reflector_vrf_ids_count && i < ARRAYSIZE(src->reflector_vrf_ids) && p->NumReflectorVrfs < CONTROL_MAX_VRFS; i++)
+		p->ReflectorVrfIds[p->NumReflectorVrfs++] = src->reflector_vrf_ids[i];
+	for (pb_size_t i = 0; i < src->client_vrf_ids_count && i < ARRAYSIZE(src->client_vrf_ids) && p->NumClientVrfs < CONTROL_MAX_VRFS; i++)
+		p->ClientVrfIds[p->NumClientVrfs++] = src->client_vrf_ids[i];
+	for (pb_size_t i = 0; i < src->reflected_vrf_ids_count && i < ARRAYSIZE(src->reflected_vrf_ids) && p->NumReflectedVrfs < CONTROL_MAX_VRFS; i++)
+		p->ReflectedVrfIds[p->NumReflectedVrfs++] = src->reflected_vrf_ids[i];
 
 	return p;
 }

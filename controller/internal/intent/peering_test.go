@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"net/netip"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -23,7 +24,7 @@ func TestApplyPeering(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if p := in.VRFs["dc"].Peering; p != (Peering{Protocol: PeeringBGP, HoldTime: 9}) {
+	if p := in.VRFs["dc"].Peering; !reflect.DeepEqual(p, Peering{Protocol: PeeringBGP, HoldTime: 9}) {
 		t.Errorf("VRF dc has the peering %+v, want bgp with the hold time 9", p)
 	}
 	if got := in.PeeringVRFs(in.Nodes["a"]); strings.Join(got, ",") != "dc" {
@@ -44,7 +45,7 @@ func TestApplyPeering(t *testing.T) {
 
 	rs := in.Resources()
 	again, err := Apply(in, doc(rs...), nil)
-	if err != nil || again.VRFs["dc"].Peering != in.VRFs["dc"].Peering {
+	if err != nil || !reflect.DeepEqual(again.VRFs["dc"].Peering, in.VRFs["dc"].Peering) {
 		t.Errorf("the resources applied again: %v, VRF dc %+v", err, again.VRFs["dc"])
 	}
 	for _, r := range rs {

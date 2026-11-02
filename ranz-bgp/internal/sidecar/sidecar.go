@@ -87,6 +87,9 @@ type peerConfig struct {
 	// with the node, by VRF id; vrfs is nil for a router of the operator
 	holdTime uint32
 	vrfs     map[uint32][]netip.Prefix
+	// roles is the role of the peer in each of those VRFs whose nodes peer through route reflectors
+	// (reflector.go), by VRF id; a VRF of a full mesh has none
+	roles map[uint32]string
 }
 
 // learnedRoute is the route of a learned prefix that the node was told about.
@@ -99,7 +102,9 @@ type learnedRoute struct {
 type session struct {
 	bgp *server.BgpServer
 	// The EVPN of a gateway (evpn.go; SDN-25 #201), nil for none
-	evpn      *evpnState
+	evpn *evpnState
+	// The route reflector of the peering of the standard mode (reflector.go; SDN-79 #359), nil outside the peering
+	reflector *reflector
 	w         *Writer
 	log       *slog.Logger
 	cancel    context.CancelFunc
@@ -274,6 +279,10 @@ func parseStart(m Message) (config, error) {
 		if seen[pc.address] {
 			return cfg, fmt.Errorf("start: peer %s comes twice", pc.address)
 		}
+		// The roles of the route reflector come with the peers messages, which set its export policy first (reflector.go)
+		if len(pc.roles) > 0 {
+			return cfg, fmt.Errorf("start: peer %s has roles of a route reflector, which only a peers message gives", pc.address)
+		}
 		seen[pc.address] = true
 		cfg.peers = append(cfg.peers, pc)
 	}
@@ -341,6 +350,10 @@ func startSession(ctx context.Context, cfg config, w *Writer, log *slog.Logger, 
 		ListenPort:      cfg.listenPort,
 		ListenAddresses: listen,
 	}})
+	// The route reflector of the peering of the standard mode (reflector.go; SDN-79 #359)
+	if err == nil && cfg.address.IsValid() {
+		err = s.startReflector(sctx, cfg.asn, cfg.routerID)
+	}
 	if err == nil {
 		err = s.setPolicies(ctx, cfg.accept)
 	}
@@ -465,7 +478,8 @@ func (s *session) setPolicies(ctx context.Context, accept []netip.Prefix) error 
 // node in the peering of the standard mode (nodePeer in peering.go).
 func (s *session) peerRequest(p peerConfig) *api.Peer {
 	if p.vrfs != nil {
-		return nodePeer(p, s.address)
+		// ... with its roles in the VRFs of a route reflector (reflector.go)
+		return s.reflectorPeer(nodePeer(p, s.address), p)
 	}
 	return &api.Peer{
 		Conf: &api.PeerConf{

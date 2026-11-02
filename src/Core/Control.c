@@ -546,8 +546,9 @@ static void ControlSetCaps(CONTROL_CLIENT *c, ranz_control_v1_Hello *hello) {
 	hello->capabilities.plain_links = caps.PlainLinks;
 	// The source groups (SDN-87, #386)
 	hello->capabilities.tags = caps.Tags;
-	// The BGP peering of the standard mode (SDN-77-R2, #532)
+	// The BGP peering of the standard mode (SDN-77-R2, #532), and its route reflectors (SDN-79, #359)
 	hello->capabilities.bgp_peering = caps.BgpPeering;
+	hello->capabilities.bgp_reflection = caps.BgpReflection;
 	// The Windows edition and Hyper-V of the host, and the Egress tier that they give the node (SDN-12, #188)
 	hello->capabilities.sku = (ranz_control_v1_Sku)caps.Sku;
 	hello->capabilities.hyper_v = caps.HyperV;
