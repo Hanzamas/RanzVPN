@@ -396,6 +396,8 @@ static void ControlDeliver(CONTROL_CLIENT *c, UINT64 gen) {
 	ControlCopyZones(&st, c->Objects, c->NumObjects);
 	// The Listener of the node (ControlListener.c; SDN-45, #238)
 	ControlCopyListener(&st, c->Objects, c->NumObjects);
+	// The mimic part of the node: the settings of its mimic server and its links (ControlMimic.c; CORE-P2-7, #424)
+	ControlCopyMimic(&st, c->Objects, c->NumObjects);
 	// The TLS fingerprints of the certificate of the Controller (ControlPins.c; SDN-92, #397)
 	ControlCopyTlsPins(&st, c->Objects, c->NumObjects);
 	// The WireGuard Devices (ControlDevice.c; SDN-80, #375)
@@ -426,6 +428,7 @@ static void ControlDeliver(CONTROL_CLIENT *c, UINT64 gen) {
 	ControlFreePeerings(&st);
 	ControlFreeSecurities(&st);
 	ControlFreeListener(&st);
+	ControlFreeMimic(&st);
 	ControlFreeZones(&st);
 	ControlRelease(st.Peers, sizeof(CONTROL_PEER) * (num_peers != 0 ? num_peers : 1));
 	ControlFreePolicy(&st);
@@ -626,6 +629,8 @@ static void ControlRun(CONTROL_CLIENT *c) {
 	ControlEvpnResend(c->Config.Evpn);
 	// ... and the counters of the source groups, once they hold any (ControlSourceGroup.c; SDN-87, #386)
 	ControlSourceGroupsResend(c->Config.SourceGroups);
+	// ... and the public key of the mimic server of the node (ControlMimic.c; CORE-P2-7, #424)
+	ControlKeysResend(c->Config.Keys);
 
 	while (ok && ControlHalted(c) == false) {
 		ok = ControlWriteLeases(c->Config.Leases, s) && ControlWriteDevices(c->Config.Devices, s);
@@ -641,6 +646,8 @@ static void ControlRun(CONTROL_CLIENT *c) {
 		ok = ok && ControlWriteEvpn(c->Config.Evpn, s);
 		// The counters of the source groups when they are due (ControlSourceGroup.c; SDN-87, #386)
 		ok = ok && ControlWriteSourceGroups(c->Config.SourceGroups, s);
+		// The keys that the node reports about itself when they changed (ControlMimic.c; CORE-P2-7, #424)
+		ok = ok && ControlWriteKeys(c->Config.Keys, s);
 		if (ok == false)
 			break;
 

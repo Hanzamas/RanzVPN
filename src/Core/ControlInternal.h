@@ -27,6 +27,11 @@ void ControlFreeZones(CONTROL_STATE *st);
 void ControlCopyListener(CONTROL_STATE *st, const ranz_control_v1_Object *objects, UINT num);
 void ControlFreeListener(CONTROL_STATE *st);
 
+// ControlMimic.c (CORE-P2-7, #424)
+void ControlCopyMimic(CONTROL_STATE *st, const ranz_control_v1_Object *objects, UINT num);
+void ControlFreeMimic(CONTROL_STATE *st);
+void ControlKeysResend(CONTROL_KEYS *k);
+
 // ControlPins.c
 void ControlCopyTlsPins(CONTROL_STATE *st, const ranz_control_v1_Object *objects, UINT num);
 
