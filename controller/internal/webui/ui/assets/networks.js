@@ -22,6 +22,8 @@ async function render() {
     { label: 'Mode', cell: (r) => r.spec?.mode ?? 'L3' },
     { label: 'IPv4 pool', cell: (r) => el('code', {}, r.spec?.ipv4Pool ?? '') },
     { label: 'IPv6 pool', cell: (r) => el('code', {}, r.spec?.ipv6Pool ?? '') },
+    // TCP splitting (CORE-P2-3): an ACK means that the client node has the data, as the lead of the page says
+    { label: 'TCP splitting', cell: (r) => (r.spec?.tcpSplit ? 'on' : 'off') },
     { label: '', cell: (r) => deleteButton('Network', r.name, render) },
   ], rows, select.value ? `The VRF ${select.value} has no Network.` : 'The Intent has no Network yet.');
 }

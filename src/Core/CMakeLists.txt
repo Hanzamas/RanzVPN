@@ -210,6 +210,8 @@ add_library(corecontrol STATIC
   ControlEvpn.c
   # The live operations of the Controller on the tables of the L2 Networks (SDN-50-N, #492)
   ControlOperation.c
+  # The L3 Networks that split TCP in a desired state (CORE-P2-3, #94)
+  ControlSplit.c
 )
 
 target_include_directories(corecontrol PRIVATE "${_ranz_controlpb}")

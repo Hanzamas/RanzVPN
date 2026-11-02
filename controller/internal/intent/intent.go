@@ -167,6 +167,10 @@ type Network struct {
 	// KeyLifetimeDays is how many days the key of a Node of the Network lives from its last authentication, from 1 to
 	// MaxKeyLifetimeDays (SDN-56, keylife.go). Left out, it is DefaultKeyLifetimeDays.
 	KeyLifetimeDays uint32 `json:"keyLifetimeDays,omitempty"`
+	// TCPSplit turns TCP splitting on for an L3 Network (CORE-P2-3, split.go): its Nodes terminate the TCP connections
+	// of their hosts on the Windows TCP stack and carry only the byte streams, so an ACK that an application gets means
+	// that its node has the data. Left out, it is off.
+	TCPSplit bool `json:"tcpSplit,omitempty"`
 }
 
 // Node is a node of the overlay, identified by its Noise static key.
@@ -1045,6 +1049,8 @@ func (in Intent) validate() []error {
 	problems = append(problems, in.validateLeaks()...)
 	problems = append(problems, in.validateDHCP()...)
 	problems = append(problems, in.validateSecurity()...)
+	// The TCP splitting of the Networks (split.go; CORE-P2-3)
+	problems = append(problems, in.validateSplit()...)
 	problems = append(problems, in.validateDNS()...)
 	problems = append(problems, in.validateUsers()...)
 	// The scopes of the Users, the Groups, the Nodes and the Policies (scope.go; SDN-38)

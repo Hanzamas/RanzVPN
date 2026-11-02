@@ -534,6 +534,10 @@ struct NODE {
 	// The switches of the L2 Networks, whose tables the live operations of the Controller read and clear (NodeOperation.c;
 	// SDN-50-N, #492), NULL while the overlay does not run
 	struct NODE_OPERATIONS *Operations;
+
+	// The TCP splitting of the L3 Networks of the overlay (NodeSplit.c; CORE-P2-3, #94): its listeners and its split flows,
+	// NULL while the overlay does not run
+	struct NODE_SPLIT *Split;
 };
 
 // How the overlay of a node runs (NodeOverlayStart)

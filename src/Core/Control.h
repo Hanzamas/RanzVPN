@@ -459,6 +459,17 @@ typedef struct CONTROL_SECURITY {
 	char Gateways[CONTROL_MAX_GATEWAYS][CONTROL_NAME_SIZE]; // ... in name order
 } CONTROL_SECURITY;
 
+// The TCP splitting of the L3 Networks (CORE-P2-3, #94)
+#define CONTROL_MAX_SPLITS 16 // The L3 Networks of a node that split TCP, in name order: the first ones
+
+// An L3 Network of the node whose TCP splitting is on (Network.tcp_split of the control protocol; CORE-P2-3, #94): the node
+// terminates the TCP connections that its host opens from its address there and carries their byte streams, and opens to
+// their real destination the ones that a peer sends from its address there (Cedar/NodeSplit.c)
+typedef struct CONTROL_SPLIT {
+	char Network[CONTROL_NAME_SIZE]; // The L3 Network
+	UINT VrfId;                      // ... and its VRF
+} CONTROL_SPLIT;
+
 // A WireGuard Device of a VRF of the node (Device of the control protocol; SDN-80, #375): a phone, a laptop or a router
 // that joins one Network over standard WireGuard through its gateway node. Its addresses and its tags identify it to the
 // rules; a packet to one of its addresses goes to its gateway, and the gateway delivers it to its host, where its
@@ -635,6 +646,10 @@ typedef struct CONTROL_STATE {
 	// of no VRF
 	UINT NumEgress;
 	UINT EgressVrfIds[CONTROL_MAX_VRFS];
+
+	// The L3 Networks of its VRFs that split TCP (CORE-P2-3, #94), in name order: none while every Network has it off
+	UINT NumSplits;
+	CONTROL_SPLIT Splits[CONTROL_MAX_SPLITS];
 } CONTROL_STATE;
 
 // A copy of a state that holds its own memory, for an owner that applies the state again later (the BGP peering of the node,
@@ -694,6 +709,8 @@ typedef struct CONTROL_CAPS {
 	// The node can be the gateway of a Stretch of an L2 Network (SDN-63, #290): its host is a Windows Server, and its VXLAN
 	// module runs
 	bool Evpn;
+	// The node runs the TCP splitting of the L3 Networks, and answers the split flows of its peers (CORE-P2-3, #94)
+	bool TcpSplit;
 } CONTROL_CAPS;
 
 // Fills caps, which is zeroed, with the Capabilities of the node. The client calls it for each Hello, so a node

@@ -52,6 +52,9 @@ type Capabilities struct {
 	// EVPN: the node can be the gateway of a Stretch (SDN-63): its host is a Windows Server and the VXLAN module of the node
 	// runs. The Controller refuses a Stretch whose gateway does not report it (stretch.go).
 	EVPN bool `json:"evpn,omitempty"`
+	// TCPSplit: the node runs the TCP splitting of the L3 Networks (CORE-P2-3). The Controller refuses a node that does not
+	// report it as a member of a VRF with a Network that splits TCP (split.go).
+	TCPSplit bool `json:"tcpSplit,omitempty"`
 }
 
 var skuNames = map[controlpb.Sku]string{
@@ -87,6 +90,7 @@ func FromProto(p *controlpb.Capabilities) *Capabilities {
 		Tags:            p.GetTags(),
 		BGPPeering:      p.GetBgpPeering(),
 		EVPN:            p.GetEvpn(),
+		TCPSplit:        p.GetTcpSplit(),
 	}
 	if len(p.GetWireguardKey()) > 0 {
 		c.WireGuardKey = base64.StdEncoding.EncodeToString(p.GetWireguardKey())
@@ -109,6 +113,7 @@ func (c Capabilities) Proto() (*controlpb.Capabilities, error) {
 		Tags:            c.Tags,
 		BgpPeering:      c.BGPPeering,
 		Evpn:            c.EVPN,
+		TcpSplit:        c.TCPSplit,
 	}
 	if c.WireGuardKey != "" {
 		k, err := base64.StdEncoding.DecodeString(c.WireGuardKey)

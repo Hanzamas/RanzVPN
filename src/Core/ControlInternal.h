@@ -67,6 +67,9 @@ void ControlCopyProfiles(CONTROL_STATE *st, const ranz_control_v1_Object *object
 // ControlEgress.c
 void ControlCopyEgress(CONTROL_STATE *st, const ranz_control_v1_Object *objects, UINT num);
 
+// ControlSplit.c
+void ControlCopySplits(CONTROL_STATE *st, const ranz_control_v1_Object *objects, UINT num);
+
 // ControlPath.c
 void ControlPathsResend(CONTROL_PATHS *p);
 

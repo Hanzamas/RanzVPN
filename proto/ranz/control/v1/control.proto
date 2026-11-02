@@ -664,6 +664,12 @@ message Network {
   // delivers it, which it does while the licence in force has EVPN and BGP (ADR-0036). A node of an older release skips the
   // field it does not know.
   Stretch stretch = 8;
+  // TCP splitting of an L3 Network (CORE-P2-3 #94, ADR-0022 amendment of 2026-11-01): in the state of every node of its
+  // VRF while it is on, off by default. A node terminates the TCP connections that its host opens from its address in the
+  // Network on the Windows TCP stack and carries only their byte streams to the peer that the destination routes to,
+  // which opens each connection to its real destination; that peer opens one only for a source in such a Network. A
+  // node of an older release skips the field it does not know.
+  bool tcp_split = 9;
 }
 
 // The security of an L2 Network (SDN-41 #234, ADR-0019 decision 1): the protections of the fork
@@ -885,6 +891,10 @@ message Capabilities {
   // The node can be the gateway of a Stretch (SDN-63 #290, ADR-0032 amendment of 2026-10-22): its host is a Windows Server and
   // the VXLAN module of the node runs. 13 and 14 are the fields that SDN-87 (#386) and SDN-77-R2 (#532) take, so this is 15.
   bool evpn = 15;
+  // The node runs the TCP splitting of the L3 Networks (CORE-P2-3 #94): it splits the TCP connections of its host in a Network
+  // with tcp_split, and answers the split flows that its peers open to it. A node that does not report it is refused as a
+  // member of a VRF that has such a Network, since the split connections of its peers to it would time out.
+  bool tcp_split = 16;
 }
 
 // The Windows edition of a node's host.
