@@ -139,10 +139,12 @@ func (s *session) setImport(ctx context.Context, peers map[netip.Addr]peerConfig
 		return fail(err)
 	}
 	state.policy = policy
+	// ... with the policy that takes the EVPN routes of the peers after it, while the node peers by EVPN too (evpnpeering.go;
+	// SDN-78 #358)
 	err := s.bgp.SetPolicyAssignment(ctx, &api.SetPolicyAssignmentRequest{Assignment: &api.PolicyAssignment{
 		Name:          globalRIB,
 		Direction:     api.PolicyDirection_POLICY_DIRECTION_IMPORT,
-		Policies:      []*api.Policy{{Name: policy}},
+		Policies:      s.importPolicies(policy),
 		DefaultAction: api.RouteAction_ROUTE_ACTION_REJECT,
 	}})
 	if err != nil {

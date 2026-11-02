@@ -163,10 +163,11 @@ func Run(ctx context.Context, conn io.ReadWriteCloser, opts Options) error {
 		w.Write(Message{Type: TypeError, Error: err.Error()})
 		return err
 	}
-	// The EVPN of a gateway (evpn.go; SDN-25 #201), whose peers are the routers of a fabric, not Ranz nodes
+	// The EVPN of a gateway (evpn.go; SDN-25 #201), whose peers are the routers of a fabric, or of the peering of the standard
+	// mode, whose peers are Ranz nodes (evpnpeering.go; SDN-78 #358)
 	ev, err := parseEVPN(first.EVPN, cfg.routerID)
-	if err == nil && ev != nil && cfg.address.IsValid() {
-		err = errors.New("start: evpn is of a gateway, whose peers are the routers of a fabric, and an address runs the peering of the standard mode with Ranz nodes: a start has one of them")
+	if err == nil {
+		err = peeringEVPN(ev, cfg.address)
 	}
 	if err != nil {
 		w.Write(Message{Type: TypeError, Error: err.Error()})
@@ -525,8 +526,10 @@ func (s *session) ping(ctx context.Context) error {
 // announce applies an announce message: the prefix goes to the peers as a path of the node, a
 // unicast path, or a VPN path of its VRF in the peering of the standard mode.
 func (s *session) announce(m Message) error {
-	// A prefix of an EVPN VRF goes to the fabric as an IP prefix route, one of another VRF nowhere (evpn.go; SDN-25 #201)
-	if m.VRF != 0 && s.evpn != nil {
+	// A prefix of an EVPN VRF goes to the fabric as an IP prefix route, one of another VRF nowhere (evpn.go; SDN-25 #201), and in
+	// the peering of the standard mode one of a VRF that peers by EVPN to the peers so, one of a VRF that peers by BGP as a VPN
+	// route (evpnpeering.go; SDN-78 #358)
+	if s.evpnRoute(m.VRF) {
 		return s.announceEVPN(m)
 	}
 	prefix, err := parsePrefix(m.Prefix)
@@ -599,8 +602,8 @@ func unicastPath(prefix netip.Prefix, next string) (*apiutil.Path, error) {
 
 // withdraw applies a withdraw message.
 func (s *session) withdraw(m Message) error {
-	// ... and leaves it (evpn.go)
-	if m.VRF != 0 && s.evpn != nil {
+	// ... and leaves it (evpn.go, evpnpeering.go)
+	if s.evpnRoute(m.VRF) {
 		return s.withdrawEVPN(m)
 	}
 	prefix, err := parsePrefix(m.Prefix)
