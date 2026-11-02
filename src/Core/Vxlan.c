@@ -24,6 +24,7 @@ struct VXLAN {
 	void *SendParam;                          // ... its first parameter
 	VXLAN_RECV_PROC *Recv;                    // Takes the frames of the VNIs that the module carries, or NULL
 	void *RecvParam;                          // ... its second parameter
+	VXLAN_RECV_GROUP_PROC *RecvGroup;         // Takes them with their source group in place of Recv, or NULL (SDN-87, #386)
 	SRWLOCK Lock;                             // The VNIs: shared on the data path, exclusive for changes
 	VXLAN_VNI *Vnis;                          // The VNIs that the module carries, sorted by VNI, in room for VXLAN_MAX_VNIS
 	UINT NumVnis;                             // ... their number
@@ -302,25 +303,28 @@ bool VxlanSendTo(VXLAN *v, UINT vni, const VXLAN_ADDR *vtep, const void *frame, 
 }
 
 // The VXLAN header at the start of the datagram data, size bytes (RFC 7348 section 5): VXLAN_NUM_REASONS, with *vni its
-// VNI and *header its size, or VXLAN_DROP_MALFORMED when the datagram is shorter than the header or the I flag is not
-// set. The reserved bits are not looked at.
-static UINT VxlanReadHeader(const UCHAR *data, UINT size, UINT *vni, UINT *header) {
+// VNI, *header its size and *group the source group of its group policy extension (VxlanGroup.c), or
+// VXLAN_DROP_MALFORMED when the datagram is shorter than the header or the I flag is not set. The other reserved bits are
+// not looked at.
+static UINT VxlanReadHeader(const UCHAR *data, UINT size, UINT *vni, UINT *header, VXLAN_GROUP *group) {
 	if (size < VXLAN_HEADER_SIZE || (data[0] & VXLAN_FLAG_VNI) == 0)
 		return VXLAN_DROP_MALFORMED;
 
 	*vni = ((UINT)data[4] << 16) | ((UINT)data[5] << 8) | data[6];
 	*header = VXLAN_HEADER_SIZE;
+	VxlanParseGroup(data, size, group);
 	return VXLAN_NUM_REASONS;
 }
 
 // The Geneve header at the start of the datagram data, size bytes, from a VTEP of Geneve: VXLAN_NUM_REASONS, with *vni
-// its VNI and *header its size with the options, or why the module drops the datagram. A header that VxlanParseGeneve
-// does not take, or one of a payload that is no Ethernet frame, is VXLAN_DROP_MALFORMED. A control message is
-// VXLAN_DROP_CONTROL: the module has none, and a tunnel endpoint does not forward the payload of one (RFC 8926 section
-// 3.4). The module reads no option yet (the source group of SDN-87 and the trace option of SDN-89 will be the first),
-// so a critical option is one that it does not know, which drops the datagram as VXLAN_DROP_CRITICAL (section 3.5.1),
+// its VNI, *header its size with the options and *group the source group of its option of the source group (SDN-87,
+// #386; VxlanGroup.c), or why the module drops the datagram. A header that VxlanParseGeneve does not take, or one of a
+// payload that is no Ethernet frame, is VXLAN_DROP_MALFORMED. A control message is VXLAN_DROP_CONTROL: the module has
+// none, and a tunnel endpoint does not forward the payload of one (RFC 8926 section 3.4). The one option that the module
+// reads is the option of the source group, whose critical bit is clear (the trace option of SDN-89 will be the next), so
+// a critical option is one that it does not know, which drops the datagram as VXLAN_DROP_CRITICAL (section 3.5.1),
 // whether the C bit of the header says so or not; any other option is skipped, and the frame goes on without it.
-static UINT VxlanReadGeneve(const UCHAR *data, UINT size, UINT *vni, UINT *header) {
+static UINT VxlanReadGeneve(const UCHAR *data, UINT size, UINT *vni, UINT *header, VXLAN_GROUP *group) {
 	GENEVE_HEADER h;
 
 	if (VxlanParseGeneve(data, size, &h) == false)
@@ -333,6 +337,10 @@ static UINT VxlanReadGeneve(const UCHAR *data, UINT size, UINT *vni, UINT *heade
 	if (h.Protocol != GENEVE_PROTOCOL_ETHERNET)
 		return VXLAN_DROP_MALFORMED;
 
+	// The first option of the source group, when there are several
+	for (UINT i = 0; i < h.NumOptions && group->Carried == false; i++)
+		VxlanParseGroupOption(&h.Options[i], group);
+
 	*vni = h.Vni;
 	*header = h.Size;
 	return VXLAN_NUM_REASONS;
@@ -341,21 +349,24 @@ static UINT VxlanReadGeneve(const UCHAR *data, UINT size, UINT *vni, UINT *heade
 // The one ingress of the module: every datagram that the node receives from a VTEP, from the address from, which reads
 // its header by the encapsulation of from: VXLAN (VxlanReadHeader) or Geneve (VxlanReadGeneve). A datagram that its
 // header lets through, on a VNI that the module carries and with a frame of VXLAN_MIN_FRAME to VXLAN_MAX_FRAME bytes
-// behind the header, goes to the receiver. A datagram on any other VNI is dropped as VXLAN_DROP_VNI, one that is too
-// short or too long as VXLAN_DROP_MALFORMED, and one that its header does not let through for the reason it gives.
+// behind the header, goes to the receiver, with the source group that its header carried to a receiver that takes it
+// (VxlanSetGroupReceiver; SDN-87, #386). A datagram on any other VNI is dropped as VXLAN_DROP_VNI, one that is too short
+// or too long as VXLAN_DROP_MALFORMED, and one that its header does not let through for the reason it gives.
 void VxlanInput(VXLAN *v, const VXLAN_ADDR *from, const UCHAR *data, UINT size) {
 	bool known = false;
 	UINT vni = 0;
 	UINT header = 0;
 	UINT reason;
+	VXLAN_GROUP group;
 
 	if (v == NULL || from == NULL || data == NULL)
 		return;
 
+	ZeroMemory(&group, sizeof(group));
 	if (from->Encap == VXLAN_ENCAP_GENEVE)
-		reason = VxlanReadGeneve(data, size, &vni, &header);
+		reason = VxlanReadGeneve(data, size, &vni, &header, &group);
 	else
-		reason = VxlanReadHeader(data, size, &vni, &header);
+		reason = VxlanReadHeader(data, size, &vni, &header, &group);
 
 	if (reason == VXLAN_NUM_REASONS && (size - header < VXLAN_MIN_FRAME || size > VXLAN_MAX_DATAGRAM))
 		reason = VXLAN_DROP_MALFORMED;
@@ -376,7 +387,9 @@ void VxlanInput(VXLAN *v, const VXLAN_ADDR *from, const UCHAR *data, UINT size) 
 	}
 
 	InterlockedIncrement64(&v->Delivered);
-	if (v->Recv != NULL)
+	if (v->RecvGroup != NULL)
+		v->RecvGroup(v, v->RecvParam, vni, from, &group, data + header, size - header);
+	else if (v->Recv != NULL)
 		v->Recv(v, v->RecvParam, vni, from, data + header, size - header);
 }
 
@@ -412,4 +425,53 @@ void VxlanAddrSetV4(VXLAN_ADDR *a, UCHAR b0, UCHAR b1, UCHAR b2, UCHAR b3, USHOR
 	a->Ip[14] = b2;
 	a->Ip[15] = b3;
 	a->Port = port;
+}
+
+// The frames of the VNIs that the module carries go to recv with the source group of their datagram, in place of the
+// receiver of VxlanNew, which takes the second parameter of that one (SDN-87, #386). Set it before the module takes its
+// first datagram.
+void VxlanSetGroupReceiver(VXLAN *v, VXLAN_RECV_GROUP_PROC *recv) {
+	if (v != NULL)
+		v->RecvGroup = recv;
+}
+
+// Send frame, size bytes, on the VNI vni to the one VTEP vtep with the source group group (SDN-87, #386), as VxlanSendTo
+// sends it without one: in the group policy extension of the VXLAN header, the group ID alone, or behind the Geneve
+// header in the option of the source group, the group ID, the tag set and the group generation (VxlanGroup.c). A group
+// that carries nothing, or none, sends the frame as VxlanSendTo does, and so does a frame that does not fit a datagram
+// with the option, which the frames up to VXLAN_MAX_FRAME bytes fit without it: the frame goes without its source group,
+// as a frame that the module sent before the source groups. False when vni has more than 24 bits, the frame is shorter
+// than VXLAN_MIN_FRAME or longer than VXLAN_MAX_FRAME, or the datagram could not be sent.
+bool VxlanSendToGroup(VXLAN *v, UINT vni, const VXLAN_ADDR *vtep, const VXLAN_GROUP *group, const void *frame, UINT size) {
+	UCHAR buf[VXLAN_MAX_DATAGRAM];
+	UINT header = VXLAN_HEADER_SIZE;
+
+	if (group == NULL || group->Carried == false)
+		return VxlanSendTo(v, vni, vtep, frame, size);
+	if (v == NULL || vtep == NULL || frame == NULL || vni > VXLAN_MAX_VNI || size < VXLAN_MIN_FRAME)
+		return false;
+
+	if (vtep->Encap == VXLAN_ENCAP_GENEVE)
+		header = GENEVE_HEADER_SIZE + GENEVE_GROUP_OPTION;
+	if (size > VXLAN_MAX_DATAGRAM - header)
+		return VxlanSendTo(v, vni, vtep, frame, size);
+
+	if (vtep->Encap == VXLAN_ENCAP_GENEVE) {
+		// The Geneve header with the length of its one option, in 4-byte words, and the option
+		VxlanWriteGeneve(buf, vni);
+		buf[0] |= (UCHAR)(GENEVE_GROUP_OPTION / 4);
+		VxlanWriteGroupOption(buf + GENEVE_HEADER_SIZE, group->Group, group->Tags, group->Generation);
+	} else {
+		VxlanWriteHeader(buf, vni);
+		VxlanWriteGroup(buf, group->Group);
+	}
+	CopyMemory(buf + header, frame, size);
+
+	if (v->Send(v->SendParam, vtep, buf, header + size)) {
+		InterlockedIncrement64(&v->Sent);
+		return true;
+	}
+
+	VxlanDrop(v, VXLAN_DROP_SEND);
+	return false;
 }

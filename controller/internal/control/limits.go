@@ -16,7 +16,7 @@ import (
 // computes those frames from the file and fails when a size outgrows its limit. Raise a limit with
 // the size.
 const (
-	// MaxHello is the largest Hello. The largest that a node can make is 87 bytes: the schema version,
+	// MaxHello is the largest Hello. The largest that a node can make is 91 bytes: the schema version,
 	// the generation applied last and the Capabilities, whose largest field is the 32-byte key of the
 	// WireGuard interface.
 	MaxHello = 1 << 10

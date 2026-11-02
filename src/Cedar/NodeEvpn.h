@@ -101,7 +101,8 @@ void NodeEvpnCommit(NODE *n);
 UINT NodeEvpnFlush(NODE *n);
 void NodeEvpnFreeTable(NODE_EVPN_TABLE *t);
 bool NodeEvpnOutput(NODE *n, NODE_VRF_TABLES *v, UINT vrf_id, const UCHAR *packet, UINT size);
-bool NodeEvpnTransit(NODE *n, NODE_VRF_TABLES *v, UINT vrf_id, UINT from, const UCHAR *packet, UINT size);
+struct NODE_SOURCE_CLAIM;
+bool NodeEvpnTransit(NODE *n, NODE_VRF_TABLES *v, UINT vrf_id, UINT from, const struct NODE_SOURCE_CLAIM *claim, const UCHAR *packet, UINT size);
 void NodeEvpnGetStatus(NODE *n, NODE_EVPN_STATUS *st);
 UINT NodeEvpnGetRoutes(NODE *n, NODE_EVPN_ROUTE *list, UINT max);
 
