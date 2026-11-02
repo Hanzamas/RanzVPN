@@ -52,6 +52,10 @@ $webName = 'admin.frontdoor.test'
 # How long the Controller may take to serve, and a node to acknowledge (s)
 $waitSeconds = 120
 
+# Read-Shared, which reads what the Controller writes to its standard error while it runs (AUD1-DT-18-R2, #604; first-test.ps1 and
+# controller-service.ps1 load it too)
+. (Join-Path $PSScriptRoot 'read-shared.ps1')
+
 function Invoke-Checked([string] $exe, [string[]] $argv) {
 	$out = & $exe @argv
 	if ($LASTEXITCODE -ne 0) { throw "$(Split-Path -Leaf $exe) $($argv -join ' ') exited with code $LASTEXITCODE" }
@@ -108,7 +112,8 @@ try {
 	}
 	$status = Invoke-Ranz $own @('status')
 	Write-Host "the Controller on its own port ${tls}: $($status | ConvertTo-Json -Compress -Depth 4)"
-	if ((Get-Content -LiteralPath $controllerErr -Raw) -notmatch [regex]::Escape('msg="handoff pipe of the front door"')) { throw "the Controller did not open its handoff pipe $pipe" }
+	# The Controller still runs and writes to this file, so the read is Read-Shared, which gives one string, and not Get-Content -Raw
+	if ((Read-Shared $controllerErr) -notmatch [regex]::Escape('msg="handoff pipe of the front door"')) { throw "the Controller did not open its handoff pipe $pipe" }
 	$secret = (Get-Content -LiteralPath $tokenFile -Raw).Trim()
 
 	# The node's certificate for the TLS of the new protocol, its key in the CNG key storage provider

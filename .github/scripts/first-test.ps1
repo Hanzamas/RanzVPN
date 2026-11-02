@@ -214,18 +214,10 @@ function Stop-Background {
 	$script:background = @()
 }
 
-# The text of a file that a process may still write to, always as one string. Get-Content -Raw is no stand-in for it on a
-# log that a service writes: it reads until a read finds nothing and gives each read that found something as a string
-# of its own, so a file that grows while it is read gives an array (step replace-certificate, AUD1-DT-18)
-function Read-Shared([string] $path) {
-	if (-not (Test-Path -LiteralPath $path)) { return '' }
-	$fs = [System.IO.File]::Open($path, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read, [System.IO.FileShare]::ReadWrite)
-	try {
-		return (New-Object System.IO.StreamReader($fs)).ReadToEnd()
-	} finally {
-		$fs.Dispose()
-	}
-}
+# Read-Shared, the text of a file that a process may still write to, always as one string: the log of a service is read with it, and
+# Get-Content -Raw is no stand-in (step replace-certificate, AUD1-DT-18). controller-service.ps1 and controller-frontdoor.ps1 load the
+# same file, since they read the log of a Controller that runs too (AUD1-DT-18-R2, #604)
+. (Join-Path $PSScriptRoot 'read-shared.ps1')
 
 # Run the blocks of the current step in the order of the document: the lines of a run block one after the other, with
 # the output of each printed and kept, a background block started. The text of all the lines is returned. -From and
