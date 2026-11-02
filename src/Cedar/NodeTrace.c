@@ -133,7 +133,7 @@ bool NodeTraceParse(const UCHAR *record, UINT size, VXLAN_TRACE *trace) {
 // record of frame version 1 whose header and options begin before record, which the trace option follows. The caller
 // holds NODE_TRACE_ROOM bytes before record. The frame with the option goes when it fits max, the largest payload of its
 // path; else the frame as it was. Its start, with *frame_size its size.
-static const UCHAR *NodeTraceWrap(UCHAR *record, const UCHAR *frame, UINT *frame_size, UINT max, const VXLAN_TRACE *trace) {
+const UCHAR *NodeTraceWrap(UCHAR *record, const UCHAR *frame, UINT *frame_size, UINT max, const VXLAN_TRACE *trace) {
 	UINT before = (UINT)(record - frame);
 	UINT add = (before == 0 ? NODE_FRAME_HEADER + NODE_FRAME_TRACE_OPTION : NODE_FRAME_TRACE_OPTION);
 

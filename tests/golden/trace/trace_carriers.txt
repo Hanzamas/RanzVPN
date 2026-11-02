@@ -1,0 +1,71 @@
+# SDN-89: the trace option in each carrier, as a node sends it and as a node reads it back
+# ranz frame: the VRF tag 0, the version, the length of the options, reserved | the type, the length, reserved, the trace ID, the ingress node | the VRF tag of the record
+# ranz frame with the source group: the header | the option of the source group | the trace option | the VRF tag of the record
+# geneve: the version and the length of the options, the flags O and C, the protocol, the VNI, reserved | the class, the type, the length, the trace ID, the ingress node
+# geneve with the source group: the header | the option of the source group | the trace option
+# vxlan: the flags, the flags D and A, the group, the VNI, reserved
+trace 0x00000001 of the ingress node 1112131415161718
+  ranz frame: 00000000 01 04 0000 | 03 03 0000 00000001 1112131415161718 | 00000065
+  read: trace 0x00000001 of the ingress node 1112131415161718; a header of 24 bytes, then the data record of VRF 101
+  a node that does not know the option takes the record without a source group; a header of 24 bytes, then the data record of VRF 101
+  ranz frame with the source group: 00000000 01 09 0000 | 01 04 0000 0003 0000 0000000000000004 00000005 | 03 03 0000 00000001 1112131415161718 | 00000065
+  read: trace 0x00000001 of the ingress node 1112131415161718; a header of 44 bytes, then the data record of VRF 101
+  a node that does not know the option takes the record with the group 3; a header of 44 bytes, then the data record of VRF 101
+  geneve: 04 00 6558 0013ed 00 | fff0 03 03 00000001 1112131415161718
+  read: trace 0x00000001 of the ingress node 1112131415161718, no source group; the frame of 64 bytes as it was sent
+  geneve with the source group: 09 00 6558 0013ed 00 | fff0 01 04 0003 0000 0000000000000004 00000005 | fff0 03 03 00000001 1112131415161718
+  read: trace 0x00000001 of the ingress node 1112131415161718, group 3; the frame of 64 bytes as it was sent
+  the critical bit of the trace option of Geneve is clear, and so is the C bit of its header
+  vxlan with the source group: 88 00 0003 0013ed 00
+  read: no trace option, group 3; the frame of 64 bytes as it was sent
+trace 0x0000002a of the ingress node a0a1a2a3a4a5a6a7
+  ranz frame: 00000000 01 04 0000 | 03 03 0000 0000002a a0a1a2a3a4a5a6a7 | 00000065
+  read: trace 0x0000002a of the ingress node a0a1a2a3a4a5a6a7; a header of 24 bytes, then the data record of VRF 101
+  a node that does not know the option takes the record without a source group; a header of 24 bytes, then the data record of VRF 101
+  ranz frame with the source group: 00000000 01 09 0000 | 01 04 0000 0003 0000 0000000000000004 00000005 | 03 03 0000 0000002a a0a1a2a3a4a5a6a7 | 00000065
+  read: trace 0x0000002a of the ingress node a0a1a2a3a4a5a6a7; a header of 44 bytes, then the data record of VRF 101
+  a node that does not know the option takes the record with the group 3; a header of 44 bytes, then the data record of VRF 101
+  geneve: 04 00 6558 0013ed 00 | fff0 03 03 0000002a a0a1a2a3a4a5a6a7
+  read: trace 0x0000002a of the ingress node a0a1a2a3a4a5a6a7, no source group; the frame of 64 bytes as it was sent
+  geneve with the source group: 09 00 6558 0013ed 00 | fff0 01 04 0003 0000 0000000000000004 00000005 | fff0 03 03 0000002a a0a1a2a3a4a5a6a7
+  read: trace 0x0000002a of the ingress node a0a1a2a3a4a5a6a7, group 3; the frame of 64 bytes as it was sent
+  the critical bit of the trace option of Geneve is clear, and so is the C bit of its header
+  vxlan with the source group: 88 00 0003 0013ed 00
+  read: no trace option, group 3; the frame of 64 bytes as it was sent
+trace 0xffffffff of the ingress node ffffffffffffffff
+  ranz frame: 00000000 01 04 0000 | 03 03 0000 ffffffff ffffffffffffffff | 00000065
+  read: trace 0xffffffff of the ingress node ffffffffffffffff; a header of 24 bytes, then the data record of VRF 101
+  a node that does not know the option takes the record without a source group; a header of 24 bytes, then the data record of VRF 101
+  ranz frame with the source group: 00000000 01 09 0000 | 01 04 0000 0003 0000 0000000000000004 00000005 | 03 03 0000 ffffffff ffffffffffffffff | 00000065
+  read: trace 0xffffffff of the ingress node ffffffffffffffff; a header of 44 bytes, then the data record of VRF 101
+  a node that does not know the option takes the record with the group 3; a header of 44 bytes, then the data record of VRF 101
+  geneve: 04 00 6558 0013ed 00 | fff0 03 03 ffffffff ffffffffffffffff
+  read: trace 0xffffffff of the ingress node ffffffffffffffff, no source group; the frame of 64 bytes as it was sent
+  geneve with the source group: 09 00 6558 0013ed 00 | fff0 01 04 0003 0000 0000000000000004 00000005 | fff0 03 03 ffffffff ffffffffffffffff
+  read: trace 0xffffffff of the ingress node ffffffffffffffff, group 3; the frame of 64 bytes as it was sent
+  the critical bit of the trace option of Geneve is clear, and so is the C bit of its header
+  vxlan with the source group: 88 00 0003 0013ed 00
+  read: no trace option, group 3; the frame of 64 bytes as it was sent
+a record of frame version 1 with the trace option whose critical bit is set
+  read: no trace
+  a node that does not know the option drops the record
+a record of frame version 1 with the trace option of the trace ID 0
+  read: no trace
+  a node that does not know the option takes the record without a source group; a header of 24 bytes, then the data record of VRF 101
+a record of frame version 0, the data record of VRF 101
+  read: no trace
+  a node that does not know the option takes the record without a source group; a header of 0 bytes, then the data record of VRF 101
+a datagram of Geneve with the trace option whose critical bit is set
+  read: nothing, the module dropped the datagram
+a datagram of Geneve with the bytes of the trace option under the type 0x04, an option that the module does not know
+  read: no trace option, no source group; the frame of 64 bytes as it was sent
+a datagram of Geneve with the class and the type of the trace option and 4 bytes of data
+  read: no trace option, no source group; the frame of 64 bytes as it was sent
+the trace of no Network is on
+  the packet of 10.0.0.1 to 10.0.0.2 goes as it went before the trace: 24 bytes, no trace option
+  the packet of 10.0.0.1 to 10.0.0.2 with the source group goes as it went before the trace: 52 bytes, no trace option
+the trace of the Network of the pool 10.0.0.0/24 in VRF 101 is on
+  the packet of 10.0.0.1 to 10.0.0.2 goes with the trace option of the node: 48 bytes; the node records it as allowed, with the group 0
+  the packet of 10.0.0.1 to 10.0.0.2 with the source group goes with the trace option of the node: 68 bytes; the node records it as allowed, with the group 3
+  the packet of 192.168.1.1 to 192.168.1.2, outside the pools of the Network, goes as it is: 24 bytes, no trace option
+  the packet of 10.0.0.1 to 10.0.0.2 to a peer of frame version 0 goes as it is: 24 bytes, no trace option; the node records it

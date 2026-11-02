@@ -39,6 +39,7 @@ typedef struct NODE_TRACES NODE_TRACES;
 // NodeTrace.c
 UINT NodeTraceWrite(UCHAR *option, const VXLAN_TRACE *trace);
 bool NodeTraceParse(const UCHAR *record, UINT size, VXLAN_TRACE *trace);
+const UCHAR *NodeTraceWrap(UCHAR *record, const UCHAR *frame, UINT *frame_size, UINT max, const VXLAN_TRACE *trace);
 CONTROL_TRACES *NodeTraceStart(NODE *n, const UCHAR *key);
 void NodeTraceStop(NODE *n);
 void NodeTraceAttach(NODE *n, NODE_VRF_TABLES *v, const CONTROL_STATE *st);
