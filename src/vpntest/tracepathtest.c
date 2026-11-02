@@ -22,6 +22,14 @@
 //   group policy extension: no trace option, and the sizes of the datagrams before SDN-89. With it on, the datagram of
 //   geneve carries the trace option after the option of the source group, with the trace ID that node-a recorded and its
 //   static key, 16 bytes more, and the one of vxlan keeps its size.
+// - From the harness tunnel endpoint, which has the address of node-a's, as anyone who can send from that address has, a
+//   datagram of geneve to node-b whose trace names another ingress node than node-a, in the tag mode trusted-underlay of
+//   red and in the tag mode off: node-b delivers its packet and records nothing of it, and it records the same datagram
+//   with node-a as its ingress node (SDN-89-R1, #630).
+// - With blue (102), whose route to node-b's address leaks into red at node-a, and red's route to node-a's address into
+//   blue at node-b, the trace of the Networks of both VRFs on at both nodes: a packet of node-a's host in red to node-b's
+//   address in blue arrives at node-b in blue, over noise and over geneve, and neither node traces or records it; on the
+//   wire its datagram of geneve goes on the VNI of blue without the trace option (SDN-89-R1, #630).
 // Print "TRACEPATH TEST OK" only when every check passes.
 
 #include "harness_int.h"
@@ -69,6 +77,9 @@
 #define	TPTEST_GUEST_TAGS		0x2ULL		// ... and its tag set
 #define	TPTEST_SERVER			3			// The group of node-b ...
 #define	TPTEST_SERVER_TAGS		0x4ULL		// ... and its tag set
+#define	TPTEST_BLUE				102			// The id of blue, whose route to node-b leaks into red, and red's route to node-a into it
+#define	TPTEST_BLUE_VNI			5102		// The VNI of blue over geneve
+#define	TPTEST_STRANGER_ID		0x5A5A5A01	// The trace ID of the first datagram of the harness tunnel endpoint
 
 // The two nodes
 #define	TPTEST_A				0
@@ -77,11 +88,15 @@
 
 static char *tptest_names[TPTEST_NUM_NODES] = {"node-a", "node-b"};
 static char *tptest_addrs[TPTEST_NUM_NODES] = {"10.0.0.1", "10.0.0.2"};
+static char *tptest_blue_addrs[TPTEST_NUM_NODES] = {"10.1.0.1", "10.1.0.2"};
 static char *tptest_tags[TPTEST_NUM_NODES] = {"guest", "server"};
 static char *tptest_kind_names[3] = {"noise", "vxlan", "geneve"};
 
 // The MAC address of both ends of the Ethernet header of a frame of a link (NodeLink.c)
 static const UCHAR tptest_mac[6] = {0x02, 0x52, 0x5A, 0x00, 0x00, 0x03};
+
+// The ingress node that a datagram of the harness tunnel endpoint names, which is no node of the test
+static const UCHAR tptest_stranger[VXLAN_TRACE_INGRESS] = {0xEE, 0xEE, 0xEE, 0xEE, 0xEE, 0xEE, 0xEE, 0xEE};
 
 // One case: a packet of node-a's host to a port of node-b's host, the verdicts of the policies of the two nodes on it
 typedef struct TPTEST_CASE
@@ -109,10 +124,11 @@ typedef struct TPTEST_NODE
 	USHORT VxlanPort;					// The UDP port of its socket of VXLAN ...
 	USHORT GenevePort;					// ... and of Geneve
 	UINT64 Generation;					// The Generation of the last state that the test applied
-	SRWLOCK Lock;						// Arrivals, Last and LastSize
+	SRWLOCK Lock;						// Arrivals, Last, LastSize and LastVrf
 	volatile LONG Arrivals;				// Packets that the host took
 	UCHAR Last[TPTEST_SIZE * 2];		// The last one, as much as fits
 	UINT LastSize;
+	UINT LastVrf;						// ... and its VRF
 } TPTEST_NODE;
 
 // The test
@@ -124,6 +140,8 @@ typedef struct TPTEST_CTX
 	SOCKET Vtep;						// The harness tunnel endpoint, on 127.0.0.1, which takes the datagrams of node-a in place of node-b ...
 	USHORT VtepPort;					// ... on this UDP port
 	UINT NextPort;						// The UDP source port of the next case
+	UINT TagMode;						// The tag mode of red in the Generations that the test applies ...
+	bool Leak;							// ... and whether they hold blue, whose route leaks into red and red's into it
 } TPTEST_CTX;
 
 static bool TpTestCheck(TPTEST_CTX *ctx, bool ok, char *what, char *fmt, ...) RANZ_PRINTF_FORMAT(4, 5);
@@ -185,9 +203,9 @@ static void TpTestAddress(UCHAR *addr, char *str)
 	}
 }
 
-// The test packet from node-a's address and the UDP port sport to node-b's address on the UDP port dport, TPTEST_SIZE
-// bytes of IPv4, into buf
-static void TpTestPacket(UCHAR *buf, UINT sport, UINT dport)
+// The test packet from node-a's address in red and the UDP port sport to the address dst, node-b's in red or in blue, on
+// the UDP port dport, TPTEST_SIZE bytes of IPv4, into buf
+static void TpTestPacket(UCHAR *buf, UINT sport, UINT dport, char *dst)
 {
 	UCHAR addr[4];
 
@@ -198,7 +216,7 @@ static void TpTestPacket(UCHAR *buf, UINT sport, UINT dport)
 	buf[9] = IP_PROTO_UDP;
 	TpTestAddress(addr, tptest_addrs[TPTEST_A]);
 	Copy(buf + 12, addr, 4);
-	TpTestAddress(addr, tptest_addrs[TPTEST_B]);
+	TpTestAddress(addr, dst);
 	Copy(buf + 16, addr, 4);
 	USHORT sum = IpChecksum(buf, 20);
 	Copy(buf + 10, &sum, 2);
@@ -344,6 +362,7 @@ static void TpTestAdapter(NODE *n, void *param, UINT vrf_id, const UCHAR *packet
 	AcquireSRWLockExclusive(&t->Lock);
 	{
 		t->LastSize = size;
+		t->LastVrf = vrf_id;
 		Copy(t->Last, packet, MIN(size, sizeof(t->Last)));
 		InterlockedIncrement(&t->Arrivals);
 	}
@@ -392,10 +411,67 @@ static void TpTestRule(CONTROL_RULE *r, char *name, UINT priority, bool deny, UI
 	}
 }
 
+// The address of node i in blue into a
+static void TpTestBlueAddressOf(UINT i, CONTROL_ADDRESS *a)
+{
+	Zero(a, sizeof(CONTROL_ADDRESS));
+	StrCpy(a->Network, sizeof(a->Network), "blue-lan");
+	a->VrfId = TPTEST_BLUE;
+	a->AddressSize = 4;
+	TpTestAddress(a->Address, tptest_blue_addrs[i]);
+	a->Length = 24;
+}
+
+// Blue in the Generation st of node i, whose peer is p, with the link of kind (SDN-89-R1, #630): the address of the node
+// there and the one of its peer, and the route that leaks from the VRF of the peer into the VRF of the node, as the
+// controller compiles a leak (NodeLeak.c): blue leaks node-b's address into red at node-a, and red node-a's address into
+// blue at node-b, so that a packet of node-a's host in red to node-b's address in blue goes on the leaked route and
+// arrives at node-b in blue. The trace of the Network of blue, whose pool is 10.1.0.0/24, is on where the trace of red is.
+// Neither VRF has a policy or a tag mode, so that only the trace tells a packet on the leaked route from one of red.
+static void TpTestLeakState(UINT i, UINT kind, CONTROL_STATE *st, CONTROL_PEER *p)
+{
+	bool a = (i == TPTEST_A);
+
+	st->Vrfs[0].Policy = false;
+	st->Vrfs[0].TagMode = CONTROL_TAG_MODE_OFF;
+	st->NumRules = 0;
+
+	st->NumVrfs = 2;
+	StrCpy(st->Vrfs[1].Name, sizeof(st->Vrfs[1].Name), "blue");
+	st->Vrfs[1].Id = TPTEST_BLUE;
+	st->Vrfs[1].Link = kind;
+	st->Vrfs[1].Vni = (kind != CONTROL_LINK_NOISE ? TPTEST_BLUE_VNI : 0);
+	st->Vrfs[1].TagMode = CONTROL_TAG_MODE_OFF;
+	st->NumAddresses = 2;
+	TpTestBlueAddressOf(i, &st->Addresses[1]);
+
+	p->NumVrfs = 2;
+	p->VrfIds[1] = TPTEST_BLUE;
+	p->NumAddresses = 2;
+	TpTestBlueAddressOf(1 - i, &p->Addresses[1]);
+	CONTROL_ROUTE *r = &p->Routes[p->NumRoutes++];
+	Zero(r, sizeof(CONTROL_ROUTE));
+	r->VrfId = (a ? TPTEST_VRF : TPTEST_BLUE);
+	r->AddressSize = 4;
+	TpTestAddress(r->Address, a ? tptest_blue_addrs[TPTEST_B] : tptest_addrs[TPTEST_A]);
+	r->Length = 32;
+	r->PeerVrfId = (a ? TPTEST_BLUE : TPTEST_VRF);
+
+	if (st->NumTraced != 0)
+	{
+		st->NumTraced = 2;
+		st->Traced[1].VrfId = TPTEST_BLUE;
+		st->Traced[1].Pool.AddressSize = 4;
+		TpTestAddress(st->Traced[1].Pool.Address, "10.1.0.0");
+		st->Traced[1].Pool.Length = 24;
+	}
+}
+
 // Apply the next Generation of node i: its address and its tag in red, its own group, its tunnel endpoint and its rules;
-// VRF red with the link of kind in the tag mode trusted-underlay and its policy; the other node as its peer, with its group
-// and the frame version 1, and the harness tunnel endpoint in place of the tunnel endpoint of node-b when harness is set; and
-// with traced, the pool 10.0.0.0/24 of the Network of red, whose trace is on
+// VRF red with the link of kind in the tag mode of the test, trusted-underlay unless a case says, and its policy; the other
+// node as its peer, with its group and the frame version 1, and the harness tunnel endpoint in place of the tunnel endpoint
+// of node-b when harness is set; with traced, the pool 10.0.0.0/24 of the Network of red, whose trace is on; and blue too
+// while the test holds the leak (TpTestLeakState)
 static bool TpTestApply(TPTEST_CTX *ctx, UINT i, UINT kind, bool traced, bool harness)
 {
 	CONTROL_STATE *st = ZeroMalloc(sizeof(CONTROL_STATE));
@@ -419,7 +495,7 @@ static bool TpTestApply(TPTEST_CTX *ctx, UINT i, UINT kind, bool traced, bool ha
 	st->Vrfs[0].Policy = true;
 	st->Vrfs[0].Link = kind;
 	st->Vrfs[0].Vni = (kind != CONTROL_LINK_NOISE ? TPTEST_VNI : 0);
-	st->Vrfs[0].TagMode = CONTROL_TAG_MODE_TRUSTED;
+	st->Vrfs[0].TagMode = ctx->TagMode;
 
 	// The rules of red at each node, in name order: node-a denies UDP to port 9002 and allows the rest, node-b allows UDP to
 	// port 9000 under default deny
@@ -472,6 +548,12 @@ static bool TpTestApply(TPTEST_CTX *ctx, UINT i, UINT kind, bool traced, bool ha
 		st->Traced[0].Pool.Length = 24;
 	}
 
+	// ... and blue, whose route leaks into red and red's into it (SDN-89-R1, #630)
+	if (ctx->Leak)
+	{
+		TpTestLeakState(i, kind, st, p);
+	}
+
 	bool ok = NodeOverlayApply(t->Node, st);
 
 	Free(p);
@@ -514,8 +596,9 @@ static bool TpTestSwitch(TPTEST_CTX *ctx, UINT kind, bool traced_a, bool traced_
 	bool applied = TpTestApply(ctx, TPTEST_B, kind, traced_b, false) && TpTestApply(ctx, TPTEST_A, kind, traced_a, harness);
 	bool linked = applied && TpTestWaitLinks(ctx);
 
-	Format(what, sizeof(what), "The link of red is %s, the trace of its Network %s at node-a and %s at node-b%s: one Generation of each node, and the session stays up",
-		tptest_kind_names[kind], traced_a ? "on" : "off", traced_b ? "on" : "off", harness ? ", node-a sends its datagrams to the harness tunnel endpoint" : "");
+	Format(what, sizeof(what), "The link of red is %s, the trace of its Network %s at node-a and %s at node-b%s%s%s: one Generation of each node, and the session stays up",
+		tptest_kind_names[kind], traced_a ? "on" : "off", traced_b ? "on" : "off", ctx->TagMode == CONTROL_TAG_MODE_OFF ? ", its tag mode off" : "",
+		ctx->Leak ? ", with blue, whose route leaks into red and red's into it" : "", harness ? ", node-a sends its datagrams to the harness tunnel endpoint" : "");
 	return TpTestCheck(ctx, applied && linked, what, "applied %u, the Generations %I64u and %I64u and the session on both %u", (UINT)applied,
 		ctx->Nodes[TPTEST_A].Generation, ctx->Nodes[TPTEST_B].Generation, (UINT)linked);
 }
@@ -595,20 +678,26 @@ static UINT64 TpTestRecorded(TPTEST_NODE *t)
 	return recorded;
 }
 
-// Send the packet of the case from node-a's host, once NODE_TRACE_INTERVAL ms passed since the one before, so that node-a
-// traces it when the trace of the Network is on there. Whether it went.
-static bool TpTestSend(TPTEST_CTX *ctx, UCHAR *packet, UINT port)
+// Send the packet of the case from node-a's host in red to the address dst, once NODE_TRACE_INTERVAL ms passed since the
+// one before, so that node-a traces it when the trace of the Network is on there. Whether it went.
+static bool TpTestSendTo(TPTEST_CTX *ctx, UCHAR *packet, UINT port, char *dst)
 {
 	TPTEST_NODE *a = &ctx->Nodes[TPTEST_A];
 
 	SleepThread(NODE_TRACE_INTERVAL + 50);
-	TpTestPacket(packet, ctx->NextPort++, port);
+	TpTestPacket(packet, ctx->NextPort++, port, dst);
 
 	NodeReaderOnline(a->Node, &a->Reader);
 	bool sent = NodeOverlayInput(a->Node, TPTEST_VRF, packet, TPTEST_SIZE);
 	NodeReaderOffline(&a->Reader);
 
 	return sent;
+}
+
+// ... to node-b's address in red
+static bool TpTestSend(TPTEST_CTX *ctx, UCHAR *packet, UINT port)
+{
+	return TpTestSendTo(ctx, packet, port, tptest_addrs[TPTEST_B]);
 }
 
 //
@@ -772,6 +861,187 @@ static void TpTestOff(TPTEST_CTX *ctx)
 	Free(sa);
 }
 
+// The datagram of Geneve on the VNI of red that node-a would send node-b with packet, behind its Ethernet header, and the
+// trace option of trace, after the option of the source group guest of node-a when group is set, into buf: its size
+static UINT TpTestDatagram(UCHAR *buf, const UCHAR *packet, const VXLAN_TRACE *trace, bool group)
+{
+	UINT header = GENEVE_HEADER_SIZE;
+
+	VxlanWriteGeneve(buf, TPTEST_VNI);
+	if (group)
+	{
+		VxlanWriteGroupOption(buf + header, TPTEST_GUEST, TPTEST_GUEST_TAGS, 1);
+		header += GENEVE_GROUP_OPTION;
+	}
+	VxlanWriteTraceOption(buf + header, trace);
+	header += GENEVE_TRACE_OPTION;
+	buf[0] = (UCHAR)((header - GENEVE_HEADER_SIZE) / 4);
+
+	Copy(buf + header, tptest_mac, 6);
+	Copy(buf + header + 6, tptest_mac, 6);
+	WRITE_USHORT(buf + header + 12, MAC_PROTO_IPV4);
+	Copy(buf + header + NODE_LINK_ETHER, packet, TPTEST_SIZE);
+
+	return header + NODE_LINK_ETHER + TPTEST_SIZE;
+}
+
+// Send the datagram of size bytes from the harness tunnel endpoint, whose address, 127.0.0.1, is the one of node-a's, to
+// the UDP port port of that address: whether it went
+static bool TpTestSendDatagram(TPTEST_CTX *ctx, USHORT port, const UCHAR *datagram, UINT size)
+{
+	struct sockaddr_in sa;
+
+	Zero(&sa, sizeof(sa));
+	sa.sin_family = AF_INET;
+	sa.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+	sa.sin_port = htons(port);
+
+	return (sendto(ctx->Vtep, (const char *)datagram, (int)size, 0, (struct sockaddr *)&sa, sizeof(sa)) == (int)size);
+}
+
+// A datagram of Geneve on the VNI of red to node-b from the harness tunnel endpoint, whose address is the one of node-a's,
+// as anyone can send who can send from that address, in the tag mode of red that the test holds, with the source group
+// guest in the tag mode trusted-underlay: the packet of node-a's address to node-b's on port 9000, which node-b's policy
+// allows, and a trace option that names another ingress node than node-a, the peer that node-b takes the datagram from;
+// then the same with node-a as its ingress node. Node-b delivers both packets, as it takes any datagram of that address,
+// records nothing of the first, as no node but its ingress node sends a trace option, and records the second
+// (SDN-89-R1, #630).
+static void TpTestStranger(TPTEST_CTX *ctx)
+{
+	TPTEST_NODE *a = &ctx->Nodes[TPTEST_A];
+	TPTEST_NODE *b = &ctx->Nodes[TPTEST_B];
+	bool trusted = (ctx->TagMode == CONTROL_TAG_MODE_TRUSTED);
+	char what[MAX_SIZE * 2];
+
+	if (TpTestSwitch(ctx, CONTROL_LINK_GENEVE, true, true, false) == false)
+	{
+		return;
+	}
+
+	for (UINT own = 0;own < 2;own++)
+	{
+		UCHAR packet[TPTEST_SIZE];
+		UCHAR datagram[GENEVE_HEADER_SIZE + GENEVE_GROUP_OPTION + GENEVE_TRACE_OPTION + NODE_LINK_ETHER + TPTEST_SIZE];
+		VXLAN_TRACE trace;
+		CONTROL_TRACE r;
+		bool same = false;
+
+		Zero(&trace, sizeof(trace));
+		trace.Traced = true;
+		trace.Id = TPTEST_STRANGER_ID + own;
+		Copy(trace.Ingress, own != 0 ? a->Key.Public : tptest_stranger, VXLAN_TRACE_INGRESS);
+		TpTestPacket(packet, ctx->NextPort++, TPTEST_ALLOWED, tptest_addrs[TPTEST_B]);
+		UINT size = TpTestDatagram(datagram, packet, &trace, trusted);
+
+		UINT64 recorded = TpTestRecorded(b);
+		LONG arrivals = InterlockedCompareExchange(&b->Arrivals, 0, 0);
+		bool sent = TpTestSendDatagram(ctx, b->GenevePort, datagram, size);
+		bool arrived = sent && TpTestArrived(b, arrivals + 1, TPTEST_BOUND);
+		AcquireSRWLockShared(&b->Lock);
+		{
+			same = (arrived && b->LastSize == TPTEST_SIZE && Cmp(b->Last, packet, TPTEST_SIZE) == 0);
+		}
+		ReleaseSRWLockShared(&b->Lock);
+
+		// A node records a traced packet before it hands it to the host, so node-b made the record by now if it made one
+		Zero(&r, sizeof(r));
+		bool records = (own != 0 ? (TpTestRecordOf(b, trace.Id, &r, TPTEST_BOUND) && Cmp(r.Ingress, a->Key.Public, CONTROL_TRACE_INGRESS) == 0 && r.Allowed) :
+			TpTestRecorded(b) == recorded);
+
+		Format(what, sizeof(what), "  geneve, the tag mode %s: a datagram of node-a's address whose trace names %s as its ingress node is delivered, and node-b records %s",
+			trusted ? "trusted-underlay" : "off", own != 0 ? "node-a" : "another node than node-a", own != 0 ? "it" : "nothing");
+		TpTestCheck(ctx, sent && arrived && same && records, what, "sent %u, arrived %u, as it was sent %u, node-b recorded %I64u more (trace 0x%08x, allowed %u)",
+			(UINT)sent, (UINT)arrived, (UINT)same, TpTestRecorded(b) - recorded, r.Id, (UINT)r.Allowed);
+	}
+}
+
+// A packet of node-a's host in red to node-b's address in blue, on the route that blue leaks into red, over the links of
+// kind, with the trace of the Networks of both VRFs on at both nodes: it arrives at node-b's host in blue, and neither node
+// traces or records it, as a packet on a leaked route goes without the trace option, in the Ranz frame and in Geneve
+// (SDN-89-R1, #630). Node-b would record it if the option came with it: its trace of blue holds the destination, and
+// node-a, which sends it, would be its ingress node.
+static void TpTestLeak(TPTEST_CTX *ctx, UINT kind)
+{
+	TPTEST_NODE *a = &ctx->Nodes[TPTEST_A];
+	TPTEST_NODE *b = &ctx->Nodes[TPTEST_B];
+	UCHAR packet[TPTEST_SIZE];
+	NODE_TRACE_STATUS *sa = ZeroMalloc(sizeof(NODE_TRACE_STATUS));
+	NODE_TRACE_STATUS *sb = ZeroMalloc(sizeof(NODE_TRACE_STATUS));
+	char what[MAX_SIZE * 2];
+
+	if (TpTestSwitch(ctx, kind, true, true, false))
+	{
+		bool same = false;
+
+		NodeTraceGetStatus(a->Node, sa);
+		UINT64 traced = sa->Traced;
+		UINT64 recorded_a = sa->Recorded;
+		NodeTraceGetStatus(b->Node, sb);
+		UINT64 recorded_b = sb->Recorded;
+		LONG arrivals = InterlockedCompareExchange(&b->Arrivals, 0, 0);
+
+		bool sent = TpTestSendTo(ctx, packet, TPTEST_ALLOWED, tptest_blue_addrs[TPTEST_B]);
+		bool arrived = sent && TpTestArrived(b, arrivals + 1, TPTEST_BOUND);
+		AcquireSRWLockShared(&b->Lock);
+		{
+			same = (arrived && b->LastSize == TPTEST_SIZE && b->LastVrf == TPTEST_BLUE && Cmp(b->Last, packet, TPTEST_SIZE) == 0);
+		}
+		ReleaseSRWLockShared(&b->Lock);
+		NodeTraceGetStatus(a->Node, sa);
+		NodeTraceGetStatus(b->Node, sb);
+
+		Format(what, sizeof(what), "  %s: a packet of node-a's host in red on the route that blue leaks arrives at node-b in blue, and neither node traces or records it",
+			tptest_kind_names[kind]);
+		TpTestCheck(ctx, sent && arrived && same && sa->Traced == traced && sa->Recorded == recorded_a && sb->Recorded == recorded_b, what,
+			"sent %u, arrived %u, as it was sent in blue %u, node-a traced %I64u and recorded %I64u more, node-b recorded %I64u more", (UINT)sent, (UINT)arrived,
+			(UINT)same, sa->Traced - traced, sa->Recorded - recorded_a, sb->Recorded - recorded_b);
+	}
+
+	Free(sb);
+	Free(sa);
+}
+
+// The datagram of node-a of a packet on the route that blue leaks into red, over the links of kind geneve, to the harness
+// tunnel endpoint in place of node-b's, with the trace of the Networks of both VRFs on: it goes on the VNI of blue without
+// the trace option or any other, and node-a traces and records nothing (SDN-89-R1, #630)
+static void TpTestLeakWire(TPTEST_CTX *ctx)
+{
+	TPTEST_NODE *a = &ctx->Nodes[TPTEST_A];
+	UINT want = GENEVE_HEADER_SIZE + NODE_LINK_ETHER + TPTEST_SIZE;
+	UCHAR packet[TPTEST_SIZE];
+	UCHAR datagram[VXLAN_MAX_DATAGRAM];
+	NODE_TRACE_STATUS *sa = ZeroMalloc(sizeof(NODE_TRACE_STATUS));
+	char what[MAX_SIZE * 2];
+
+	if (TpTestSwitch(ctx, CONTROL_LINK_GENEVE, true, true, true))
+	{
+		// What the harness tunnel endpoint holds from before goes
+		while (TpTestTake(ctx, datagram, sizeof(datagram), 0) != 0)
+		{
+		}
+
+		NodeTraceGetStatus(a->Node, sa);
+		UINT64 traced = sa->Traced;
+		UINT64 recorded = sa->Recorded;
+		bool sent = TpTestSendTo(ctx, packet, TPTEST_ALLOWED, tptest_blue_addrs[TPTEST_B]);
+		UINT size = (sent ? TpTestTake(ctx, datagram, sizeof(datagram), TPTEST_BOUND) : 0);
+		NodeTraceGetStatus(a->Node, sa);
+
+		UINT vni = (size >= GENEVE_HEADER_SIZE ? ((UINT)datagram[4] << 16) | ((UINT)datagram[5] << 8) | datagram[6] : 0);
+		UINT options = (size >= GENEVE_HEADER_SIZE ? (datagram[0] & 0x3F) * 4 : 0);
+		bool frame = (size == want && options == 0 && Cmp(datagram + GENEVE_HEADER_SIZE, tptest_mac, 6) == 0 &&
+			Cmp(datagram + GENEVE_HEADER_SIZE + NODE_LINK_ETHER, packet, TPTEST_SIZE) == 0);
+
+		Format(what, sizeof(what), "  geneve: the datagram of a packet on the route that blue leaks into red goes on the VNI of blue without the trace option, %u bytes, and node-a traces and records nothing",
+			want);
+		TpTestCheck(ctx, sent && frame && vni == TPTEST_BLUE_VNI && sa->Traced == traced && sa->Recorded == recorded, what,
+			"sent %u, a datagram of %u bytes on VNI %u with %u bytes of options, the frame as it was sent %u, node-a traced %I64u and recorded %I64u more", (UINT)sent, size,
+			vni, options, (UINT)frame, sa->Traced - traced, sa->Recorded - recorded);
+	}
+
+	Free(sa);
+}
+
 // The nodes, their overlays and the harness tunnel endpoint, and the first Generation of both: noise, the trace on at both
 static bool TpTestOpen(TPTEST_CTX *ctx, TRANSPORT *loopback)
 {
@@ -893,10 +1163,38 @@ static void TpTestRun(TPTEST_CTX *ctx)
 		Print("[the datagrams of node-a on the wire, the link of red is %s]\n", tptest_kind_names[kinds[k]]);
 		TpTestWire(ctx, kinds[k]);
 	}
+
+	// A datagram of geneve from the address of node-a's tunnel endpoint whose trace names another ingress node than node-a,
+	// in the tag mode trusted-underlay of red and in the tag mode off (SDN-89-R1, #630)
+	UINT modes[2] = {CONTROL_TAG_MODE_TRUSTED, CONTROL_TAG_MODE_OFF};
+	for (UINT m = 0;m < 2;m++)
+	{
+		Print("[a datagram of geneve from the address of node-a whose trace names another ingress node, the tag mode of red %s]\n",
+			modes[m] == CONTROL_TAG_MODE_TRUSTED ? "trusted-underlay" : "off");
+		ctx->TagMode = modes[m];
+		TpTestStranger(ctx);
+	}
+	ctx->TagMode = CONTROL_TAG_MODE_TRUSTED;
+
+	// A packet on the route that blue leaks into red, over noise and over geneve, and its datagram of geneve on the wire
+	// (SDN-89-R1, #630)
+	ctx->Leak = true;
+	for (UINT k = 0;k < 3;k++)
+	{
+		if (kinds[k] == CONTROL_LINK_VXLAN)
+		{
+			continue;
+		}
+		Print("[a packet of node-a's host on the route that blue leaks into red, the links of red and blue are %s]\n", tptest_kind_names[kinds[k]]);
+		TpTestLeak(ctx, kinds[k]);
+	}
+	Print("[the datagram of node-a on the wire on the route that blue leaks into red, the links of red and blue are geneve]\n");
+	TpTestLeakWire(ctx);
+	ctx->Leak = false;
 }
 
 // tracepath: a traced packet through two nodes
-RANZ_TEST_TAGS("tracepath", tracepath_test, "core", "Trace path (SDN-89): a packet of a Network whose trace is on crosses two nodes over noise, vxlan and geneve, and each records the trace ID, the ingress node, the group that the packet carried and the verdict of its policy; over vxlan the trace ends at the ingress node; a node whose trace is off forwards the packet with the option; with the trace off no option goes and a datagram keeps its size.");
+RANZ_TEST_TAGS("tracepath", tracepath_test, "core", "Trace path (SDN-89): a packet of a Network whose trace is on crosses two nodes over noise, vxlan and geneve, and each records the trace ID, the ingress node, the group that the packet carried and the verdict of its policy; over vxlan the trace ends at the ingress node; a node whose trace is off forwards the packet with the option; with the trace off no option goes and a datagram keeps its size. A trace that names another ingress node than the peer that sent it records nothing, and a packet on a leaked route is traced by no node (SDN-89-R1).");
 void tracepath_test(UINT num, char **arg)
 {
 	TPTEST_CTX *ctx = ZeroMalloc(sizeof(TPTEST_CTX));
@@ -908,6 +1206,7 @@ void tracepath_test(UINT num, char **arg)
 
 	ctx->Vtep = INVALID_SOCKET;
 	ctx->NextPort = TPTEST_FIRST_PORT;
+	ctx->TagMode = CONTROL_TAG_MODE_TRUSTED;
 
 	if (TpTestOpen(ctx, loopback))
 	{
