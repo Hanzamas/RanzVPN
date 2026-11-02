@@ -419,6 +419,8 @@ void FreeNode(NODE *n) {
 	Free(n->Peers);
 	FreeNodeThrottle(n->LoginThrottle);
 	ControlFreeEvpn(n->EvpnReport);
+	// The keys that the control stream reported, once no control stream runs (NodeMimicState.c; CORE-P2-7, #424)
+	ControlFreeKeys(n->MimicKeys);
 
 	DeleteLock(n->TableLock);
 	DeleteLock(n->Lock);

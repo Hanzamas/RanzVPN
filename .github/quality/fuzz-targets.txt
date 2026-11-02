@@ -122,6 +122,10 @@ src/Core  ControlCopyPeerings  fuzz_control  via ControlInput
 # does it, and the seeds operation-*.bin of fuzz_control hold Operations of every kind after a state with L2 and L3 Networks;
 # no parser word in the name, listed as the reader of the controller's bytes that it is
 src/Core  ControlTakeOperation  fuzz_control  via ControlInput
+# The mimic part of a state (CORE-P2-7 #424): ControlInput hands the NodeConfig of an Update to ControlCopyMimic, which copies
+# the settings of the mimic server of the node and its links, and the owner of fuzz_control checks what it took; no parser word
+# in the name, listed as the reader of the controller's bytes that it is
+src/Core  ControlCopyMimic  fuzz_control  via ControlInput
 
 # The Node and the configuration store of Cedar (CORE-F5)
 src/Cedar  NodeParseRoles       exempt  the role names of the node's own configuration, split by ParseToken and looked up in a fixed table
