@@ -21,7 +21,8 @@
 //   ["198.18.81.1/24", "fd81:a::1/64"], "nat": true}]}. An L3 Network that it does not name, or names with a gateway that
 //   is not valid, stays down, and the node log says why. The KM-TEST adapter of a routed network has the MAC address of the
 //   node's static key and the name of the Network (NodeRoutedMac), so the node finds it again at its next start; the
-//   gateway addresses go when the role stops, the adapter stays.
+//   gateway addresses go when the role stops, the adapter stays. When the health check of the port resets the adapter, its
+//   device restarts without the gateway addresses, which the routed network puts on again with the forwarding.
 // arm64 has no backend for the port (NodeL2Offered), so no routed network comes up there.
 
 #include "Node.h"
@@ -684,6 +685,29 @@ static bool NodeRoutedAddresses(NODE_ROUTED *r) {
 	return true;
 }
 
+// Reset the KM-TEST adapter of a routed network (the NODE_L2_RESET_PROC of its port), on the injector thread of the port
+// after NODE_L2_RESETS failed attaches: its device restarts, which takes the gateway addresses off its interfaces, so the
+// forwarding and the gateway addresses go on again. False when the adapter does not come up again; the node log says
+// whether the network holds its addresses again.
+static bool NodeRoutedReset(void *param, UINT *if_index) {
+	NODE_ROUTED *r = (NODE_ROUTED *)param;
+	NET_LUID luid;
+
+	if (r == NULL || NodeKmTestReset(r->KmTest, if_index) == false)
+		return false;
+
+	bool ok = (ConvertInterfaceIndexToLuid(NodeKmTestIndex(r->KmTest), &luid) == NO_ERROR);
+	if (ok) {
+		r->IfIndex = NodeKmTestIndex(r->KmTest);
+		r->Luid = luid.Value;
+		ok = (NodeRoutedSetForwarding(r, true) && NodeRoutedAddresses(r));
+	}
+
+	NodeLog(r->Node, "Routed network %s: its KM-TEST adapter reset, interface %u, %s", r->Name, r->IfIndex, ok ? "forwarding and gateway addresses on again" : "without its forwarding or gateway addresses");
+
+	return true;
+}
+
 // Bring up a routed network on the node n: its KM-TEST adapter, found again by its MAC address or created, whose
 // interfaces forward and hold its gateway addresses, and the L2 adapter on it, the port. NULL when one of them does not
 // come up; the node log says which.
@@ -723,8 +747,8 @@ NODE_ROUTED *NodeRoutedNew(NODE *n, const NODE_ROUTED_CONFIG *cfg) {
 	l2.IfIndex = r->IfIndex;
 	l2.Proc = NodeRoutedFromHost;
 	l2.Param = r;
-	l2.Reset = NodeKmTestReset;
-	l2.ResetParam = r->KmTest;
+	l2.Reset = NodeRoutedReset;
+	l2.ResetParam = r;
 	l2.Backends = cfg->Backends;
 	l2.NumBackends = cfg->NumBackends;
 	r->L2 = NodeL2New(n, &l2);
