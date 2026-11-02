@@ -46,8 +46,10 @@ var (
 	FullScale = Scale{Nodes: 10000, VRFs: 1000, Routes: 100000, Runs: 1, Batches: 5}
 	// ReducedScale is a tenth of the scale target, the same scenario for the checks of a pull request: the change of every
 	// VRF runs three times, and so does the enrolment, for the performance gate to judge the best of each. The enrolment is
-	// the phase that a runner makes slow now and then (every Hello and every Ack of it is a store write, one at a time, and
-	// the sync of a shared disk varies), which a single enrolment of a run cannot tell from a slowdown of the controller.
+	// the phase that a runner makes slow now and then: the controller writes to its store for every Hello and every Ack of it,
+	// one write at a time, so the disk of the runner sets its speed, and on the shared runners of CI the same enrolment took
+	// 2.8 s to 10.7 s on the disk and 2.6 s to 3.1 s on a RAM disk (the stress of CI-FLAKE-9, #616). One enrolment of a run
+	// cannot tell a slow disk from a slowdown of the controller; the best of three of them can.
 	ReducedScale = Scale{Nodes: 1000, VRFs: 100, Routes: 10000, Runs: 3, Batches: 1, Enrolments: 3}
 	// SmallScale is the scenario for the tests of a pull request that run with the race detector. It enrols twice, for the
 	// test of the run that enrols more than once.

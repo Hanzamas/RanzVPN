@@ -1,9 +1,11 @@
 # A temporary stress of CI-FLAKE-9 (#616), taken out again by the last commit of its pull request. It runs the scale scenario of
-# ranz.yml at a tenth of the target again and again on each of six runners, in turn on the disk of the runner and on a RAM disk,
-# with a probe of the sync latency of that disk before and after each run, to show how much of the spread of the enrolment
-# belongs to the runner, how much to the run, and what the disk has to do with it. It runs when this file changes in a push.
+# ranz.yml at a tenth of the target again and again on each of eight runners, with a probe of the sync latency of the disk before
+# each run, to show how the best of the three enrolments of a run is spread between runs and between runners. It runs when this
+# file changes in a push.
 #
-# Round 1: the scenario of integration (one enrolment in a run).
+# Round 1 (head 6ed6369c, the scenario of integration with one enrolment in a run, on six runners, in turn on the disk and on a
+# RAM disk): the enrolment took 2.8 s to 10.7 s on the disk and 2.6 s to 3.1 s on the RAM disk.
+# Round 2: the scenario of the head, three enrolments in a run, four runs on the disk of each of eight runners.
 
 name: scale-stress-616
 
@@ -29,7 +31,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        n: [1, 2, 3, 4, 5, 6]
+        n: [1, 2, 3, 4, 5, 6, 7, 8]
     steps:
     - uses: actions/checkout@v4
     - uses: actions/setup-go@v5
@@ -55,9 +57,7 @@ jobs:
           echo
           uname -r
           findmnt -T "$RUNNER_TEMP" || true
-          findmnt -T /dev/shm || true
           lsblk || true
-          df -h "$RUNNER_TEMP" /dev/shm || true
         } > stress-out/machine.txt 2>&1
         grep -E 'Model name|^CPU\(s\)|Hypervisor' stress-out/machine.txt || true
         findmnt -T "$RUNNER_TEMP" || true
@@ -90,15 +90,12 @@ jobs:
         print('fsync in %s: n=%d mean=%.2f p50=%.2f p90=%.2f p99=%.2f max=%.2f ms' % (d, n, sum(lat) / n, lat[n // 2], lat[int(n * 0.9)], lat[int(n * 0.99)], lat[-1]))
         PY
         cd controller/internal/controller
-        for i in 1 2 3 4 5 6; do
-          if [ $((i % 2)) -eq 1 ]; then mode=disk; tmp=/tmp; else mode=shm; tmp=/dev/shm; fi
-          echo "::group::run $i on $mode"
+        for i in 1 2 3 4; do
+          echo "::group::run $i"
           date -u +%H:%M:%S
-          python3 "$RUNNER_TEMP/probe.py" "$tmp" | sed "s/^/run $i before: /" | tee -a "$out/probe.txt"
-          TMPDIR="$tmp" RANZ_SCALE=pr RANZ_SCALE_OUT="$out/run$i-$mode" "$RUNNER_TEMP/scale.test" -test.run '^TestScale$' -test.v -test.timeout 10m > "$out/run$i-$mode.log" 2>&1 || echo "run $i failed"
-          python3 "$RUNNER_TEMP/probe.py" "$tmp" | sed "s/^/run $i after: /" | tee -a "$out/probe.txt"
-          grep -E 'enrolled|declared|FAIL|panic' "$out/run$i-$mode.log" || true
-          grep -hE 'scale_(enrol|setup|change_apply)' "$out/run$i-$mode/scale-bench.txt" || true
+          python3 "$RUNNER_TEMP/probe.py" /tmp | sed "s/^/run $i before: /" | tee -a "$out/probe.txt"
+          RANZ_SCALE=pr RANZ_SCALE_OUT="$out/run$i" "$RUNNER_TEMP/scale.test" -test.run '^TestScale$' -test.v -test.timeout 10m > "$out/run$i.log" 2>&1 || echo "run $i failed"
+          grep -E 'enrolled|FAIL|panic' "$out/run$i.log" || true
           echo "::endgroup::"
         done
     - uses: actions/upload-artifact@v4
