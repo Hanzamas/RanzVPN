@@ -556,6 +556,8 @@ static void ControlSetCaps(CONTROL_CLIENT *c, ranz_control_v1_Hello *hello) {
 	hello->capabilities.egress_tier = (ranz_control_v1_EgressTier)caps.EgressTier;
 	// The gateway of a Stretch (SDN-63, #290)
 	hello->capabilities.evpn = caps.Evpn;
+	// The TCP splitting of the L3 Networks (CORE-P2-3, #94)
+	hello->capabilities.tcp_split = caps.TcpSplit;
 	// The live operations, which the client does when its owner gives it their procedure (ControlOperation.c; SDN-50-N, #492)
 	hello->capabilities.operations = (c->Config.OperationProc != NULL);
 }
