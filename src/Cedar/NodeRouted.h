@@ -10,8 +10,8 @@
 #include "Node.h"
 #include "NodeL2.h"
 
-// The gateway addresses and the NAT of the routed networks in the configuration store: one JSON object (NodeRoutedParseSetting).
-// An L3 Network that it does not name stays down.
+// The gateway addresses of the routed networks in the configuration store, and whether they go through NAT: one JSON object
+// (NodeRoutedParseSetting). An L3 Network that it does not name stays down.
 #define NODE_SETTING_ROUTED "Routed"
 
 #define NODE_ROUTED_MAX_GATEWAYS 4     // Gateway addresses of a routed network at most
@@ -62,7 +62,7 @@ typedef struct NODE_ROUTED_CONFIG {
 	UCHAR Key[PEER_KEY_SIZE];                               // The static key of the node, which the MAC address of its adapter derives from
 	UINT NumGateways;                                       // Its gateway addresses ...
 	NODE_ROUTED_GATEWAY Gateways[NODE_ROUTED_MAX_GATEWAYS]; // ...
-	bool Nat;                                               // Its packets to the internet go through the NAT network of WinNAT of the node
+	bool Nat;                                               // The routed networks go to the internet through the NAT network of WinNAT of the node
 	const NODE_L2_BACKEND *const *Backends;                 // The backends of its L2 adapter to try, NULL for XDP, then SeLow ...
 	UINT NumBackends;                                       // ... and their number
 } NODE_ROUTED_CONFIG;
@@ -74,7 +74,7 @@ typedef struct NODE_ROUTED_STATUS {
 	UCHAR MemberMac[6]; // ... and of the member side of its port
 	bool Forwarding4;   // The kernel forwards what its IPv4 interface receives, as GetIpInterfaceEntry reads it back ...
 	bool Forwarding6;   // ... and its IPv6 interface
-	bool Nat;           // It goes through the NAT network of WinNAT of the node
+	bool Nat;           // The routed networks go through the NAT network of WinNAT of the node
 	char Backend[16];   // The backend of its L2 adapter
 	UINT64 FromMembers; // IP packets of the members that went into the host
 	UINT64 ToMembers;   // IP packets that the kernel routed to the members, which went to the owner of the member side

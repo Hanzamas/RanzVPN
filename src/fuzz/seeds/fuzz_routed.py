@@ -95,8 +95,9 @@ def make_seeds(h):
     packet('header_short.bin', bytes(short_header))
     packet('short.bin', h.ipv4(member4, other4, 17, b'')[:19])
 
-    # The Routed setting: lab with an IPv4 and an IPv6 gateway and NAT; lab named in capitals; only another network; a /31; a
-    # loopback, a link-local and a multicast gateway; a gateway without its prefix length; five gateways; no array; no JSON
+    # The Routed setting: lab with an IPv4 and an IPv6 gateway, and a nat in the network, where the setting does not read it
+    # (it reads nat at its top); lab named in capitals; only another network; a /31; a loopback, a link-local and a multicast
+    # gateway; a gateway without its prefix length; five gateways; no array; no JSON
     setting('lab.bin', '{"networks": [{"name": "lab", "gateways": ["198.18.81.1/24", "fd81:a::1/64"], "nat": true}]}')
     setting('lab_capitals.bin', '{"networks": [{"name": "LAB", "gateways": ["10.81.0.1/16"]}]}')
     setting('other.bin', '{"networks": [{"name": "other", "gateways": ["198.18.82.1/24"]}]}')

@@ -12,13 +12,16 @@
 //   the network with the MAC address of the member side, so the members of the network are all behind it. It never answers
 //   for a gateway address, nor a solicitation of the duplicate address detection of the host, and the interfaces of the
 //   port make none (DadTransmits 0): no one but the node is on the segment.
-// - The NAT: the routed networks whose setting asks for it reach the internet through the NAT network of WinNAT of the
-//   node (NODE_EGRESS_NETNAT_NAME; ADR-0025 decision 6), over the supernet of their IPv4 prefixes. WinNAT holds one NAT
-//   network per host: the routed networks make it only where none exists, never touch one of another program, and leave
-//   alone the one of the node that the Egress of the overlay holds over its VRFs (NodeEgressNat.c), whose prefix differs;
-//   those routed networks then have no NAT, and the node log says so. They take out what they made when the role stops.
-// - The setting: Routed in the configuration store, one JSON object: {"networks": [{"name": "lab", "gateways":
-//   ["198.18.81.1/24", "fd81:a::1/64"], "nat": true}]}. An L3 Network that it does not name, or names with a gateway that
+// - The NAT: when the setting asks for it, the routed networks reach the internet through the NAT network of WinNAT of the
+//   node (NODE_EGRESS_NETNAT_NAME; ADR-0025 decision 6), over the supernet of the IPv4 prefixes of all of them. WinNAT
+//   translates what leaves its internal prefix by any interface outside it, the adapter of another routed network as well
+//   as the uplink: so the supernet holds every routed network, the kernel routes between them untranslated, and each of
+//   them reaches the internet translated. WinNAT holds one NAT network per host: the routed networks make it only where
+//   none exists, never touch one of another program, and leave alone the one of the node that the Egress of the overlay
+//   holds over its VRFs (NodeEgressNat.c), whose prefix differs; the routed networks then have no NAT, and the node log
+//   says so. They take out what they made when the role stops.
+// - The setting: Routed in the configuration store, one JSON object: {"nat": true, "networks": [{"name": "lab",
+//   "gateways": ["198.18.81.1/24", "fd81:a::1/64"]}]}. An L3 Network that it does not name, or names with a gateway that
 //   is not valid, stays down, and the node log says why. The KM-TEST adapter of a routed network has the MAC address of the
 //   node's static key and the name of the Network (NodeRoutedMac), so the node finds it again at its next start; the
 //   gateway addresses go when the role stops, the adapter stays. When the health check of the port resets the adapter, its
@@ -55,7 +58,7 @@
 #define NODE_ROUTED_NA        136
 // Bytes of the shortest frame that the port hands the host: the shortest Ethernet frame without its FCS
 #define NODE_ROUTED_MIN_FRAME 60
-// Routed networks whose IPv4 prefixes the NAT network of WinNAT of the node takes at most
+// IPv4 prefixes of the routed networks that the NAT network of WinNAT of the node takes at most
 #define NODE_ROUTED_MAX_NAT 64
 
 // A routed network
@@ -65,7 +68,7 @@ struct NODE_ROUTED {
 	UINT NumGateways;                                       // Its gateway addresses ...
 	NODE_ROUTED_GATEWAY Gateways[NODE_ROUTED_MAX_GATEWAYS]; // ...
 	bool Made[NODE_ROUTED_MAX_GATEWAYS];                    // ... and the ones that its interface holds, which go when it stops
-	bool Nat;                                               // It goes through the NAT network of WinNAT of the node
+	bool Nat;                                               // The routed networks go through the NAT network of WinNAT of the node
 	UCHAR Mac[6];                                           // The MAC address of its KM-TEST adapter ...
 	UCHAR MemberMac[6];                                     // ... and of the member side of the port
 	NODE_KMTEST *KmTest;                                    // The KM-TEST adapter ...
@@ -160,8 +163,8 @@ static bool NodeRoutedParseGateway(const char *str, NODE_ROUTED_GATEWAY *gw) {
 	return NodeRoutedUnicast(gw->Address, gw->Size);
 }
 
-// The gateway addresses and the NAT of the routed network name in the Routed setting json: its gateways into gw
-// (NODE_ROUTED_MAX_GATEWAYS) and *num, and whether it goes through NAT into *nat. False when the setting is no JSON object
+// The gateway addresses of the routed network name in the Routed setting json, into gw (NODE_ROUTED_MAX_GATEWAYS) and *num,
+// and whether the routed networks go through NAT, the nat of the setting, into *nat. False when the setting is no JSON object
 // with an array networks that names the network (without case), or when it gives the network no gateway, more than
 // NODE_ROUTED_MAX_GATEWAYS, or one that is not valid.
 bool NodeRoutedParseSetting(const char *json, const char *name, NODE_ROUTED_GATEWAY *gw, UINT *num, bool *nat) {
@@ -200,7 +203,7 @@ bool NodeRoutedParseSetting(const char *json, const char *name, NODE_ROUTED_GATE
 				(*num)++;
 		}
 
-		*nat = (cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(net, "nat")) != 0);
+		*nat = (cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(root, "nat")) != 0);
 		break;
 	}
 
@@ -869,10 +872,11 @@ void NodeRoutedGetStatus(NODE_ROUTED *r, NODE_ROUTED_STATUS *st) {
 // The routed networks of the server role
 //
 
-// Put the IPv4 prefixes of the routed networks that go through NAT into the NAT network of WinNAT of the node, over their
-// supernet, where no NAT network of WinNAT exists (NodeEgressNat.c). One of another program is never touched, and one of the
-// node over another prefix, which the Egress of the overlay holds, stays as it is: those routed networks then have no NAT,
-// and the node log says why.
+// Put the IPv4 prefixes of the routed networks into the NAT network of WinNAT of the node, over their supernet, when the
+// Routed setting asks for NAT and no NAT network of WinNAT exists (NodeEgressNat.c). The supernet holds every routed
+// network, so the kernel routes between them untranslated: WinNAT translates what leaves its internal prefix by any other
+// interface. One of another program is never touched, and one of the node over another prefix, which the Egress of the
+// overlay holds, stays as it is: the routed networks then have no NAT, and the node log says why.
 static void NodeRoutedNatUp(NODE *n, NODE_ROUTED_SET *set) {
 	NODE_ROUTED_GATEWAY gw[NODE_ROUTED_MAX_NAT];
 	UCHAR super[4];
@@ -880,16 +884,30 @@ static void NodeRoutedNatUp(NODE *n, NODE_ROUTED_SET *set) {
 	wchar_t want[NODE_ROUTED_PREFIX];
 	wchar_t have[NODE_ROUTED_PREFIX];
 	UINT num = 0;
+	bool nat = false;
+	bool all = true;
 
 	for (UINT i = 0; i < LIST_NUM(set->Networks); i++) {
 		NODE_ROUTED *r = LIST_DATA(set->Networks, i);
 
-		for (UINT j = 0; r->Nat && j < r->NumGateways && num < NODE_ROUTED_MAX_NAT; j++)
-			if (r->Gateways[j].Size == 4)
+		nat = (nat || r->Nat);
+		for (UINT j = 0; j < r->NumGateways; j++) {
+			if (r->Gateways[j].Size != 4)
+				continue;
+			if (num < NODE_ROUTED_MAX_NAT)
 				gw[num++] = r->Gateways[j];
+			else
+				all = false;
+		}
 	}
-	if (num == 0)
+	if (nat == false || num == 0)
 		return;
+
+	// A prefix outside the supernet would leave its network translated on its way to the others
+	if (all == false) {
+		NodeLog(n, "Routed networks: no NAT, as they have more IPv4 prefixes than the NAT network of WinNAT of the node takes (%u)", (UINT)NODE_ROUTED_MAX_NAT);
+		return;
+	}
 
 	UINT length = NodeRoutedSupernet(gw, num, super);
 	if (length < NODE_EGRESS_SUPERNET) {

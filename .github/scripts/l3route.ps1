@@ -5,7 +5,7 @@
 # 2. vpntest l3route xdp, as a process of its own with a time limit, with the golden files of the repository (RANZ_GOLDEN_DIR
 #    names the directory of the harness family, whose sibling is the family l3route): the routed networks of the server role,
 #    each on a KM-TEST adapter of its own, the routing of the kernel between them against the golden file
-#    l3route_routing.txt, the forwarding of the kernel, and the NAT of a routed network to an uplink of the test through
+#    l3route_routing.txt, the forwarding of the kernel, and the NAT of the routed networks to an uplink of the test through
 #    WinNAT against l3route_nat.txt. The run passes when it prints L3ROUTE TEST OK, no leak and L3ROUTE GOLDEN MODE compare:
 #    a run that recorded golden files in place of comparing them fails, as vpntest.ps1 fails one.
 # 3. The NAT networks of WinNAT and the KM-TEST adapters of the runner before and after, as the tools of Windows show them: the

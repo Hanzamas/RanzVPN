@@ -7,8 +7,8 @@
 // XDP (.github/scripts/l3route.ps1); the smoke loop leaves it out (.github/quality/smoke-exclude.txt). Its argument is the
 // backend that the host must give: "xdp" (the default) or "selow".
 // - The server role: a node whose configuration store holds the L2 Network lan and the L3 Networks lab-a, lab-b, lab-c
-//   (offline) and lab-d, and the Routed setting with the gateways of lab-a (198.18.81.1/24 and fd81:a::1/64, with NAT) and
-//   lab-b (198.18.82.1/24 and fd81:b::1/64), brings lab-a and lab-b up, each on a KM-TEST adapter of its own whose
+//   (offline) and lab-d, and the Routed setting with the gateways of lab-a (198.18.81.1/24 and fd81:a::1/64) and lab-b
+//   (198.18.82.1/24 and fd81:b::1/64), and NAT, brings lab-a and lab-b up, each on a KM-TEST adapter of its own whose
 //   interfaces hold its gateway addresses and forward IPv4 and IPv6, as GetIpInterfaceEntry reads them back. lab-c, which
 //   is offline, and lab-d, which the setting does not name, stay down.
 // - Routing through the Windows IP stack (golden family l3route, l3route_routing.txt): the test plays the members of the
@@ -16,18 +16,19 @@
 //   IPv6 from lab-a to lab-b reach the member of the other network as a router forwards them: the TTL or the hop limit one
 //   less, the IPv4 header checksum made anew and every other byte as it was. A packet from an address of another network is
 //   refused by the port. The oracle of the slim fork has no routing between its Hubs since its Layer 3 switch went (#26),
-//   so the golden file is the reference of the routing.
+//   so the golden file is the reference of the routing. The NAT network of WinNAT of the node is up meanwhile, so the
+//   routing proves that WinNAT leaves the packets between the routed networks alone. A routed packet that arrives otherwise
+//   than expected has what the member took printed ([INFO]).
 // - The kernel forwards, the node does not: with the forwarding of the IPv4 interface of lab-a off, a packet of lab-a to
 //   lab-b arrives nowhere, and with it on again it arrives; the forwarded datagrams that the IPv4 and IPv6 stacks of the
 //   host count (GetIpStatisticsEx) grow by the packets that went across at least; the port of each network took from its
 //   members only what they sent and handed them only what the kernel routed to them.
 // - The NAT to the internet (l3route_nat.txt): a KM-TEST adapter of the test with its own L2 adapter, the uplink
-//   (198.18.83.1/24, with a route to 198.18.201.0/24 through a neighbour behind it), stands in for the internet, which a
-//   hosted runner cannot answer from. The NAT network of WinNAT of the node, RanzVPN-Egress, is over 198.18.81.0/24, the
-//   prefix of lab-a. UDP of lab-a to 198.18.201.10 leaves by the uplink from the address of the uplink, translated by
-//   WinNAT, and the answer that the test puts into the uplink reaches the member of lab-a translated back; UDP of lab-b,
-//   which asks for no NAT, leaves by the uplink from its own address. Once the node stopped, the NAT network of the node and
-//   the gateway addresses are gone.
+//   (198.18.90.1/24, with a route to 198.18.201.0/24 through a neighbour behind it), stands in for the internet, which a
+//   hosted runner cannot answer from. The NAT network of WinNAT of the node, RanzVPN-Egress, is over 198.18.80.0/22, the
+//   supernet of lab-a and lab-b, which the uplink is outside of. UDP of lab-a and of lab-b to 198.18.201.10 leaves by the
+//   uplink from the address of the uplink, translated by WinNAT, and the answer that the test puts into the uplink reaches
+//   the member translated back. Once the node stopped, the NAT network of the node and the gateway addresses are gone.
 // Prints "L3ROUTE TEST OK" only when every check passes.
 
 #include "harness_int.h"
@@ -42,6 +43,7 @@
 #include "Mayaqua/Encrypt.h"
 #include "Mayaqua/FileIO.h"
 #include "Mayaqua/Internat.h"
+#include "Mayaqua/IpAddr.h"
 #include "Mayaqua/Kernel.h"
 #include "Mayaqua/Memory.h"
 #include "Mayaqua/Microsoft.h"
@@ -69,10 +71,10 @@
 #define	L3ROUTE_DATA			"ranz l3route"
 #define	L3ROUTE_ANSWER			"ranz l3route answer"
 
-// The Routed setting of the node: lab-a with NAT, lab-b without
+// The Routed setting of the node: lab-a and lab-b, with NAT
 static char *l3route_setting =
-	"{\"networks\": ["
-	"{\"name\": \"lab-a\", \"gateways\": [\"198.18.81.1/24\", \"fd81:a::1/64\"], \"nat\": true},"
+	"{\"nat\": true, \"networks\": ["
+	"{\"name\": \"lab-a\", \"gateways\": [\"198.18.81.1/24\", \"fd81:a::1/64\"]},"
 	"{\"name\": \"lab-b\", \"gateways\": [\"198.18.82.1/24\", \"fd81:b::1/64\"]}"
 	"]}";
 
@@ -82,8 +84,8 @@ static UCHAR l3route_b4[4] = {198, 18, 82, 10};				// The member of lab-b
 static UCHAR l3route_b4_other[4] = {198, 18, 82, 11};		// Another address of lab-b
 static UCHAR l3route_gw_a4[4] = {198, 18, 81, 1};			// The gateway of lab-a
 static UCHAR l3route_gw_b4[4] = {198, 18, 82, 1};			// ... and of lab-b
-static UCHAR l3route_uplink4[4] = {198, 18, 83, 1};			// The uplink
-static UCHAR l3route_neighbour4[4] = {198, 18, 83, 2};		// The neighbour behind the uplink ...
+static UCHAR l3route_uplink4[4] = {198, 18, 90, 1};			// The uplink, outside the supernet of lab-a and lab-b
+static UCHAR l3route_neighbour4[4] = {198, 18, 90, 2};		// The neighbour behind the uplink ...
 static UCHAR l3route_outside_net[4] = {198, 18, 201, 0};	// ... the network behind it ...
 static UCHAR l3route_outside4[4] = {198, 18, 201, 10};		// ... and the address there that answers
 static UCHAR l3route_a6[16] = {0xFD, 0x81, 0, 0x0A, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x10};	// The member of lab-a: fd81:a::10
@@ -331,6 +333,63 @@ static UINT L3Wait(L3ROUTE_MEMBER *m, UINT since, const L3ROUTE_MATCH *want, UCH
 	}
 }
 
+// Print the IP packets that the member name took from the mark since on, for a case that did not go as expected: what the
+// kernel or WinNAT made of its packet shows there
+static void L3Dump(char *name, L3ROUTE_MEMBER *m, UINT since)
+{
+	AcquireSRWLockShared(&m->Lock);
+	for (UINT i = since;i < m->Taken;i++)
+	{
+		UINT slot = i % L3ROUTE_MAX_PACKETS;
+		const UCHAR *p = m->Packets[slot];
+		UINT size = m->Sizes[slot];
+		UINT version = (size != 0 ? (UINT)(p[0] >> 4) : 0);
+		UINT header = 0;
+		UINT proto = 0;
+		UINT ttl = 0;
+		char src[MAX_SIZE];
+		char dst[MAX_SIZE];
+
+		if (m->Taken - i > L3ROUTE_MAX_PACKETS)
+		{
+			continue;
+		}
+
+		if (version == 4 && size >= 20)
+		{
+			header = (UINT)(p[0] & 0x0F) * 4;
+			proto = p[9];
+			ttl = p[8];
+			L3Ip4Str(src, sizeof(src), p + 12);
+			L3Ip4Str(dst, sizeof(dst), p + 16);
+		}
+		else if (version == 6 && size >= 40)
+		{
+			header = 40;
+			proto = p[6];
+			ttl = p[7];
+			IP6AddrToStr(src, sizeof(src), (const IPV6_ADDR *)(p + 8));
+			IP6AddrToStr(dst, sizeof(dst), (const IPV6_ADDR *)(p + 24));
+		}
+		else
+		{
+			Print("  [INFO] %s took %u bytes that are no IP packet\n", name, size);
+			continue;
+		}
+
+		if (proto == 17 && header >= 20 && size >= header + 8)
+		{
+			Print("  [INFO] %s took ipv%u udp %s:%u > %s:%u, ttl %u, %u bytes\n", name, version, src, (UINT)READ_USHORT(p + header), dst,
+				(UINT)READ_USHORT(p + header + 2), ttl, size);
+		}
+		else
+		{
+			Print("  [INFO] %s took ipv%u protocol %u %s > %s, ttl %u, %u bytes\n", name, version, proto, src, dst, ttl, size);
+		}
+	}
+	ReleaseSRWLockShared(&m->Lock);
+}
+
 //
 // The packets
 //
@@ -473,8 +532,9 @@ static bool L3AsRouted(const UCHAR *sent, UINT sent_size, const UCHAR *got, UINT
 #define	L3ROUTE_REFUSED			2			// The port refuses it
 
 // One packet of a member of from: it goes into the host through the port of from, and the member to_member of the network
-// to_name, or the member other of other_name, gets it, or no one does. The line of the case, its description desc and what
-// the test saw, goes into text. True when it went as expect says.
+// to_name, or the member other of other_name, gets it, or no one does. What arrives to the destination of want counts from
+// whatever source, so a packet that a NAT changed on its way arrives too, and changed. The line of the case, its description
+// desc and what the test saw, goes into text. True when it went as expect says.
 static bool L3Case(L3ROUTE_CTX *ctx, BUF *text, char *desc, UINT expect, NODE_ROUTED *from, char *to_name, L3ROUTE_MEMBER *to_member,
 	char *other_name, L3ROUTE_MEMBER *other, const UCHAR *packet, UINT size, const L3ROUTE_MATCH *want)
 {
@@ -482,14 +542,19 @@ static bool L3Case(L3ROUTE_CTX *ctx, BUF *text, char *desc, UINT expect, NODE_RO
 	UCHAR got_other[L3ROUTE_MAX_PACKET];
 	char line[MAX_SIZE * 2];
 	char what[MAX_SIZE * 2];
+	L3ROUTE_MATCH dest;
 	bool ok = false;
 	bool v4 = ((packet[0] >> 4) == 4);
 	UINT mark = L3Mark(to_member);
 	UINT mark_other = L3Mark(other);
 
+	Copy(&dest, want, sizeof(dest));
+	Zero(dest.Src, sizeof(dest.Src));
+	dest.SrcPort = 0;
+
 	bool sent = NodeRoutedSend(from, packet, size);
-	UINT got_size = (sent ? L3Wait(to_member, mark, want, got, expect == L3ROUTE_ROUTED ? L3ROUTE_BOUND : L3ROUTE_QUIET) : 0);
-	UINT other_size = L3Wait(other, mark_other, want, got_other, 0);
+	UINT got_size = (sent ? L3Wait(to_member, mark, &dest, got, expect == L3ROUTE_ROUTED ? L3ROUTE_BOUND : L3ROUTE_QUIET) : 0);
+	UINT other_size = L3Wait(other, mark_other, &dest, got_other, 0);
 
 	if (sent == false)
 	{
@@ -517,6 +582,12 @@ static bool L3Case(L3ROUTE_CTX *ctx, BUF *text, char *desc, UINT expect, NODE_RO
 	L3Line(text, line);
 	Format(what, sizeof(what), "%s, as expected", line);
 	L3Check(ctx, ok, what, "%s", expect == L3ROUTE_ROUTED ? "it did not arrive as a router forwards it" : (expect == L3ROUTE_NOWHERE ? "it arrived" : "the port took it"));
+
+	if (ok == false)
+	{
+		L3Dump(to_name, to_member, mark);
+		L3Dump(other_name, other, mark_other);
+	}
 
 	return ok;
 }
@@ -815,7 +886,7 @@ static bool L3UplinkNew(L3ROUTE_CTX *ctx, L3ROUTE_UPLINK *u, NODE *n)
 	u->Luid = luid.Value;
 
 	StrCpy(error, sizeof(error), "");
-	if (L3Check(ctx, L3UplinkSetUp(u, error, sizeof(error)), "the uplink takes 198.18.83.1/24, the neighbour 198.18.83.2 and the route to 198.18.201.0/24 through it", "%s", error) == false)
+	if (L3Check(ctx, L3UplinkSetUp(u, error, sizeof(error)), "the uplink takes 198.18.90.1/24, the neighbour 198.18.90.2 and the route to 198.18.201.0/24 through it", "%s", error) == false)
 	{
 		return false;
 	}
@@ -938,13 +1009,14 @@ static void L3Nat(L3ROUTE_CTX *ctx, BUF *text, NODE *n, NODE_ROUTED *a, NODE_ROU
 	char prefix_a[MAX_SIZE];
 	char line[MAX_SIZE * 2];
 
-	L3Line(text, "# the uplink (198.18.83.1/24, with a route to 198.18.201.0/24 through the neighbour 198.18.83.2) stands in for the internet; lab-a asks for NAT, lab-b does not");
+	L3Line(text, "# the uplink (198.18.90.1/24, with a route to 198.18.201.0/24 through the neighbour 198.18.90.2) stands in for the internet; the Routed setting asks for NAT");
 
 	bool found = NodeEgressNetNatPrefix(NODE_EGRESS_NETNAT_NAME, prefix, sizeof(prefix));
 	UniToStr(prefix_a, sizeof(prefix_a), prefix);
 	Format(line, sizeof(line), "the NAT network of WinNAT of the node, RanzVPN-Egress: %s", found ? prefix_a : "none");
 	L3Line(text, line);
-	L3Check(ctx, found && StrCmp(prefix_a, "198.18.81.0/24") == 0, "the NAT network of WinNAT of the node, RanzVPN-Egress, is over 198.18.81.0/24, the prefix of lab-a", "%s", found ? prefix_a : "none");
+	L3Check(ctx, found && StrCmp(prefix_a, "198.18.80.0/22") == 0, "the NAT network of WinNAT of the node, RanzVPN-Egress, is over 198.18.80.0/22, the supernet of lab-a and lab-b", "%s",
+		found ? prefix_a : "none");
 
 	Zero(&u, sizeof(u));
 	u.Taken = ZeroMalloc(sizeof(L3ROUTE_MEMBER));
@@ -953,7 +1025,7 @@ static void L3Nat(L3ROUTE_CTX *ctx, BUF *text, NODE *n, NODE_ROUTED *a, NODE_ROU
 	if (L3UplinkNew(ctx, &u, n))
 	{
 		L3NatCase(ctx, text, "lab-a > outside ipv4 udp 198.18.81.10:40011 > 198.18.201.10:7", a, ma, &u, l3route_a4, 40011, true, true);
-		L3NatCase(ctx, text, "lab-b > outside ipv4 udp 198.18.82.10:40012 > 198.18.201.10:7", b, mb, &u, l3route_b4, 40012, false, false);
+		L3NatCase(ctx, text, "lab-b > outside ipv4 udp 198.18.82.10:40012 > 198.18.201.10:7", b, mb, &u, l3route_b4, 40012, true, true);
 	}
 
 	L3UplinkFree(&u);
