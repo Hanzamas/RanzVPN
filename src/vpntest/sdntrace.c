@@ -24,6 +24,7 @@
 
 #include "Cedar/ConfigStore.h"
 #include "Cedar/Node.h"
+#include "Cedar/NodeSourceGroup.h"
 
 #include "Mayaqua/Encrypt.h"
 #include "Mayaqua/FileIO.h"
@@ -60,6 +61,8 @@
 #define	SDNTRACE_RATE_DATA		1200		// The data of a datagram of that stream
 #define	SDNTRACE_RATE_PORT		9821		// Its UDP port, the port of the traffic test of vpncmd and of ranz test throughput
 #define	SDNTRACE_RATE_CHECK		64			// The sender looks at the clock once in this many datagrams
+#define	SDNTRACE_CARRIED		2			// The records of its peer that each node judges by their source group, at least (SDN-87, #386)
+#define	SDNTRACE_AGAIN			10			// The sequence number of the first echo that goes again until they did
 
 // The two nodes: their names in the intent, and the X25519 public keys of their static scalars 1, 2, ... 32 and 33,
 // 34, ... 64, which the controller conformance tests use as well (controller/internal/controller)
@@ -581,6 +584,44 @@ static void SdnTracePing(SDNTRACE_CTX *ctx, SDNTRACE_NODE *a, SDNTRACE_NODE *b, 
 	SdnTraceCheck(ctx, sent && SdnTraceArrived(a, reply, size), what, "sent %u", (UINT)sent);
 }
 
+// Whether each node judged at least SDNTRACE_CARRIED records of its peer by the source group that they carried (SDN-87,
+// #386): both report the Capability tags, so the controller gives each the groups of the other, which the records of a
+// Noise session carry. The Generations that give them can still roll out at the first echoes, whose records a node then
+// judges by the map of address to group, so the echoes go both ways again until the nodes judged enough, within
+// SDNTRACE_ARRIVE. The script reads the same counters in the telemetry of the API.
+static bool SdnTraceCarried(SDNTRACE_CTX *ctx, SDNTRACE_NODE *nodes)
+{
+	UINT64 end = Tick64() + SDNTRACE_ARRIVE;
+	USHORT seq = SDNTRACE_AGAIN;
+
+	while (true)
+	{
+		bool all = true;
+
+		for (UINT i = 0;i < SDNTRACE_NUM_NODES;i++)
+		{
+			NODE_SOURCE_GROUP_STATUS st;
+
+			NodeSourceGroupGetStatus(nodes[i].Node, &st);
+			if (st.Modes[CONTROL_TAG_MODE_SESSION].Carried < SDNTRACE_CARRIED)
+			{
+				all = false;
+			}
+		}
+
+		if (all)
+		{
+			return true;
+		}
+		if (Tick64() >= end)
+		{
+			return false;
+		}
+		SleepThread(SDNTRACE_POLL);
+		SdnTracePing(ctx, &nodes[0], &nodes[1], seq++, "with the controller, until both judge records by their source group");
+	}
+}
+
 // A UDP datagram from src to dst with SDNTRACE_RATE_DATA bytes of data: an IPv4 header with its checksum, and a UDP header
 // with the checksum 0, which IPv4 allows. Its size
 static UINT SdnTraceDatagram(UCHAR *buf, UINT src, UINT dst)
@@ -864,6 +905,9 @@ void sdntrace_test(UINT num, char **arg)
 		{
 			SdnTracePing(ctx, &nodes[0], &nodes[1], 1, "with the controller");
 			SdnTracePing(ctx, &nodes[1], &nodes[0], 2, "with the controller");
+			// Each node judges the records of the other by the source group that the controller gave it (SDN-87, #386)
+			SdnTraceCheck(ctx, SdnTraceCarried(ctx, nodes), "each node judged at least 2 records of its peer by the source group that they carried, which the controller gave the peer",
+				"not within %u ms", SDNTRACE_ARRIVE);
 
 			// The script checks the acknowledged Generations through the API, then stops the controller
 			Print("SDNTRACE PINGED\n");

@@ -27,9 +27,20 @@
 // the UDP sockets of the module (VxlanUdp.c), on the VXLAN port and, for the VTEPs of Geneve, on the Geneve port, or
 // the harness of a test.
 //
+// A datagram can carry the source group of its frame (SDN-87, #386; VxlanGroup.c): its group ID, in the group policy
+// extension of VXLAN (draft-smith-vxlan-group-policy, which Linux and Open vSwitch implement), or its group ID, its tag
+// set and the group generation of its sender, in the option of the source group of Geneve, whose critical bit is clear,
+// so that a tunnel endpoint that does not know it skips it. The extension of VXLAN has no room for the group generation.
+// VxlanSendToGroup sends a frame with one, and VxlanInput reads the one of each datagram and hands it to a receiver that
+// takes it (VxlanSetGroupReceiver). A tunnel endpoint that does not know the extension ignores its bits, which RFC 7348
+// reserves.
+//
 // The VXLAN header (RFC 7348 section 5) in front of the frame in the UDP datagram:
-//   byte 0     the flags: the I flag (VXLAN_FLAG_VNI) set, the other bits zero when sent and ignored when received
-//   bytes 1-3  reserved: zero when sent, ignored when received
+//   byte 0     the flags: the I flag (VXLAN_FLAG_VNI) set, the other bits zero when sent and ignored when received; the
+//              G flag (VXLAN_FLAG_GROUP) of the group policy extension, set when bytes 2-3 hold a group ID
+//   bytes 1-3  reserved: zero when sent, ignored when received; with the G flag, bytes 2-3 the group ID, big-endian, and
+//              the flags D (don't learn) and A (policy applied) of byte 1 clear, as a flag that says that the policy was
+//              applied at the source is easy to forge
 //   bytes 4-6  the VNI, big-endian
 //   byte 7     reserved: zero when sent, ignored when received
 //
@@ -44,6 +55,16 @@
 //   bytes 8-   the options (section 3.5), each a header of 4 bytes and its data: the class in bytes 0-1, the type in
 //              byte 2, whose high bit is the critical bit (GENEVE_OPTION_CRITICAL), and in byte 3 three reserved bits,
 //              ignored when received, and the length of the data in 4-byte words (the five low bits)
+//
+// The option of the source group (SDN-87, #386), GENEVE_GROUP_OPTION bytes:
+//   bytes 0-1   the class GENEVE_CLASS_RANZ
+//   byte 2      the type GENEVE_TYPE_GROUP, with the critical bit clear
+//   byte 3      the length of the data in 4-byte words: GENEVE_GROUP_DATA / 4
+//   bytes 4-5   the group ID, big-endian
+//   bytes 6-7   reserved: zero when sent, ignored when received
+//   bytes 8-15  the tag set, big-endian
+//   bytes 16-19 the group generation of the sender in the VRF, its 32 low bits, big-endian: the Generation of the state of
+//               the sender from which on it may assert what it asserts there (Core/Control.h, CONTROL_SOURCE_GROUP)
 
 #ifndef CORE_VXLAN_H
 #define CORE_VXLAN_H
@@ -67,6 +88,13 @@
 #define GENEVE_OPTION_CRITICAL   0x80   // The critical bit of the type of an option
 #define GENEVE_MAX_OPTIONS       63     // The options of one header at most: 63 words of options, one word for each header
 #define GENEVE_MAX_OPTION_DATA   124    // The data of one option at most: 31 words
+
+// The source group (SDN-87, #386): the group policy extension of VXLAN and the option of the source group of Geneve
+#define VXLAN_FLAG_GROUP    0x80                    // Byte 0 of the VXLAN header: the G flag, bytes 2-3 hold the group ID
+#define GENEVE_CLASS_RANZ   0xFFF0                  // An option class of Experimental Use (RFC 8926 section 7.2), until the vendor class of Ranz VPN is registered before the release
+#define GENEVE_TYPE_GROUP   0x01                    // The type of the option of the source group, whose critical bit is clear
+#define GENEVE_GROUP_DATA   16                      // The data of the option: the group ID, two reserved bytes, the tag set and the group generation
+#define GENEVE_GROUP_OPTION (4 + GENEVE_GROUP_DATA) // The option with its header
 
 // The encapsulation of a VTEP (VXLAN_ADDR)
 #define VXLAN_ENCAP_VXLAN  0 // VXLAN (RFC 7348), on VXLAN_PORT
@@ -137,6 +165,21 @@ typedef bool(VXLAN_SEND_PROC)(void *param, const VXLAN_ADDR *dst, const void *da
 // call VxlanSend and VxlanSendTo and nothing else of the module.
 typedef void(VXLAN_RECV_PROC)(VXLAN *v, void *param, UINT vni, const VXLAN_ADDR *from, const UCHAR *frame, UINT size);
 
+// The source group that a datagram carries (SDN-87, #386): in the group policy extension of VXLAN, the group ID alone,
+// or in the option of the source group of Geneve, the group ID, the tag set and the group generation of the sender
+typedef struct VXLAN_GROUP {
+	bool Carried;       // The datagram carries a source group ...
+	bool HasTags;       // ... with its tag set ...
+	bool HasGeneration; // ... and the group generation of the sender
+	USHORT Group;       // The group ID
+	UINT64 Tags;        // The tag set
+	UINT Generation;    // The group generation, its 32 low bits
+} VXLAN_GROUP;
+
+// Takes one frame as VXLAN_RECV_PROC does, with the source group that its datagram carried, in place of the receiver of
+// VxlanNew (VxlanSetGroupReceiver)
+typedef void(VXLAN_RECV_GROUP_PROC)(VXLAN *v, void *param, UINT vni, const VXLAN_ADDR *from, const VXLAN_GROUP *group, const UCHAR *frame, UINT size);
+
 // Vxlan.c
 VXLAN *VxlanNew(VXLAN_SEND_PROC *send, void *send_param, VXLAN_RECV_PROC *recv, void *recv_param);
 void VxlanFree(VXLAN *v);
@@ -147,10 +190,18 @@ bool VxlanSendTo(VXLAN *v, UINT vni, const VXLAN_ADDR *vtep, const void *frame, 
 void VxlanInput(VXLAN *v, const VXLAN_ADDR *from, const UCHAR *data, UINT size);
 void VxlanGetStats(VXLAN *v, VXLAN_STATS *st);
 void VxlanAddrSetV4(VXLAN_ADDR *a, UCHAR b0, UCHAR b1, UCHAR b2, UCHAR b3, USHORT port);
+void VxlanSetGroupReceiver(VXLAN *v, VXLAN_RECV_GROUP_PROC *recv);
+bool VxlanSendToGroup(VXLAN *v, UINT vni, const VXLAN_ADDR *vtep, const VXLAN_GROUP *group, const void *frame, UINT size);
 
 // VxlanGeneve.c
 void VxlanWriteGeneve(UCHAR *buf, UINT vni);
 bool VxlanParseGeneve(const UCHAR *data, UINT size, GENEVE_HEADER *h);
+
+// VxlanGroup.c
+void VxlanWriteGroup(UCHAR *header, USHORT group);
+void VxlanWriteGroupOption(UCHAR *option, USHORT group, UINT64 tags, UINT generation);
+bool VxlanParseGroup(const UCHAR *data, UINT size, VXLAN_GROUP *g);
+bool VxlanParseGroupOption(const GENEVE_OPTION *o, VXLAN_GROUP *g);
 
 // VxlanUdp.c
 VXLAN_UDP *VxlanUdpNew(USHORT port);
