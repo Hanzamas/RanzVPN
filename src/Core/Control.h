@@ -123,6 +123,62 @@ typedef struct CONTROL_LISTENER {
 	UINT RenewDays;
 } CONTROL_LISTENER;
 
+// The mimic part of a node (Mimic of the control protocol; SDN-94, #423; CORE-P2-7, #424): the sizes of its fields
+// (control.options), and the modes of the decoy of a mimic server (MimicDecoyMode)
+#define CONTROL_MIMIC_NAMES        8   // The server names of a mimic server (MimicServer.server_names) ...
+#define CONTROL_MIMIC_NAME_SIZE    254 // ... each a DNS name with its terminating NUL, as the name of a link (MimicLink.server_name)
+#define CONTROL_MIMIC_LINKS        8   // The links of a node (Mimic.links)
+#define CONTROL_MIMIC_SHORT_ID     8   // A short id at most (MimicServer.short_id, MimicLink.short_id)
+#define CONTROL_MIMIC_KEY_SIZE     32  // The X25519 public key of a mimic server (MimicLink.public_key, Pins.mimic_key)
+#define CONTROL_MIMIC_DECOY_OWN    1   // A landing page of the sidecar, with a certificate of its own
+#define CONTROL_MIMIC_DECOY_BORROW 2   // The site at Dest, whose own certificate a prober sees
+
+// The settings of the server role of the mimicry sidecar of the node (MimicServer of the control protocol): what an operator
+// chose in the mimic section of its Listener, and the short id that the Controller made for the server. They hold no key:
+// the node makes the key of its server itself (Cedar/NodeMimicState.c).
+typedef struct CONTROL_MIMIC_SERVER {
+	char Listen[TRANSPORT_ADDRESS_SIZE];                            // host:port of the TCP listener of the sidecar, an address of its own
+	UINT NumServerNames;                                            // The names of the decoy site, the first the name in the ClientHello of the links ...
+	char ServerNames[CONTROL_MIMIC_NAMES][CONTROL_MIMIC_NAME_SIZE]; // ...
+	UINT MaxTimeDiffMs;                                             // How far the clock of a client may be from the server's, in ms
+	UINT DecoyMode;                                                 // CONTROL_MIMIC_DECOY_*
+	char Dest[TRANSPORT_ADDRESS_SIZE];                              // BORROW: host:port of the site
+	bool Acme;                                                      // OWN: the certificate comes from an ACME service ...
+	char AcmeDirectory[CONTROL_URL_SIZE];                           // ... the https URL of its directory
+	char AcmeEmail[CONTROL_EMAIL_SIZE];                             // ... the contact of the account, "" for none
+	char AcmeCacheDir[CONTROL_PATH_SIZE];                           // ... the folder on the node that holds the account key and the certificates
+	char AcmeCaFile[CONTROL_PATH_SIZE];                             // ... and the roots of a private service, "" for the system's
+	char CertFile[CONTROL_PATH_SIZE];                               // OWN: or from a PEM file on the node ...
+	char KeyFile[CONTROL_PATH_SIZE];                                // ... with its key
+	bool SelfSigned;                                                // OWN: or it is self-signed, for tests only
+	UINT ShortIdSize;                                               // The short id of the server, which every client puts into its proof ...
+	UCHAR ShortId[CONTROL_MIMIC_SHORT_ID];                          // ...
+} CONTROL_MIMIC_SERVER;
+
+// One link of the node to a mimic server (MimicLink of the control protocol): what the sidecar of its client role needs to
+// dial the server
+typedef struct CONTROL_MIMIC_LINK {
+	char Peer[CONTROL_NAME_SIZE];             // The node that is the mimic server
+	char Address[TRANSPORT_ADDRESS_SIZE];     // host:port of a mimic endpoint of it, which the node dials
+	char ServerName[CONTROL_MIMIC_NAME_SIZE]; // The name in the ClientHello: the first server name of the server
+	UCHAR PublicKey[CONTROL_MIMIC_KEY_SIZE];  // The public key of the server that its node reported: the pin of the link
+	UINT ShortIdSize;                         // The short id of the server ...
+	UCHAR ShortId[CONTROL_MIMIC_SHORT_ID];    // ...
+} CONTROL_MIMIC_LINK;
+
+// The mimic part of the state of the node (Mimic of the control protocol): what the node writes into its Configuration store
+// for its mimicry sidecar. It holds no private key.
+typedef struct CONTROL_MIMIC {
+	bool HasServer;                                // A Listener gives the node a mimic section: it is a mimic server ...
+	CONTROL_MIMIC_SERVER Server;                   // ... with these settings
+	UINT NumLinks;                                 // Its links to the mimic servers among its peers ...
+	CONTROL_MIMIC_LINK Links[CONTROL_MIMIC_LINKS]; // ... ordered by peer, then in the order of its endpoints
+} CONTROL_MIMIC;
+
+// The keys that a client reports about the node (Pins of the control protocol; SDN-94, #423; CORE-P2-7, #424): the public
+// key of its mimic server (CONTROL_CONFIG.Keys), ControlMimic.c
+typedef struct CONTROL_KEYS CONTROL_KEYS;
+
 // A Mirror that the node applies (Mirror of the control protocol; SDN-23, #199): the node copies the packets of the
 // overlay that match it to the sensor, in VXLAN
 typedef struct CONTROL_MIRROR {
@@ -584,6 +640,10 @@ typedef struct CONTROL_STATE {
 	// Its Listener (SDN-45, #238), NULL for none: then it listens on no port of its own. Valid as the state is.
 	CONTROL_LISTENER *Listener;
 
+	// Its mimic part (SDN-94, #423; CORE-P2-7, #424): the settings of its mimic server and its links to the mimic servers among
+	// its peers, NULL while it is neither a mimic server nor the client of one. Valid as the state is.
+	CONTROL_MIMIC *Mimic;
+
 	// The UDP port of its WireGuard interface, 0 when it is the gateway of no Device, and the WireGuard Devices of its
 	// VRFs in name order (SDN-80, #375)
 	UINT WireGuardPort;
@@ -810,6 +870,10 @@ typedef struct CONTROL_CONFIG {
 	// (SDN-25-R3, #571)
 	CONTROL_EVPN *Evpn;
 
+	// The keys that the client reports about the node, the public key of its mimic server, NULL for none: the owner's, which
+	// must outlive the client (SDN-94, #423; CORE-P2-7, #424)
+	CONTROL_KEYS *Keys;
+
 	// Does the live operations of the Controller on the tables of the L2 Networks, NULL for none: the Hello then reports no
 	// Capability operations (SDN-50-N, #492) ...
 	CONTROL_OPERATION_PROC *OperationProc;
@@ -949,5 +1013,18 @@ void ControlFreeEvpn(CONTROL_EVPN *e);
 void ControlSetEvpn(CONTROL_EVPN *e, const CONTROL_EVPN_COUNTERS *c);
 bool ControlGetEvpn(CONTROL_EVPN *e, CONTROL_EVPN_COUNTERS *c);
 bool ControlWriteEvpn(CONTROL_EVPN *e, TRANSPORT_STREAM *s);
+
+// The keys that a node reports about itself (SDN-94, #423; CORE-P2-7, #424), ControlMimic.c: the public key of its mimic
+// server, which the node made, and whose private key never leaves it. NewKeys makes the report that a client sends
+// (CONTROL_CONFIG.Keys), FreeKeys frees it once no client uses it. SetMimicKey puts the public key of CONTROL_MIMIC_KEY_SIZE
+// bytes in place of the one before, or none for NULL. The client sends it in a Pins message after each Hello while there is
+// one, and a Pins message whenever it changed, an empty one once it went: a node that never had a key sends none. GetMimicKey
+// copies the key into key: false, with key zero, while there is none. WriteKeys writes the Pins message when it is due, as
+// the client does on its stream.
+CONTROL_KEYS *ControlNewKeys();
+void ControlFreeKeys(CONTROL_KEYS *k);
+void ControlSetMimicKey(CONTROL_KEYS *k, const UCHAR *key);
+bool ControlGetMimicKey(CONTROL_KEYS *k, UCHAR *key);
+bool ControlWriteKeys(CONTROL_KEYS *k, TRANSPORT_STREAM *s);
 
 #endif // CORE_CONTROL_H

@@ -294,6 +294,11 @@ struct NODE_MIMIC_STATUS {
 	char Version[MAX_SIZE]; // What the sidecar named in ready: ranz mimic and its libraries
 	char PipeAcl[MAX_SIZE]; // The DACL of the control pipe as the system holds it, in SDDL
 	char Error[MAX_SIZE];   // Why the transport of the role is not available, "" while it is or the role has no settings
+
+	// The channel binding of the last stream of the role, which the Noise session over it is bound to: the last stream that
+	// the server role accepted, the last that the client role dialled; none before the first (CORE-P2-7, #424)
+	UINT BindingSize;
+	UCHAR Binding[NODE_MIMIC_BINDING];
 };
 
 // One message of a mimicry sidecar on its control pipe, as NodeMimicParseMessage reads it: the fields of the protocol of
@@ -477,6 +482,9 @@ struct NODE {
 	wchar_t MimicSidecar[MAX_PATH]; // The executable that holds the sidecar: NODE_BGP_EXE_NAME next to the executable
 	NODE_MIMIC_TEST MimicTest;      // What a test changes in the way the node starts a sidecar
 	NODE_MIMIC *Mimic;              // The sidecars and the transport, NULL while the node does not run
+	// The keys that the control stream reports about the node: the public key of its mimic server, which it made for the mimic
+	// part of its state (NodeMimicState.c; CORE-P2-7, #424), from NewNode to FreeNode
+	struct CONTROL_KEYS *MimicKeys;
 
 	// The overlay (NodeOverlay.c; SDN-3, #179), NULL while it does not run
 	NODE_OVERLAY *Overlay;

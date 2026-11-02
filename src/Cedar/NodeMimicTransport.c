@@ -179,6 +179,17 @@ static bool NodeMimicReadLine(HANDLE pipe, HANDLE event, HANDLE cancel, UINT tim
 	}
 }
 
+// Keep the channel binding of the last stream of a role in its status, which a test compares at both ends of a session
+// (CORE-P2-7, #424)
+static void NodeMimicKeepBinding(NODE_MIMIC_SIDECAR *sc, const UCHAR *binding, UINT size) {
+	Lock(sc->Lock);
+	{
+		sc->St.BindingSize = MIN(size, NODE_MIMIC_BINDING);
+		Copy(sc->St.Binding, binding, sc->St.BindingSize);
+	}
+	Unlock(sc->Lock);
+}
+
 // A stream on a connected pipe, with the binding of its line
 static MIMIC_STREAM *NodeMimicNewStream(HANDLE pipe, const UCHAR *binding, UINT binding_size) {
 	MIMIC_STREAM *s = ZeroMalloc(sizeof(MIMIC_STREAM));
@@ -336,6 +347,7 @@ static bool NodeMimicDial(void *param, const char *address, HANDLE cancel, void 
 
 	s->BindingSize = binding_size;
 	Copy(s->Binding, binding, binding_size);
+	NodeMimicKeepBinding(sc, binding, binding_size);
 	*stream = s;
 
 	return true;
@@ -541,6 +553,7 @@ static bool NodeMimicAccept(void *listener, UINT timeout, void **stream) {
 			    NodeMimicParseBind(line, binding, &binding_size)) {
 				s->BindingSize = binding_size;
 				Copy(s->Binding, binding, binding_size);
+				NodeMimicKeepBinding(l->Sidecar, binding, binding_size);
 				*stream = s;
 				return true;
 			}

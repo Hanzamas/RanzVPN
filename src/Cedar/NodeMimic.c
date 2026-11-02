@@ -28,6 +28,8 @@
 #include "Mayaqua/Str.h"
 #include "Mayaqua/Tick64.h"
 
+#include "Core/Control.h"
+
 #include "ConfigStore.h"
 #include "NodeInternal.h"
 #include "NodeMimicInternal.h"
@@ -777,33 +779,27 @@ static void NodeMimicFree(NODE_MIMIC *m) {
 	Free(m);
 }
 
-// The executable of the sidecar: ranz.exe next to the executable of the node, until a test names another
+// The executable of the sidecar: ranz.exe next to the executable of the node, until a test names another; and the keys that
+// the control stream reports about the node, the public key of its mimic server (NodeMimicState.c; CORE-P2-7, #424)
 void NodeMimicInit(NODE *n) {
 	GetExeDirW(n->MimicSidecar, sizeof(n->MimicSidecar));
 	ConbinePathW(n->MimicSidecar, sizeof(n->MimicSidecar), n->MimicSidecar, NODE_BGP_EXE_NAME);
+	n->MimicKeys = ControlNewKeys();
 }
 
-// Read the settings of the roles and start the sidecar of the client role. The caller holds the node lock. A node
-// without the settings has no mimic transport and says nothing of it; a node without ranz.exe next to it has none
-// either, and says why.
-void NodeMimicStart(NODE *n) {
-	char *names[NODE_MIMIC_NUM_ROLES] = {NODE_SETTING_MIMIC_SERVER, NODE_SETTING_MIMIC_CLIENT};
+NODE_MIMIC *NodeMimicNew(NODE *n) {
 	wchar_t log_names[NODE_MIMIC_NUM_ROLES][MAX_PATH] = {L"ranz-mimic-server.log", L"ranz-mimic-client.log"};
 	wchar_t log_dir[MAX_PATH];
-	UINT num = 0;
-
-	if (n->Mimic != NULL || n->Store == NULL)
-		return;
 
 	NODE_MIMIC *m = ZeroMalloc(sizeof(NODE_MIMIC));
 	m->Node = n;
 	m->ListenerLock = NewLock();
+	InitializeSRWLock(&m->ServeLock);
 
 	ConbinePathW(log_dir, sizeof(log_dir), n->DataDir, NODE_LOG_DIR_NAME);
 
 	for (UINT i = 0; i < NODE_MIMIC_NUM_ROLES; i++) {
 		NODE_MIMIC_SIDECAR *sc = &m->Sidecars[i];
-		char *value = ZeroMalloc(NODE_MIMIC_MAX_SETTING + 2);
 
 		sc->Mimic = m;
 		sc->Role = i;
@@ -811,6 +807,29 @@ void NodeMimicStart(NODE *n) {
 		sc->StopEvent = CreateEventW(NULL, TRUE, FALSE, NULL);
 		sc->ReadyEvent = CreateEventW(NULL, TRUE, FALSE, NULL);
 		ConbinePathW(sc->LogPath, sizeof(sc->LogPath), log_dir, log_names[i]);
+	}
+
+	NodeMimicTransportInit(m);
+
+	return m;
+}
+
+// Read the settings of the roles and start the sidecar of the client role. The caller holds the node lock. A node
+// without the settings has no mimic transport and says nothing of it; a node without ranz.exe next to it has none
+// either, and says why. The key of a mimic server that the settings hold goes to the Controller after each Hello
+// (NodeMimicState.c; CORE-P2-7, #424), so that a node reports the same key after a restart.
+void NodeMimicStart(NODE *n) {
+	char *names[NODE_MIMIC_NUM_ROLES] = {NODE_SETTING_MIMIC_SERVER, NODE_SETTING_MIMIC_CLIENT};
+	UINT num = 0;
+
+	if (n->Mimic != NULL || n->Store == NULL)
+		return;
+
+	NODE_MIMIC *m = NodeMimicNew(n);
+
+	for (UINT i = 0; i < NODE_MIMIC_NUM_ROLES; i++) {
+		NODE_MIMIC_SIDECAR *sc = &m->Sidecars[i];
+		char *value = ZeroMalloc(NODE_MIMIC_MAX_SETTING + 2);
 
 		if (CsGetSetting(n->Store, names[i], value, NODE_MIMIC_MAX_SETTING + 2) && IsEmptyStr(value) == false) {
 			sc->St.Configured = true;
@@ -821,6 +840,8 @@ void NodeMimicStart(NODE *n) {
 				NodeLog(n, "Mimic %s role unavailable: %s", NodeMimicRoleName(i), sc->St.Error);
 			} else {
 				sc->Settings = CopyStr(value);
+				if (i == NODE_MIMIC_ROLE_SERVER)
+					NodeMimicReportKey(n, value);
 			}
 		}
 
@@ -833,8 +854,8 @@ void NodeMimicStart(NODE *n) {
 		return;
 	}
 
-	n->Mimic = m;
-	NodeMimicTransportInit(m);
+	// The overlay takes the streams of the mimic server without the node lock (NodeMimicAcceptServed)
+	InterlockedExchangePointer((PVOID volatile *)&n->Mimic, m);
 
 	if (IsFileExistsW(n->MimicSidecar) == false) {
 		for (UINT i = 0; i < NODE_MIMIC_NUM_ROLES; i++) {
@@ -873,6 +894,9 @@ void NodeMimicStop(NODE *n) {
 	if (m == NULL)
 		return;
 
+	// The listener that the node opened for the server role of its state closes first (NodeMimicState.c; CORE-P2-7, #424)
+	NodeMimicUnserve(m);
+
 	bool listening;
 
 	Lock(m->ListenerLock);
@@ -890,7 +914,7 @@ void NodeMimicStop(NODE *n) {
 		return;
 	}
 
-	n->Mimic = NULL;
+	InterlockedExchangePointer((PVOID volatile *)&n->Mimic, NULL);
 	NodeMimicFree(m);
 }
 
