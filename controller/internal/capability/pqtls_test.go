@@ -41,7 +41,7 @@ func TestAPIFormPQTLS(t *testing.T) {
 	}
 }
 
-// No feature needs pq_tls: a session falls back to X25519 without it, so a node that does not report it is refused nothing
+// No feature needs pq_tls: a session falls back to a classical group without it, so a node that does not report it is refused nothing
 // that one that reports it gets (ADR-0033 decision 4).
 func TestNoFeatureNeedsPQTLS(t *testing.T) {
 	states := compile(t,

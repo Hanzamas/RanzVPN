@@ -25,8 +25,8 @@ func quantumScenario(t *testing.T) Scenario {
 
 // ranz explain shows for each link of kind noise whether its session is quantum-resistant (CORE-P2-5, #382): the outer
 // QUIC or TLS-443 session of two Nodes that both report the Capability pqTls negotiates X25519MLKEM768; when either does
-// not, or reported no Capabilities, it falls back to X25519, not quantum-resistant, and explain names the Node that does
-// not report it. The key exchange changes no verdict, and a link of kind vxlan, which encrypts nothing, has none.
+// not, or reported no Capabilities, it falls back to a classical group, not quantum-resistant, and explain names the Node
+// that does not report it. The key exchange changes no verdict, and a link of kind vxlan, which encrypts nothing, has none.
 func TestLinkShowsWhetherItsSessionIsQuantumResistant(t *testing.T) {
 	in, states, err := quantumScenario(t).Compile()
 	if err != nil {
@@ -44,11 +44,11 @@ func TestLinkShowsWhetherItsSessionIsQuantumResistant(t *testing.T) {
 		{"both report pqTls", map[string]*controlpb.Capabilities{"dc-1": pq, "dc-2": pq}, true, nil,
 			"encrypted; its QUIC or TLS-443 session negotiates X25519MLKEM768, quantum-resistant, as dc-1 and dc-2 both report pqTls"},
 		{"the peer does not", map[string]*controlpb.Capabilities{"dc-1": pq, "dc-2": classical}, false, []string{"dc-2"},
-			"encrypted; its QUIC or TLS-443 session negotiates X25519, not quantum-resistant, as dc-2 does not report pqTls"},
+			"encrypted; its QUIC or TLS-443 session negotiates a classical group, not quantum-resistant, as dc-2 does not report pqTls"},
 		{"the sender reported none", map[string]*controlpb.Capabilities{"dc-2": pq}, false, []string{"dc-1"},
-			"encrypted; its QUIC or TLS-443 session negotiates X25519, not quantum-resistant, as dc-1 does not report pqTls"},
+			"encrypted; its QUIC or TLS-443 session negotiates a classical group, not quantum-resistant, as dc-1 does not report pqTls"},
 		{"no Node reported any", nil, false, []string{"dc-1", "dc-2"},
-			"encrypted; its QUIC or TLS-443 session negotiates X25519, not quantum-resistant, as dc-1 and dc-2 do not report pqTls"},
+			"encrypted; its QUIC or TLS-443 session negotiates a classical group, not quantum-resistant, as dc-1 and dc-2 do not report pqTls"},
 	} {
 		t.Run(c.what, func(t *testing.T) {
 			r, err := New(in, states).WithCapabilities(c.caps).Explain(Query{From: "dc-1", To: "dc-2", VRF: "corp", Protocol: "udp", SourcePort: 40000, Port: 53})
@@ -60,7 +60,7 @@ func TestLinkShowsWhetherItsSessionIsQuantumResistant(t *testing.T) {
 				t.Fatalf("the link steps are %+v", link)
 			}
 			l := link[0].Link
-			want := KeyExchangeX25519
+			want := KeyExchangeClassical
 			if c.resistant {
 				want = KeyExchangeHybrid
 			}
@@ -99,11 +99,11 @@ func TestLinkKeyExchangeInTheAPIForm(t *testing.T) {
 	if s := string(b); !strings.Contains(s, `"keyExchange":"X25519MLKEM768"`) || !strings.Contains(s, `"quantumResistant":true`) || strings.Contains(s, "withoutPqTls") {
 		t.Errorf("the API form of a quantum-resistant link is %s", s)
 	}
-	b, err = json.Marshal(Link{Peer: "dc-2", Kind: "noise", Encrypted: true, KeyExchange: KeyExchangeX25519, WithoutPQTLS: []string{"dc-2"}})
+	b, err = json.Marshal(Link{Peer: "dc-2", Kind: "noise", Encrypted: true, KeyExchange: KeyExchangeClassical, WithoutPQTLS: []string{"dc-2"}})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if s := string(b); !strings.Contains(s, `"keyExchange":"X25519"`) || strings.Contains(s, "quantumResistant") || !strings.Contains(s, `"withoutPqTls":["dc-2"]`) {
+	if s := string(b); !strings.Contains(s, `"keyExchange":"classical"`) || strings.Contains(s, "quantumResistant") || !strings.Contains(s, `"withoutPqTls":["dc-2"]`) {
 		t.Errorf("the API form of a link that is not quantum-resistant is %s", s)
 	}
 	if got := keyExchangeText("dc-1", "dc-2", &Link{Kind: "vxlan"}); got != "" {

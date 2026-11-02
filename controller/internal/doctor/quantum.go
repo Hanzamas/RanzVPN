@@ -14,8 +14,9 @@ import (
 // TLS transport of the Node writes with the hybrid first where no policy decides it, else the default of Windows, which does
 // not name the hybrid; msquic takes its TLS from Schannel, so the one list governs both paths (src/Core/TransportGroup.c
 // reads it the same way). ranz doctor reports which list holds on the host and whether the host can negotiate the hybrid,
-// and where it cannot, what to run to switch it on. A host that cannot falls back to X25519 with every peer, and its Node
-// does not report the Capability pqTls; two Nodes that both report it negotiate the hybrid.
+// and where it cannot, what to run to switch it on. A host that cannot falls back to a classical group with every peer, and
+// its Node does not report the Capability pqTls; two Nodes that both report it negotiate the hybrid. Schannel takes a
+// change of the machine's list at once, and a change of an ECC Curve Order policy when Windows starts.
 
 // TitleQuantum is the heading of the report of the post-quantum key exchange.
 const TitleQuantum = "Post-quantum key exchange (X25519MLKEM768 on QUIC and TLS-443)"
@@ -95,7 +96,9 @@ func decide(h host) quantumState {
 	}
 	s.fix = []string{"Run as an administrator:", "    " + regAdd(key, withHybrid(s.list))}
 	if h.policy {
-		s.fix = append(s.fix, "or put "+hybridGroup+" first in the ECC Curve Order setting of the Group Policy that sets it (Computer Configuration, Administrative Templates, Network, SSL Configuration Settings).")
+		s.fix = append(s.fix, "or put "+hybridGroup+" first in the ECC Curve Order setting of the Group Policy that sets it (Computer Configuration, Administrative Templates, Network, SSL Configuration Settings).",
+			"Then restart Windows: Schannel takes a changed ECC Curve Order policy when Windows starts.")
+		return s
 	}
 	s.fix = append(s.fix, "Then restart the Node service (Restart-Service ranzvpnserver), so that its transports and its next Hello take the list.")
 	return s
@@ -154,10 +157,10 @@ func writeQuantum(w io.Writer, h host) {
 	fmt.Fprintf(w, "    ML-KEM in CNG: %s\n", yes)
 	fmt.Fprintf(w, "    TLS group list in force, %s: %s\n", s.from, listText(s.list))
 	if s.asks {
-		fmt.Fprintln(w, "    This host can negotiate X25519MLKEM768: its Node asks for it first on QUIC and TLS-443, reports the Capability pqTls, and falls back to X25519 with a peer that does not ask for it.")
+		fmt.Fprintln(w, "    This host can negotiate X25519MLKEM768: its Node asks for it first on QUIC and TLS-443, reports the Capability pqTls, and falls back to a classical group with a peer that does not ask for it.")
 		return
 	}
-	fmt.Fprintf(w, "    This host cannot negotiate X25519MLKEM768: %s. Its sessions use X25519, and its Node does not report the Capability pqTls.\n", s.why)
+	fmt.Fprintf(w, "    This host cannot negotiate X25519MLKEM768: %s. Its sessions use a classical group, which is not quantum-resistant, and its Node does not report the Capability pqTls.\n", s.why)
 	fmt.Fprintln(w, "    To switch it on:")
 	for _, line := range s.fix {
 		fmt.Fprintf(w, "    %s\n", line)

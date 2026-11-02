@@ -41,11 +41,11 @@ func explainLink(t *testing.T, h *harness, from, to string) explain.Step {
 // The key exchange of a link in the controller conformance seam (CORE-P2-5, #382): the simulated nodes gw and laptop report
 // the Capability pq_tls in their Hello, the API lists it as pqTls, and the link of the two, which ranz explain shows
 // through the API, is quantum-resistant: X25519MLKEM768. When the laptop comes back without it, as a node whose host lacks
-// the hybrid or has it switched off, the API no longer lists it, and the link falls back to X25519, not quantum-resistant,
-// naming the laptop. The packet is delivered either way.
+// the hybrid or has it switched off, the API no longer lists it, and the link falls back to a classical group, not
+// quantum-resistant, naming the laptop. The policy of VRF corp allows the flow, so the packet is delivered either way.
 func TestExplainShowsWhetherTheSessionOfALinkIsQuantumResistant(t *testing.T) {
 	h := newHarness(t)
-	h.apply("caps-apply1.json")
+	h.apply("pqtls.json")
 	gw := h.newSim("gw", keyBranch1)
 	gw.Capabilities = withPQTLS(capsServer)
 	gw.start(h)
@@ -80,9 +80,9 @@ func TestExplainShowsWhetherTheSessionOfALinkIsQuantumResistant(t *testing.T) {
 	}
 	for _, c := range []struct{ from, to string }{{"gw", "laptop"}, {"laptop", "gw"}} {
 		s := explainLink(t, h, c.from, c.to)
-		if l := s.Link; l.KeyExchange != explain.KeyExchangeX25519 || l.QuantumResistant || !slices.Equal(l.WithoutPQTLS, []string{"laptop"}) ||
-			!strings.Contains(s.Text, "negotiates X25519, not quantum-resistant, as laptop does not report pqTls") {
-			t.Errorf("the link of %s to %s is %+v and says %q, want X25519, not quantum-resistant, naming the laptop", c.from, c.to, l, s.Text)
+		if l := s.Link; l.KeyExchange != explain.KeyExchangeClassical || l.QuantumResistant || !slices.Equal(l.WithoutPQTLS, []string{"laptop"}) ||
+			!strings.Contains(s.Text, "negotiates a classical group, not quantum-resistant, as laptop does not report pqTls") {
+			t.Errorf("the link of %s to %s is %+v and says %q, want a classical group, not quantum-resistant, naming the laptop", c.from, c.to, l, s.Text)
 		}
 	}
 }

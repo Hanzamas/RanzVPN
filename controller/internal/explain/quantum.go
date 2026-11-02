@@ -13,15 +13,18 @@ import (
 // for the hybrid X25519MLKEM768. A Node asks for it where its host has it (src/Core/TransportGroup.c) and reports that as
 // the Capability pqTls. Each end offers the groups of its host: the client sends the key share of its first group, and the
 // server picks the first group of its own list that the client offers. So the session of two Nodes that both report pqTls
-// negotiates X25519MLKEM768, and every other session falls back to X25519 without failing. Explain says at each link of kind
-// noise which of the two it negotiates and whether it is quantum-resistant, from the Capabilities that the two Nodes
-// reported last; a Node that reported none counts as one without pqTls. A link of kind vxlan or geneve encrypts nothing, so
-// it has no key exchange.
+// negotiates X25519MLKEM768, and every other session falls back to a classical group without failing: X25519 where the
+// lists of the two hosts put it first, as the list that a Node writes does, else the classical group that their lists put
+// first, such as NistP384 under an ECC Curve Order policy that names it first. Explain says at each link of kind noise
+// which of the two it negotiates and whether it is quantum-resistant, from the Capabilities that the two Nodes reported
+// last; a Node that reported none counts as one without pqTls. A link of kind vxlan or geneve encrypts nothing, so it has
+// no key exchange.
 
-// The key exchange groups of the outer session of a link of kind noise, by their names in the TLS registry of IANA.
+// The key exchange of the outer session of a link of kind noise: the hybrid by its name in the TLS registry of IANA, or a
+// classical group, one without ML-KEM, which the lists of the two hosts choose.
 const (
-	KeyExchangeHybrid = "X25519MLKEM768"
-	KeyExchangeX25519 = "X25519"
+	KeyExchangeHybrid    = "X25519MLKEM768"
+	KeyExchangeClassical = "classical"
 )
 
 // WithCapabilities gives the model the Capabilities that the Nodes reported last, by Node name, which the key exchange of
@@ -32,7 +35,7 @@ func (m *Model) WithCapabilities(caps map[string]*controlpb.Capabilities) *Model
 }
 
 // keyExchange gives the link l of kind noise from the Node s to the Node peer the key exchange of its outer session: the
-// hybrid when both report pqTls, else X25519, with the Nodes that do not report it.
+// hybrid when both report pqTls, else a classical group, with the Nodes that do not report it.
 func (w *walk) keyExchange(s *node, peer string, l *Link) {
 	if l.Kind != linkNoise {
 		return
@@ -43,7 +46,7 @@ func (w *walk) keyExchange(s *node, peer string, l *Link) {
 		}
 	}
 	l.QuantumResistant = len(l.WithoutPQTLS) == 0
-	l.KeyExchange = KeyExchangeX25519
+	l.KeyExchange = KeyExchangeClassical
 	if l.QuantumResistant {
 		l.KeyExchange = KeyExchangeHybrid
 	}
@@ -51,7 +54,7 @@ func (w *walk) keyExchange(s *node, peer string, l *Link) {
 
 // keyExchangeText says the key exchange of the link l of kind noise from the Node s to the Node peer after what it says of
 // the encryption: "; its QUIC or TLS-443 session negotiates X25519MLKEM768, quantum-resistant, as dc-1 and dc-2 both report
-// pqTls", or "...X25519, not quantum-resistant, as dc-2 does not report pqTls".
+// pqTls", or "...a classical group, not quantum-resistant, as dc-2 does not report pqTls".
 func keyExchangeText(s, peer string, l *Link) string {
 	if l.KeyExchange == "" {
 		return ""
@@ -63,5 +66,5 @@ func keyExchangeText(s, peer string, l *Link) string {
 	if len(l.WithoutPQTLS) > 1 {
 		verb = "do"
 	}
-	return fmt.Sprintf("; its QUIC or TLS-443 session negotiates %s, not quantum-resistant, as %s %s not report pqTls", l.KeyExchange, strings.Join(l.WithoutPQTLS, " and "), verb)
+	return fmt.Sprintf("; its QUIC or TLS-443 session negotiates a classical group, not quantum-resistant, as %s %s not report pqTls", strings.Join(l.WithoutPQTLS, " and "), verb)
 }

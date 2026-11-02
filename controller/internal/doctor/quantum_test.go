@@ -58,6 +58,17 @@ func TestQuantumTellsWhetherTheHostCanNegotiateTheHybrid(t *testing.T) {
 			if c.fix != "" && !slices.ContainsFunc(s.fix, func(line string) bool { return strings.Contains(line, c.fix) }) {
 				t.Errorf("the fix is %q, without %q", s.fix, c.fix)
 			}
+			// Schannel takes a change of the machine's list at once, so the Node service restarts for its next Hello; it takes
+			// a change of an ECC Curve Order policy when Windows starts
+			if !c.asks && c.h.mlkem {
+				restart := "Restart-Service ranzvpnserver"
+				if c.h.policy {
+					restart = "Then restart Windows: Schannel takes a changed ECC Curve Order policy when Windows starts."
+				}
+				if !slices.ContainsFunc(s.fix, func(line string) bool { return strings.Contains(line, restart) }) {
+					t.Errorf("the fix is %q, without %q", s.fix, restart)
+				}
+			}
 
 			var out bytes.Buffer
 			writeQuantum(&out, c.h)
@@ -67,7 +78,8 @@ func TestQuantumTellsWhetherTheHostCanNegotiateTheHybrid(t *testing.T) {
 					t.Errorf("the report has no %q:\n%s", want, text)
 				}
 			}
-			if c.asks != strings.Contains(text, "This host can negotiate X25519MLKEM768") || c.asks == strings.Contains(text, "This host cannot negotiate X25519MLKEM768") {
+			if c.asks != strings.Contains(text, "This host can negotiate X25519MLKEM768") || c.asks == strings.Contains(text, "This host cannot negotiate X25519MLKEM768") ||
+				c.asks == strings.Contains(text, "Its sessions use a classical group, which is not quantum-resistant") {
 				t.Errorf("the report of a host that asks %v:\n%s", c.asks, text)
 			}
 			if c.fix != "" && (!strings.Contains(text, "To switch it on:\n") || !strings.Contains(text, c.fix)) {

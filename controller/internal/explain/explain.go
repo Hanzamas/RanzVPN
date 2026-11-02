@@ -149,10 +149,10 @@ type Link struct {
 	TagMode  string   `json:"tagMode,omitempty"`
 	Tags     string   `json:"tags,omitempty"`
 	Networks []string `json:"networks,omitempty"`
-	// KeyExchange is the key exchange group that the outer QUIC or TLS-443 session of a link of kind noise negotiates, and
-	// QuantumResistant says whether it is: X25519MLKEM768 when both Nodes report the Capability pqTls, else X25519, and
-	// WithoutPQTLS names the Nodes that do not (quantum.go; CORE-P2-5). All three are empty for a link of kind vxlan or
-	// geneve, which encrypts nothing.
+	// KeyExchange is the key exchange that the outer QUIC or TLS-443 session of a link of kind noise negotiates, and
+	// QuantumResistant says whether it is: X25519MLKEM768 when both Nodes report the Capability pqTls, else classical, a
+	// group without ML-KEM, and WithoutPQTLS names the Nodes that do not report it (quantum.go; CORE-P2-5). All three are
+	// empty for a link of kind vxlan or geneve, which encrypts nothing.
 	KeyExchange      string   `json:"keyExchange,omitempty"`
 	QuantumResistant bool     `json:"quantumResistant,omitempty"`
 	WithoutPQTLS     []string `json:"withoutPqTls,omitempty"`
