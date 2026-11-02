@@ -59,3 +59,12 @@ def make_seeds(h):
     seed('length_past_datagram.bin', geneve(6001, untagged[:20], words=63))
     seed('ipv4_payload.bin', geneve(6001, h.ipv4(a, b, 1, echo, 9), protocol=0x0800))
     seed('short.bin', geneve(6001, untagged[:13]))
+    # The option of the source group (SDN-87 #386; Vxlan.h): the class 0xFFF0 of Experimental Use, the type 1 with the
+    # critical bit clear and 16 bytes of data, the group ID, two reserved bytes, the tag set and the group generation of
+    # the sender. Alone, after OVN's, with the critical bit set, which the module does not know, and with data of another
+    # length, which is no such option
+    source_group = struct.pack('>HHQI', 3, 0, 0x4, 1)
+    seed('source_group.bin', geneve(6001, untagged, option(0xFFF0, 0x01, source_group)))
+    seed('source_group_after_ovn.bin', geneve(6001, untagged, ovn + option(0xFFF0, 0x01, source_group)))
+    seed('source_group_critical.bin', geneve(6001, untagged, option(0xFFF0, 0x81, source_group)))
+    seed('source_group_short.bin', geneve(6001, untagged, option(0xFFF0, 0x01, source_group[:4])))

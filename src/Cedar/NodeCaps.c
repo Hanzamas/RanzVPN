@@ -208,6 +208,9 @@ void NodeCapsProc(void *param, CONTROL_CAPS *caps) {
 	// The links of kind vxlan and geneve run on Winsock UDP, on every host (NodeLink.c; SDN-76, #356)
 	if (caps != NULL)
 		caps->PlainLinks = true;
+	// The source groups travel with the packets of every node (NodeSourceGroup.c; SDN-87, #386)
+	if (caps != NULL)
+		caps->Tags = true;
 }
 
 void NodeCapsPeering(NODE *n, CONTROL_CAPS *caps) {

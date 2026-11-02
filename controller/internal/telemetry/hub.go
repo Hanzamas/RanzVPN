@@ -108,6 +108,8 @@ type NodeSnapshot struct {
 	Rules      []RuleCounters `json:"rules"`
 	Paths      *PathCounters  `json:"paths,omitempty"`
 	EVPN       *EvpnCounters  `json:"evpn,omitempty"`
+	// The packets of the peers by the tag mode of their source group (sourcegroup.go; SDN-87)
+	SourceGroups []SourceGroupCounters `json:"sourceGroups,omitempty"`
 }
 
 type peerEntry struct {
@@ -147,6 +149,8 @@ type nodeData struct {
 	rules map[ruleKey]*ruleEntry
 	paths *pathEntry
 	evpn  *evpnEntry
+	// The counters of the source groups by tag mode (sourcegroup.go; SDN-87)
+	groups map[string]*groupEntry
 }
 
 // Hub keeps the latest counters that each node reported.
@@ -250,6 +254,7 @@ func (h *Hub) Report(node string, t *controlpb.Telemetry) {
 			Malformed:   v.GetMalformed(),
 		}, seen: now}
 	}
+	d.reportGroups(t, now)
 	h.prune(now)
 }
 
@@ -277,7 +282,8 @@ func (h *Hub) prune(now time.Time) {
 		if d.evpn != nil && now.Sub(d.evpn.seen) > h.stale {
 			d.evpn = nil
 		}
-		if len(d.peers)+len(d.vrfs)+len(d.rules) == 0 && d.paths == nil && d.evpn == nil && now.Sub(d.seen) > h.stale {
+		d.pruneGroups(now, h.stale)
+		if len(d.peers)+len(d.vrfs)+len(d.rules)+len(d.groups) == 0 && d.paths == nil && d.evpn == nil && now.Sub(d.seen) > h.stale {
 			delete(h.nodes, name)
 		}
 	}
@@ -334,6 +340,7 @@ func (h *Hub) Snapshot(vrfName func(uint32) string) []NodeSnapshot {
 		slices.SortFunc(s.Rules, func(a, b RuleCounters) int {
 			return cmp.Or(cmp.Compare(a.VRFID, b.VRFID), cmp.Compare(a.Rule, b.Rule))
 		})
+		s.SourceGroups = d.groupSnapshot()
 		out = append(out, s)
 	}
 	slices.SortFunc(out, func(a, b NodeSnapshot) int { return cmp.Compare(a.Node, b.Node) })
@@ -384,6 +391,7 @@ func (h *Hub) Samples(vrfName func(uint32) string) []Sample {
 				Sample{Metric: "evpn_dropped_frames", Labels: []string{n.Node, "undelivered"}, Value: v.Undelivered},
 				Sample{Metric: "evpn_dropped_frames", Labels: []string{n.Node, "failed"}, Value: v.Failed})
 		}
+		out = append(out, groupSamples(n)...)
 	}
 	return out
 }
