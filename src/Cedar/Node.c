@@ -282,6 +282,9 @@ static void NodeWriteConfigDump(NODE *n) {
 	if (b == NULL)
 		return;
 
+	// The private key of a mimic server stays in the store (NodeMimicState.c; CORE-P2-7, #424)
+	NodeMimicBlankDump(b);
+
 	ConbinePathW(path, sizeof(path), n->DataDir, NODE_CONFIG_DUMP_NAME);
 	DumpBufW(b, path);
 	FreeBuf(b);

@@ -11,8 +11,9 @@
 // - makes the X25519 key of the mimic server the first time that a state asks the node for one (CryptoX25519GenerateKey, on
 //   CNG). The private key is part of the text of the server role and nowhere else: in the Configuration store, which only
 //   SYSTEM, the Administrators and the account of the node open, and on the control pipe of the sidecar, never on a command
-//   line. The node writes no text of the settings into its log, and the diagnostics bundle blanks the key by its name,
-//   private_key. The node keeps the key while its states have a server role: a state without one removes the text and the key
+//   line. The node writes no text of the settings into its log, the text dump of the store that it writes at its start
+//   (node_config.txt) shows the digits of the key as stars (NodeMimicBlankDump), and the diagnostics bundle blanks the key by
+//   its name, private_key. The node keeps the key while its states have a server role: a state without one removes the text and the key
 //   with it, and the next state that asks for a server gets a new key. A key is never replaced by itself;
 // - reports the public key on its control stream (Pins; CONTROL_KEYS of Core/Control.h) once the store holds the text, after
 //   each Hello and whenever it changed, and an empty report once the key went. After a restart the node reports the key that
@@ -488,4 +489,32 @@ TRANSPORT_STREAM *NodeMimicAcceptServed(NODE *n) {
 	ReleaseSRWLockShared(&m->ServeLock);
 
 	return s;
+}
+
+// The text dump of the Configuration store, which a node writes beside the store at each start (node_config.txt) and the
+// diagnostics bundle carries, quotes the text of each setting as it is: the MimicServer setting with the private key of the mimic
+// server. The key stays in the store: each hexadecimal digit of the value of a private_key in the dump, after the quotes and the
+// colon of its name, becomes a star, in the memory of the dump before it is written.
+void NodeMimicBlankDump(BUF *b) {
+	static const char name[] = "private_key";
+	UINT len = sizeof(name) - 1;
+
+	if (b == NULL || b->Buf == NULL || b->Size < len)
+		return;
+
+	UCHAR *data = (UCHAR *)b->Buf;
+
+	for (UINT i = 0; i + len <= b->Size; i++) {
+		if (Cmp(data + i, (void *)name, len) != 0)
+			continue;
+
+		// The quotes of the JSON text, escaped by the dump, and the colon between the name and its value
+		UINT j = i + len;
+		while (j < b->Size && (data[j] == '\\' || data[j] == '"' || data[j] == ':' || data[j] == ' '))
+			j++;
+		while (j < b->Size && NodeMimicDigit((char)data[j]) >= 0)
+			data[j++] = '*';
+
+		i = j - 1;
+	}
 }

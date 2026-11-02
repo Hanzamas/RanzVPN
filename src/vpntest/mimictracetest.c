@@ -14,15 +14,15 @@
 //   client role of its sidecar. The data transport of the overlay of each node is the dialler of this test: it dials a peer at
 //   the mimic endpoints of its Peer object through the mimic transport of the node, which dials the link of that address (the
 //   data transport of the Node service dials nowhere: Gap 3 of docs/first-test.md). The Noise session of the client comes up
-//   over the mimic transport, and both ends have the same channel binding. The command lines of the sidecars hold no key, and
-//   the diagnostics bundle of the server holds its settings without the private key. The test writes the file "up", which
-//   holds the public key of the server.
+//   over the mimic transport, and both ends have the same channel binding. The command lines of the sidecars hold no key. The
+//   test writes the file "up", which holds the public key of the server.
 // - mimic-prober, a node without a control stream, applies a link to the mimic server whose short id the test changed: its
 //   dial is spliced to the decoy and fails, and the server counts one probe.
 // - The script applies the Intent with another address of the mimic server and writes "changed": the sidecar of each role
 //   restarts with its new setting, the key stays, and the session comes up again at the new address.
 // - mimic-server restarts: it reports the same key, which its store holds, before it applies a state, and the session comes up
-//   again. The test writes "restarted".
+//   again. The text dump of the store that it wrote at its start (node_config.txt) and its diagnostics bundle hold its
+//   MimicServer setting without the private key. The test writes "restarted".
 // - The script applies the Intent without the mimic section and writes "removed": the sidecars stop, and the settings and the
 //   key are gone. The test writes "gone".
 // - The script stops the controller and writes "stopped": the private key of the mimic server is in no file of the folder of
@@ -1033,8 +1033,6 @@ static bool MimicTraceJoin(MIMICTRACE_CTX *ctx, UCHAR *binding, UINT64 *since)
 	MimicTraceCheck(ctx, has && server_line && client_line, "the command line of each sidecar is ranz.exe mimic with its pipe: no key, and no link", "server %u, client %u, the last \"%s\"",
 		(UINT)server_line, (UINT)client_line, cmdline);
 
-	MimicTraceBundle(ctx);
-
 	if (up == false || bound == false || reported == false)
 	{
 		return false;
@@ -1189,6 +1187,19 @@ static bool MimicTraceRestart(MIMICTRACE_CTX *ctx, UCHAR *binding, UINT64 *since
 	MimicTraceCheck(ctx, early && StrCmp(hex, ctx->Public) == 0, "after a restart mimic-server reports the same key, which its store holds, before it applies a state",
 		"started %u, a key reported %u (%s)", (UINT)started, (UINT)early, hex);
 
+	// The text dump of its store that the node wrote at its start, which the diagnostics bundle carries: the MimicServer setting,
+	// without the private key
+	wchar_t path[MAX_PATH];
+	ConbinePathW(path, sizeof(path), ctx->Server.Dir, NODE_CONFIG_DUMP_NAME);
+	BUF *dump = ReadDumpExW(path, false, 0);
+	bool blank = (dump != NULL && MimicTraceHas(dump, NODE_SETTING_MIMIC_SERVER) && MimicTraceHasKey(ctx, dump) == false);
+	MimicTraceCheck(ctx, blank, "the text dump of its store that the node wrote at its start, node_config.txt, holds the MimicServer setting and not the private key", "%s",
+		dump == NULL ? "no dump" : "the setting is missing, or the key is in it");
+	if (dump != NULL)
+	{
+		FreeBuf(dump);
+	}
+
 	bool overlay = (started && MimicTraceOverlay(ctx, &ctx->Server, true));
 	bool served = (overlay && MimicTraceWaitServer(ctx, MIMICTRACE_SECOND, 0, &st));
 	MimicTraceCheck(ctx, served && MimicTraceSameKey(ctx), "it applies its state again: the server role of its sidecar runs with the same setting and the same key",
@@ -1203,6 +1214,12 @@ static bool MimicTraceRestart(MIMICTRACE_CTX *ctx, UCHAR *binding, UINT64 *since
 
 	*since = s.Since;
 	Copy(binding, again, NODE_MIMIC_BINDING);
+
+	// The diagnostics bundle of the server, whose text dump of the store holds the MimicServer setting now
+	if (started)
+	{
+		MimicTraceBundle(ctx);
+	}
 
 	MimicTraceCheck(ctx, MimicTraceWriteFile(ctx, "restarted", "ok\n"), "the test wrote the file restarted for the script", "%s", "the file cannot be written");
 

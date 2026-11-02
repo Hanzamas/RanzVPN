@@ -22,6 +22,8 @@ void NodeMimicStop(NODE *n);
 // (NodeMimicState.c; CORE-P2-7, #424)
 void NodeMimicApplied(NODE *n, const struct CONTROL_STATE *st);
 TRANSPORT_STREAM *NodeMimicAcceptServed(NODE *n);
+// ... and the text dump of the Configuration store without the private key of a mimic server (NodeWriteConfigDump of Node.c)
+void NodeMimicBlankDump(BUF *b);
 void NodeLogMitigations(NODE *n);
 void NodeShapeStart(NODE *n, const NODE_OVERLAY_CONFIG *cfg);
 void NodeShapeStop(NODE *n);
