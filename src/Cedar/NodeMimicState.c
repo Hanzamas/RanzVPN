@@ -24,9 +24,12 @@
 // - starts, restarts or stops the sidecar of a role when its text changes: a change of the server settings or of the links
 //   restarts the sidecar of that role, the streams over it end and the clients dial again through their fallback list, and the
 //   other role and the other transports of the node are not touched. A state without the mimic part stops both sidecars and
-//   takes the texts out.
+//   takes the texts out. A text that the store does not take out stays, with the key in it, and so does the report of the
+//   key: the next state without the role tries again.
 // A node without ranz.exe beside it applies the state all the same, writes the texts and keeps its key, and says why the mimic
-// transport is unavailable, as NodeMimicStart does at its start; nothing else of the node is affected.
+// transport is unavailable, as NodeMimicStart does at its start; nothing else of the node is affected. The overlay applies the
+// mimic part last (NodeOverlayState), as a start or a stop of a sidecar is waited for: the rest of the Generation is in force
+// before it, and only the acknowledgement of the Generation waits for the sidecars.
 
 #include "Node.h"
 
@@ -358,7 +361,15 @@ static void NodeMimicServe(NODE *n, NODE_MIMIC *m, const char *text, const UCHAR
 		NodeMimicUnserve(m);
 		NodeMimicSettings(n, sc, NULL, false, "");
 		m->Unavailable[NODE_MIMIC_ROLE_SERVER] = false;
-		CsSetSetting(n->Store, NODE_SETTING_MIMIC_SERVER, NULL);
+
+		// The report follows the store: a store that keeps the text keeps the key, which the node reports at its next start, and
+		// the next state without the role takes it out again
+		if (CsSetSetting(n->Store, NODE_SETTING_MIMIC_SERVER, NULL) != ERR_NO_ERROR) {
+			NodeLog(n, "Mimic server role: generation %I64u has none, so its sidecar stopped, but the Configuration store did not take the %s setting and the key of the server out: the next state without the role tries again",
+			        gen, NODE_SETTING_MIMIC_SERVER);
+			return;
+		}
+
 		ControlSetMimicKey(n->MimicKeys, NULL);
 		NodeLog(n, "Mimic server role: generation %I64u has none, so its sidecar stopped, and the %s setting and the key of the server are gone", gen, NODE_SETTING_MIMIC_SERVER);
 		return;
@@ -416,7 +427,13 @@ static void NodeMimicLink(NODE *n, NODE_MIMIC *m, const char *text, UINT num, UI
 		NodeMimicStopSidecar(sc);
 		NodeMimicSettings(n, sc, NULL, false, "");
 		m->Unavailable[NODE_MIMIC_ROLE_CLIENT] = false;
-		CsSetSetting(n->Store, NODE_SETTING_MIMIC_CLIENT, NULL);
+
+		if (CsSetSetting(n->Store, NODE_SETTING_MIMIC_CLIENT, NULL) != ERR_NO_ERROR) {
+			NodeLog(n, "Mimic client role: generation %I64u has no link, so its sidecar stopped, but the Configuration store did not take the %s setting out: the next state without a link tries again",
+			        gen, NODE_SETTING_MIMIC_CLIENT);
+			return;
+		}
+
 		NodeLog(n, "Mimic client role: generation %I64u has no link, so its sidecar stopped and the %s setting is gone", gen, NODE_SETTING_MIMIC_CLIENT);
 		return;
 	}

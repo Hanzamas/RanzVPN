@@ -337,10 +337,6 @@ static void NodeOverlayState(void *param, const CONTROL_STATE *state) {
 	// Where the node listens: the Listener of the Generation (NodeListener.c; SDN-45, #238)
 	if (swapped)
 		NodeListenerApplied(ov->Node, st);
-	// The mimic part of the Generation: the settings and the key of its mimic server, and its links (NodeMimicState.c;
-	// CORE-P2-7, #424)
-	if (swapped)
-		NodeMimicApplied(ov->Node, st);
 
 	Lock(ov->Lock);
 	{
@@ -387,6 +383,11 @@ static void NodeOverlayState(void *param, const CONTROL_STATE *state) {
 		NodeEgressApplied(ov->Node, st);
 	// The sidecar of the BGP peering takes the Generation that went in (NodePeering.c; SDN-77, #357)
 	NodePeeringApplied(ov->Node, state, swapped);
+	// The mimic part of the Generation goes in last: the settings and the key of its mimic server, and its links. A sidecar
+	// that it starts or stops is waited for, so the rest of the Generation is in force before, and only the acknowledgement
+	// waits for it (NodeMimicState.c; CORE-P2-7, #424)
+	if (swapped)
+		NodeMimicApplied(ov->Node, st);
 	NodeExitFreeState(exits);
 	NodePeeringDone(with, state);
 	ReleaseSRWLockExclusive(&ov->ApplyLock);
