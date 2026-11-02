@@ -90,6 +90,23 @@ func (in Intent) VRFTagMode(vrf string) string {
 	return TagModeOff
 }
 
+// VRFTagModes returns the tag mode of each VRF of in by its name, as VRFTagMode gives it, in one pass over
+// the Networks: a compilation that asks for the mode of every VRF would sort the Networks once for each.
+func (in Intent) VRFTagModes() map[string]string {
+	out := make(map[string]string, len(in.VRFs))
+	for _, name := range sortedNames(in.Networks) {
+		if n := in.Networks[name]; out[n.VRF] == "" {
+			out[n.VRF] = tagMode(n)
+		}
+	}
+	for name := range in.VRFs {
+		if out[name] == "" {
+			out[name] = TagModeOff
+		}
+	}
+	return out
+}
+
 // TagsNote returns what `ranz explain` says of the source groups of the Network network: that its tags
 // are not authenticated when its VRF has a link of kind vxlan or geneve and its tag mode is
 // trusted-underlay, "" otherwise.

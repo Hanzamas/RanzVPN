@@ -93,8 +93,9 @@ func tagKeyLabel(vrf, id uint32) string {
 // hmacVRFs returns the ids of the VRFs of in whose tag mode is hmac.
 func hmacVRFs(in intent.Intent) map[uint32]bool {
 	out := map[uint32]bool{}
+	modes := in.VRFTagModes()
 	for name, v := range in.VRFs {
-		if in.VRFTagMode(name) == intent.TagModeHMAC {
+		if modes[name] == intent.TagModeHMAC {
 			out[v.ID] = true
 		}
 	}
@@ -209,8 +210,9 @@ func (c *Controller) withTagKeys(in intent.Intent, states map[string]desired.Sta
 	need := map[uint32]uint32{}
 	lists := map[uint32][]*controlpb.TagKey{}
 	var unkeyed []string
+	modes := in.VRFTagModes()
 	for _, name := range slices.Sorted(maps.Keys(in.VRFs)) {
-		if in.VRFTagMode(name) != intent.TagModeHMAC {
+		if modes[name] != intent.TagModeHMAC {
 			continue
 		}
 		id := in.VRFs[name].ID
@@ -269,6 +271,9 @@ func (c *Controller) saveTagKeys(ctx context.Context, need map[uint32]uint32) er
 // once the change is stored. A failure is logged: no state holds the keys any more, and the next start
 // drops the rows (loadTagKeys). c.mu is held.
 func (c *Controller) dropTagKeys(ctx context.Context, next intent.Intent) {
+	if len(c.tkeys.keys) == 0 {
+		return
+	}
 	keep := hmacVRFs(next)
 	var gone []uint32
 	for id := range c.tkeys.keys {
