@@ -51,15 +51,16 @@ func TestApplyTagModes(t *testing.T) {
 	}
 }
 
-// A tag mode is refused with the Network and the reason: a mode that is neither off nor trusted-underlay
-// (hmac comes with SDN-88), and two Networks of one VRF with two modes.
+// A tag mode is refused with the Network and the reason: a mode that is none of off, trusted-underlay and
+// hmac, hmac in a VRF whose link is vxlan (SDN-88), whose group policy extension has no room for the
+// MAC, and two Networks of one VRF with two modes.
 func TestApplyTagModesRejects(t *testing.T) {
 	for _, c := range []struct {
 		a, b string
 		want string
 	}{
-		{`"tagMode": "hmac"`, ``, `Network "a-net": the tagMode must be off or trusted-underlay, not "hmac"`},
-		{`"tagMode": "on"`, ``, `Network "a-net": the tagMode must be off or trusted-underlay, not "on"`},
+		{`"tagMode": "hmac"`, ``, `Network "a-net": the tagMode hmac needs the link geneve or noise in VRF "dc", which has the link vxlan: the group policy extension of VXLAN has no room for the MAC`},
+		{`"tagMode": "on"`, ``, `Network "a-net": the tagMode must be off, trusted-underlay or hmac, not "on"`},
 		{`"tagMode": "trusted-underlay"`, `"tagMode": "off"`, `Network "b-net": the tagMode is off, and Network "a-net" of the same VRF "dc" has trusted-underlay`},
 		{``, `"tagMode": "trusted-underlay"`, `Network "b-net": the tagMode is trusted-underlay, and Network "a-net" of the same VRF "dc" has off`},
 	} {

@@ -174,6 +174,11 @@ ranz.control.v1.Vtep.address max_size:16
 ranz.control.v1.NodeConfig.groups max_count:16
 ranz.control.v1.Peer.groups max_count:16
 ranz.control.v1.Telemetry.groups max_count:4
+# The keys of a VRF in the tag mode hmac (SDN-88): two at once, the one in use and the next or the one
+# before, each of 32 bytes. They make a Vrf object about 90 bytes larger, which leaves it smaller than
+# the NodeConfig.
+ranz.control.v1.Vrf.tag_keys max_count:2
+ranz.control.v1.TagKey.key max_size:32
 # The live operations (SDN-50): an Operation names an L2 Network, a DNS label of at most 63 characters, and one MAC
 # address or one IP address. The OperationResult of a node holds at most 512 entries of a table, each with a MAC address,
 # an address and the name of the member, and why an operation failed. It is a frame of at most 57 kB, below

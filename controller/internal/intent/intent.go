@@ -156,7 +156,7 @@ type Network struct {
 	// the IPv4 pool when the bridged LAN has no DHCP server. Left out, the responder is off.
 	DHCP *DHCP `json:"dhcp,omitempty"`
 	// TagMode is how the Nodes of the VRF trust the source group that a link of kind vxlan or geneve
-	// carries (SDN-87, tagmode.go): off or trusted-underlay. Left out, it is off.
+	// carries (SDN-87, tagmode.go): off, trusted-underlay or hmac (SDN-88). Left out, it is off.
 	TagMode string `json:"tagMode,omitempty"`
 	// Security is the security of an L2 Network (SDN-41, security.go): the protections that its
 	// switch applies to the frames of its clients, and its gateways. Left out, none holds.

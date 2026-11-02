@@ -22,6 +22,8 @@ func TestTrustedUnderlayTagsNotAuthenticated(t *testing.T) {
 		{"geneve", "Trusted-Underlay", intent.TagModeTrustedUnderlay, true},
 		{"vxlan", "off", intent.TagModeOff, false},
 		{"geneve", "", intent.TagModeOff, false},
+		// SDN-88: in hmac the Nodes authenticate the source group of the link, which has no mark
+		{"geneve", "hmac", intent.TagModeHMAC, false},
 		{"noise", "trusted-underlay", "", false},
 	} {
 		t.Run(c.link+"-"+c.mode, func(t *testing.T) {

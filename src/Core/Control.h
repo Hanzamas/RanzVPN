@@ -76,7 +76,10 @@
 #define CONTROL_TAG_MODE_OFF     0     // It ignores the source group of such a link and sends none
 #define CONTROL_TAG_MODE_TRUSTED 1     // trusted-underlay: it takes it and sends it, as the operator vouches for the underlay
 #define CONTROL_TAG_MODE_SESSION 2     // Only in the counters: the records of the Noise sessions, which carry it authenticated
-#define CONTROL_TAG_MODES        3     // The tag modes of the counters
+#define CONTROL_TAG_MODE_HMAC    3     // hmac: it takes and sends it with a MAC under a key of the VRF (SDN-88, #387)
+#define CONTROL_TAG_MODES        4     // The tag modes of the counters
+#define CONTROL_TAG_KEYS         2     // The keys of a VRF in the tag mode hmac (Vrf.tag_keys of control.options)
+#define CONTROL_TAG_KEY_SIZE     32    // ... each
 #define CONTROL_GROUP_REPORT     5000  // ms between two looks of the client at the counters, which it sends when they changed ...
 #define CONTROL_GROUP_REFRESH    60000 // ... and at least this often while they hold any, so the controller never takes them for stale
 
@@ -247,7 +250,17 @@ typedef struct CONTROL_GROUP_COUNTERS {
 	UINT64 Missing;
 	UINT64 Ignored;
 	UINT64 Refused;
+	UINT64 Unauthenticated; // In the tag mode hmac, one whose MAC the node could not verify, judged by that map (SDN-88, #387)
 } CONTROL_GROUP_COUNTERS;
+
+// A key of a VRF in the tag mode hmac (TagKey of the control protocol; SDN-88, #387): its ID, of which the option of the
+// source group names the 16 low bits, the key, and whether the node computes the MAC of the source groups that it sends
+// with it; it takes a MAC of either key of the VRF
+typedef struct CONTROL_TAG_KEY {
+	UINT Id;
+	UCHAR Key[CONTROL_TAG_KEY_SIZE];
+	bool Send;
+} CONTROL_TAG_KEY;
 
 // The tunnel endpoint of a node or of a peer for the links of kind vxlan and geneve (Vtep of the control protocol;
 // SDN-76, #356)
@@ -401,8 +414,12 @@ typedef struct CONTROL_VRF {
 	UINT Vni;                     // ... and the VNI of a link of kind vxlan or geneve
 	char Hub[CONTROL_NAME_SIZE];  // The hub node of a VRF of topology hub-and-spoke (SDN-19, #195), "" for a full mesh
 	bool Ecmp;                    // The flows to a prefix of several gateways spread over the healthy ones (SDN-19, #195)
-	UINT TagMode;                 // How the node trusts the source group that such a link carries (CONTROL_TAG_MODE_OFF or _TRUSTED; SDN-87, #386)
+	UINT TagMode;                 // How the node trusts the source group that such a link carries (CONTROL_TAG_MODE_OFF, _TRUSTED or _HMAC; SDN-87, #386)
 	bool Peering;                 // Its nodes exchange their routes by BGP (SDN-77, #357)
+
+	// Its keys of the tag mode hmac, ordered by ID (SDN-88, #387), which ControlDeliver zeroes once the owner took the state
+	UINT NumTagKeys;
+	CONTROL_TAG_KEY TagKeys[CONTROL_TAG_KEYS];
 } CONTROL_VRF;
 
 // A reservation of the pool of a DHCP responder: an IPv4 prefix (Prefix of Dhcp.reserved)

@@ -22,6 +22,7 @@ const (
 	ModeSession         = "session"          // the records of the Noise sessions, which carry the source group authenticated
 	ModeOff             = "off"              // the datagrams of a plain link of a VRF in the tag mode off
 	ModeTrustedUnderlay = "trusted-underlay" // ... and of one in trusted-underlay
+	ModeHMAC            = "hmac"             // ... and of one in hmac, which carry it with a MAC (SDN-88)
 )
 
 // SourceGroupCounters are the packets of the peers that a node judged in one tag mode since the node
@@ -30,13 +31,16 @@ const (
 // a rollout of the Generations explains (a group that the peer could assert before, or a group ID that
 // the node's state does not know), both judged by the map of address to group; Refused claimed a group
 // that the sending node may not assert, whatever group generation the claim names, and were dropped as
-// an unknown group.
+// an unknown group; Unauthenticated, in the mode hmac, carried one whose MAC the node could not verify
+// (a forged or changed claim, a key that the node does not hold, a timestamp outside the window, or no
+// MAC), judged by the map too (SDN-88).
 type SourceGroupCounters struct {
-	Mode    string `json:"mode"`
-	Carried uint64 `json:"carried"`
-	Missing uint64 `json:"missing"`
-	Ignored uint64 `json:"ignored"`
-	Refused uint64 `json:"refused"`
+	Mode            string `json:"mode"`
+	Carried         uint64 `json:"carried"`
+	Missing         uint64 `json:"missing"`
+	Ignored         uint64 `json:"ignored"`
+	Refused         uint64 `json:"refused"`
+	Unauthenticated uint64 `json:"unauthenticated"`
 }
 
 type groupEntry struct {
@@ -53,6 +57,8 @@ func modeName(m controlpb.TagMode) string {
 		return ModeOff
 	case controlpb.TagMode_TAG_MODE_TRUSTED_UNDERLAY:
 		return ModeTrustedUnderlay
+	case controlpb.TagMode_TAG_MODE_HMAC:
+		return ModeHMAC
 	}
 	return ""
 }
@@ -75,7 +81,8 @@ func (d *nodeData) reportGroups(t *controlpb.Telemetry, now time.Time) {
 			e = &groupEntry{}
 			d.groups[mode] = e
 		}
-		e.SourceGroupCounters = SourceGroupCounters{Mode: mode, Carried: g.GetCarried(), Missing: g.GetMissing(), Ignored: g.GetIgnored(), Refused: g.GetRefused()}
+		e.SourceGroupCounters = SourceGroupCounters{Mode: mode, Carried: g.GetCarried(), Missing: g.GetMissing(), Ignored: g.GetIgnored(), Refused: g.GetRefused(),
+			Unauthenticated: g.GetUnauthenticated()}
 		e.seen = now
 	}
 }
@@ -109,7 +116,8 @@ func groupSamples(n NodeSnapshot) []Sample {
 			Sample{Metric: "source_group_packets", Labels: []string{n.Node, g.Mode, "carried"}, Value: g.Carried},
 			Sample{Metric: "source_group_packets", Labels: []string{n.Node, g.Mode, "missing"}, Value: g.Missing},
 			Sample{Metric: "source_group_packets", Labels: []string{n.Node, g.Mode, "ignored"}, Value: g.Ignored},
-			Sample{Metric: "source_group_packets", Labels: []string{n.Node, g.Mode, "refused"}, Value: g.Refused})
+			Sample{Metric: "source_group_packets", Labels: []string{n.Node, g.Mode, "refused"}, Value: g.Refused},
+			Sample{Metric: "source_group_packets", Labels: []string{n.Node, g.Mode, "unauthenticated"}, Value: g.Unauthenticated})
 	}
 	return out
 }

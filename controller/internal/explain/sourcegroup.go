@@ -26,6 +26,11 @@ func (w *walk) tags(s *node, vrf uint32, l *Link) {
 		return
 	}
 	l.TagMode = intent.TagModeOff
+	// In hmac the Nodes authenticate the source group of the link with a MAC under a key of the VRF (SDN-88), so it has no mark
+	if s.vrfs[vrf].GetTagMode() == controlpb.TagMode_TAG_MODE_HMAC {
+		l.TagMode = intent.TagModeHMAC
+		return
+	}
 	if s.vrfs[vrf].GetTagMode() != controlpb.TagMode_TAG_MODE_TRUSTED_UNDERLAY {
 		return
 	}

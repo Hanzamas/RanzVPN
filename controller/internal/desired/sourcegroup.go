@@ -81,8 +81,12 @@ const maxGroup = 1<<16 - 1
 // tagMode returns the tag mode of the Networks of a VRF as the control protocol carries it: off is left
 // unspecified, which the Nodes take as off.
 func tagMode(mode string) controlpb.TagMode {
-	if mode == intent.TagModeTrustedUnderlay {
+	switch mode {
+	case intent.TagModeTrustedUnderlay:
 		return controlpb.TagMode_TAG_MODE_TRUSTED_UNDERLAY
+	case intent.TagModeHMAC:
+		// SDN-88 #387: the keys of the VRF go in with WithTagKeys (tagkeys.go)
+		return controlpb.TagMode_TAG_MODE_HMAC
 	}
 	return controlpb.TagMode_TAG_MODE_UNSPECIFIED
 }

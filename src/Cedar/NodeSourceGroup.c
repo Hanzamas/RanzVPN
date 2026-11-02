@@ -78,6 +78,7 @@
 
 #include "NodeGateway.h"
 #include "NodeInternal.h"
+#include "NodeTagMac.h"
 
 #include <stdlib.h>
 
@@ -86,7 +87,9 @@
 #define NODE_SOURCE_MISSING 1 // It carried none: the map of address to group judged it
 #define NODE_SOURCE_IGNORED 2 // It carried one that the node ignores, in the tag mode off, of a peer whose groups it does not know yet, or one that a rollout of the Generations explains: the map judged it
 #define NODE_SOURCE_REFUSED 3 // It claimed a group that the sending peer may not assert: dropped
-#define NODE_SOURCE_RESULTS 4
+// It carried one whose MAC the node could not verify in the tag mode hmac (NodeTagMac.c; SDN-88, #387): the map judged it
+#define NODE_SOURCE_UNAUTHENTICATED 4
+#define NODE_SOURCE_RESULTS         5
 
 // One source group that a node knows: its VRF, its group ID and its tag set, and the group generation of the node that may
 // assert it in the VRF, its 32 low bits; of the node's own group, whether it holds it, and stamps no group in the VRF
@@ -121,7 +124,7 @@ typedef struct NODE_SOURCE_PEER {
 struct NODE_SOURCE_GROUP_TABLE {
 	UINT NumVrfs;                            // The VRFs of the Generation ...
 	UINT VrfIds[CONTROL_MAX_VRFS];           // ...
-	UINT Modes[CONTROL_MAX_VRFS];            // ... and the tag mode of each (CONTROL_TAG_MODE_OFF or _TRUSTED)
+	UINT Modes[CONTROL_MAX_VRFS];            // ... and the tag mode of each (CONTROL_TAG_MODE_OFF, _TRUSTED or _HMAC)
 	UINT NumOwn;                             // The node's own group in each of its VRFs
 	NODE_SOURCE_GROUP Own[CONTROL_MAX_VRFS]; // ...
 	UINT NumDevices;                         // The addresses of the Devices whose gateway the node is
@@ -130,6 +133,9 @@ struct NODE_SOURCE_GROUP_TABLE {
 	NODE_SOURCE_PEER *Peers;                 // ...
 	UINT NumKnown;                           // Every group that the state gives in the VRFs of the node, the node's own, of its
 	NODE_SOURCE_GROUP *Known;                // peers and of the Devices, sorted by VRF and group ID (NodeSourceGroupKnownOf)
+
+	// The keys of the VRFs in the tag mode hmac (NodeTagMac.c; SDN-88, #387), NULL while none is
+	NODE_TAG_MAC_TABLE *Mac;
 };
 
 // The source groups of the overlay of a node: the counters by tag mode and result, the report of them on the control
@@ -236,6 +242,11 @@ void NodeSourceGroupClaim(NODE_SOURCE_CLAIM *claim, UINT carrier, const VXLAN_GR
 		claim->Group = group->Group;
 		claim->Tags = group->Tags;
 		claim->Generation = group->Generation;
+		// The ID of the key, the timestamp and the MAC of the option of the authenticated source group (SDN-88, #387)
+		claim->HasMac = group->HasMac;
+		claim->KeyId = group->KeyId;
+		claim->Time = group->Time;
+		Copy(claim->Mac, group->Mac, sizeof(claim->Mac));
 	}
 }
 
@@ -382,10 +393,14 @@ void NodeSourceGroupAttach(NODE *n, NODE_VRF_TABLES *v, const CONTROL_STATE *st)
 	NODE_SOURCE_GROUP_TABLE *t = ZeroMalloc(sizeof(NODE_SOURCE_GROUP_TABLE));
 
 	for (UINT i = 0; i < st->NumVrfs && i < CONTROL_MAX_VRFS; i++) {
+		UINT mode = st->Vrfs[i].TagMode;
+
 		t->VrfIds[t->NumVrfs] = st->Vrfs[i].Id;
-		t->Modes[t->NumVrfs] = (st->Vrfs[i].TagMode == CONTROL_TAG_MODE_TRUSTED ? CONTROL_TAG_MODE_TRUSTED : CONTROL_TAG_MODE_OFF);
+		t->Modes[t->NumVrfs] = (mode == CONTROL_TAG_MODE_TRUSTED || mode == CONTROL_TAG_MODE_HMAC ? mode : CONTROL_TAG_MODE_OFF);
 		t->NumVrfs++;
 	}
+	// The keys of the VRFs in the tag mode hmac (NodeTagMac.c; SDN-88, #387)
+	t->Mac = NodeTagMacNew(st);
 
 	for (UINT i = 0; i < st->NumGroups && i < CONTROL_MAX_VRFS; i++) {
 		NODE_SOURCE_GROUP *g = &t->Own[t->NumOwn++];
@@ -471,6 +486,7 @@ void NodeFreeSourceGroupTable(NODE_SOURCE_GROUP_TABLE *t) {
 	Free(t->Peers);
 	Free(t->Devices);
 	Free(t->Known);
+	NodeTagMacFree(t->Mac);
 
 	Zero(t, sizeof(NODE_SOURCE_GROUP_TABLE));
 	Free(t);
@@ -543,17 +559,19 @@ const UCHAR *NodeSourceGroupWrap(NODE_VRF_TABLES *v, UINT hop, UINT vrf_id, UCHA
 
 // The source group that a packet of the host in the VRF vrf_id carries over a link of kind vxlan or geneve, into *group,
 // with the group generation of the node in the VRF, which only Geneve carries: false, with *group empty, unless the tag
-// mode of the VRF is trusted-underlay and the node has a source group for the packet. The caller reads v as a reader of
-// the table snapshot of the node.
+// mode of the VRF is trusted-underlay or hmac and the node has a source group for the packet. In hmac the group goes with
+// the ID of the key, a timestamp and its MAC, over geneve only (NodeTagMacSign; SDN-88, #387). The caller reads v as a
+// reader of the table snapshot of the node.
 bool NodeSourceGroupStamp(NODE_VRF_TABLES *v, UINT vrf_id, const UCHAR *packet, UINT size, VXLAN_GROUP *group) {
 	const NODE_SOURCE_GROUP_TABLE *t = (v != NULL ? v->SourceGroups : NULL);
+	UINT mode = NodeSourceGroupMode(t, vrf_id);
 	NODE_SOURCE_GROUP g;
 
 	if (group == NULL)
 		return false;
 
 	Zero(group, sizeof(VXLAN_GROUP));
-	if (t == NULL || NodeSourceGroupMode(t, vrf_id) != CONTROL_TAG_MODE_TRUSTED || NodeSourceGroupOf(t, vrf_id, packet, size, &g) == false)
+	if (t == NULL || (mode != CONTROL_TAG_MODE_TRUSTED && mode != CONTROL_TAG_MODE_HMAC) || NodeSourceGroupOf(t, vrf_id, packet, size, &g) == false)
 		return false;
 
 	group->Carried = true;
@@ -563,7 +581,22 @@ bool NodeSourceGroupStamp(NODE_VRF_TABLES *v, UINT vrf_id, const UCHAR *packet, 
 	group->Tags = g.Tags;
 	group->Generation = g.Generation;
 
+	if (mode == CONTROL_TAG_MODE_HMAC)
+		return NodeTagMacSign(t->Mac, vrf_id, packet, size, NodeTagMacNow(), group);
+
 	return true;
+}
+
+// Whether the claim that a datagram of the link of the VRF vrf_id carried with its IP packet of size bytes at packet is
+// authentic, into claim->Authentic, when the tag mode of the VRF is hmac (NodeTagMacCheck; SDN-88, #387): the node judges a
+// claim that is not as a packet without one (NodeSourceGroupJudge). The link calls it on each datagram before the claim
+// goes anywhere, so a hub or an EVPN gateway that judges the claim sees the same. The caller reads v as a reader of the
+// table snapshot of the node.
+void NodeSourceGroupCheck(NODE_VRF_TABLES *v, UINT vrf_id, const UCHAR *packet, UINT size, NODE_SOURCE_CLAIM *claim) {
+	const NODE_SOURCE_GROUP_TABLE *t = (v != NULL ? v->SourceGroups : NULL);
+
+	if (claim != NULL && claim->Carrier != NODE_CARRIER_SESSION && NodeSourceGroupMode(t, vrf_id) == CONTROL_TAG_MODE_HMAC)
+		NodeTagMacCheck(t->Mac, vrf_id, packet, size, NodeTagMacNow(), claim);
 }
 
 // Whether the node knows the groups that the peer of the next hop hop of the table t may assert: its state gives the peer
@@ -607,6 +640,9 @@ static UINT NodeSourceGroupGeneration(const NODE_SOURCE_GROUP_TABLE *t, UINT hop
 static UINT NodeSourceGroupJudge(const NODE_SOURCE_GROUP_TABLE *t, UINT mode, UINT vrf_id, UINT hop, const NODE_SOURCE_CLAIM *claim) {
 	if (claim == NULL || claim->Carried == false)
 		return NODE_SOURCE_MISSING;
+	// In the tag mode hmac a claim whose MAC the node could not verify is as none (NodeSourceGroupCheck; SDN-88, #387)
+	if (mode == CONTROL_TAG_MODE_HMAC && claim->Authentic == false)
+		return NODE_SOURCE_UNAUTHENTICATED;
 	if (mode == CONTROL_TAG_MODE_OFF || t == NULL || NodeSourceGroupKnows(t, hop) == false)
 		return NODE_SOURCE_IGNORED;
 
@@ -772,6 +808,7 @@ static void NodeSourceGroupCounters(void *param, CONTROL_GROUP_COUNTERS *counter
 		counters[i].Missing = (UINT64)ReadAcquire64(&g->Counts[i][NODE_SOURCE_MISSING]);
 		counters[i].Ignored = (UINT64)ReadAcquire64(&g->Counts[i][NODE_SOURCE_IGNORED]);
 		counters[i].Refused = (UINT64)ReadAcquire64(&g->Counts[i][NODE_SOURCE_REFUSED]);
+		counters[i].Unauthenticated = (UINT64)ReadAcquire64(&g->Counts[i][NODE_SOURCE_UNAUTHENTICATED]);
 	}
 }
 

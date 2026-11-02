@@ -128,6 +128,22 @@
 // (SourceGroupCounters). No schema version changes with them: a node of an older release skips the
 // fields it does not know, reports no Capability tags and gets no record of version 1.
 //
+// The tag mode hmac (SDN-88, #387): the option of the source group of a link of kind geneve carries a
+// MAC, HMAC-SHA256 truncated to 64 bits, over the VNI, the group ID, the ID of the key, the tag set, the
+// group generation, a timestamp and the inner IP and L4 headers, under a key of the VRF. The controller
+// makes the keys of each VRF in that mode, keeps them sealed in its store and gives each node that
+// reports the Capability tags the keys of its VRFs in their Vrf objects (Vrf.tag_keys), in clear inside
+// the control stream only: the states that the controller stores hold the ID of each key and not the
+// key. Two keys are active at once: a node takes a MAC of either and computes its own with the one that
+// the controller marks to send with. The controller rotates a key in two Generations: the first gives
+// every node the new key besides the one in use, and once every node of the VRF acknowledged it, the
+// second makes it the key to send with, so no node sends with a key that another node does not hold. A
+// node that takes a datagram whose MAC is wrong, of a key that it does not hold, or whose timestamp is
+// more than 30 s from its clock, judges it as a datagram without the option, by the map of address to
+// group. A replay inside that window stays possible, the payload is not encrypted, and every node of the
+// VRF holds its key. No schema version changes with them: a node of an older release takes the tag mode
+// that it does not know for off.
+//
 // Live operations (SDN-50, #243): an operator reads or clears the MAC table or the IP table of an L2
 // Network on a node. The controller sends the node an Operation on its stream, with an id of its own;
 // the node does it at once and answers with an OperationResult of the same id. Only a node that reports
@@ -586,6 +602,21 @@ message Vrf {
   bool ecmp = 12;
   // How the nodes of the VRF exchange their routes (SDN-77 #357)
   Peering peering = 13;
+  // The keys of the VRF in the tag mode hmac (SDN-88 #387), ordered by ID, 2 at most, in the Vrf object
+  // of a node that reports the Capability tags; none in any other tag mode
+  repeated TagKey tag_keys = 16;
+}
+
+// A key of a VRF in the tag mode hmac (SDN-88 #387), which the controller made and keeps sealed. Its ID
+// grows by one with each key of the VRF; the option of the source group names its 16 low bits. The
+// controller sends the key in clear inside the control stream only: the states that it stores and
+// compares hold the ID without the key.
+message TagKey {
+  uint32 id = 1;
+  bytes key = 2;   // 32 bytes
+  // The node computes the MAC of the source groups that it sends with this key; it takes a MAC of
+  // either key of the VRF
+  bool send = 3;
 }
 
 // The source group of an endpoint in one VRF (SDN-87 #386): its group ID, from 1 to 65535, and its
@@ -620,6 +651,11 @@ enum TagMode {
   TAG_MODE_TRUSTED_UNDERLAY = 2;
   // Only in SourceGroupCounters: the records of the Noise sessions.
   TAG_MODE_SESSION = 3;
+  // The node takes it only with a MAC under a key of the VRF (Vrf.tag_keys) and a timestamp within 30
+  // s of its clock, and sends it with one (SDN-88 #387): a link of kind geneve, as the group policy
+  // extension of VXLAN has no room for the MAC. A replay inside the window stays possible, and every
+  // node of the VRF holds the key, so it can claim any group of the VRF.
+  TAG_MODE_HMAC = 4;
 }
 
 // The zone of a VRF (SDN-11 #187, ADR-0028 decisions 6 and 7). The stub resolver of a node
@@ -1000,6 +1036,9 @@ message SourceGroupCounters {
   // that the peer could assert before or a group ID that the node's state does not know
   uint64 ignored = 4;
   uint64 refused = 5;  // claimed a group that the sending node may not assert: dropped as an unknown group
+  // carried one whose MAC the node could not verify in the tag mode hmac (SDN-88 #387): a wrong MAC, a
+  // key that the node does not hold, a timestamp outside the window, or no MAC: judged by that map
+  uint64 unauthenticated = 6;
 }
 
 // The BGP peering of the standard mode at a node (SDN-77 #357): each peer of its sidecar, in the
