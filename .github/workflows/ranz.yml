@@ -185,9 +185,9 @@ jobs:
     # CI-SPEED-1 #547; about 10 minutes before), and the fuzz step runs each target of fuzz-targets.txt for 20 s,
     # one after the other, about 14 minutes now: a job of 25 minutes was cancelled in its static analysis, the last step,
     # with every step before it done
-    # TEMPORARY (CI-FLAKE-4, #581): 240 minutes for the stress step at the end, which runs controller/internal/controller 100
-    # times under -race, about 80 s each, 40 again in the last commit of this pull request
-    timeout-minutes: 240
+    # TEMPORARY (CI-FLAKE-4, #581): 150 minutes for the stress step at the end, which runs controller/internal/controller 30
+    # more times under -race, about 140 s each, 40 again in the last commit of this pull request
+    timeout-minutes: 150
     steps:
     - uses: actions/checkout@v4
     - uses: actions/setup-go@v5
@@ -511,13 +511,15 @@ jobs:
         "$RUNNER_TEMP/gobin/govulncheck" -format json ./... > "$RUNNER_TEMP/govulncheck-linux.json"
         GOOS=windows "$RUNNER_TEMP/gobin/govulncheck" -format json ./... > "$RUNNER_TEMP/govulncheck-windows.json"
         python .github/scripts/govulncheck-gate.py --accepted .github/quality/govulncheck-accepted.txt "$RUNNER_TEMP/govulncheck-linux.json" "$RUNNER_TEMP/govulncheck-windows.json"
-    # TEMPORARY, removed in the last commit of this pull request (CI-FLAKE-4, #581): the two tests of the sightings and the
-    # package of the helper again and again under -race, while a program opens and closes thousands of connections, each of
-    # which takes a source port of the runner. go test runs 5 times at a time (the package once), until the runs or the
-    # minutes of the call are over, and the step fails at the first test that fails.
+    # TEMPORARY, removed in the last commit of this pull request (CI-FLAKE-4, #581): controller/internal/controller again and
+    # again under -race, while a program opens and closes thousands of connections, each of which takes a source port of the
+    # runner. The two tests of the sightings ran 100 times in a row, and the package 70 times, in run 41376006594 (head
+    # 65426b5f): the 160 minutes of its call held 70 runs of about 137 s, and the ticket asks for 100. This step runs the
+    # package 30 times more, one run at a time, until the runs or the minutes of the call are over, and fails at the first
+    # run that fails.
     - name: 'Stress, temporary (CI-FLAKE-4, #581)'
       if: ${{ !cancelled() }}
-      timeout-minutes: 210
+      timeout-minutes: 120
       run: |
         mkdir -p "$RUNNER_TEMP/churn"
         cat > "$RUNNER_TEMP/churn/main.go" <<'EOF'
@@ -583,9 +585,7 @@ jobs:
             echo "$name: $runs runs in a row passed with the connections open, after $SECONDS s"
           done
         }
-        stress 20 100 5 TestRunServesTheCertificateOfItsSetting -run '^TestRunServesTheCertificateOfItsSetting$' ./controller
-        stress 35 100 1 TestRollingUpgrade -run '^TestRollingUpgrade$' ./controller
-        stress 160 100 1 controller/internal/controller ./controller/internal/controller
+        stress 100 30 1 controller/internal/controller ./controller/internal/controller
     - uses: actions/upload-artifact@v4
       if: failure()
       with:
@@ -943,7 +943,9 @@ jobs:
     # as the step Test has it, while a program keeps every core of the runner busy. For the tests go test runs 5 times at a
     # time, until the 20 runs or the minutes of the test are over. The stress fails the step at its first failure.
     - name: 'Stress, temporary (CI-FLAKE-5, #592)'
-      if: ${{ !cancelled() && matrix.platform.ARCHITECTURE == 'x64' }}
+      # Off for this head: the step ran all that the ticket asks for in run 41376006594 (head 65426b5f), and the last
+      # commit of this pull request takes it out
+      if: false
       shell: pwsh
       timeout-minutes: 210
       run: |
