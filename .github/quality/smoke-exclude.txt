@@ -7,6 +7,7 @@ s              the start/stop smoke test, which the script runs first with a che
 memory_leak    leaks one byte on purpose
 bgp            needs ranz and gobgpd next to vpntest and administrator rights: .github/scripts/bgp-spike.ps1 runs it
 evpn           needs ranz next to vpntest, whose sidecars of two nodes peer with each other: .github/scripts/bgp-spike.ps1 runs it
+stretch        needs ranz next to vpntest, whose sidecars of three nodes peer on 127.0.0.2 and 127.0.0.3: .github/scripts/bgp-spike.ps1 runs it
 peering        needs ranz next to vpntest and TCP 179 free on 127.0.0.2 to 127.0.0.4: .github/scripts/bgp-peering.ps1 runs it
 bgpboth        needs ranz next to vpntest and TCP 179 free on every address: .github/scripts/bgp-peering.ps1 runs it
 mimic          needs ranz next to vpntest: .github/scripts/mimic-sidecar.ps1 runs it

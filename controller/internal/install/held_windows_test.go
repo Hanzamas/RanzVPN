@@ -64,13 +64,21 @@ func TestWaitUnheldGivesUp(t *testing.T) {
 }
 
 // The image of a program that runs holds no handle to its file: ranz uninstall -keep-ranz, run from the
-// ranz.exe of the Ranz folder, does not wait for itself. The running program here is the test binary.
+// ranz.exe of the Ranz folder, does not wait for itself. The running program here is the test binary,
+// which go test has just written: another process of the runner, a scanner of new programs for one, may
+// still hold it for a moment, and waitUnheld waits for that as it should. So a first wait lets such a
+// handle go, and a program that held its own image would make it run out of time and report; the second
+// wait, while the program still runs from the file, must not wait at all.
 func TestWaitUnheldDoesNotWaitForTheRunningProgram(t *testing.T) {
 	self, err := os.Executable()
 	if err != nil {
 		t.Fatalf("os.Executable: %v", err)
 	}
 	var out strings.Builder
+	waitUnheld(&out, self, 10*time.Second)
+	if out.Len() != 0 {
+		t.Fatalf("waitUnheld of the running program reported %q", out.String())
+	}
 	start := time.Now()
 	waitUnheld(&out, self, 10*time.Second)
 	if took := time.Since(start); took > time.Second || out.Len() != 0 {
