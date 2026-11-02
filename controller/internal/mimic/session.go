@@ -11,6 +11,8 @@ import (
 	"strings"
 	"sync/atomic"
 	"time"
+
+	hyserver "github.com/apernet/hysteria/core/v2/server"
 )
 
 // Options are the options of a session.
@@ -21,6 +23,12 @@ type Options struct {
 	skipDetect bool // the library does not probe the decoy
 	dialOuter  func(ctx context.Context, network, address string) (net.Conn, error)
 	now        func() time.Time // the clock of the client role, which the proof of a link carries
+	// onBrutal hears the rate at which an end of a connection of the Hysteria mode sends, in bytes
+	// per second: Brutal at that rate, or 0 for BBR
+	onBrutal func(role string, bps uint64)
+	// onHysteria hears the configuration that the Hysteria part of the server role gives the server of
+	// the library (hysteriaserver.go)
+	onHysteria func(*hyserver.Config)
 }
 
 // Version names ranz mimic, the program that runs the sidecar, and the libraries it embeds.
@@ -34,6 +42,8 @@ func Version() string {
 				parts = append(parts, "REALITY "+d.Version)
 			case "github.com/refraction-networking/utls":
 				parts = append(parts, "uTLS "+d.Version)
+			case "github.com/apernet/hysteria/core/v2":
+				parts = append(parts, "Hysteria "+d.Version)
 			}
 		}
 		if len(parts) > 0 {
@@ -159,7 +169,7 @@ func Run(ctx context.Context, conn net.Conn, opts Options) error {
 		return err
 	}
 	s.ev.start()
-	log.Info("started", "role", s.role, "listen", ready.Listen, "decoy", ready.Decoy)
+	log.Info("started", "role", s.role, "listen", ready.Listen, "decoy", ready.Decoy, "hysteria", ready.Hysteria)
 
 	for {
 		m, err := r.Read()
@@ -204,6 +214,7 @@ func (s *session) start(ctx context.Context, m Message, ready *Message, log *slo
 		s.server = srv
 		ready.Listen = srv.addr()
 		ready.Decoy = srv.decoyAddr()
+		ready.Hysteria = srv.hysteriaAddr()
 	case RoleClient:
 		cfg, err := parseClient(m.Client)
 		if err != nil {

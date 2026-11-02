@@ -85,6 +85,12 @@ type Node struct {
 	// Operation to a node that does not; the simulator ends its stream at an Operation that it has no
 	// handler for, as a node ends its stream at a frame that it does not know.
 	Operations OperationHandler
+	// OnAck, when it is set, is called with the generation after the node sent its Ack of it, on the goroutine of the
+	// stream (the Fleet of the scale scenario takes the instant of each Ack so, scale.go).
+	OnAck func(generation uint64)
+	// NoFrames keeps the node from recording the frames of its stream, so Frames returns none: a Fleet of thousands of
+	// nodes has no use for them, and they would hold every update twice.
+	NoFrames bool
 
 	mu      sync.Mutex
 	state   desired.State
@@ -197,6 +203,9 @@ func (n *Node) run(ctx context.Context, ep Endpoint) error {
 			ack := &controlpb.Ack{Generation: body.Update.GetGeneration()}
 			if err := n.send(conn, &controlpb.ControlMessage{Body: &controlpb.ControlMessage_Ack{Ack: ack}}); err != nil {
 				return err
+			}
+			if n.OnAck != nil {
+				n.OnAck(ack.GetGeneration())
 			}
 			if n.Updates != nil {
 				select {
@@ -322,6 +331,9 @@ func (n *Node) send(conn *control.Conn, m *controlpb.ControlMessage) error {
 }
 
 func (n *Node) record(f Frame) {
+	if n.NoFrames {
+		return
+	}
 	n.mu.Lock()
 	defer n.mu.Unlock()
 	n.frames = append(n.frames, f)
