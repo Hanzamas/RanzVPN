@@ -798,10 +798,11 @@ jobs:
     # The data directory of the Controller on arm64, which ships and is a client edition of Windows (AUD1-DT-18-R2, #604; ST-3 of
     # docs/threat-model.md). The Test step above runs on x64 only, so the window test, the tests of the names that a data directory
     # may not have and the tests of a kept folder (controller/datadir_*_windows_test.go) ran on x64 and nowhere else, and the experiment
-    # of PR 541 measured both architectures. The pattern is the first word of each of those tests; each needs an elevated
-    # Administrator and fails without one on a runner, and the step fails when a test of each file is not among the ones that passed,
-    # which is what a pattern that no longer names them would do. The step of the service that checks the same folder with the
-    # running service (controller-service.ps1, Test-DataDirChildren) stays on x64 as the whole step does: it runs HTTP.sys on port 80
+    # of PR 541 measured both architectures. The pattern is the first word of each of those tests, and TestNeedACLs, whose name
+    # starts with another word. Each needs an elevated Administrator and fails without one on a runner, except TestNeedACLs, which
+    # reads no volume. The step fails when a test of each of the five files is not among the ones that passed, which is what a
+    # pattern that no longer names them would do. The step of the service that checks the same folder with the running service
+    # (controller-service.ps1, Test-DataDirChildren) stays on x64 as the whole step does: it runs HTTP.sys on port 80
     # and the process mitigation test of the service, and nothing in it has been shown on arm64. The first test job of windows.yml
     # does run the service on arm64, and checks the owner and the list that the install gave its data directory (step controller-up).
     - name: Test the data directory of the Controller
@@ -811,10 +812,10 @@ jobs:
         TEMP: ${{ runner.temp }}
         TMP: ${{ runner.temp }}
       run: |
-        go test -count=1 -v -timeout 15m -run '^(TestInstall|TestNewDataDir|TestNoStandardUser|TestControllerRefuses|TestCheckDataDir|TestKeptDataDir|TestTheList)' ./controller | Tee-Object -Variable ran
+        go test -count=1 -v -timeout 15m -run '^(TestInstall|TestNewDataDir|TestNoStandardUser|TestControllerRefuses|TestCheckDataDir|TestKeptDataDir|TestTheList|TestNeedACLs)' ./controller | Tee-Object -Variable ran
         if ($LASTEXITCODE -ne 0) { throw "go test exited with code $LASTEXITCODE" }
         $text = $ran -join "`n"
-        foreach ($name in 'TestNoStandardUserOpensANewDataDirWhileItIsMade', 'TestInstallRefusesALinkBelowTheTopOfAKeptDataDir', 'TestInstallLooksAtAnEntryByItsExactName') {
+        foreach ($name in 'TestCheckDataDirOwner', 'TestNoStandardUserOpensANewDataDirWhileItIsMade', 'TestInstallRefusesALinkBelowTheTopOfAKeptDataDir', 'TestInstallLooksAtAnEntryByItsExactName', 'TestNeedACLs') {
           if ($text -notmatch "--- PASS: $name ") { throw "$name did not pass on this runner: the pattern of this step no longer names it" }
         }
     # The contract of the one executable, read from outside and natively on this architecture
