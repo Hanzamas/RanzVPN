@@ -615,10 +615,11 @@ static bool TpTestSend(TPTEST_CTX *ctx, UCHAR *packet, UINT port)
 // The cases
 //
 
-// One case over the link of kind with the trace on at both nodes, or at node-a alone unless traced_b: node-a records the
-// packet as its ingress node with the group guest and its verdict; node-b records it with the same trace ID, ingress node
-// and group and its own verdict, when the packet left node-a, the link carries the option and the trace is on at node-b,
-// and nothing otherwise; and node-b's host takes the packet as it was sent when both policies allow it
+// One case over the link of kind with the trace on at both nodes, or at node-a alone unless traced_b: the packet goes when
+// the policy of node-a allows it, and NodeOverlayInput says that it went nowhere when that policy denies it; node-a records
+// the packet as its ingress node with the group guest and its verdict; node-b records it with the same trace ID, ingress
+// node and group and its own verdict, when the packet left node-a, the link carries the option and the trace is on at
+// node-b, and nothing otherwise; and node-b's host takes the packet as it was sent when both policies allow it
 static void TpTestCase(TPTEST_CTX *ctx, UINT kind, TPTEST_CASE *c, bool traced_b)
 {
 	TPTEST_NODE *a = &ctx->Nodes[TPTEST_A];
@@ -669,7 +670,7 @@ static void TpTestCase(TPTEST_CTX *ctx, UINT kind, TPTEST_CASE *c, bool traced_b
 			c->AllowedA ? "allowed" : "denied", (kind == CONTROL_LINK_VXLAN && c->AllowedA) ? ", as the VXLAN header has no room for the trace option" :
 			(traced_b == false && c->AllowedA) ? ", as its trace is off" : "");
 	}
-	TpTestCheck(ctx, sent && ingress && (reaches == false || recorded) && quiet && arrived == (c->AllowedA && c->AllowedB) && (arrived == false || same), what,
+	TpTestCheck(ctx, sent == c->AllowedA && ingress && (reaches == false || recorded) && quiet && arrived == (c->AllowedA && c->AllowedB) && (arrived == false || same), what,
 		"sent %u, node-a recorded %u (trace 0x%08x, group %u, allowed %u), node-b recorded %u (trace 0x%08x, group %u, allowed %u), node-b quiet %u, arrived %u, as it was sent %u",
 		(UINT)sent, (UINT)ingress, ra.Id, ra.Group, (UINT)ra.Allowed, (UINT)recorded, rb.Id, rb.Group, (UINT)rb.Allowed, (UINT)quiet, (UINT)arrived, (UINT)same);
 }
