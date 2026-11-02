@@ -61,7 +61,7 @@
 #define	L3ROUTE_TTL				64			// The TTL and the hop limit of the packets of the members
 #define	L3ROUTE_KEY				"Ranz L3Route Test"		// The identity key of the node, in the software KSP; deleted at the end
 #define	L3ROUTE_KEY_W			L"Ranz L3Route Test"
-#define	L3ROUTE_UPLINK			83			// The Network id of the MAC address of the uplink (NodeL2Mac)
+#define	L3ROUTE_UPLINK_ID		83			// The Network id of the MAC address of the uplink (NodeL2Mac)
 #define	L3ROUTE_LENGTH			24			// The prefix length of the uplink
 #define	L3ROUTE_ECHO_PORT		7			// The UDP port of the address behind the uplink
 #define	L3ROUTE_GOLDEN			"l3route_routing.txt"
@@ -805,7 +805,7 @@ static bool L3UplinkNew(L3ROUTE_CTX *ctx, L3ROUTE_UPLINK *u, NODE *n)
 	char error[MAX_SIZE];
 
 	memset(key, 0x83, sizeof(key));
-	NodeL2Mac(u->Mac, key, L3ROUTE_UPLINK);
+	NodeL2Mac(u->Mac, key, L3ROUTE_UPLINK_ID);
 	u->KmTest = NodeKmTestNew(n, u->Mac);
 	u->IfIndex = NodeKmTestIndex(u->KmTest);
 	if (L3Check(ctx, u->KmTest != NULL && ConvertInterfaceIndexToLuid(u->IfIndex, &luid) == NO_ERROR, "the uplink, a KM-TEST adapter of the test, comes up", "interface %u", u->IfIndex) == false)
