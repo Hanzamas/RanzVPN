@@ -37,6 +37,8 @@
 # tests linked in, as a release links its own (controller/cluster_test.go). rqlite publishes no
 # Windows build for arm64: the member of ranz for arm64 is the x64 rqlited.exe, which Windows 11 on
 # ARM runs under emulation, and the arm64 job writes it out and starts it (TestRqlitedMemberRuns).
+# The tests of the data directory of the Controller (controller/datadir_*_windows_test.go, ST-3 of docs/threat-model.md) run on
+# both: in the step Test on x64, and in the step Test the data directory of the Controller on arm64 (AUD1-DT-18-R2, #604).
 # On both architectures the job runs the sidecar on the named pipe of the node, among them the
 # process mitigations and the System32-only DLL search of ranz read from outside its process
 # (ADR-0039, SEC-1 #279), runs the executable for its contract, and checks its flags
@@ -89,8 +91,8 @@
 # clients guide that a test of controller/cmd/ranz keeps in step with the product (SDN-82, #377);
 # .gitattributes, which sets the line endings of the checkout; this file, the plan (ci-plan.yml and
 # ci-plan.py),
-# .github/scripts/controller-service.ps1 with the .github/scripts/controller-hostfiles.ps1 that it
-# runs, .github/scripts/ranz-tools.ps1, the binary hardening gate
+# .github/scripts/controller-service.ps1 with the .github/scripts/controller-hostfiles.ps1 and the
+# .github/scripts/read-shared.ps1 that it runs, .github/scripts/ranz-tools.ps1, the binary hardening gate
 # .github/scripts/binary-hardening.ps1, which windows.yml runs too, the fuzz targets, coverage
 # floors, accepted vulnerabilities and recorded scale medians of .github/quality and the scripts that read them. A pull
 # request that changes none of them (a C change under src/, or docs only) does not run this
@@ -122,6 +124,7 @@ on:
     - '.github/scripts/ci-plan.py'
     - '.github/scripts/controller-service.ps1'
     - '.github/scripts/controller-hostfiles.ps1'
+    - '.github/scripts/read-shared.ps1'
     - '.github/scripts/ranz-tools.ps1'
     - '.github/quality/fuzz-targets.txt'
     - '.github/quality/coverage-floors.txt'
@@ -781,6 +784,28 @@ jobs:
       run: |
         go test -count=1 -v -run '^(TestRqlitedMemberRuns|TestRqlitedExe.*|TestParseFlagsRqliteExternal)$' ./controller
         if ($LASTEXITCODE -ne 0) { throw "go test exited with code $LASTEXITCODE" }
+    # The data directory of the Controller on arm64, which ships and is a client edition of Windows (AUD1-DT-18-R2, #604; ST-3 of
+    # docs/threat-model.md). The Test step above runs on x64 only, so the window test, the tests of the names that a data directory
+    # may not have and the tests of a kept folder (controller/datadir_*_windows_test.go) ran on x64 and nowhere else, and the experiment
+    # of PR 541 measured both architectures. The pattern is the first word of each of those tests; each needs an elevated
+    # Administrator and fails without one on a runner, and the step fails when a test of each file is not among the ones that passed,
+    # which is what a pattern that no longer names them would do. The step of the service that checks the same folder with the
+    # running service (controller-service.ps1, Test-DataDirChildren) stays on x64 as the whole step does: it runs HTTP.sys on port 80
+    # and the process mitigation test of the service, and nothing in it has been shown on arm64. The first test job of windows.yml
+    # does run the service on arm64, and checks the owner and the list that the install gave its data directory (step controller-up).
+    - name: Test the data directory of the Controller
+      if: matrix.platform.ARCHITECTURE != 'x64'
+      shell: pwsh
+      env:
+        TEMP: ${{ runner.temp }}
+        TMP: ${{ runner.temp }}
+      run: |
+        go test -count=1 -v -timeout 15m -run '^(TestInstall|TestNewDataDir|TestNoStandardUser|TestControllerRefuses|TestCheckDataDir|TestKeptDataDir|TestTheList)' ./controller | Tee-Object -Variable ran
+        if ($LASTEXITCODE -ne 0) { throw "go test exited with code $LASTEXITCODE" }
+        $text = $ran -join "`n"
+        foreach ($name in 'TestNoStandardUserOpensANewDataDirWhileItIsMade', 'TestInstallRefusesALinkBelowTheTopOfAKeptDataDir', 'TestInstallLooksAtAnEntryByItsExactName') {
+          if ($text -notmatch "--- PASS: $name ") { throw "$name did not pass on this runner: the pattern of this step no longer names it" }
+        }
     # The contract of the one executable, read from outside and natively on this architecture
     # (ONE-1): one version for every subcommand, the subcommands, the NOTICE
     - name: The executable
