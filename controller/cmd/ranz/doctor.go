@@ -87,7 +87,7 @@ func runDoctor(ctx context.Context, args []string, stdout, stderr io.Writer) int
 		code = 1
 	}
 	// Whether the host can negotiate the hybrid X25519MLKEM768 on QUIC and TLS-443, and what to run to switch it on where it
-	// cannot (CORE-P2-5, #382): a report, which fails no check, since a host without it still runs Ranz with X25519
+	// cannot (CORE-P2-5, #382): a report, which fails no check, since a host without it still runs Ranz with a classical group
 	doctor.PostQuantum(out)
 	if !*makeBundle {
 		return code
