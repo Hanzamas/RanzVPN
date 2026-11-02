@@ -16,6 +16,8 @@
 // is where the node looks for it (SDN-77-R2, #532).
 // Whether the node can be the gateway of a Stretch of an L2 Network, the Capability evpn (SDN-63, #290), follows from the edition: a
 // Windows Server whose VXLAN module runs, which every node does.
+// Whether the host asks for the hybrid X25519MLKEM768 on QUIC and TLS-443, the Capability pq_tls (CORE-P2-5, #382), follows from
+// CNG and the TLS group list in force on the host (TransportTlsHybrid of Core/TransportGroup.c), found again for each Hello.
 
 #include "Node.h"
 
@@ -211,6 +213,14 @@ void NodeCapsProc(void *param, CONTROL_CAPS *caps) {
 	// The source groups travel with the packets of every node (NodeSourceGroup.c; SDN-87, #386)
 	if (caps != NULL)
 		caps->Tags = true;
+	// The hybrid X25519MLKEM768 on QUIC and TLS-443 (CORE-P2-5, #382): the host asks for it when CNG has ML-KEM and the group
+	// list in force names it first, which the TLS transport of the node sets where no policy decides the list
+	if (caps != NULL) {
+		TRANSPORT_TLS_HYBRID h;
+
+		TransportTlsHybrid(&h);
+		caps->PqTls = h.Asks;
+	}
 }
 
 void NodeCapsPeering(NODE *n, CONTROL_CAPS *caps) {

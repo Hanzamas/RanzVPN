@@ -52,6 +52,10 @@ type Capabilities struct {
 	// EVPN: the node can be the gateway of a Stretch (SDN-63): its host is a Windows Server and the VXLAN module of the node
 	// runs. The Controller refuses a Stretch whose gateway does not report it (stretch.go).
 	EVPN bool `json:"evpn,omitempty"`
+	// PQTLS: the host of the node asks for the hybrid key exchange X25519MLKEM768 on the QUIC and TLS-443 paths (CORE-P2-5):
+	// CNG has ML-KEM and its TLS group list names the hybrid first. The session of two nodes that both report it is
+	// quantum-resistant, which explain shows for each link (internal/explain); no feature needs it.
+	PQTLS bool `json:"pqTls,omitempty"`
 }
 
 var skuNames = map[controlpb.Sku]string{
@@ -87,6 +91,7 @@ func FromProto(p *controlpb.Capabilities) *Capabilities {
 		Tags:            p.GetTags(),
 		BGPPeering:      p.GetBgpPeering(),
 		EVPN:            p.GetEvpn(),
+		PQTLS:           p.GetPqTls(),
 	}
 	if len(p.GetWireguardKey()) > 0 {
 		c.WireGuardKey = base64.StdEncoding.EncodeToString(p.GetWireguardKey())
@@ -109,6 +114,7 @@ func (c Capabilities) Proto() (*controlpb.Capabilities, error) {
 		Tags:            c.Tags,
 		BgpPeering:      c.BGPPeering,
 		Evpn:            c.EVPN,
+		PqTls:           c.PQTLS,
 	}
 	if c.WireGuardKey != "" {
 		k, err := base64.StdEncoding.DecodeString(c.WireGuardKey)

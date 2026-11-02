@@ -88,6 +88,7 @@ typedef struct QUIC_CONN {
 	char Remote[QUIC_REMOTE_SIZE];       // The address of the other end, "host:port": taken when the handshake completed, "" until then (AUD1-DT-11, #459)
 	SOURCE_KEY Key;                      // The source of a connection that a listener accepted
 	volatile LONG Pending;               // 1 while the limits count it as one that has not finished its handshake
+	UINT Group;                          // The key exchange group that msquic reported when the handshake completed (TransportQuicGroup.c), 0 for none
 } QUIC_CONN;
 
 // A stream: the TRANSPORT stream object, a synchronous byte stream over an async msquic stream
@@ -683,6 +684,11 @@ static bool QuicStreamRemote(void *stream, char *address, UINT size) {
 	return true;
 }
 
+// The key exchange group of the connection of a stream, which the connection took when it came up (CORE-P2-5, #382)
+static UINT QuicStreamGroup(void *stream) {
+	return ((const QUIC_STREAM *)stream)->Conn->Group;
+}
+
 static bool QuicStreamRekey(void *stream) {
 	// QUIC holds the keys; the outer key update is QUIC_PARAM_CONN_FORCE_KEY_UPDATE of the private
 	// header, which this transport does not set yet. The session asks for it on its schedule, and
@@ -744,6 +750,8 @@ static _Function_class_(QUIC_CONNECTION_CALLBACK) QUIC_STATUS QUIC_API QuicConnC
 		// The exporter now, while msquic still holds the TLS state, which a server lets go of once the
 		// client acknowledged its handshake; the streams of the connection take it as their binding
 		c->Exported = TransportQuicExporter(g_quic, connection, c->Net->Server, c->Exporter);
+		// The key exchange group of the connection, as msquic reports it, at the same time (CORE-P2-5, #382)
+		c->Group = TransportQuicGroup(g_quic, connection);
 		QuicConnRemote(c, connection);
 		QuicConnLeave(c);
 		InterlockedExchange(&c->Connected, 1);
@@ -1084,6 +1092,7 @@ static void QuicFill(TRANSPORT *t, QUIC_NET *net) {
 	t->Binding = QuicStreamBinding;
 	t->Rekey = QuicStreamRekey;
 	t->Remote = QuicStreamRemote;
+	t->Group = QuicStreamGroup;
 }
 
 void TransportQuicDefaultConfig(TRANSPORT_QUIC_CONFIG *cfg, const char *thumbprint, bool machine_store) {

@@ -885,6 +885,12 @@ message Capabilities {
   // The node can be the gateway of a Stretch (SDN-63 #290, ADR-0032 amendment of 2026-10-22): its host is a Windows Server and
   // the VXLAN module of the node runs. 13 and 14 are the fields that SDN-87 (#386) and SDN-77-R2 (#532) take, so this is 15.
   bool evpn = 15;
+  // The host of the node asks for the hybrid key exchange X25519MLKEM768 on the QUIC and TLS-443 paths (CORE-P2-5 #382):
+  // CNG has ML-KEM and the TLS group list in force on the host names the hybrid first. Two nodes that both report it
+  // negotiate it, so their sessions are quantum-resistant; a node that does not falls back to X25519. No feature needs it,
+  // and no apply is refused for the lack of it. 16 and 17 are the fields that CORE-P2-3 (#94) and SDN-79 (#359) take in
+  // their pull requests, so this is 18.
+  bool pq_tls = 18;
 }
 
 // The Windows edition of a node's host.

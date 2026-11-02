@@ -60,6 +60,7 @@ typedef struct NODE_OVERLAY_PEER {
 	UINT64 Since;                       // When Session came up, for the state of the node (SDN-91, #396) ...
 	TRANSPORT *Transport;               // ... and the transport that it runs over
 	char Source[NODE_FLAP_SOURCE_SIZE]; // The address that Session came from, "" when the transport told none (NodeFlap.c; AUD1-DT-11, #459)
+	UINT Group;                         // The key exchange group of the outer session of Session as its stack reported it, 0 for none (CORE-P2-5, #382)
 
 	// The endpoints that its Peer object lists (SDN-93, #410), which the node dials it at, in the order of the race
 	UINT NumEndpoints;
@@ -483,6 +484,8 @@ static void NodeOverlayClose(NODE_OVERLAY *ov, NODE_OVERLAY_PEER *p) {
 static bool NodeOverlayAttach(NODE_OVERLAY *ov, const UCHAR *key, TRANSPORT_NOISE *s) {
 	char name[PEER_NAME_SIZE];
 	bool ok = false;
+	// The key exchange of its outer session, as the stack reported it (CORE-P2-5, #382)
+	UINT group = TransportGroup(s->Stream);
 
 	Lock(ov->Lock);
 	{
@@ -496,6 +499,7 @@ static bool NodeOverlayAttach(NODE_OVERLAY *ov, const UCHAR *key, TRANSPORT_NOIS
 			p->Transport = TransportOf(s->Stream);
 			// Where it came from, for the count of the replacements of the session (NodeFlap.c; AUD1-DT-11, #459)
 			TransportRemote(s->Stream, p->Source, sizeof(p->Source));
+			p->Group = group;
 			ok = true;
 		}
 	}
@@ -508,6 +512,9 @@ static bool NodeOverlayAttach(NODE_OVERLAY *ov, const UCHAR *key, TRANSPORT_NOIS
 	}
 
 	NodeLog(ov->Node, "Overlay: the session to %s is up", name);
+	if (group != 0)
+		NodeLog(ov->Node, "Overlay: the session to %s has the key exchange %s (0x%04X): %s", name, TransportGroupName(group), group,
+		        TransportGroupPostQuantum(group) ? "quantum-resistant" : "not quantum-resistant");
 	return true;
 }
 
@@ -1301,6 +1308,7 @@ UINT NodeOverlayGetSessions(NODE *n, NODE_OVERLAY_SESSION *list, UINT max, char 
 				if (s->Up && p->Transport != NULL)
 					StrCpy(s->Transport, sizeof(s->Transport), p->Transport->Name);
 				s->Since = (s->Up ? p->Since : 0);
+				s->Group = (s->Up ? p->Group : 0);
 			}
 			num++;
 		}

@@ -51,7 +51,8 @@ func TestExplainCommand(t *testing.T) {
 		"udp 10.100.0.1:40000 > 10.1.0.1:53 from node-s in VRF shared\n",
 		"  node-s  route   10.1.0.1/32 leads to node-r: a route that VRF red leaks into VRF shared through the route targets 64512:1",
 		"  node-r  policy  rule red-from-shared-dns (priority 1000) of VRF red at node-r allows the flow",
-		"  node-s  link    the Noise session of node-s to node-r carries the packet in VRF red, encrypted; node-r has no endpoints",
+		// No Node reported Capabilities, so none reports pqTls: the session falls back to X25519 (CORE-P2-5, #382)
+		"  node-s  link    the Noise session of node-s to node-r carries the packet in VRF red, encrypted; its QUIC or TLS-443 session negotiates X25519, not quantum-resistant, as node-s and node-r do not report pqTls; node-r has no endpoints",
 		"verdict: delivered to node-r in VRF red as 10.100.0.1 > 10.1.0.1\n",
 	} {
 		if !strings.Contains(out, want) {
@@ -137,7 +138,7 @@ func TestExplainCommandLinks(t *testing.T) {
 	const dialled = "; dc-2 is dialled at quic dc-2.example.com:443, tls 203.0.113.2:443; dc-1 has no endpoints, so no peer dials it\n"
 	for _, c := range []struct{ vrf, link string }{
 		{"dc", "  dc-1  link    the link of kind vxlan of VRF dc carries the packet on VNI 3000 to the tunnel endpoint of dc-2: unencrypted, plain on a network that the operator trusts" + dialled},
-		{"corp", "  dc-1  link    the Noise session of dc-1 to dc-2 carries the packet in VRF corp, encrypted" + dialled},
+		{"corp", "  dc-1  link    the Noise session of dc-1 to dc-2 carries the packet in VRF corp, encrypted; its QUIC or TLS-443 session negotiates X25519, not quantum-resistant, as dc-1 and dc-2 do not report pqTls" + dialled},
 	} {
 		var out, errOut bytes.Buffer
 		code := runExplain(ctx, []string{"-server", srv.URL, "-token-file", tokenFile, "-tls-fingerprint", fingerprint, "-vrf", c.vrf, "-protocol", "udp", "-sport", "40000", "-port", "53", "dc-1", "dc-2"}, &out, &errOut)

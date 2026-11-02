@@ -795,8 +795,11 @@ static bool TlsOpen(TLS_STREAM *s) {
 		s->Info.Version = TRANSPORT_TLS_12;
 	else
 		return false;
-	if (QueryContextAttributesW(&s->Ctx, SECPKG_ATTR_CIPHER_INFO, &cipher) == SEC_E_OK)
+	if (QueryContextAttributesW(&s->Ctx, SECPKG_ATTR_CIPHER_INFO, &cipher) == SEC_E_OK) {
 		s->Info.CipherSuite = cipher.dwCipherSuite;
+		// The key exchange group of the session as Schannel reports it, its TLS NamedGroup (CORE-P2-5, #382)
+		s->Info.StackGroup = cipher.dwKeyType;
+	}
 	// TLS 1.2 chooses its group in the ServerKeyExchange, which the transport does not read
 	if (s->Info.Version == TRANSPORT_TLS_12)
 		s->Info.Group = 0;
@@ -1089,6 +1092,11 @@ static UINT TlsStreamBinding(void *stream, UCHAR *binding, UINT max, UINT *size)
 		binding[0] ^= 0xFF;
 
 	return NOISE_BINDING_EXPORTER;
+}
+
+// The key exchange group of the session of a stream, as Schannel reported it when the handshake completed (CORE-P2-5, #382)
+static UINT TlsStreamGroup(void *stream) {
+	return ((const TLS_STREAM *)stream)->Info.StackGroup;
 }
 
 static bool TlsStreamRekey(void *stream) {
@@ -1544,6 +1552,7 @@ static void TlsFill(TRANSPORT *t, TLS_NET *net) {
 	t->Queue = net->Cfg.Queue;
 	t->Take = TlsTake;
 	t->Remote = TlsStreamRemote;
+	t->Group = TlsStreamGroup;
 }
 
 void TransportTlsDefaultConfig(TRANSPORT_TLS_CONFIG *cfg, const char *thumbprint, bool machine_store) {
