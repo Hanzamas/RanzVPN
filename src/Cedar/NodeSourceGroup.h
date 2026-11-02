@@ -17,6 +17,7 @@
 #define NODE_FRAME_CRITICAL   0x80 // The critical bit of the type of an option: a node that does not know the option drops the record
 #define NODE_FRAME_GROUP      1    // The type of the option of the source group, whose critical bit is clear
 #define NODE_FRAME_GROUP_DATA 16   // The data of that option: the group ID, two reserved bytes, the tag set and the group generation
+#define NODE_FRAME_TRACE      3    // The type of the trace option, whose critical bit is clear (NodeTrace.c; SDN-89, #388)
 
 // Bytes of the header of a record of frame version 1 with the option of the source group, before the data record of frame
 // version 0
@@ -38,6 +39,7 @@ typedef struct NODE_SOURCE_CLAIM {
 	UINT Group;         // The group ID
 	UINT64 Tags;        // The tag set
 	UINT Generation;    // The group generation, its 32 low bits: the Generation of the state of the peer that the claim was made on
+	VXLAN_TRACE Trace;  // The trace option that a datagram of a link carried (NodeTrace.c; SDN-89, #388)
 } NODE_SOURCE_CLAIM;
 
 // What NodeSourceGroupGetStatus reports: the packets of the peers of a node by the tag mode in which it judged them
