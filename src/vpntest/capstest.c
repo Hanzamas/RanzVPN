@@ -293,50 +293,54 @@ void caps_test(UINT num, char **arg)
 	GetExeNameW(node->BgpSidecar, sizeof(node->BgpSidecar));
 	caps.BgpPeering = false;
 	caps.BgpReflection = false;
+	caps.EvpnPeering = false;
 	NodeCapsPeering(node, &caps);
-	if (caps.BgpPeering == false || caps.BgpReflection == false)
+	if (caps.BgpPeering == false || caps.BgpReflection == false || caps.EvpnPeering == false)
 	{
-		Print("  [FAIL] A node whose sidecar is there does not report the BGP peering (%u) or its route reflectors (%u)\n", (UINT)caps.BgpPeering,
-			(UINT)caps.BgpReflection);
+		Print("  [FAIL] A node whose sidecar is there does not report the BGP peering (%u), its route reflectors (%u) or its EVPN peering (%u)\n", (UINT)caps.BgpPeering,
+			(UINT)caps.BgpReflection, (UINT)caps.EvpnPeering);
 		failed++;
 	}
 	else
 	{
-		Print("  [OK] A node whose sidecar is there reports the BGP peering and its route reflectors\n");
+		Print("  [OK] A node whose sidecar is there reports the BGP peering, its route reflectors and its EVPN peering\n");
 	}
 
 	UniStrCat(node->BgpSidecar, sizeof(node->BgpSidecar), L".missing");
 	caps.BgpPeering = true;
 	caps.BgpReflection = true;
+	caps.EvpnPeering = true;
 	NodeCapsPeering(node, &caps);
-	if (caps.BgpPeering || caps.BgpReflection)
+	if (caps.BgpPeering || caps.BgpReflection || caps.EvpnPeering)
 	{
-		Print("  [FAIL] A node whose sidecar is not there reports the BGP peering (%u) or its route reflectors (%u)\n", (UINT)caps.BgpPeering,
-			(UINT)caps.BgpReflection);
+		Print("  [FAIL] A node whose sidecar is not there reports the BGP peering (%u), its route reflectors (%u) or its EVPN peering (%u)\n", (UINT)caps.BgpPeering,
+			(UINT)caps.BgpReflection, (UINT)caps.EvpnPeering);
 		failed++;
 	}
 	else
 	{
-		Print("  [OK] A node whose sidecar is not there reports no BGP peering and no route reflectors\n");
+		Print("  [OK] A node whose sidecar is not there reports no BGP peering, no route reflectors and no EVPN peering\n");
 	}
 
 	// A node that names no sidecar at all, and no node
 	Zero(node->BgpSidecar, sizeof(node->BgpSidecar));
 	caps.BgpPeering = true;
 	caps.BgpReflection = true;
+	caps.EvpnPeering = true;
 	NodeCapsPeering(node, &caps);
-	if (caps.BgpPeering || caps.BgpReflection)
+	if (caps.BgpPeering || caps.BgpReflection || caps.EvpnPeering)
 	{
-		Print("  [FAIL] A node that names no sidecar reports the BGP peering or its route reflectors\n");
+		Print("  [FAIL] A node that names no sidecar reports the BGP peering, its route reflectors or its EVPN peering\n");
 		failed++;
 	}
 
 	caps.BgpPeering = true;
 	caps.BgpReflection = true;
+	caps.EvpnPeering = true;
 	NodeCapsPeering(NULL, &caps);
-	if (caps.BgpPeering || caps.BgpReflection)
+	if (caps.BgpPeering || caps.BgpReflection || caps.EvpnPeering)
 	{
-		Print("  [FAIL] No node reports the BGP peering or its route reflectors\n");
+		Print("  [FAIL] No node reports the BGP peering, its route reflectors or its EVPN peering\n");
 		failed++;
 	}
 
