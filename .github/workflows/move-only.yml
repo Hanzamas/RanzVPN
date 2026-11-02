@@ -32,10 +32,11 @@ jobs:
   move_only:
     name: move-only check
     runs-on: ubuntu-latest
-    # The job itself took 17 to 31 s in 13 runs of 2026-11-01 and 2026-11-02, pushes and pull requests (the limit counts from the start
-    # of the job, not from the minutes that a run may wait for a runner). 10 minutes is 19 times the longest of them, and ends a hung
-    # job 350 minutes before GitHub would: since CI-INTEG-1 (#585) a push to integration or master waits for the run of the push before
-    # it, so a job without a limit holds the group for 360 minutes (CI-INTEG-1-R1, #597; .github/scripts/job-timeout-check.py)
+    # The job itself took 17 to 43 s in the 187 successful runs from 2026-11-01 05:46 to 2026-11-02 22:04 UTC, pushes and pull requests
+    # (the limit counts from the start of the job, not from the minutes that a run may wait for a runner). 10 minutes is almost 14 times
+    # the longest of them, and ends a hung job 350 minutes before GitHub would: since CI-INTEG-1 (#585) a push to integration or master
+    # waits for the run of the push before it, so a job without a limit holds the group for 360 minutes (CI-INTEG-1-R1, #597;
+    # .github/scripts/job-timeout-check.py)
     timeout-minutes: 10
     steps:
     - uses: actions/checkout@v4
