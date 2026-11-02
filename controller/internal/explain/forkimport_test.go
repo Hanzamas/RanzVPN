@@ -441,172 +441,37 @@ func TestForkImportNeverLetsThroughWhatTheForkDropped(t *testing.T) {
 	t.Logf("%d frames: the import denies %d that the fork let through, and delivers none that the fork dropped", sent, len(narrower))
 }
 
-// forkExactConfig is a Config file with the Virtual Hub EXACT, whose access list has entries that a Policy carries as
-// they are (users, a group and a user of one name, a priority with a pass entry and a discard entry, prefixes, ports
-// without a protocol, an entry that is inactive), and whose users are in the groups red and blue.
-const forkExactConfig = `declare root
-{
-declare ServerConfiguration
-{
-}
-declare VirtualHUB
-{
-declare EXACT
-{
-declare AccessList
-{
-declare 1
-{
-bool Active true
-bool Discard false
-uint Priority 100
-uint Protocol 6
-uint DestPortStart 22
-uint DestPortEnd 22
-string SrcUsername red
-}
-declare 2
-{
-bool Active true
-bool Discard true
-uint Priority 100
-uint Protocol 6
-uint DestPortStart 22
-uint DestPortEnd 22
-}
-declare 3
-{
-bool Active true
-bool Discard true
-uint Priority 200
-string DestUsername blue
-string SrcIpAddress 10.9.0.4
-string SrcSubnetMask 255.255.255.255
-}
-declare 4
-{
-bool Active true
-bool Discard false
-uint Priority 300
-uint Protocol 17
-uint DestPortStart 5000
-uint DestPortEnd 5100
-string SrcUsername u3
-}
-declare 5
-{
-bool Active true
-bool Discard true
-uint Priority 400
-uint Protocol 17
-}
-declare 6
-{
-bool Active true
-bool Discard true
-uint Priority 500
-uint Protocol 1
-string DestIpAddress 10.9.0.2
-string DestSubnetMask 255.255.255.255
-}
-declare 7
-{
-bool Active true
-bool Discard false
-uint Priority 600
-uint Protocol 6
-uint DestPortStart 8000
-uint DestPortEnd 8100
-string SrcUsername red
-}
-declare 8
-{
-bool Active true
-bool Discard true
-uint Priority 700
-uint DestPortStart 8081
-uint DestPortEnd 8081
-}
-declare 9
-{
-bool Active false
-bool Discard true
-uint Priority 800
-uint Protocol 6
-}
-}
-declare SecurityAccountDatabase
-{
-declare GroupList
-{
-declare blue
-{
-}
-declare red
-{
-}
-}
-declare UserList
-{
-declare blue
-{
-}
-declare u1
-{
-string GroupName red
-}
-declare u2
-{
-string GroupName red
-}
-declare u3
-{
-string GroupName blue
-}
-declare u4
-{
-}
-}
-}
-}
-}
-}
-`
-
 // On a hub whose entries a Policy carries as they are, every frame between two Nodes gets from the import the verdict
 // that the fork gave it: the entries in the order of the fork, the group and the user of one name, a pass entry before a
 // discard entry of one priority, the prefixes, the ports of both protocols, and what no entry matches. This is the second
-// criterion of #203 held to every frame of a kind, not to the ones that the fork was run on.
+// criterion of #203 held to every frame of a kind, not to the ones that the fork was run on. The hub is EXACT of
+// tests/golden/configimport/exact.config, and the Nodes are those of the scenario forkimport-exact, which the vpntest
+// harness runs through the data plane for 15 of these frames, so that explain, the oracle and the data plane agree on them.
 func TestForkImportJudgesEveryFrameAsTheForkDid(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "exact.config")
-	if err := os.WriteFile(path, []byte(forkExactConfig), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	var nodes []string
-	var resources []intent.Resource
-	keys := map[string]uint8{}
-	for i, u := range []struct{ name, address string }{{"u1", "10.9.0.1"}, {"u2", "10.9.0.2"}, {"u3", "10.9.0.3"}, {"u4", "10.9.0.4"}, {"blue", "10.9.0.5"}} {
-		nodes = append(nodes, u.name)
-		keys[u.name] = uint8(1 + 32*i)
-		spec := fmt.Sprintf(`{"vrfs": ["exact"], "owner": %q, "addresses": {"exact": %q}}`, u.name, u.address)
-		resources = append(resources, intent.Resource{Kind: intent.KindNode, Name: u.name, Spec: []byte(spec)})
-	}
-	s := Scenario{Name: "exact", Nodes: keys, Intent: intent.Document{Resources: resources},
-		Import: &ForkImport{Config: path, Pools: map[string]string{"EXACT": "10.9.0.0/24"}}}
+	s := scenario(t, "forkimport-exact")
 	in, states, err := s.Compile()
 	if err != nil {
 		t.Fatal(err)
 	}
-	root, err := forkimport.Parse([]byte(forkExactConfig))
+	b, err := os.ReadFile(filepath.Join(scenarioDir, filepath.FromSlash(s.Import.Config)))
 	if err != nil {
 		t.Fatal(err)
 	}
+	root, err := forkimport.Parse(b)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var nodes []string
+	for name := range in.Nodes {
+		nodes = append(nodes, name)
+	}
+	slices.Sort(nodes)
 	world := newForkWorld(t, root.Child("VirtualHUB").Child("EXACT"), in)
 	narrower, wider, sent := world.compare(t, New(in, states), nodes)
 	for _, line := range append(narrower, wider...) {
 		t.Errorf("the verdict of the import differs from the one of the fork: %s", line)
 	}
-	if sent != 20*len(forkProbes) {
-		t.Errorf("%d frames were sent, want %d", sent, 20*len(forkProbes))
+	if want := len(nodes) * (len(nodes) - 1) * len(forkProbes); len(nodes) != 5 || sent != want {
+		t.Errorf("%d frames were sent between %d Nodes, want %d between 5", sent, len(nodes), want)
 	}
 }
