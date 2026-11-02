@@ -267,6 +267,9 @@ type Controller struct {
 	// The numbers of the source groups that the store holds (sourcegroup.go; SDN-87)
 	groups groupState
 
+	// The traced packets that the Nodes reported (trace.go; SDN-89)
+	traces traceState
+
 	// The delegations of the Networks, which the roles held for one Network are bound by (scope.go; SDN-38)
 	scopes scopeState
 }

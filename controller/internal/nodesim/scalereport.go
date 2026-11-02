@@ -4,7 +4,9 @@ package nodesim
 // reader needs. scale.json holds all of it, scale-summary.md is the table that the job summary of CI shows, and
 // scale-bench.txt, with scale-bench-run2.txt and the files after it, hold the BENCH lines of each run for the performance
 // regression gate (.github/scripts/bench-gate.py, ADR-0040 item 5), which compares them with the medians that
-// .github/quality/scale-pr.txt and scale-full.txt record.
+// .github/quality/scale-pr.txt and scale-full.txt record. A line is in one file only: the file of the run holds the lines of the
+// change and of the enrolment of that run, so that the number of files that hold a case is the number of samples that the gate
+// judges it on, and the first file also holds the lines of the change of a route, which a report has once.
 
 import (
 	"encoding/json"
@@ -41,6 +43,13 @@ type ScaleEnrol struct {
 	Ack ScaleStats `json:"ack"`
 }
 
+// ScaleRound is one enrolment after the first, which a report holds beside the first: the applies that declared the VRFs on the
+// controller of the enrolment, and the enrolment.
+type ScaleRound struct {
+	SetupApplyMs []float64  `json:"setupApplyMs"`
+	Enrol        ScaleEnrol `json:"enrol"`
+}
+
 // ScaleChange is one change of the intent that reached nodes, in one or more applies.
 type ScaleChange struct {
 	Name  string `json:"name"`
@@ -59,6 +68,8 @@ type ScaleReport struct {
 	// SetupApplyMs is the time of each apply that declared a batch of VRFs.
 	SetupApplyMs []float64  `json:"setupApplyMs"`
 	Enrol        ScaleEnrol `json:"enrol"`
+	// MoreEnrols are the enrolments after the first (Scale.Enrolments), each on a controller of its own.
+	MoreEnrols []ScaleRound `json:"moreEnrols,omitempty"`
 	// Changes are the changes of the MTU of every VRF, one for each run, and Route the change of one route.
 	Changes []ScaleChange `json:"changes"`
 	Route   ScaleChange   `json:"route"`
@@ -120,19 +131,29 @@ func (r *ScaleReport) JSON() ([]byte, error) {
 	return json.MarshalIndent(r, "", "  ")
 }
 
-// Bench returns the BENCH lines of the run-th run (from 1) for the performance gate: the lines of the enrolment and of the
-// change of a route, which a report has once, and those of the change of every VRF of that run. A time is in milliseconds, the
-// enrolment rate in operations a second.
+// enrolments returns the enrolments of the report with the applies that declared the VRFs before each: the first, which the
+// report holds itself, and the others.
+func (r *ScaleReport) enrolments() []ScaleRound {
+	return append([]ScaleRound{{SetupApplyMs: r.SetupApplyMs, Enrol: r.Enrol}}, r.MoreEnrols...)
+}
+
+// Bench returns the BENCH lines of the run-th run (from 1) for the performance gate: the lines of the run-th enrolment, with the
+// applies that declared its VRFs, and those of the change of every VRF of that run, and in the first run the lines of the change
+// of a route, which a report has once. A run that has no enrolment or no change has none of its lines. A time is in milliseconds,
+// the enrolment rate in operations a second.
 func (r *ScaleReport) Bench(run int) string {
 	var b strings.Builder
 	line := func(name string, value float64, unit string) {
 		fmt.Fprintf(&b, "BENCH %s %.1f %s\n", name, value, unit)
 	}
-	line("scale_setup_apply", scaleSum(r.SetupApplyMs), "ms")
-	line("scale_enrol_converge", r.Enrol.ConvergeMs, "ms")
-	line("scale_enrol_rate", r.Enrol.PerSecond, "ops/s")
-	line("scale_enrol_ack_p50", r.Enrol.Ack.P50Ms, "ms")
-	line("scale_enrol_ack_p99", r.Enrol.Ack.P99Ms, "ms")
+	if rounds := r.enrolments(); run >= 1 && run <= len(rounds) {
+		e := rounds[run-1]
+		line("scale_setup_apply", scaleSum(e.SetupApplyMs), "ms")
+		line("scale_enrol_converge", e.Enrol.ConvergeMs, "ms")
+		line("scale_enrol_rate", e.Enrol.PerSecond, "ops/s")
+		line("scale_enrol_ack_p50", e.Enrol.Ack.P50Ms, "ms")
+		line("scale_enrol_ack_p99", e.Enrol.Ack.P99Ms, "ms")
+	}
 	if run >= 1 && run <= len(r.Changes) {
 		c := r.Changes[run-1]
 		line("scale_change_apply", scaleMean(c.ApplyMs), "ms")
@@ -141,8 +162,10 @@ func (r *ScaleReport) Bench(run int) string {
 		line("scale_change_ack_p99", c.Ack.P99Ms, "ms")
 		line("scale_change_ack_max", c.Ack.MaxMs, "ms")
 	}
-	line("scale_route_apply", scaleMean(r.Route.ApplyMs), "ms")
-	line("scale_route_ack_max", r.Route.Ack.MaxMs, "ms")
+	if run == 1 {
+		line("scale_route_apply", scaleMean(r.Route.ApplyMs), "ms")
+		line("scale_route_ack_max", r.Route.Ack.MaxMs, "ms")
+	}
 	return b.String()
 }
 
@@ -151,25 +174,36 @@ func (r *ScaleReport) Markdown() string {
 	var b strings.Builder
 	s := r.Scale
 	fmt.Fprintf(&b, "### Scale scenario: %d nodes, %d VRFs, %d routes\n\n", s.Nodes, s.VRFs, s.Routes)
-	fmt.Fprintf(&b, "%d nodes in each VRF, %d routes advertised by each node; the VRFs are declared and changed in %d applies; the change of every VRF runs %d times.\n\n",
-		s.PerVRF(), s.PerNode(), max(s.Batches, 1), max(s.Runs, 1))
+	fmt.Fprintf(&b, "%d nodes in each VRF, %d routes advertised by each node; the VRFs are declared and changed in %d applies; the change of every VRF runs %d times and the enrolment %d times.\n\n",
+		s.PerVRF(), s.PerNode(), max(s.Batches, 1), max(s.Runs, 1), s.enrolments())
 	b.WriteString("Apply-to-ack is the time from the start of the apply that carries a change to the Ack of each node, in milliseconds.\n\n")
 	b.WriteString("| phase | nodes | apply | min | p50 | p90 | p95 | p99 | max |\n|---|---:|---:|---:|---:|---:|---:|---:|---:|\n")
 	row := func(name string, nodes int, apply string, st ScaleStats) {
 		fmt.Fprintf(&b, "| %s | %d | %s | %.0f | %.0f | %.0f | %.0f | %.0f | %.0f |\n", name, nodes, apply, st.MinMs, st.P50Ms, st.P90Ms, st.P95Ms, st.P99Ms, st.MaxMs)
 	}
 	row("enrolment, from the start of the stream of a node", r.Enrol.Nodes, "-", r.Enrol.Ack)
+	for i, m := range r.MoreEnrols {
+		row(fmt.Sprintf("enrolment %d, on a controller of its own", i+2), m.Enrol.Nodes, "-", m.Enrol.Ack)
+	}
 	for _, c := range r.Changes {
 		row(c.Name+", the MTU of every VRF", c.Nodes, fmt.Sprintf("%.0f", scaleSum(c.ApplyMs)), c.Ack)
 	}
 	row("route, one more LAN subnet of one gateway", r.Route.Nodes, fmt.Sprintf("%.0f", scaleSum(r.Route.ApplyMs)), r.Route.Ack)
 	fmt.Fprintf(&b, "\nThe applies that declared the VRFs took %.0f ms in all. Enrolment took %.0f ms for %d nodes, %.0f nodes a second. The run took %.0f s.\n",
 		scaleSum(r.SetupApplyMs), r.Enrol.ConvergeMs, r.Enrol.Nodes, r.Enrol.PerSecond, r.TotalMs/1000)
+	if len(r.MoreEnrols) > 0 {
+		times := make([]string, 0, 1+len(r.MoreEnrols))
+		for _, e := range r.enrolments() {
+			times = append(times, fmt.Sprintf("%.0f ms", e.Enrol.ConvergeMs))
+		}
+		fmt.Fprintf(&b, "The %d enrolments took %s, and the performance gate judges the best of them.\n", len(times), strings.Join(times, ", "))
+	}
 	return b.String()
 }
 
 // Write writes the report to the directory dir: scale.json, scale-summary.md and the BENCH lines of each run, in
-// scale-bench.txt for the first and scale-bench-run<N>.txt for the others.
+// scale-bench.txt for the first and scale-bench-run<N>.txt for the others. There is a file for each change and for each
+// enrolment, whichever are more.
 func (r *ScaleReport) Write(dir string) error {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
@@ -179,7 +213,7 @@ func (r *ScaleReport) Write(dir string) error {
 		return err
 	}
 	files := map[string][]byte{"scale.json": data, "scale-summary.md": []byte(r.Markdown())}
-	for run := 1; run <= max(len(r.Changes), 1); run++ {
+	for run := 1; run <= max(len(r.Changes), len(r.enrolments())); run++ {
 		name := "scale-bench.txt"
 		if run > 1 {
 			name = fmt.Sprintf("scale-bench-run%d.txt", run)

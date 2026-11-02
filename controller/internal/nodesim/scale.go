@@ -45,10 +45,15 @@ var (
 	// store takes in one transaction, and the change of every VRF runs once.
 	FullScale = Scale{Nodes: 10000, VRFs: 1000, Routes: 100000, Runs: 1, Batches: 5}
 	// ReducedScale is a tenth of the scale target, the same scenario for the checks of a pull request: the change of every
-	// VRF runs three times, for the performance gate to judge the best of them.
-	ReducedScale = Scale{Nodes: 1000, VRFs: 100, Routes: 10000, Runs: 3, Batches: 1}
-	// SmallScale is the scenario for the tests of a pull request that run with the race detector.
-	SmallScale = Scale{Nodes: 60, VRFs: 6, Routes: 360, Runs: 1, Batches: 2}
+	// VRF runs three times, and so does the enrolment, for the performance gate to judge the best of each. The enrolment is
+	// the phase that a runner makes slow now and then: the controller writes to its store for every Hello and every Ack of it,
+	// one write at a time, so the disk of the runner sets its speed, and on the shared runners of CI the same enrolment took
+	// 2.8 s to 10.7 s on the disk and 2.6 s to 3.1 s on a RAM disk (the stress of CI-FLAKE-9, #616). One enrolment of a run
+	// cannot tell a slow disk from a slowdown of the controller; the best of three of them can.
+	ReducedScale = Scale{Nodes: 1000, VRFs: 100, Routes: 10000, Runs: 3, Batches: 1, Enrolments: 3}
+	// SmallScale is the scenario for the tests of a pull request that run with the race detector. It enrols twice, for the
+	// test of the run that enrols more than once.
+	SmallScale = Scale{Nodes: 60, VRFs: 6, Routes: 360, Runs: 1, Batches: 2, Enrolments: 2}
 )
 
 // Scale is the size of one run of the scale scenario.
@@ -63,10 +68,18 @@ type Scale struct {
 	// Batches is in how many applies the VRFs are declared, and then changed in each run: an apply carries the VRFs of one
 	// batch with their nodes. 1 when it is 0.
 	Batches int `json:"batches"`
+	// Enrolments is how many times the enrolment is run and measured, 1 when it is 0: the first in the run itself, and each of
+	// the others on a controller of its own (ScaleTarget.Fresh) that is declared the same intent, so that every one of them is
+	// an enrolment from nothing and the samples do not depend on one another.
+	Enrolments int `json:"enrolments"`
 }
 
 func (s Scale) runs() int {
 	return max(s.Runs, 1)
+}
+
+func (s Scale) enrolments() int {
+	return max(s.Enrolments, 1)
 }
 
 func (s Scale) batches() int {
@@ -100,8 +113,8 @@ func (s Scale) Wait() time.Duration {
 // VRFs divide into the batches.
 func (s Scale) Validate() error {
 	switch {
-	case s.Nodes < 1 || s.VRFs < 1 || s.Routes < 1 || s.Runs < 0 || s.Batches < 0:
-		return fmt.Errorf("nodesim: a scale needs nodes, VRFs and routes, and no negative runs or batches: %+v", s)
+	case s.Nodes < 1 || s.VRFs < 1 || s.Routes < 1 || s.Runs < 0 || s.Batches < 0 || s.Enrolments < 0:
+		return fmt.Errorf("nodesim: a scale needs nodes, VRFs and routes, and no negative runs, batches or enrolments: %+v", s)
 	case s.Nodes%s.VRFs != 0:
 		return fmt.Errorf("nodesim: %d nodes do not divide into %d VRFs", s.Nodes, s.VRFs)
 	case s.Routes%s.Nodes != 0:

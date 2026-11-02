@@ -35,6 +35,9 @@ import (
 //	ranz explain [flags] -listener NAME   explain a Listener (SDN-94, #423): its mimic section, whether its Node
 //	                                      reported the public key of its mimic server, and the Nodes that have a link
 //	                                      to it (explain_listener.go)
+//	ranz explain [flags] -trace ID|all    the path of a traced packet (SDN-89, #388; explaintrace.go): each Node that
+//	                                      the packet of the trace ID crossed, the ingress Node first, with the group
+//	                                      that it carried and the verdict of the Node; all lists every trace
 func init() {
 	register("explain", func(args []string) int { return runExplain(context.Background(), args, os.Stdout, os.Stderr) })
 }
@@ -42,10 +45,12 @@ func init() {
 const explainUsage = `usage: ranz explain [flags] A B
        ranz explain [flags] NODE
        ranz explain [flags] -listener NAME
+       ranz explain [flags] -trace ID|all
   A: a Node, a WireGuard Device or an address of either, which sends the packet
   B: a Node, a WireGuard Device or an IP address
   NODE: a Node, whose BGP peering is printed: its peers, the state of each session and the prefixes learned from each
   NAME: a Listener: its mimic section, whether its Node reported the public key of its mimic server, and the Nodes that have a link to it
+  ID: a trace ID, decimal or 0x and hex: the path of the traced packet, each Node that it crossed with the group that it carried and the verdict of the Node; all lists every trace that the controller holds
 `
 
 // runExplain runs ranz explain with the arguments that follow its name, and returns the exit code.
@@ -66,6 +71,7 @@ func runExplain(ctx context.Context, args []string, stdout, stderr io.Writer) in
 	port := flags.Uint("port", 0, "the destination port of TCP or UDP")
 	format := flags.String("o", "text", "the form of the answer: text, or json as the API gives it")
 	listener := flags.String("listener", "", "explain the Listener with this name, in place of a packet (no A and B)")
+	trace := flags.String("trace", "", "print the path of the traced packet of this trace ID, or every trace with all, in place of a packet (no A and B)")
 	flags.Usage = func() {
 		fmt.Fprint(stderr, explainUsage)
 		flags.PrintDefaults()
@@ -76,9 +82,9 @@ func runExplain(ctx context.Context, args []string, stdout, stderr io.Writer) in
 		}
 		return 2
 	}
-	if *listener != "" {
-		// A Listener, with no packet: A, B and the flags of a packet do not go with it
-		if flags.NArg() != 0 || *vrf != "" || *protocol != "" || *sport != 0 || *port != 0 || (*format != "text" && *format != "json") {
+	if *listener != "" || *trace != "" {
+		// A Listener or a trace, with no packet: A, B and the flags of a packet do not go with it, nor does the one with the other
+		if flags.NArg() != 0 || *vrf != "" || *protocol != "" || *sport != 0 || *port != 0 || (*format != "text" && *format != "json") || (*listener != "" && *trace != "") {
 			flags.Usage()
 			return 2
 		}
@@ -93,6 +99,10 @@ func runExplain(ctx context.Context, args []string, stdout, stderr io.Writer) in
 	}
 	if *listener != "" {
 		return explainListener(ctx, c, *listener, *format, stdout, stderr)
+	}
+	// The path of a traced packet (explaintrace.go; SDN-89)
+	if *trace != "" {
+		return explainTrace(ctx, c, *trace, *format, stdout, stderr)
 	}
 	// One Node: its BGP peering (explainpeering.go; SDN-77)
 	if flags.NArg() == 1 {

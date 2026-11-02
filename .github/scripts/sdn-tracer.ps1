@@ -23,6 +23,9 @@ $ErrorActionPreference = 'Stop'
 # of their Noise session carry (SDN-87, #386): the counters of the tag mode session that each reports must reach the
 # telemetry of the API, with at least two records of the other node that it judged by the group that they carried,
 # and no claim refused;
+# the trace of the Network default is on (SDN-89, #388), so each node traces the packets of the pool that it sends as their
+# ingress node, and the other records each with the group that it carried and its verdict: the API must hold the trace of a
+# packet that crossed both nodes, and ranz explain -trace must show its path, each node with the group and the verdict;
 # once the controller stopped, they must still exchange it: they forward on the state they applied
 # last. vpntest creates the file $pinged after the first echoes and waits for the control streams
 # to go down; this script then checks the API and stops the controller. Once it stopped, vpntest also
@@ -130,8 +133,9 @@ try {
 	$revisions = @((Invoke-Ranz @('get', 'revisions')).revisions)
 	if ($revisions.Count -ne 1 -or $revisions[0].operation -ne 'first-start') { throw "the revisions of the first start are $($revisions | ConvertTo-Json -Compress -Depth 4)" }
 
-	# The two nodes, which name no VRF
-	$intent = @{ resources = @($nodes.Keys | ForEach-Object { @{ kind = 'Node'; name = $_; spec = @{ publicKey = $nodes[$_] } } }) }
+	# The two nodes, which name no VRF, and the Network default with its trace on, as an operator switches it on (SDN-89, #388)
+	$network | Add-Member -NotePropertyName 'trace' -NotePropertyValue $true -Force
+	$intent = @{ resources = @(@{ kind = 'Network'; name = 'default'; spec = $network }) + @($nodes.Keys | ForEach-Object { @{ kind = 'Node'; name = $_; spec = @{ publicKey = $nodes[$_] } } }) }
 	$file = Join-Path $work 'nodes.json'
 	$intent | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $file -Encoding utf8NoBOM
 	$applied = Invoke-Ranz @('apply', '-f', $file)
@@ -239,6 +243,38 @@ try {
 		$session = @($n.sourceGroups | Where-Object { $_.mode -eq 'session' })[0]
 		Write-Host "API: node $($n.node) judged $($session.carried) records of its peer by the source group that they carried, $($session.missing) without one and $($session.ignored) whose claim it ignored"
 	}
+
+	# The trace of a packet (SDN-89, #388): the Network default traces, so a node traced an echo of its host as its ingress
+	# node, and the other node recorded it with the group that it carried and its verdict. The API holds the trace of a
+	# packet that crossed both nodes, the ingress node first, both with the group that the controller gave the sender and
+	# allowed by the starter rule, and ranz explain -trace shows its path
+	$end = (Get-Date).AddSeconds($waitSeconds)
+	while ($true) {
+		$traces = @((Invoke-RestMethod -Uri "$api/api/v1/traces" -Headers @{ Authorization = "Bearer $secret" } -SkipCertificateCheck).traces)
+		$crossed = @($traces | Where-Object {
+			$steps = @($_.steps)
+			$_ -and $steps.Count -eq 2 -and $nodes.Contains($_.ingress) -and $steps[0].ingress -and $steps[0].node -eq $_.ingress -and $nodes.Contains($steps[1].node) -and
+				$steps[1].node -ne $_.ingress -and $steps[0].vrf -eq 'default' -and $steps[1].vrf -eq 'default' -and $steps[0].group -gt 0 -and $steps[1].group -eq $steps[0].group -and
+				$steps[0].verdict -eq 'allow' -and $steps[1].verdict -eq 'allow'
+		})
+		if ($crossed.Count -gt 0) { break }
+		if ((Get-Date) -ge $end) { throw "the API holds no trace of a packet that crossed both nodes: $($traces | ConvertTo-Json -Compress -Depth 6)" }
+		Start-Sleep -Milliseconds 500
+	}
+	$path = $crossed[0]
+	$other = @($path.steps)[1].node
+	$group = @($path.steps)[0].group
+	$shown = & $ranz explain -server $api -token-file $tokenFile -trace $path.id
+	if ($LASTEXITCODE -ne 0) { throw "ranz explain -trace $($path.id) exited with code $LASTEXITCODE" }
+	Write-Host "ranz explain -trace $($path.id), of the $($traces.Count) traces that the API holds:"
+	$shown | ForEach-Object { Write-Host "  $_" }
+	$text = $shown -join "`n"
+	if ($text -notmatch "(?m)^trace $($path.id) \(0x[0-9a-f]{8}\) of $($path.ingress), reported [^:]+:[0-9]{2}:[0-9]{2}Z: 2 Nodes$" -or
+		$text -notmatch "(?m)^  $($path.ingress) +ingress +VRF default +group $group( \([^)]*\))? +allowed$" -or
+		$text -notmatch "(?m)^  $other +VRF default +group $group( \([^)]*\))? +allowed$") {
+		throw "ranz explain -trace $($path.id) does not show the path of the packet through $($path.ingress) and $other, each with the group $group and its verdict"
+	}
+	Write-Host "API: the trace $($path.id) of a packet that crossed $($path.ingress) and $other, each of which recorded the group $group and allowed it, which ranz explain -trace shows"
 
 	# The controller stops; the nodes ping each other again on the state they applied
 	Stop-Process -Id $ctl.Id -Force
