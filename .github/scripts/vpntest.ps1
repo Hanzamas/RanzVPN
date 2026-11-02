@@ -123,8 +123,44 @@ if ($env:GITHUB_ACTIONS -eq 'true') {
 }
 
 # A test whose output the job log should show besides its result has a script vpntest.d\<test>.ps1 here, which runs
-# after the checks with the output of the test in $full and writes what it wants shown
+# after the checks with the output of the test in $full and writes what it wants shown, or checks more
 $hooksDir = Join-Path $PSScriptRoot 'vpntest.d'
+
+# A test that compares its output with a golden file in place of an oracle must fail when that file changes (CORE-S8-3
+# #577), or it would pass on anything. Its hook calls this: the test runs again on a copy of the golden directory of its
+# family (RANZ_GOLDEN_DIR names the directory of the family harness, whose siblings are the families) in which the middle
+# line of the golden file $file has a planted change, and it must fail, with a failed check that names $file.
+function Assert-FailsOnPlantedGolden([string] $test, [string] $family, [string] $file) {
+	$plant = Join-Path ([System.IO.Path]::GetTempPath()) "ranz-golden-plant-$test"
+	if (Test-Path -LiteralPath $plant) { Remove-Item -LiteralPath $plant -Recurse -Force }
+	New-Item -ItemType Directory -Path $plant | Out-Null
+	Copy-Item -LiteralPath (Join-Path $repo "tests\golden\$family") -Destination $plant -Recurse
+	$path = Join-Path $plant "$family\$file"
+	$lines = @(Get-Content -LiteralPath $path)
+	if ($lines.Count -eq 0) { Write-Error "${test}: the golden file $family/$file has no line to plant a change in" }
+	$line = [int][Math]::Floor($lines.Count / 2)
+	$lines[$line] = $lines[$line] + ' (planted)'
+	Set-Content -LiteralPath $path -Value $lines
+
+	$goldenDir = $env:RANZ_GOLDEN_DIR
+	$env:RANZ_GOLDEN_DIR = Join-Path $plant 'harness'
+	try {
+		$planted = @(Write-Output "q\n" | & "$BuildDir\vpntest.exe" $test)
+	} finally {
+		$env:RANZ_GOLDEN_DIR = $goldenDir
+		Remove-Item -LiteralPath $plant -Recurse -Force -ErrorAction SilentlyContinue
+	}
+
+	$name = $test.ToUpper()
+	$passed = @($planted | ? { $_ -cmatch "^$name TEST OK" })
+	$failed = @($planted | ? { $_ -cmatch "^$name TEST FAILED" })
+	$caught = @($planted | ? { $_ -cmatch '^\s*\[FAIL\] ' -and $_.Contains($file) })
+	if ($passed.Count -ne 0 -or $failed.Count -ne 1 -or $caught.Count -eq 0) {
+		$planted | % { Write-Host $_ }
+		Write-Error "$test did not fail on a planted change of line $($line + 1) of its golden file $family/$file"
+	}
+	Write-Host "$test fails on a planted change of line $($line + 1) of its golden file $family/${file}: $($caught[0].Trim())"
+}
 
 # Runs one test and checks it: its OK marker once, no leak, no golden file recorded in place of a comparison. The BENCH
 # lines of run number $run go to the bench file of that run; $script:printedBench says whether there were any.

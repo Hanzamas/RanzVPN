@@ -1,0 +1,10 @@
+password user, right password: error 0
+password user, wrong password: error 9
+unknown user: error 9
+certificate user, his certificate and key: error 0
+certificate user, another certificate: error 9
+certificate user, his certificate signed by another key: error 9
+root certificate user, a certificate of the trusted root: error 0
+root certificate user, a certificate of no trusted root: error 9
+domain user, right password: error 0
+domain user, wrong password: error 9

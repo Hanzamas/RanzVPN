@@ -9,10 +9,12 @@
 // For each credential, right and wrong, the new core runs a Noise_IK session bound to a TLS exporter between a client
 // node and the server node, the client sends its Login as the first control message, and the node checks it with
 // NodeLogin. Its error must be the one that the SE-VPN login (raw Packs as ClientUploadAuth sent them, ServerAccept and
-// Sam on the server) gave for the case at the last run against the oracle, which the table of the cases holds; the
-// right credentials must log in and the wrong ones must not; a session whose Login passed carries data, one whose Login
-// failed is closed. Print "NODELOGIN TEST OK" only when every check passes.
+// Sam on the server) gave for the case at the last run against the oracle: the table of the cases with those errors is
+// the golden file tests/golden/nodelogin/nodelogin_errors.txt (golden family "nodelogin"), which the errors of NodeLogin
+// must match. The right credentials must log in and the wrong ones must not; a session whose Login passed carries data,
+// one whose Login failed is closed. Print "NODELOGIN TEST OK" only when every check passes.
 
+#include "golden.h"
 #include "testlist.h"
 
 #include "Cedar/Account.h"
@@ -44,6 +46,7 @@
 #define	NODELOGIN_ROOT_USER		"nl_rootcert"		// User whose certificate a trusted root signs
 #define	NODELOGIN_DOMAIN_USER	"nl_domain"			// User of the Windows domain: the local account of the test
 #define	NODELOGIN_WRONG			"NodeLogin-Wrong-1"	// No user's password
+#define	NODELOGIN_GOLDEN		"nodelogin_errors.txt"	// The golden file: the error of the SE-VPN login for each case
 
 // How a case gives its credential
 #define	NODELOGIN_SECRET_PASSWORD	0	// A password user's password
@@ -60,17 +63,16 @@ typedef struct NODELOGIN_CERTS
 	X *Stranger;						// Self-signed, unknown to both hubs
 } NODELOGIN_CERTS;
 
-// One case: a credential of a user, whether it must log in, and the error of the SE-VPN login
+// One case: a credential of a user, and whether it must log in
 typedef struct NODELOGIN_CASE
 {
-	char *What;
+	char *What;							// Its name, which names its line in the golden file
 	char *User;
 	UINT Secret;						// NODELOGIN_SECRET_*
 	bool RightPassword;					// Password cases: the user's password, else NODELOGIN_WRONG
 	X **Cert;							// Certificate cases: the certificate ...
 	K **Key;							// ... and the key that signs
 	bool Expect;						// The credential logs the user in
-	UINT SeVpnError;					// The error that the SE-VPN login gave at the last run against the oracle
 } NODELOGIN_CASE;
 
 // The state of the test
@@ -78,6 +80,9 @@ typedef struct NODELOGIN_CTX
 {
 	UINT NumChecks;
 	UINT NumFailed;
+	char OutDir[MAX_SIZE];				// The output and golden directories of the golden family "nodelogin"
+	char GoldenDir[MAX_SIZE];
+	bool Update;						// Update mode: the golden file is written, not compared
 	NODELOGIN_CERTS Certs;
 	wchar_t Account[32];				// The local account of the domain user
 	char AccountPassword[64];			// Its password
@@ -393,7 +398,7 @@ static void NodeLoginDeleteFiles(wchar_t *dir)
 	DeleteDirW(dir);
 }
 
-RANZ_TEST("nodelogin", nodelogin_test, "Node Login: password, certificate and domain credentials through a Noise session and NodeLogin give the SE-VPN login's result of the table of the cases (administrator rights).");
+RANZ_TEST("nodelogin", nodelogin_test, "Node Login: password, certificate and domain credentials through a Noise session and NodeLogin give the SE-VPN login's error of each case, the golden file of the table of the cases (golden family nodelogin; administrator rights).");
 void nodelogin_test(UINT num, char **arg)
 {
 	NODELOGIN_CTX *ctx = ZeroMalloc(sizeof(NODELOGIN_CTX));
@@ -401,20 +406,25 @@ void nodelogin_test(UINT num, char **arg)
 
 	Print("Node Login test: the Login of a Noise session against the results of the SE-VPN login of the slim fork\n");
 
-	// The cases, with the error that the SE-VPN login of the slim fork gave for each at the last run against the oracle
-	// (head 1819f09d, CI run 41302403531, x64 and arm64; CORE-S8-3 #577)
+	HarnessGetFamilyDirs("nodelogin", ctx->OutDir, sizeof(ctx->OutDir), ctx->GoldenDir, sizeof(ctx->GoldenDir), &ctx->Update);
+	MakeDirEx(ctx->OutDir);
+	Print("NODELOGIN GOLDEN MODE %s\n", ctx->Update ? "update" : "compare");
+	Print("  golden directory: %s\n", ctx->GoldenDir);
+
+	// The cases. The error that the SE-VPN login of the slim fork gave for each at the last run against the oracle (head
+	// 1819f09d, CI run 41302403531, x64 and arm64; CORE-S8-3 #577) is the line of the case in the golden file.
 	NODELOGIN_CASE cases[] =
 	{
-		{"password user, right password", NODELOGIN_PASSWORD_USER, NODELOGIN_SECRET_PASSWORD, true, NULL, NULL, true, ERR_NO_ERROR},
-		{"password user, wrong password", NODELOGIN_PASSWORD_USER, NODELOGIN_SECRET_PASSWORD, false, NULL, NULL, false, ERR_AUTH_FAILED},
-		{"unknown user", "nl_nobody", NODELOGIN_SECRET_PASSWORD, true, NULL, NULL, false, ERR_AUTH_FAILED},
-		{"certificate user, his certificate and key", NODELOGIN_CERT_USER, NODELOGIN_SECRET_CERT, false, &ctx->Certs.User, &ctx->Certs.UserKey, true, ERR_NO_ERROR},
-		{"certificate user, another certificate", NODELOGIN_CERT_USER, NODELOGIN_SECRET_CERT, false, &ctx->Certs.Stranger, &ctx->Certs.StrangerKey, false, ERR_AUTH_FAILED},
-		{"certificate user, his certificate signed by another key", NODELOGIN_CERT_USER, NODELOGIN_SECRET_CERT, false, &ctx->Certs.User, &ctx->Certs.StrangerKey, false, ERR_AUTH_FAILED},
-		{"root certificate user, a certificate of the trusted root", NODELOGIN_ROOT_USER, NODELOGIN_SECRET_CERT, false, &ctx->Certs.Rooted, &ctx->Certs.RootedKey, true, ERR_NO_ERROR},
-		{"root certificate user, a certificate of no trusted root", NODELOGIN_ROOT_USER, NODELOGIN_SECRET_CERT, false, &ctx->Certs.Stranger, &ctx->Certs.StrangerKey, false, ERR_AUTH_FAILED},
-		{"domain user, right password", NODELOGIN_DOMAIN_USER, NODELOGIN_SECRET_DOMAIN, true, NULL, NULL, true, ERR_NO_ERROR},
-		{"domain user, wrong password", NODELOGIN_DOMAIN_USER, NODELOGIN_SECRET_DOMAIN, false, NULL, NULL, false, ERR_AUTH_FAILED},
+		{"password user, right password", NODELOGIN_PASSWORD_USER, NODELOGIN_SECRET_PASSWORD, true, NULL, NULL, true},
+		{"password user, wrong password", NODELOGIN_PASSWORD_USER, NODELOGIN_SECRET_PASSWORD, false, NULL, NULL, false},
+		{"unknown user", "nl_nobody", NODELOGIN_SECRET_PASSWORD, true, NULL, NULL, false},
+		{"certificate user, his certificate and key", NODELOGIN_CERT_USER, NODELOGIN_SECRET_CERT, false, &ctx->Certs.User, &ctx->Certs.UserKey, true},
+		{"certificate user, another certificate", NODELOGIN_CERT_USER, NODELOGIN_SECRET_CERT, false, &ctx->Certs.Stranger, &ctx->Certs.StrangerKey, false},
+		{"certificate user, his certificate signed by another key", NODELOGIN_CERT_USER, NODELOGIN_SECRET_CERT, false, &ctx->Certs.User, &ctx->Certs.StrangerKey, false},
+		{"root certificate user, a certificate of the trusted root", NODELOGIN_ROOT_USER, NODELOGIN_SECRET_CERT, false, &ctx->Certs.Rooted, &ctx->Certs.RootedKey, true},
+		{"root certificate user, a certificate of no trusted root", NODELOGIN_ROOT_USER, NODELOGIN_SECRET_CERT, false, &ctx->Certs.Stranger, &ctx->Certs.StrangerKey, false},
+		{"domain user, right password", NODELOGIN_DOMAIN_USER, NODELOGIN_SECRET_DOMAIN, true, NULL, NULL, true},
+		{"domain user, wrong password", NODELOGIN_DOMAIN_USER, NODELOGIN_SECRET_DOMAIN, false, NULL, NULL, false},
 	};
 	UINT num_cases = sizeof(cases) / sizeof(cases[0]);
 
@@ -432,19 +442,35 @@ void nodelogin_test(UINT num, char **arg)
 		NodeLoginAddUsers(ctx, hub);
 		ReleaseHub(hub);
 
+		BUF *report = NewBuf();
+
 		for (UINT i = 0;i < num_cases;i++)
 		{
 			NODELOGIN_CASE *c = &cases[i];
 			bool carried = false;
 			UINT err = NodeLoginNoise(ctx, n, c, &carried);
-			char what[MAX_SIZE];
+			char line[MAX_SIZE];
 
-			Format(what, sizeof(what), "%s: %s, as the SE-VPN login", c->What, c->Expect ? "logs in" : "refused");
-			NodeLoginCheck(ctx, err == c->SeVpnError && (err == ERR_NO_ERROR) == c->Expect, what,
-				"NodeLogin error %u, SE-VPN login error %u", err, c->SeVpnError);
+			Format(line, sizeof(line), "%s: %s", c->What, c->Expect ? "logs in" : "refused");
+			NodeLoginCheck(ctx, (err == ERR_NO_ERROR) == c->Expect, line, "NodeLogin error %u", err);
 			NodeLoginCheck(ctx, carried, c->Expect ? "  the session carries data" : "  the session is closed",
 				"the session did not %s", c->Expect ? "carry the data record" : "close");
+
+			// The line of the case in the golden file: its error, which must be the one of the SE-VPN login
+			Format(line, sizeof(line), "%s: error %u\n", c->What, err);
+			WriteBuf(report, line, StrLen(line));
 		}
+
+		// The errors of NodeLogin against the ones of the SE-VPN login (in update mode: written, not compared)
+		char *text = HarnessBufToStr(report);
+		HARNESS h;
+
+		Zero(&h, sizeof(h));
+		HarnessCompareGolden(&h, ctx->OutDir, ctx->GoldenDir, NODELOGIN_GOLDEN, text, ctx->Update);
+		NodeLoginCheck(ctx, h.NumFail == 0, "each case gives the error of the SE-VPN login: the errors match the golden file " NODELOGIN_GOLDEN,
+			"they differ from the golden file %s (the diff is above)", NODELOGIN_GOLDEN);
+		Free(text);
+		FreeBuf(report);
 
 		// A join Login names a tunnel, not a user: Sam has nothing to check
 		NOISE_LOGIN join;
