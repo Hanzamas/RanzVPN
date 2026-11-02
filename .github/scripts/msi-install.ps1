@@ -8,7 +8,9 @@ param(
 	[switch] $SelfTest,     # Checks the bounds of the waits and the evidence of a hang on planted hangs alone, with no package: no other parameter is read
 	[switch] $SelfTestFlow, # What -SelfTest runs in a process of its own: the main flow on a planted hang, which must end with an error
 	[string] $CheckLaunches, # Reads the script at this path and fails when it starts msiexec anywhere but in Invoke-Msiexec: no other parameter is read
-	[string] $EvidenceRequest # What a call that does not end runs in a process of its own: collects the evidence that this file asks for
+	[string] $EvidenceRequest, # What a call that does not end runs in a process of its own: collects the evidence that this file asks for
+	[string] $EventsRequest, # What the diagnostics of a failed step run in a process of their own: reads the events that this file asks for
+	[string] $CheckFlow     # Runs the main flow of the script at this path on a planted hang and fails when what it prints is wrong: no other parameter is read
 )
 
 $ErrorActionPreference = 'Stop'
@@ -60,12 +62,24 @@ $PSNativeCommandUseErrorActionPreference = $false
 # the Application log can on the computer that #593 is about, must not keep the call from being ended and failed. The other waits
 # have a bound too, and print the state of the service and the processes when they reach it: the wait for the Node to stop or to
 # start (Wait-ServiceState: Stop-Service and Start-Service wait for ever for a service that never gets there, so they only ask) and
-# ranz.exe version (Get-RanzVersionLine). Others stay without one: the signature, hash and access list reads, the COM queries of
-# Windows Installer and the diagnostics of a failed step. Only msiexec, the Node and ranz.exe version have hung or can.
+# ranz.exe version (Get-RanzVersionLine). The diagnostics of a failed step ask CIM with a time limit ($cimSeconds) and read the events of
+# the System log in a process of their own under a bound ($eventsSeconds), as the evidence does (CI-FLAKE-6-R2, #624). Others stay without
+# a bound: the signature, hash and access list reads, the COM queries of Windows Installer, the CIM queries that the steps make themselves
+# and the files and the registry that the diagnostics read. Only msiexec, the Node and ranz.exe version have hung or can.
+#
+# The process of the service msiserver is ended only when sc.exe queryex gives it for the service at that moment and it is named
+# msiexec: the service may have ended while the evidence was collected, and its id may be another process by then (#624). A process
+# whose exit code the script reads is started with Process.Start (Start-ProcessWithHandle), which holds its handle from its creation: a
+# process that Start-Process -PassThru started and that ended before its handle was taken has no exit code to give, and ranz.exe version
+# prints one line and ends (#624).
 #
 # -SelfTest plants a hang of each kind and checks all of that on any computer with PowerShell 7, Windows or Linux: quality-gates-test.py
-# runs it on Linux, and the msi job runs it on x64 and arm64. -CheckLaunches reads a script with the parser of PowerShell and fails
-# when msiexec is started anywhere but in Invoke-Msiexec: quality-gates-test.py runs it on this script and on planted faults.
+# runs it on Linux, and the msi job runs it on x64 and arm64. A planted hang ends the service msiserver with its tree, so on Windows it
+# ends the real service only in GitHub Actions (GITHUB_ACTIONS is true), where nothing else uses it; on a workstation, where an install
+# of somebody else may be running in the service, a process stands in for it as on Linux, and the self-test says so (#624).
+# -CheckLaunches reads a script with the parser of PowerShell and fails when msiexec, or an install that has no msiexec, is started
+# anywhere but in Invoke-Msiexec; -CheckFlow runs the main flow of a script on a planted hang and fails when its output is wrong:
+# quality-gates-test.py runs both on this script and on copies of it with a planted fault.
 
 # The bound of a msiexec call, in seconds. The green runs of 2026-10-31 (five of each architecture, from the pushes to integration)
 # took 36 s at the most for the slowest call, the install of the previous package on x64 (23 s on arm64), and 5 s at the most for
@@ -76,15 +90,27 @@ $msiexecFile = 'msiexec.exe'
 $msiexecPrefix = @()
 # The message of the call that reached its bound, once one did: Step stops the run there, and no other call starts
 $script:msiexecHang = $null
+# The name of the process of the service msiserver (it runs msiexec.exe /V): the end of a hang ends the process that it finds for the
+# service only when it has this name. -SelfTest puts the name of its stand-in for the service there.
+$serviceProcessName = 'msiexec'
 
 # The bound of the evidence of a call that does not end, in seconds. The evidence of the hangs that PR 594 ran took under 2 s, so 60 s
-# is thirty times that; with the bound of the call, the end of the call and the service and the 10 s that each of them is given, the
-# step stays inside its timeout of 10 minutes. $evidenceStall is the seconds that a planted stall sleeps in the query of the events.
+# is thirty times that. The bounds of the end of a hang add up to 200 s at the most: the query of the service 30 s, the two reads of
+# sc.exe queryex 10 s each, the evidence 60 s, the end of the evidence process 40 s (the table of processes 30 s and a wait of 10 s),
+# the table of processes 30 s, and the waits for the call and for the service to be gone 10 s each. $evidenceStall is the seconds that a
+# planted stall sleeps in the query of the events.
 $evidenceSeconds = 60
 $evidenceStall = 0
 # The bound of the wait for the Node to stop and to start, and of ranz.exe version, in seconds. The Node takes a few seconds to do
 # either (the slowest step of the green runs, which also runs msiexec, took 77 s), and the wait for it to run had 60 s already.
 $waitSeconds = 60
+# The time limit of a query of CIM and of sc.exe queryex, and the bound of the events that the diagnostics of a failed step read, in
+# seconds: each answers in well under a second, and a query that does not is what the bounds are for. $eventsStall is the seconds
+# that a planted stall sleeps in the query of those events.
+$cimSeconds = 30
+$scSeconds = 10
+$eventsSeconds = 20
+$eventsStall = 0
 # This script and the program that runs it: the process that collects the evidence runs this script again, and -SelfTest runs it for the flow
 $msiInstallScript = $MyInvocation.MyCommand.Path
 if (-not $msiInstallScript) { $msiInstallScript = $PSCommandPath }
@@ -112,11 +138,41 @@ function Get-Sha256([string] $path) {
 	return (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash
 }
 
+# Starts $file with $arguments and gives { Process, Output, Error }. Process.Start makes the Process with the handle of the process in
+# it, so that its exit code is there whenever the process ended. The Process that Start-Process -PassThru gives takes the handle when it
+# is first asked for something, and a process that ended before that has no exit code to give: ranz.exe version prints one line and
+# ends, so it could be gone first (CI-FLAKE-6-R2, #624). The arguments are passed as they are and quoted by the framework. With $redirect
+# the output and the error are read in the background (Output and Error are the tasks that read them, Get-PipeText gives their text), so
+# that a process that writes more than a pipe holds is not waited for for ever.
+function Start-ProcessWithHandle([string] $file, [string[]] $arguments, [bool] $redirect = $false) {
+	$info = [System.Diagnostics.ProcessStartInfo]::new($file)
+	foreach ($argument in $arguments) { $info.ArgumentList.Add($argument) }
+	$info.UseShellExecute = $false
+	$info.RedirectStandardOutput = $redirect
+	$info.RedirectStandardError = $redirect
+	$process = [System.Diagnostics.Process]::Start($info)
+	$call = [pscustomobject]@{ Process = $process; Output = $null; Error = $null }
+	if ($redirect) {
+		$call.Output = $process.StandardOutput.ReadToEndAsync()
+		$call.Error = $process.StandardError.ReadToEndAsync()
+	}
+	return $call
+}
+
+# What a process wrote to a pipe that Start-ProcessWithHandle reads, once the process is gone. A pipe that a process of the call still
+# holds is not waited for for ever: after 10 s the text is nothing.
+function Get-PipeText($task) {
+	try {
+		if ($null -ne $task -and $task.Wait(10000)) { return [string] $task.Result }
+	} catch { }
+	return ''
+}
+
 # Every process of this computer, one object each: the id, the parent, the name, the threads, the seconds of cpu, the start time and
 # the command line. Windows asks CIM, with a time limit; another computer (the self-test on Linux) asks Get-Process and /proc.
 function Get-ProcessTable {
 	if ($IsWindows) {
-		foreach ($p in @(Get-CimInstance Win32_Process -OperationTimeoutSec 30)) {
+		foreach ($p in @(Get-CimInstance Win32_Process -OperationTimeoutSec $cimSeconds)) {
 			[pscustomobject]@{
 				ProcessId = [int] $p.ProcessId
 				ParentProcessId = [int] $p.ParentProcessId
@@ -204,9 +260,39 @@ function Get-ProcessEvidence([int[]] $rootIds, [string[]] $rootNames) {
 }
 
 # The Win32_Service object of a service (its state, the process that runs it, its start mode and exit code), with a time limit, or nothing
-# when there is no such service. -SelfTest on Linux has no CIM, so it puts a function of this name in front of this one.
+# when there is no such service. -SelfTest puts a function of this name in front of this one where its service is a stand-in: Linux has
+# no CIM, and a workstation's service is not for ending.
 function Get-ServiceDetails([string] $name) {
-	return Get-CimInstance Win32_Service -Filter "Name='$name'" -OperationTimeoutSec 30
+	return Get-CimInstance Win32_Service -Filter "Name='$name'" -OperationTimeoutSec $cimSeconds
+}
+
+# The process that the Service Control Manager gives for the service $name (sc.exe queryex): its id, 0 when the service has none, and
+# nothing when sc.exe did not answer within $scSeconds or its answer has no process line. It asks the Service Control Manager and not CIM,
+# so that it answers when CIM does not. -SelfTest puts a function of this name in front of this one where its service is a stand-in.
+function Get-ServiceProcessId([string] $name) {
+	try {
+		$call = Start-ProcessWithHandle 'sc.exe' @('queryex', $name) $true
+		if (-not $call.Process.WaitForExit($scSeconds * 1000)) {
+			try { $call.Process.Kill($true) } catch { }
+			return $null
+		}
+		if ((Get-PipeText $call.Output) -match '(?m)^\s*PID\s*:\s*(\d+)') { return [int] $Matches[1] }
+	} catch { }
+	return $null
+}
+
+# Why the process $id, which was read for the service $name some time ago, is not known to be its process now, or nothing when it is: the
+# Service Control Manager gives that process for the service now, and the process has the name of the service's. The service may have
+# ended since it was read, and another process may have its id (CI-FLAKE-6-R2, #624); that process must not be ended as the service.
+function Get-ServiceProcessFault([string] $name, [int] $id) {
+	$now = Get-ServiceProcessId $name
+	if ($null -eq $now) { return "sc.exe queryex $name did not answer, so process $id is not known to be the service's" }
+	if ($now -eq 0) { return "the Service Control Manager says that the service $name has no process now" }
+	if ($now -ne $id) { return "the Service Control Manager says that the service $name runs in process $now now, not in process $id" }
+	$process = Get-Process -Id $id -ErrorAction SilentlyContinue
+	if ($null -eq $process) { return "process $id is gone" }
+	if ($process.ProcessName -ne $serviceProcessName) { return "process $id is $($process.ProcessName), not $serviceProcessName" }
+	return $null
 }
 
 function Format-ServiceLine([string] $name, $service) {
@@ -271,6 +357,23 @@ function Stop-ProcessTree([int] $id, [string] $role, $table, $ended, $notEnded) 
 	}
 }
 
+# Runs this script again in a process of its own with the switch $mode and the request file $requestFile, which says what the process is to
+# do, and gives it $seconds at the most. The evidence of a hang and the events of the diagnostics are read this way: a query that stalls
+# must not hold this script, and a process can be ended where a job cannot. A process that is not done in time is ended, and its end is
+# a line of $ended or $notEnded. Gives { TimedOut, ExitCode, ProcessId }: TimedOut is true only when the process was still running at
+# its bound. A process that cannot be started throws.
+function Invoke-ScriptProcess([string] $mode, [string] $requestFile, [int] $seconds, [string] $role, $ended, $notEnded) {
+	$process = (Start-ProcessWithHandle $pwshPath @('-NoProfile', '-NonInteractive', '-File', $msiInstallScript, $mode, $requestFile)).Process
+	$timedOut = -not $process.WaitForExit($seconds * 1000)
+	$exitCode = $null
+	if ($timedOut) {
+		Stop-ProcessTree $process.Id $role $null $ended $notEnded
+	} else {
+		$exitCode = $process.ExitCode
+	}
+	return [pscustomobject]@{ TimedOut = $timedOut; ExitCode = $exitCode; ProcessId = $process.Id }
+}
+
 # What a call that does not end shows, written to the file that the request names as it is found, line by line, so that a part that
 # stalls hides none of the parts before it: the msiexec processes, the processes of the runner and the tree of each, the end of the
 # verbose log, the state of the service msiserver (read by the caller, which ends its process) and last the events of Windows Installer,
@@ -326,32 +429,50 @@ function Write-MsiexecEvidence([string] $requestPath) {
 	}
 }
 
+# What -EventsRequest runs in a process of its own: the events that the request asks for (a log, a provider and the time to start from),
+# one line each, written to the file of the request as they are found, or the reason that they could not be read. The stall that
+# -SelfTest plants sleeps where the query that can stall is.
+function Write-EventLines([string] $requestPath) {
+	$request = Get-Content -LiteralPath $requestPath -Raw | ConvertFrom-Json
+	$file = [string] $request.File
+	[System.IO.File]::WriteAllText($file, '')
+	if ([int] $request.StallSeconds -gt 0) { Start-Sleep -Seconds ([int] $request.StallSeconds) }
+	try {
+		$start = [datetime]::new([long] $request.StartTicks, [System.DateTimeKind]::Local)
+		$events = @(Get-WinEvent -FilterHashtable @{ LogName = [string] $request.LogName; ProviderName = [string] $request.ProviderName; StartTime = $start } -ErrorAction SilentlyContinue)
+		foreach ($record in @($events | Sort-Object RecordId)) {
+			Add-Content -LiteralPath $file -Value ('  {0} id {1}: {2}' -f (Format-Utc $record.TimeCreated), $record.Id, ($record.Message -replace '\s+', ' '))
+		}
+	} catch {
+		Add-Content -LiteralPath $file -Value "  not read: $($_.Exception.Message)"
+	}
+}
+
 # Collects the evidence of the call $callId in a process of its own, for $evidenceSeconds at the most, and prints what the file holds
 # when that process is done or ended. Whatever happens here, the caller goes on to end the call. A process that has to be ended is
-# a line of $ended or $notEnded. Gives the file, the number of its lines, whether the process was done in time and a note.
-function Invoke-EvidenceCollection([int] $callId, [string] $log, [string] $step, $service, $serviceError, $ended, $notEnded) {
+# a line of $ended or $notEnded. Gives the file, the number of its lines, whether the process was still running at its bound and a
+# note for the other things that can go wrong: the request could not be written, the process could not be started, or it ended with
+# a code. Only TimedOut speaks of the bound (CI-FLAKE-6-R2, #624).
+function Invoke-EvidenceCollection([int] $callId, [string] $log, [string] $step, $service, $serviceError, [int] $serviceId, $ended, $notEnded) {
 	$file = Join-Path $LogDir "$step-evidence.txt"
 	$requestFile = Join-Path $LogDir "$step-evidence-request.json"
-	$result = [pscustomobject]@{ File = $file; Lines = 0; Complete = $false; Note = '' }
+	$result = [pscustomobject]@{ File = $file; Lines = 0; TimedOut = $false; Note = '' }
 	try {
 		$rootIds = @($callId)
+		if ($serviceId -gt 0) { $rootIds += $serviceId }
 		# The service as plain values: the CIM object holds far more than the line of the evidence needs, and JSON would write all of it
 		$plain = $null
 		if ($service) {
 			$plain = [pscustomobject]@{ State = [string] $service.State; ProcessId = [int] $service.ProcessId; StartMode = [string] $service.StartMode; Status = [string] $service.Status; ExitCode = [long] $service.ExitCode }
-			if ($plain.ProcessId -gt 0) { $rootIds += $plain.ProcessId }
 		}
 		$request = [pscustomobject]@{ CallId = $callId; Log = $log; File = $file; RootIds = $rootIds; Service = $plain; ServiceError = $serviceError; StallSeconds = $evidenceStall }
 		$request | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath $requestFile -Encoding utf8
-		$collector = Start-Process -FilePath $pwshPath -ArgumentList @('-NoProfile', '-NonInteractive', '-File', "`"$msiInstallScript`"", '-EvidenceRequest', "`"$requestFile`"") -PassThru
-		# On Windows the exit code of a process that Start-Process started is read from a handle that must be taken while it runs
-		if ($IsWindows) { $null = $collector.Handle }
-		$result.Complete = $collector.WaitForExit($evidenceSeconds * 1000)
-		if (-not $result.Complete) {
-			Write-Host "the evidence was not done within $evidenceSeconds s: its process $($collector.Id) is ended, and what it had found is below"
-			Stop-ProcessTree $collector.Id 'the evidence collection' $null $ended $notEnded
-		} elseif ($collector.ExitCode -ne 0) {
-			$result.Note = "its process exited with the code $($collector.ExitCode)"
+		$run = Invoke-ScriptProcess '-EvidenceRequest' $requestFile $evidenceSeconds 'the evidence collection' $ended $notEnded
+		$result.TimedOut = $run.TimedOut
+		if ($run.TimedOut) {
+			Write-Host "the evidence was not done within $evidenceSeconds s: its process $($run.ProcessId) is ended, and what it had found is below"
+		} elseif ($run.ExitCode -ne 0) {
+			$result.Note = "its process exited with the code $($run.ExitCode)"
 		}
 	} catch {
 		Write-Host "the evidence could not be collected: $($_.Exception.Message)"
@@ -368,16 +489,20 @@ function Invoke-EvidenceCollection([int] $callId, [string] $log, [string] $step,
 # The end of a call that did not end: reads the state of the service msiserver, collects the evidence, ends the call with its process
 # tree and the process of the service with its tree, and gives the message of the failure. The message lists the processes that were
 # ended and the ones that were not, each as it was found afterwards, and speaks of the evidence and of the log only as far as they
-# are there.
+# are there. The process of the service is ended only when the Service Control Manager says that it is the service's (see
+# Get-ServiceProcessFault).
 function Stop-HungCall([System.Diagnostics.Process] $call, [string] $what, [string] $step, [string] $log) {
 	$ended = [System.Collections.Generic.List[string]]::new()
 	$notEnded = [System.Collections.Generic.List[string]]::new()
 	$notes = [System.Collections.Generic.List[string]]::new()
-	# The service is read before anything ends: an install usually hangs in it, and its process is what the evidence and the end need
+	# The service is read before anything ends: an install usually hangs in it, and its process is what the evidence and the end need. CIM
+	# gives its state; when CIM does not answer, sc.exe queryex gives its process all the same, so that the service is ended then too
 	$service = $null
 	$serviceError = $null
 	try { $service = Get-ServiceDetails 'msiserver' } catch { $serviceError = $_.Exception.Message }
-	$evidence = Invoke-EvidenceCollection $call.Id $log $step $service $serviceError $ended $notEnded
+	$serviceId = if ($service) { [int] $service.ProcessId } else { 0 }
+	if ($serviceId -le 0) { $serviceId = [int] (Get-ServiceProcessId 'msiserver') }
+	$evidence = Invoke-EvidenceCollection $call.Id $log $step $service $serviceError $serviceId $ended $notEnded
 	$table = @()
 	try {
 		$table = @(Get-ProcessTable)
@@ -385,20 +510,30 @@ function Stop-HungCall([System.Diagnostics.Process] $call, [string] $what, [stri
 		$notes.Add("the processes could not be listed ($($_.Exception.Message)), so the processes that the call and the service started are not named")
 	}
 	Stop-ProcessTree $call.Id 'the call' $table $ended $notEnded
-	$serviceText = if ($serviceError) {
-		"was not read ($serviceError)"
-	} elseif ($null -eq $service) {
-		'is not installed'
-	} elseif ([int] $service.ProcessId -le 0) {
-		"has no process ($($service.State))"
-	} else {
-		"was $($service.State) in process $($service.ProcessId)"
+	# The evidence took a while, and the service may have ended in it, and its id be another process now: that process is ended only when
+	# the Service Control Manager says that it is the service's, and it has the name of the service's process (CI-FLAKE-6-R2, #624)
+	$serviceFault = $null
+	if ($serviceId -gt 0) {
+		$serviceFault = Get-ServiceProcessFault 'msiserver' $serviceId
+		if (-not $serviceFault) { Stop-ProcessTree $serviceId 'the service msiserver' $table $ended $notEnded }
 	}
-	if ($service -and [int] $service.ProcessId -gt 0) { Stop-ProcessTree ([int] $service.ProcessId) 'the service msiserver' $table $ended $notEnded }
+	if ($serviceError) {
+		$serviceText = "was not read ($serviceError)"
+		if ($serviceId -gt 0) { $serviceText += ", and sc.exe queryex gives process $serviceId" }
+	} elseif ($null -eq $service) {
+		$serviceText = 'is not installed'
+	} elseif ($serviceId -le 0) {
+		$serviceText = "has no process ($($service.State))"
+	} else {
+		$serviceText = "was $($service.State) in process $serviceId"
+	}
+	if ($serviceFault) { $serviceText += "; it was not ended: $serviceFault" }
 	$endedText = if ($ended.Count -gt 0) { $ended -join ', ' } else { 'nothing' }
 	$notEndedText = if ($notEnded.Count -gt 0) { $notEnded -join ', ' } else { 'nothing' }
 	$evidenceText = if ($evidence.Lines -gt 0) { "$($evidence.Lines) lines above and in $(Split-Path -Leaf $evidence.File)" } else { 'none was collected' }
-	if (-not $evidence.Complete) { $evidenceText += ", stopped at its bound of $evidenceSeconds s" }
+	# The bound is named only when it was reached: a request that could not be written or a process that could not be started says what
+	# happened in its note, and a bound that was never reached is no part of it
+	if ($evidence.TimedOut) { $evidenceText += ", stopped at its bound of $evidenceSeconds s" }
 	if ($evidence.Note) { $evidenceText += " ($($evidence.Note))" }
 	$logText = if (Test-Path -LiteralPath $log) { "$log ($((Get-Item -LiteralPath $log).Length) bytes)" } else { 'was not written' }
 	$message = "$what did not end within $msiexecSeconds s (step $step). Ended: $endedText. Not ended: $notEndedText. The service msiserver $serviceText. Evidence: $evidenceText. Verbose log: $logText."
@@ -473,26 +608,60 @@ function Get-ClosedStoreHash {
 
 # What ranz.exe version prints: its exit code and its line, with a bound. A call that is not done in $seconds prints the state of the
 # Node service and the processes, ends the call and fails. $file and $prefix are ranz.exe and no arguments; -SelfTest puts a stand-in there.
+# The call is started with Start-ProcessWithHandle, which holds its handle from its creation: ranz.exe version prints one line and
+# ends, so it can be gone before a handle that is taken afterwards, and the exit code with it (CI-FLAKE-6-R2, #624).
 function Get-RanzVersionLine([string] $file, [string[]] $prefix, [int] $seconds) {
 	$out = Join-Path $LogDir 'ranz-version.out'
 	$err = Join-Path $LogDir 'ranz-version.err'
-	$call = Start-Process -FilePath $file -ArgumentList @($prefix + @('version')) -PassThru -NoNewWindow -RedirectStandardOutput $out -RedirectStandardError $err
-	if ($IsWindows) { $null = $call.Handle }
-	if (-not $call.WaitForExit($seconds * 1000)) {
-		Write-Host "ranz.exe version did not end within $seconds s (process $($call.Id)). What the computer shows:"
+	$call = Start-ProcessWithHandle $file @($prefix + @('version')) $true
+	$process = $call.Process
+	if (-not $process.WaitForExit($seconds * 1000)) {
+		Write-Host "ranz.exe version did not end within $seconds s (process $($process.Id)). What the computer shows:"
 		try {
-			foreach ($line in @(Get-WaitEvidence $nodeService @($call.Id))) { Write-Host $line }
+			foreach ($line in @(Get-WaitEvidence $nodeService @($process.Id))) { Write-Host $line }
 		} catch {
 			Write-Host "the evidence stopped: $($_.Exception.Message)"
 		}
 		$ended = [System.Collections.Generic.List[string]]::new()
 		$notEnded = [System.Collections.Generic.List[string]]::new()
-		Stop-ProcessTree $call.Id 'the call' $null $ended $notEnded
+		Stop-ProcessTree $process.Id 'the call' $null $ended $notEnded
 		$endedText = if ($ended.Count -gt 0) { $ended -join ', ' } else { 'nothing' }
 		$notEndedText = if ($notEnded.Count -gt 0) { $notEnded -join ', ' } else { 'nothing' }
 		throw "ranz.exe version did not end within $seconds s. Ended: $endedText. Not ended: $notEndedText."
 	}
-	return [pscustomobject]@{ Code = $call.ExitCode; Line = (Read-MsiLog $out).Trim() }
+	# What the call wrote stays in the log folder, as the redirection of Start-Process kept it
+	$output = Get-PipeText $call.Output
+	[System.IO.File]::WriteAllText($out, $output)
+	[System.IO.File]::WriteAllText($err, (Get-PipeText $call.Error))
+	return [pscustomobject]@{ Code = $process.ExitCode; Line = $output.Trim() }
+}
+
+# The events of the Service Control Manager since $since, for the diagnostics of a failed step. Get-WinEvent has no time limit, and a
+# query that stalls would hold the diagnostics, and the end of the job with them, as it held the evidence of a hang (CI-FLAKE-6-R1, #596):
+# the query runs in a process of its own (-EventsRequest) for $eventsSeconds at the most, and the lines that it had found are printed when
+# it is done or ended (CI-FLAKE-6-R2, #624).
+function Show-ServiceControlEvents([datetime] $since) {
+	Write-Host 'Service Control Manager events since the start of the job:'
+	$file = Join-Path $LogDir 'diagnostics-events.txt'
+	$requestFile = Join-Path $LogDir 'diagnostics-events-request.json'
+	$ended = [System.Collections.Generic.List[string]]::new()
+	$notEnded = [System.Collections.Generic.List[string]]::new()
+	try {
+		$request = [pscustomobject]@{ File = $file; LogName = 'System'; ProviderName = 'Service Control Manager'; StartTicks = $since.Ticks; StallSeconds = $eventsStall }
+		$request | ConvertTo-Json | Set-Content -LiteralPath $requestFile -Encoding utf8
+		$run = Invoke-ScriptProcess '-EventsRequest' $requestFile $eventsSeconds 'the query of the events' $ended $notEnded
+		if ($run.TimedOut) {
+			Write-Host "  the events were not read within $eventsSeconds s: its process $($run.ProcessId) is ended, and what it had found is below"
+			if ($notEnded.Count -gt 0) { Write-Host "  not ended: $($notEnded -join ', ')" }
+		} elseif ($run.ExitCode -ne 0) {
+			Write-Host "  the query of the events exited with the code $($run.ExitCode)"
+		}
+	} catch {
+		Write-Host "  the events could not be read: $($_.Exception.Message)"
+	}
+	if (Test-Path -LiteralPath $file) {
+		foreach ($line in @(Get-Content -LiteralPath $file)) { Write-Host $line }
+	}
 }
 
 # A step: it runs its body and reports what failed, and the steps after it run whatever it did. It returns
@@ -541,9 +710,14 @@ function Invoke-Flow([scriptblock] $steps, [scriptblock] $cleanUp) {
 
 # The lines of the script at $path that start msiexec anywhere but in Invoke-Msiexec, each as "line: text". The parser of PowerShell
 # reads the script, so a comment, a message or a string that names msiexec starts nothing. A command starts msiexec when it is msiexec
-# itself (by name or by path), or when it starts a program (Start-Process, the call operator & or ., cmd, Invoke-Expression) or a
-# Process (its Start) and names msiexec in its text, which holds the variables $msiexecFile and $msiexecPrefix too. A program that is
-# named by another variable is not seen: the check is for the way that the hang of #593 came, an unbounded Start-Process.
+# itself (by name or by path), or when it starts a program (Start-Process, Start-ProcessWithHandle, the call operator & or ., cmd,
+# Invoke-Expression) or a Process (its Start) and names msiexec in its text, which holds the variables $msiexecFile and $msiexecPrefix
+# too. Three more forms are forbidden (CI-FLAKE-6-R2, #624): a program started with a splat (Start-Process @splat), whose program is in
+# a hashtable that this check does not read; a command that is given msiexec as an argument, which is how a helper that takes the program
+# starts it (a command that prints, as Write-Host, only names it); and a call of a method of the Windows Installer object that installs
+# (InstallProduct, ConfigureProduct, ReinstallProduct, ConfigureFeature, ApplyPatch): an install that has no msiexec.exe and no bound.
+# Not seen, and left to the review of the diff: a program named by another variable or built from pieces of text, a ProcessStartInfo
+# whose FileName is assigned, and a call of msi.dll through Add-Type.
 function Get-MsiexecLaunches([string] $path) {
 	$tokens = $null
 	$errors = $null
@@ -551,21 +725,32 @@ function Get-MsiexecLaunches([string] $path) {
 	if ($errors.Count -gt 0) { throw "$path does not parse: line $($errors[0].Extent.StartLineNumber): $($errors[0].Message)" }
 	$allowed = $ast.Find({ param($node) $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq 'Invoke-Msiexec' }, $true)
 	if ($null -eq $allowed) { throw "$path has no function Invoke-Msiexec" }
-	$starters = @('start-process', 'start', 'saps', 'invoke-expression', 'iex', 'invoke-command', 'icm', 'cmd', 'cmd.exe')
-	$nodes = $ast.FindAll({ param($node) $node -is [System.Management.Automation.Language.CommandAst] -or $node -is [System.Management.Automation.Language.InvokeMemberExpressionAst] }, $true)
+	$starters = @('start-process', 'start', 'saps', 'start-processwithhandle', 'invoke-expression', 'iex', 'invoke-command', 'icm', 'cmd', 'cmd.exe')
+	$printers = @('write-host', 'write-output', 'write-warning', 'write-error', 'write-verbose', 'write-debug', 'write-information')
+	$installs = @('InstallProduct', 'ConfigureProduct', 'ReinstallProduct', 'ConfigureFeature', 'ApplyPatch')
+	$nodes = $ast.FindAll({ param($node) $node -is [System.Management.Automation.Language.CommandAst] -or $node -is [System.Management.Automation.Language.MemberExpressionAst] }, $true)
 	foreach ($node in $nodes) {
 		if ($node.Extent.StartOffset -ge $allowed.Extent.StartOffset -and $node.Extent.EndOffset -le $allowed.Extent.EndOffset) { continue }
 		$text = $node.Extent.Text
 		$starts = $false
 		if ($node -is [System.Management.Automation.Language.CommandAst]) {
 			$name = $node.GetCommandName()
+			$lowerName = if ($name) { $name.ToLowerInvariant() } else { '' }
 			$operator = $node.InvocationOperator -ne [System.Management.Automation.Language.TokenKind]::Unknown
+			$splatted = @($node.CommandElements | Where-Object { $_ -is [System.Management.Automation.Language.VariableExpressionAst] -and $_.Splatted }).Count -gt 0
+			$given = @($node.CommandElements | Select-Object -Skip 1 | Where-Object { $_ -is [System.Management.Automation.Language.StringConstantExpressionAst] -and $_.Value -match '^(.*[\\/])?msiexec(\.exe)?$' }).Count -gt 0
 			if ($name -and $name -match '(^|[\\/])msiexec(\.exe)?$') {
 				$starts = $true
-			} elseif ($text -match 'msiexec' -and ($operator -or ($name -and $starters -contains $name.ToLowerInvariant()))) {
+			} elseif ($text -match 'msiexec' -and ($operator -or $starters -contains $lowerName)) {
+				$starts = $true
+			} elseif ($splatted -and $starters -contains $lowerName) {
+				$starts = $true
+			} elseif ($given -and $printers -notcontains $lowerName) {
 				$starts = $true
 			}
-		} elseif ($text -match 'msiexec' -and @('Start', 'new') -contains $node.Member.Extent.Text) {
+		} elseif ($installs -contains $node.Member.Extent.Text) {
+			$starts = $true
+		} elseif ($node -is [System.Management.Automation.Language.InvokeMemberExpressionAst] -and $text -match 'msiexec' -and @('Start', 'new') -contains $node.Member.Extent.Text) {
 			$starts = $true
 		}
 		if ($starts) { "$($node.Extent.StartLineNumber): $($text -replace '\s+', ' ')" }
@@ -610,8 +795,10 @@ Set-Content -LiteralPath $args[0] -Value "$PID $($child.Id)"
 Start-Sleep -Seconds 120
 '@
 	Set-Content -LiteralPath (Join-Path $work 'standin-ranz.ps1') -Value @'
-# A stand-in for ranz.exe (the self-test of msi-install.ps1): "quick version" prints the line of ranz.exe version at once, any other call hangs
+# A stand-in for ranz.exe (the self-test of msi-install.ps1): "quick version" prints the line of ranz.exe version at once, "gone version"
+# ends at once with the exit code 42 and prints nothing, any other call hangs
 if ($args[0] -eq 'quick') { 'ranz 9.9.9'; exit 0 }
+if ($args[0] -eq 'gone') { exit 42 }
 Start-Sleep -Seconds 120
 '@
 	return $work
@@ -717,12 +904,60 @@ $flowBound = 10
 # before it has a part to write, and the check is that the parts before the stall are kept
 $stallBound = 10
 
+# Whether -SelfTest may end the real service msiserver: a planted hang ends the service with its whole tree, busy or not. That harms
+# nothing on a runner of GitHub Actions, where nothing else uses it, and it would end the install of somebody else on a workstation
+# (CI-FLAKE-6-R2, #624). On any other computer a process stands in for the service: Linux has none at all.
+function Test-RealServiceMayBeEnded([bool] $windows, [string] $githubActions) {
+	return ($windows -and $githubActions -eq 'true')
+}
+
+# Runs the main flow of the script at $path on a planted hang, in a process of its own (-SelfTestFlow), and checks what the job would see:
+# a non-zero exit code, the call in the message, the failed step in the list that the summary prints, the clean-up, and no step after
+# the call. The line of Invoke-Msiexec that names the call is printed before anything fails, so it does not show that the summary holds
+# the list of the failed steps: the step is looked for under its own name, after the first line of the summary, which the process
+# prints whole before it fails (CI-FLAKE-6-R2, #624). -SelfTest runs this on the script itself, and -CheckFlow on a script that a
+# fixture changed.
+function Test-PlantedFlow([string] $path) {
+	$call = Start-ProcessWithHandle $pwshPath @('-NoProfile', '-NonInteractive', '-File', $path, '-SelfTestFlow') $true
+	$process = $call.Process
+	if (-not $process.WaitForExit(180000)) {
+		$process.Kill($true)
+		throw 'the main flow on a planted hang did not end within 180 s'
+	}
+	$text = (Get-PipeText $call.Output) + (Get-PipeText $call.Error)
+	if ($process.ExitCode -eq 0) { throw "the main flow on a planted hang exited with the code 0, as if nothing had failed:`n$text" }
+	foreach ($want in @('1 steps failed:', "the run stops after 'the call that never ends'", 'planted clean-up ran')) {
+		if (-not $text.Contains($want)) { throw "the output of the main flow on a planted hang has no '$want':`n$text" }
+	}
+	$summary = $text.Substring($text.IndexOf('1 steps failed:', [System.StringComparison]::Ordinal))
+	$listed = "the call that never ends: msiexec /i hang.msi did not end within $flowBound s"
+	if (-not $summary.Contains($listed)) { throw "the summary of the main flow on a planted hang does not list the failed step ('$listed') after its first line, '1 steps failed:':`n$text" }
+	if ($text.Contains('planted: the step after the hang ran')) { throw "the main flow ran a step after the call that did not end:`n$text" }
+	if ($text.Contains('planted: the flow ended without an error')) { throw "the main flow on a planted hang ended without an error:`n$text" }
+	Write-Host "ok: the main flow on a planted hang exits with the code $($process.ExitCode), with the call in its message, after its clean-up, and runs no step after the call"
+}
+
 function Invoke-SelfTest {
 	$bound = 15
 	if (-not $msiInstallScript -or -not (Test-Path -LiteralPath $msiInstallScript)) { throw "this script does not know its own path ('$msiInstallScript'), which the process that collects the evidence and the planted flow need" }
 	$work = New-PlantedWork
 	$script:LogDir = $work
 	try {
+		# Where the real service msiserver is not for ending, a process stands in for it below, as on Linux
+		$decisions = @(
+			@{ Windows = $true; Actions = 'true'; Real = $true },
+			@{ Windows = $true; Actions = ''; Real = $false },
+			@{ Windows = $false; Actions = 'true'; Real = $false }
+		)
+		foreach ($case in $decisions) {
+			if ((Test-RealServiceMayBeEnded $case.Windows $case.Actions) -ne $case.Real) { throw "the real service msiserver may be ended: $(-not $case.Real), for Windows $($case.Windows) and GITHUB_ACTIONS '$($case.Actions)'" }
+		}
+		Write-Host 'ok: the real service msiserver may be ended on Windows in GitHub Actions only: not on a workstation, and not on Linux, which has none'
+		$realService = Test-RealServiceMayBeEnded $IsWindows $env:GITHUB_ACTIONS
+		if ($IsWindows -and -not $realService) {
+			Write-Host 'skipped: the planted hangs do not end the real service msiserver here, as GITHUB_ACTIONS is not true and an install of somebody else may be running in it: a process stands in for the service, as on Linux'
+		}
+
 		$notThere = Join-Path $work 'not-there.msi'
 		if ($IsWindows) {
 			# The real call ends in a few seconds, and the first one of a runner starts the service: its bound is wide, so that a slow start
@@ -741,13 +976,22 @@ function Invoke-SelfTest {
 		if (Test-Path -LiteralPath (Join-Path $work 'planted-refused-evidence.txt')) { throw 'a call that ended left the evidence of a hang' }
 		Write-Host 'ok: a call that ends gives its exit code, and leaves no evidence of a hang'
 
-		# Linux has no Windows Installer service: a process stands in for it, and a function hides the CIM query for everything below
+		# The time limit of a query of CIM and the bound of the events of the diagnostics. They run here, before the stand-in for the service
+		# below hides the function whose limit the first of them tests
+		Invoke-SelfTestQueries
+
+		# Where the service is a stand-in (Linux has no Windows Installer service, and a workstation's is not for ending) a process stands in
+		# for it, and functions hide the CIM query and sc.exe queryex for everything below
 		$standInServices = @{}
+		$standInSc = @{}
 		$service = $null
-		if (-not $IsWindows) {
+		if (-not $realService) {
 			function Get-ServiceDetails([string] $name) { if ($standInServices.ContainsKey($name)) { $standInServices[$name] } }
+			function Get-ServiceProcessId([string] $name) { if ($standInSc.ContainsKey($name)) { $standInSc[$name] } }
 			$service = Start-StandInService $work 'planted-service-1'
 			$standInServices['msiserver'] = $service.Details
+			$standInSc['msiserver'] = $service.ProcessIds[0]
+			$script:serviceProcessName = (Get-Process -Id $PID).ProcessName
 		}
 
 		$thrown = $null
@@ -769,7 +1013,7 @@ function Invoke-SelfTest {
 		$ids = @(Read-Pids (Join-Path $work 'planted-hang.log.pids'))
 		if ($ids.Count -ne 2) { throw "the stand-in wrote $($ids.Count) process ids, not two: its own and its child's" }
 		$tree = @($ids)
-		if (-not $IsWindows) { $tree += $service.ProcessIds }
+		if (-not $realService) { $tree += $service.ProcessIds }
 		if (-not ($thrown -match 'Ended: (?<ended>.*?)\. Not ended: (?<notended>.*?)\. The service msiserver (?<service>.*?)\. Evidence: ')) { throw "the failure has no 'Ended: ... Not ended: ... The service msiserver ... Evidence: ...' to read: $thrown" }
 		$endedText = $Matches['ended']
 		$notEndedText = $Matches['notended']
@@ -781,8 +1025,8 @@ function Invoke-SelfTest {
 		foreach ($id in $tree) {
 			if ($endedText -notmatch "process $id,") { throw "the failure does not list process $id, which it ended, as ended (it says: Ended: $endedText. Not ended: $notEndedText): $thrown" }
 		}
-		# The stand-ins of Linux are all ended; the real service of Windows may refuse to end, and the failure then says so
-		if (-not $IsWindows -and $notEndedText -ne 'nothing') { throw "the failure lists processes as not ended, and all of them are gone: $notEndedText" }
+		# The stand-ins are all ended; the real service of Windows may refuse to end, and the failure then says so
+		if (-not $realService -and $notEndedText -ne 'nothing') { throw "the failure lists processes as not ended, and all of them are gone: $notEndedText" }
 		foreach ($match in [regex]::Matches($endedText, 'process (\d+),')) {
 			if (Test-ProcessAlive ([int] $match.Groups[1].Value)) { throw "the failure says that process $($match.Groups[1].Value) was ended, and it is still there: $thrown" }
 		}
@@ -800,10 +1044,11 @@ function Invoke-SelfTest {
 			ServicePattern = '^service msiserver: (Running|Stopped|Start Pending|Stop Pending), process \d+'
 			EventPattern = $null
 		}
-		# Windows has the event log and the real service: the event of the real call that was planted (id 1040 of not-there.msi), and the
-		# state of the service as it is. If it ran, the real service is in the message as ended or not ended; if it did not, the message says so.
-		if ($IsWindows) {
-			$want.EventPattern = $eventPattern
+		# Windows has the event log: the event of the real call that was planted (id 1040 of not-there.msi). Where the service is the real
+		# one, its state is in the evidence as it is: if it ran, the real service is in the message as ended or not ended; if it did not,
+		# the message says so.
+		if ($IsWindows) { $want.EventPattern = $eventPattern }
+		if ($realService) {
 			if ($parts.Service -match '^service msiserver: (Running|Start Pending|Stop Pending), process (\d+)') {
 				$serviceId = [int] $Matches[2]
 				if ($serviceId -gt 0 -and "$endedText, $notEndedText" -notmatch "process $serviceId,") { throw "the service msiserver ran in process $serviceId, and the failure lists it neither as ended nor as not ended: $thrown" }
@@ -865,9 +1110,10 @@ function Invoke-SelfTest {
 		$script:evidenceSeconds = $stallBound
 		$script:evidenceStall = 120
 		$service2 = $null
-		if (-not $IsWindows) {
+		if (-not $realService) {
 			$service2 = Start-StandInService $work 'planted-service-2'
 			$standInServices['msiserver'] = $service2.Details
+			$standInSc['msiserver'] = $service2.ProcessIds[0]
 		}
 		$thrown = $null
 		$watch = [System.Diagnostics.Stopwatch]::StartNew()
@@ -886,7 +1132,7 @@ function Invoke-SelfTest {
 		if (-not ($thrown -match 'Ended: (?<ended>.*?)\. Not ended: ') -or $Matches['ended'] -notmatch 'the evidence collection') { throw "the failure does not list the process that collected the evidence as ended: $thrown" }
 		$ids2 = @(Read-Pids (Join-Path $work 'planted-stall.log.pids'))
 		$tree2 = @($ids2)
-		if (-not $IsWindows) { $tree2 += $service2.ProcessIds }
+		if (-not $realService) { $tree2 += $service2.ProcessIds }
 		$deadline = (Get-Date).AddSeconds(15)
 		while (@($tree2 | Where-Object { Test-ProcessAlive ([int] $_) }).Count -gt 0 -and (Get-Date) -lt $deadline) { Start-Sleep -Milliseconds 250 }
 		$alive = @($tree2 | Where-Object { Test-ProcessAlive ([int] $_) })
@@ -896,26 +1142,15 @@ function Invoke-SelfTest {
 		Write-Host "ok: a stall in the evidence still ends the call and its processes and fails the step within its bound ($bound s and the $stallBound s of the evidence, after $([int] $seconds) s), and the failure names the bound"
 		$script:msiexecHang = $null
 
+		Invoke-SelfTestEnd $work
 		Invoke-SelfTestWaits $work
 
 		# The main flow on a planted hang, in a process of its own: the exit code, the message and the clean-up are what the job sees
-		$flow = Start-Process -FilePath $pwshPath -ArgumentList @('-NoProfile', '-NonInteractive', '-File', "`"$msiInstallScript`"", '-SelfTestFlow') -PassThru -RedirectStandardOutput (Join-Path $work 'flow.out') -RedirectStandardError (Join-Path $work 'flow.err')
-		if ($IsWindows) { $null = $flow.Handle }
-		if (-not $flow.WaitForExit(180000)) {
-			$flow.Kill($true)
-			throw 'the main flow on a planted hang did not end within 180 s'
-		}
-		$text = (Read-MsiLog (Join-Path $work 'flow.out')) + (Read-MsiLog (Join-Path $work 'flow.err'))
-		if ($flow.ExitCode -eq 0) { throw "the main flow on a planted hang exited with the code 0, as if nothing had failed:`n$text" }
-		foreach ($want in @("msiexec /i hang.msi did not end within $flowBound s", '1 steps failed:', "the run stops after 'the call that never ends'", 'planted clean-up ran')) {
-			if (-not $text.Contains($want)) { throw "the output of the main flow on a planted hang has no '$want':`n$text" }
-		}
-		if ($text.Contains('planted: the step after the hang ran')) { throw "the main flow ran a step after the call that did not end:`n$text" }
-		if ($text.Contains('planted: the flow ended without an error')) { throw "the main flow on a planted hang ended without an error:`n$text" }
-		Write-Host "ok: the main flow on a planted hang exits with the code $($flow.ExitCode), with the call in its message, after its clean-up, and runs no step after the call"
+		Test-PlantedFlow $msiInstallScript
 	} finally {
 		$script:evidenceSeconds = 60
 		$script:evidenceStall = 0
+		$script:serviceProcessName = 'msiexec'
 		# Whatever a check did, no stand-in stays behind
 		foreach ($file in @(Get-ChildItem -LiteralPath $work -Filter '*.pids' -ErrorAction SilentlyContinue)) {
 			foreach ($id in @(Read-Pids $file.FullName)) {
@@ -978,10 +1213,23 @@ function Invoke-SelfTestWaits([string] $work) {
 		Write-Host 'ok: a Node that stops and starts is left alone, and its store is hashed while it is stopped'
 		$script:waitSeconds = 3
 
+		# A process that ends at once keeps its exit code: nothing asks the process for it until 2 s after it ended. A Process that
+		# Start-Process -PassThru gives takes its handle when it is first asked for something, and the exit code of a process that ended before
+		# that is lost (CI-FLAKE-6-R2, #624).
+		$gone = Start-ProcessWithHandle $pwshPath @('-NoProfile', '-NonInteractive', '-Command', 'exit 42')
+		Start-Sleep -Seconds 2
+		if (-not $gone.Process.WaitForExit(30000)) { throw 'a process that exits at once did not end within 30 s' }
+		if ($gone.Process.ExitCode -ne 42) { throw "a process that exited with the code 42 at once, and was asked for it 2 s later, gave '$($gone.Process.ExitCode)'" }
+		Write-Host 'ok: a process that ends at once keeps its exit code, which is read after it ended'
+
 		$standIn = Join-Path $work 'standin-ranz.ps1'
-		$quick = Get-RanzVersionLine $pwshPath @('-NoProfile', '-NonInteractive', '-File', "`"$standIn`"", 'quick') 30
+		$standInCall = @('-NoProfile', '-NonInteractive', '-File', $standIn)
+		$quick = Get-RanzVersionLine $pwshPath @($standInCall + 'quick') 30
 		if ($quick.Code -ne 0 -or $quick.Line -ne 'ranz 9.9.9') { throw "a ranz.exe that ends gave the exit code $($quick.Code) and the line '$($quick.Line)'" }
-		$r = Invoke-Captured { [void](Get-RanzVersionLine $pwshPath @('-NoProfile', '-NonInteractive', '-File', "`"$standIn`"") 3) }
+		$goneVersion = Get-RanzVersionLine $pwshPath @($standInCall + 'gone') 30
+		if ($goneVersion.Code -ne 42 -or $goneVersion.Line -ne '') { throw "a ranz.exe version that ends at once with the exit code 42 and no line gave the exit code '$($goneVersion.Code)' and the line '$($goneVersion.Line)'" }
+		Write-Host 'ok: a ranz.exe version that ends at once keeps its exit code 42, and prints no line'
+		$r = Invoke-Captured { [void](Get-RanzVersionLine $pwshPath $standInCall 3) }
 		if (-not $r.Thrown) { throw 'a ranz.exe version that never ends was waited for, and the wait did not fail' }
 		if ($r.Seconds -lt 3 -or $r.Seconds -gt 3 + 30) { throw "the call of a ranz.exe version that never ends failed after $([int] $r.Seconds) s, not within its bound of 3 s: $($r.Thrown)" }
 		if ($r.Thrown -notlike 'ranz.exe version did not end within 3 s. Ended: *(process *, the call)*. Not ended: nothing.') { throw "the failure of a ranz.exe version that never ends is '$($r.Thrown)'" }
@@ -998,6 +1246,163 @@ function Invoke-SelfTestWaits([string] $work) {
 	}
 }
 
+# The limits of the two queries that the diagnostics of a failed step ask, each on a planted stall (CI-FLAKE-6-R2, #624): a CIM query that
+# never answers, and a query of the events that sleeps for 120 s. A function in front of Get-CimInstance stands in for the provider, on
+# Windows too, and only inside the block that tests it: it gives up when its time limit is reached, as the cmdlet does, and with no
+# limit it sleeps for 120 s, so a query that is asked with none returns after that, and the check fails on it.
+function Invoke-SelfTestQueries {
+	$script:cimSeconds = 2
+	$script:eventsSeconds = 5
+	$script:eventsStall = 120
+	try {
+		$r = Invoke-Captured {
+			function Get-CimInstance {
+				[CmdletBinding()]
+				param([string] $ClassName, [string] $Filter, [int] $OperationTimeoutSec = 0)
+				$wait = if ($OperationTimeoutSec -gt 0) { $OperationTimeoutSec } else { 120 }
+				Start-Sleep -Seconds $wait
+				throw "the CIM query of $ClassName did not answer within $wait s"
+			}
+			[void](Get-ServiceDetails 'msiserver')
+		}
+		if (-not $r.Thrown) { throw 'a CIM query that never answers was waited for, and Get-ServiceDetails did not fail' }
+		if ($r.Seconds -lt 2 -or $r.Seconds -gt 2 + 30) { throw "Get-ServiceDetails failed after $([int] $r.Seconds) s, not at its time limit of 2 s: $($r.Thrown)" }
+		if ($r.Thrown -ne 'the CIM query of Win32_Service did not answer within 2 s') { throw "the failure of a CIM query that never answers is '$($r.Thrown)', not the one of its time limit of 2 s" }
+		Write-Host "ok: a CIM query that never answers fails at its time limit (2 s, after $([int] $r.Seconds) s)"
+
+		$r = Invoke-Captured { Show-ServiceControlEvents (Get-Date) }
+		if ($r.Thrown) { throw "the diagnostics failed on a query of the events that stalls: $($r.Thrown)" }
+		if ($r.Seconds -lt 5 -or $r.Seconds -gt 5 + 30) { throw "the diagnostics returned after $([int] $r.Seconds) s from a query of the events that stalls, not at its bound of 5 s:`n$($r.Output)" }
+		if (-not ($r.Output -match 'the events were not read within 5 s: its process (\d+) is ended')) { throw "the diagnostics do not say that the query of the events was ended at its bound of 5 s:`n$($r.Output)" }
+		$queryId = [int] $Matches[1]
+		$deadline = (Get-Date).AddSeconds(15)
+		while ((Test-ProcessAlive $queryId) -and (Get-Date) -lt $deadline) { Start-Sleep -Milliseconds 250 }
+		if (Test-ProcessAlive $queryId) { throw "the query of the events that stalled is still there after the diagnostics: process $queryId" }
+		Write-Host "ok: a stall in the query of the events of the diagnostics is ended at its bound (5 s, after $([int] $r.Seconds) s), and the diagnostics go on"
+
+		# On Windows the same query reads the System log: nothing in it says that it could not
+		if ($IsWindows) {
+			$script:eventsStall = 0
+			$script:eventsSeconds = 60
+			$hourAgo = (Get-Date).AddHours(-1)
+			$r = Invoke-Captured { Show-ServiceControlEvents $hourAgo }
+			if ($r.Thrown -or $r.Output -match '(?m)^  (not read|the events)') { throw "the query of the events of the diagnostics did not read the System log: $($r.Thrown)`n$($r.Output)" }
+			Write-Host 'ok: the query of the events of the diagnostics reads the System log'
+		}
+	} finally {
+		$script:cimSeconds = 30
+		$script:eventsSeconds = 20
+		$script:eventsStall = 0
+	}
+}
+
+# The end of a hang on planted evidence and planted services (CI-FLAKE-6-R2, #624): Stop-HungCall runs on a planted call that did not end,
+# with no wait for its bound. The functions that read the service are stand-ins here on every computer, so nothing below touches the real
+# service msiserver, in GitHub Actions too. The planted call is the stand-in for msiexec.exe of the planted hangs above.
+function Invoke-SelfTestEnd([string] $work) {
+	$pwsh = $pwshPath
+	$pwshName = (Get-Process -Id $PID).ProcessName
+	$realScript = $msiInstallScript
+	$realName = $serviceProcessName
+	$standInServices = @{}
+	$standInSc = @{}
+	$standInCim = $null
+	$started = [System.Collections.Generic.List[int]]::new()
+	function Get-ServiceDetails([string] $name) {
+		if ($standInCim) { throw $standInCim }
+		if ($standInServices.ContainsKey($name)) { $standInServices[$name] }
+	}
+	function Get-ServiceProcessId([string] $name) { if ($standInSc.ContainsKey($name)) { $standInSc[$name] } }
+	# A planted call that does not end: it writes its log and the ids of its two processes, and sleeps
+	function Start-PlantedHang([string] $step) {
+		$hangScript = Join-Path $work 'standin-msiexec.ps1'
+		$log = Join-Path $work "$step.log"
+		$call = Start-ProcessWithHandle $pwsh @('-NoProfile', '-NonInteractive', '-File', $hangScript, '/i', (Join-Path $work 'hang.msi'), '/qn', '/norestart', '/l*v!', $log)
+		if (-not (Wait-File "$log.pids" 60)) { throw "the planted call of the step $step wrote no process ids within 60 s" }
+		return [pscustomobject]@{ Process = $call.Process; Log = $log; Ids = @(Read-Pids "$log.pids") }
+	}
+	# The end of a planted call: the message of the failure, and the ids of the processes of the call
+	function Invoke-PlantedEnd([string] $step) {
+		$hang = Start-PlantedHang $step
+		$message = Stop-HungCall $hang.Process 'msiexec /i hang.msi' $step $hang.Log
+		return [pscustomobject]@{ Message = $message; Ids = $hang.Ids }
+	}
+	function Assert-Gone([int[]] $ids, [string] $what) {
+		$deadline = (Get-Date).AddSeconds(15)
+		while (@($ids | Where-Object { Test-ProcessAlive $_ }).Count -gt 0 -and (Get-Date) -lt $deadline) { Start-Sleep -Milliseconds 250 }
+		$alive = @($ids | Where-Object { Test-ProcessAlive $_ })
+		if ($alive.Count -gt 0) { throw "$what is still there after the end of the hang: process $($alive -join ', ')" }
+	}
+	try {
+		# An evidence process that cannot be started: the failure says what happened, and names no bound, as none was reached
+		$script:pwshPath = Join-Path $work 'no-such-program'
+		try { $r = Invoke-PlantedEnd 'planted-no-start' } finally { $script:pwshPath = $pwsh }
+		Assert-Gone $r.Ids 'the planted call whose evidence could not be started'
+		if ($r.Message -notlike '*Evidence: none was collected (it could not be collected: *') { throw "the failure of a call whose evidence process could not be started does not say what happened: $($r.Message)" }
+		if ($r.Message -like '*stopped at its bound*') { throw "the failure of a call whose evidence process could not be started names a bound that was never reached: $($r.Message)" }
+		Write-Host 'ok: an evidence process that cannot be started is a failure that says so, and names no bound'
+
+		# An evidence process that ends at once with an exit code: the code is kept, and no bound is named either
+		$exitScript = Join-Path $work 'standin-evidence.ps1'
+		Set-Content -LiteralPath $exitScript -Value 'exit 7'
+		$script:msiInstallScript = $exitScript
+		try { $r = Invoke-PlantedEnd 'planted-evidence-exit' } finally { $script:msiInstallScript = $realScript }
+		Assert-Gone $r.Ids 'the planted call whose evidence process exited at once'
+		if ($r.Message -notlike '*Evidence: none was collected (its process exited with the code 7)*') { throw "the failure of a call whose evidence process exited at once with the code 7 does not say so: $($r.Message)" }
+		if ($r.Message -like '*stopped at its bound*') { throw "the failure of a call whose evidence process exited at once names a bound that was never reached: $($r.Message)" }
+		Write-Host 'ok: an evidence process that ends at once keeps its exit code, and the failure names no bound'
+
+		# A process id that another process has reused: the service ended, and its id is a process that is not the service's. CIM and
+		# sc.exe queryex are stand-ins that still give that id for the service, as they would before the service ended, so the name of
+		# the process is what refuses
+		$bystander = Start-Process -FilePath $pwsh -ArgumentList @('-NoProfile', '-NonInteractive', '-Command', 'Start-Sleep -Seconds 120') -PassThru
+		$started.Add($bystander.Id)
+		$standInServices['msiserver'] = [pscustomobject]@{ State = 'Running'; ProcessId = $bystander.Id; StartMode = 'Manual'; Status = 'OK'; ExitCode = 0 }
+		$standInSc['msiserver'] = $bystander.Id
+		$script:serviceProcessName = 'msiexec'
+		try { $r = Invoke-PlantedEnd 'planted-reused-id' } finally { $script:serviceProcessName = $realName }
+		Assert-Gone $r.Ids 'the planted call whose service id was reused'
+		if (-not (Test-ProcessAlive $bystander.Id)) { throw "process $($bystander.Id), which has the id that the service msiserver had and is another process, was ended" }
+		if ($r.Message -match "process $($bystander.Id),") { throw "the failure lists process $($bystander.Id), which is not the service's, as ended or not ended: $($r.Message)" }
+		if ($r.Message -notlike "*it was not ended: process $($bystander.Id) is $pwshName, not msiexec*") { throw "the failure does not say that process $($bystander.Id), which is $pwshName and not msiexec, was not ended: $($r.Message)" }
+		Write-Host 'ok: a process whose id was the service msiserver and is another process now is not ended, and the failure says so'
+
+		# The service has another process or none now by the Service Control Manager, while CIM, read before, still gives the old one: the old
+		# process has the name of the service's, and only the Service Control Manager refuses
+		$moved = Start-StandInService $work 'planted-service-moved'
+		foreach ($id in $moved.ProcessIds) { $started.Add($id) }
+		$standInServices['msiserver'] = $moved.Details
+		$standInSc['msiserver'] = 0
+		$script:serviceProcessName = $pwshName
+		try { $r = Invoke-PlantedEnd 'planted-service-moved-on' } finally { $script:serviceProcessName = $realName }
+		Assert-Gone $r.Ids 'the planted call whose service moved on'
+		if (-not (Test-ProcessAlive $moved.ProcessIds[0])) { throw "process $($moved.ProcessIds[0]), which the Service Control Manager no longer gives for the service msiserver, was ended" }
+		if ($r.Message -notlike '*it was not ended: the Service Control Manager says that the service msiserver has no process now*') { throw "the failure does not say that the Service Control Manager has no process for the service: $($r.Message)" }
+		Write-Host 'ok: a process that the Service Control Manager no longer gives for the service msiserver is not ended, and the failure says so'
+
+		# CIM does not answer and sc.exe queryex does: the service is ended all the same, which it was not when only CIM gave its process
+		$stuck = Start-StandInService $work 'planted-service-cim'
+		foreach ($id in $stuck.ProcessIds) { $started.Add($id) }
+		$standInCim = 'planted: the CIM query did not answer within 30 s'
+		$standInSc['msiserver'] = $stuck.ProcessIds[0]
+		$script:serviceProcessName = $pwshName
+		try { $r = Invoke-PlantedEnd 'planted-cim-stuck' } finally { $script:serviceProcessName = $realName; $standInCim = $null }
+		Assert-Gone ($r.Ids + $stuck.ProcessIds) 'the planted call, or the service that only sc.exe queryex gave,'
+		if ($r.Message -notlike '*The service msiserver was not read (planted: the CIM query did not answer within 30 s), and sc.exe queryex gives process *') { throw "the failure does not say that CIM did not answer and sc.exe queryex gave the process: $($r.Message)" }
+		foreach ($id in $stuck.ProcessIds) {
+			if ($r.Message -notmatch "process $id,") { throw "the failure does not list process $id, which it ended, as ended: $($r.Message)" }
+		}
+		Write-Host 'ok: the service msiserver is ended when CIM does not answer and sc.exe queryex gives its process, and the failure says so'
+	} finally {
+		$script:pwshPath = $pwsh
+		$script:msiInstallScript = $realScript
+		$script:serviceProcessName = $realName
+		foreach ($id in $started) {
+			try { (Get-Process -Id $id -ErrorAction Stop).Kill($true) } catch { }
+		}
+	}
+}
+
 # What -SelfTest runs in a process of its own: the main flow, which is Invoke-Flow with Step, on steps that hold a planted hang. A step
 # that ends, the step with the call that never ends and a step after it. The flow must end with an error, after its clean-up, with the
 # call in the message, and the step after the call must not run. Diagnostics and clean-up are planted: they need a computer with the product.
@@ -1008,22 +1413,30 @@ function Invoke-SelfTestFlow {
 		$script:msiexecSeconds = $flowBound
 		Set-PlantedMsiexec $work
 		function Get-ServiceDetails([string] $name) { }
+		function Get-ServiceProcessId([string] $name) { }
 		function Show-Diagnostics { Write-Host 'planted diagnostics ran' }
-		Invoke-Flow {
-			[void](Step 'a call that ends' {
-				$r = Invoke-Msiexec '/i' (Join-Path $work 'refused.msi') 'flow-refused'
-				if ($r.Code -ne 23) { throw "msiexec exited with code $($r.Code), not 23" }
-			})
-			[void](Step 'the call that never ends' {
-				[void](Invoke-Msiexec '/i' (Join-Path $work 'hang.msi') 'flow-hang')
-			})
-			[void](Step 'a step after the call that never ends' {
-				Write-Host 'planted: the step after the hang ran'
-			})
-		} {
-			Write-Host 'planted clean-up ran'
+		try {
+			Invoke-Flow {
+				[void](Step 'a call that ends' {
+					$r = Invoke-Msiexec '/i' (Join-Path $work 'refused.msi') 'flow-refused'
+					if ($r.Code -ne 23) { throw "msiexec exited with code $($r.Code), not 23" }
+				})
+				[void](Step 'the call that never ends' {
+					[void](Invoke-Msiexec '/i' (Join-Path $work 'hang.msi') 'flow-hang')
+				})
+				[void](Step 'a step after the call that never ends' {
+					Write-Host 'planted: the step after the hang ran'
+				})
+			} {
+				Write-Host 'planted clean-up ran'
+			}
+			Write-Host 'planted: the flow ended without an error'
+		} catch {
+			# The message that fails the job, whole, as a line of the output: the error view of PowerShell may wrap a long one, and the check
+			# of the flow reads this line. The flow still fails with it, so its exit code is the one that the job sees.
+			Write-Host "the flow failed with: $($_.Exception.Message)"
+			throw
 		}
-		Write-Host 'planted: the flow ended without an error'
 	} finally {
 		foreach ($file in @(Get-ChildItem -LiteralPath $work -Filter '*.pids' -ErrorAction SilentlyContinue)) {
 			foreach ($id in @(Read-Pids $file.FullName)) {
@@ -1039,14 +1452,28 @@ if ($EvidenceRequest) {
 	Write-MsiexecEvidence $EvidenceRequest
 	exit 0
 }
+if ($EventsRequest) {
+	Write-EventLines $EventsRequest
+	exit 0
+}
 if ($CheckLaunches) {
 	$launches = @(Get-MsiexecLaunches $CheckLaunches)
 	foreach ($launch in $launches) { Write-Host "  $CheckLaunches`:$launch" }
 	if ($launches.Count -gt 0) {
-		Write-Host "$($launches.Count) commands of $CheckLaunches start msiexec outside Invoke-Msiexec, where a call has its bound"
+		Write-Host "$($launches.Count) commands of $CheckLaunches start msiexec outside Invoke-Msiexec (or install without it), where a call has its bound"
 		throw 'msiexec is started outside Invoke-Msiexec'
 	}
 	Write-Host "ok: $CheckLaunches starts msiexec in Invoke-Msiexec and nowhere else"
+	exit 0
+}
+if ($CheckFlow) {
+	# The failure is a line of the output, whole: the error view of PowerShell wraps a long message
+	try {
+		Test-PlantedFlow $CheckFlow
+	} catch {
+		Write-Host "the check of the main flow of $CheckFlow failed: $($_.Exception.Message)"
+		exit 1
+	}
 	exit 0
 }
 if ($SelfTestFlow) {
@@ -1289,10 +1716,18 @@ function Remove-InstalledState {
 	$global:LASTEXITCODE = 0
 }
 
-# What a failed step needs to be read from the log alone
+# What a failed step needs to be read from the log alone. It asks CIM and the event log only through Get-ServiceDetails (a time limit) and
+# Show-ServiceControlEvents (a process of its own with a bound): a query with no limit would hold the diagnostics and the job with them
+# (CI-FLAKE-6-R2, #624), and quality-gates-test.py fails when this function holds a query of its own.
 function Show-Diagnostics {
 	foreach ($name in @($nodeService, $controllerService)) {
-		$svc = Get-CimInstance Win32_Service -Filter "Name='$name'" -ErrorAction SilentlyContinue
+		$svc = $null
+		try {
+			$svc = Get-ServiceDetails $name
+		} catch {
+			Write-Host "service ${name}: not read ($($_.Exception.Message))"
+			continue
+		}
 		if ($svc) {
 			Write-Host "service ${name}: $($svc.State), exit code $($svc.ExitCode), process $($svc.ProcessId), start name '$($svc.StartName)', path $($svc.PathName)"
 		} else {
@@ -1321,9 +1756,7 @@ function Show-Diagnostics {
 	if ($StandIn) {
 		Write-Host "calls of the stand-in ranz.exe: $((Get-Calls) -join '; ')"
 	} else {
-		Write-Host 'Service Control Manager events since the start of the job:'
-		Get-WinEvent -FilterHashtable @{ LogName = 'System'; ProviderName = 'Service Control Manager'; StartTime = $since } -ErrorAction SilentlyContinue |
-			Sort-Object RecordId | ForEach-Object { Write-Host ("  {0:u} id {1}: {2}" -f $_.TimeCreated, $_.Id, ($_.Message -replace '\s+', ' ')) }
+		Show-ServiceControlEvents $since
 		foreach ($log in @(Get-ChildItem -LiteralPath $nodeLogDir -File -Recurse -ErrorAction SilentlyContinue)) {
 			Write-Host "last lines of $($log.FullName):"
 			Get-Content -LiteralPath $log.FullName -Tail 30 -ErrorAction SilentlyContinue | ForEach-Object { Write-Host "  $_" }
