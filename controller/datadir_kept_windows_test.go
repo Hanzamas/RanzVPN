@@ -170,11 +170,11 @@ func TestInstallRefusesASymbolicLinkToAFileInAKeptDataDir(t *testing.T) {
 	}
 }
 
-// setReparseTag makes the empty file path a reparse point with the tag tag, which names no kind that Windows knows: FSCTL_SET_REPARSE_POINT
-// with a REPARSE_GUID_DATA_BUFFER, the form of the tags that no vendor of Windows owns. Its header is the tag, the length of
-// what follows it and a reserved word, and it holds a GUID that is not zero and the data of the reparse point. The file system
-// keeps it as it is, and a program that opens the file without FILE_FLAG_OPEN_REPARSE_POINT gets an error, as one does for the
-// file of a filter that is not there.
+// setReparseTag makes the empty file path a reparse point with the tag tag, a tag of the range that Microsoft owns and has given to
+// nothing, so that it is the kind of no link and no filter of Windows: FSCTL_SET_REPARSE_POINT with a REPARSE_DATA_BUFFER, whose
+// header is the tag, the length of the data that follows it and a reserved word, and four bytes of data. The file system keeps it
+// as it is, and a program that opens the file without FILE_FLAG_OPEN_REPARSE_POINT gets an error, as one does for the file of a
+// filter that is not there.
 func setReparseTag(t *testing.T, path string, tag uint32) {
 	t.Helper()
 	name, err := windows.UTF16PtrFromString(path)
@@ -186,13 +186,10 @@ func setReparseTag(t *testing.T, path string, tag uint32) {
 		t.Fatalf("opening %s: %v", path, err)
 	}
 	defer windows.CloseHandle(h)
-	const header, guid, data = 8, 16, 4
-	buf := make([]byte, header+guid+data)
+	const header, data = 8, 4
+	buf := make([]byte, header+data)
 	binary.LittleEndian.PutUint32(buf, tag)
-	binary.LittleEndian.PutUint16(buf[4:], guid+data)
-	for i := range guid {
-		buf[header+i] = byte(i + 1)
-	}
+	binary.LittleEndian.PutUint16(buf[4:], data)
 	var n uint32
 	if err := windows.DeviceIoControl(h, windows.FSCTL_SET_REPARSE_POINT, &buf[0], uint32(len(buf)), nil, 0, &n, nil); err != nil {
 		t.Fatalf("making %s a reparse point with the tag 0x%08X: %v", path, tag, err)
@@ -214,11 +211,11 @@ func TestInstallRefusesAReparsePointThatIsNoLinkInAKeptDataDir(t *testing.T) {
 	if err := os.WriteFile(file, nil, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	setReparseTag(t, file, 0x0000F00D)
+	setReparseTag(t, file, 0x80000FFF)
 	beforeDir := securityOf(t, dir)
 
 	err := takeOverDataDir(dir)
-	for _, want := range []string{`"` + file + `"`, "is a reparse point", "0x0000F00D", "did not take", `fsutil reparsepoint query "` + file + `"`} {
+	for _, want := range []string{`"` + file + `"`, "is a reparse point", "0x80000FFF", "did not take", `fsutil reparsepoint query "` + file + `"`} {
 		if err == nil || !strings.Contains(err.Error(), want) {
 			t.Errorf("the install of a kept data directory that holds a reparse point that is no link answered %v, want a refusal that says %q", err, want)
 		}
@@ -287,17 +284,20 @@ func TestInstallRefusesAKeptDataDirThatHoldsAnEntryItCannotLookAt(t *testing.T) 
 	wantDataDirOfTheAdministrators(t, dir)
 }
 
-// The look does not see an explicit entry for a user on a child that a trusted account owns, and the install keeps it (finding 2 of
-// the fourth read-only review of PR 541). The look reads owners only, and the list that the install passes down replaces the
-// entries that came from the folder and keeps the ones that a child has of its own. An administrator who followed the advice
-// that the install gave before the third review, takeown alone on the folder of a user, made this state: the Administrators own
-// payload\rqlited.exe, and the entry that the user put on its list stays. ST-3 of docs/threat-model.md and the upgrade note of
-// AUD1-DT-18-R2 (#604) say so, and name the repair, icacls <folder> /reset /T and then the registration of the service again over
-// the folder, so this test pins both: the install takes the folder and the entry stays, and after the repair the entry is gone and
-// the child has the list of the data directory. A change of the look that refuses such an entry fails the first half of it, and
-// that change makes ST-3 and the note out of date.
+// The look does not see an explicit entry for an account that is not trusted on a child that a trusted account owns, and the install
+// keeps it (finding 2 of the fourth read-only review of PR 541). The look reads owners only, and the list that the install passes
+// down replaces the entries that came from the folder and keeps the ones that a child has of its own. An administrator who
+// followed the advice that the refusal gave before AUD1-DT-18 (#503), takeown alone on the folder of a user, made this state: the
+// Administrators own payload\rqlited.exe, and the entry that the user put on its list stays. ST-3 of docs/threat-model.md and the
+// upgrade note of AUD1-DT-18-R2 (#604) say so, and name the repair, icacls <folder> /reset /T and then the registration of the
+// service again over the folder, so this test pins both: the install takes the folder and the entry stays, and after the repair the
+// entry is gone and the child has the list of the data directory. A change of the look that refuses such an entry fails the first
+// half of it, and that change makes ST-3 and the note out of date. The entry is one for the Users group, which icacls resolves; it
+// is found by its text, an entry of the file itself with no flag of inheritance, since the Users group may have entries that the file
+// inherited from the temporary folder, which carry the flag ID.
 func TestInstallDoesNotSeeAnExplicitEntryOfAUserOnAChildOfATrustedOwner(t *testing.T) {
 	requireAdministrator(t)
+	const usersSID, explicit = "S-1-5-32-545", "(A;;FA;;;BU)"
 	dir := keptDataDir(t)
 	file := filepath.Join(dir, "payload", "rqlited.exe")
 	plantFile(t, file)
@@ -308,31 +308,31 @@ func TestInstallDoesNotSeeAnExplicitEntryOfAUserOnAChildOfATrustedOwner(t *testi
 		}
 	}
 	// An entry that a user put on the list of what it made, on a file that the Administrators own now
-	icacls(file, "/grant", "*"+standardUserSID+":(F)")
-	if got := securityOf(t, file); !hasTrustee(got, standardUserSID) || strings.HasPrefix(got, "O:"+standardUserSID) {
-		t.Fatalf("%s has the security %s, want an owner that is not the standard user and an entry for it: this test shows nothing", file, got)
+	icacls(file, "/grant", "*"+usersSID+":(F)")
+	if got := securityOf(t, file); !strings.Contains(got, explicit) || strings.HasPrefix(got, "O:BU") {
+		t.Fatalf("%s has the security %s, want an owner that is not the Users group and the entry %s of its own: this test shows nothing", file, got, explicit)
 	}
 
 	if err := takeOverDataDir(dir); err != nil {
 		t.Fatalf("the install refused a kept data directory whose child, owned by a trusted account, has an explicit entry for a user (%v): the look sees such an entry now, so ST-3 and the upgrade note of AUD1-DT-18-R2 are out of date, and so is this test", err)
 	}
 	wantDataDirOfTheAdministrators(t, dir)
-	if got := securityOf(t, file); !hasTrustee(got, standardUserSID) {
-		t.Errorf("%s has the security %s after the install: the entry of the standard user is gone, so the install replaces more than the entries that came from the folder, and ST-3 and the upgrade note are out of date", file, got)
+	if got := securityOf(t, file); !strings.Contains(got, explicit) {
+		t.Errorf("%s has the security %s after the install: the entry %s is gone, so the install replaces more than the entries that came from the folder, and ST-3 and the upgrade note are out of date", file, got, explicit)
 	}
 
 	// The repair that ST-3 and the note name
 	icacls(dir, "/reset", "/T")
-	if got := securityOf(t, file); hasTrustee(got, standardUserSID) {
-		t.Errorf("icacls /reset /T left the entry of the standard user on %s: %s", file, got)
+	if got := securityOf(t, file); strings.Contains(got, explicit) {
+		t.Errorf("icacls /reset /T left the entry %s on %s: %s", explicit, file, got)
 	}
 	if err := takeOverDataDir(dir); err != nil {
 		t.Fatalf("the install after icacls /reset /T: %v", err)
 	}
 	wantDataDirOfTheAdministrators(t, dir)
 	got := securityOf(t, file)
-	if hasTrustee(got, standardUserSID) {
-		t.Errorf("%s has the security %s after the repair: it keeps the entry of the standard user", file, got)
+	if hasTrustee(got, "BU") {
+		t.Errorf("%s has the security %s after the repair: it still names the Users group", file, got)
 	}
 	for _, trustee := range []string{"SY", "BA", serviceSID} {
 		if !strings.Contains(got, "ID;FA;;;"+trustee+")") {
