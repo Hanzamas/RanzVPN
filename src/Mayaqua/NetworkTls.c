@@ -41,8 +41,7 @@ bool AddChainSslCert(struct ssl_ctx_st *ctx, X *x) {
 }
 
 // A server context with every setting that does not depend on the connection applied: certificate chain,
-// certificate and key, and groups. x and priv may be NULL (no certificate), chain NULL takes the certificates
-// of the chain_certs folder
+// certificate and key, and groups. x and priv may be NULL (no certificate), chain NULL adds no chain
 struct ssl_ctx_st *NewServerSSLCtx(X *x, K *priv, LIST *chain) {
 	SSL_CTX *ctx;
 	bool use_cert = (x != NULL && priv != NULL && CheckXandK(x, priv));
@@ -51,9 +50,7 @@ struct ssl_ctx_st *NewServerSSLCtx(X *x, K *priv, LIST *chain) {
 	if (ctx == NULL)
 		return NULL;
 
-	if (chain == NULL) {
-		AddChainSslCertOnDirectory(ctx);
-	} else {
+	if (chain != NULL) {
 		LockList(chain);
 		{
 			for (UINT i = 0; i < LIST_NUM(chain); i++)
