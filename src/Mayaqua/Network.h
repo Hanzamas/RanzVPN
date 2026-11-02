@@ -18,8 +18,6 @@
 
 #define MAX_NUM_IGNORE_ERRORS 1024
 
-#define DEFAULT_CIPHER_LIST "ECDHE+AESGCM:ECDHE+CHACHA20:DHE+AESGCM:DHE+CHACHA20:ECDHE+AES256:DHE+AES256:RSA+AES"
-
 #define PRIVATE_IP_TXT_FILENAME "$private_ip.txt"
 
 #define UDP_MAX_BUFFER_SIZE 11911168
@@ -42,15 +40,6 @@ struct SOCK_EVENT {
 
 #define SOCK_TCP 1
 #define SOCK_UDP 2
-
-struct SSL_ACCEPT_SETTINGS {
-	bool Tls_Disable1_0;
-	bool Tls_Disable1_1;
-	bool Tls_Disable1_2;
-	bool Tls_Disable1_3;
-	bool Override_Security_Level;
-	UINT Override_Security_Level_Value;
-};
 
 struct SOCK {
 	REF *ref;
@@ -190,7 +179,7 @@ bool IsTransientAcceptError(UINT err);
 UINT Send(SOCK *sock, void *data, UINT size, bool secure);
 UINT Recv(SOCK *sock, void *data, UINT size, bool secure);
 
-// The ssl_err result of StartSSLEx3 and StartSSLServer: why the TLS start failed (TLS_ERR_NONE: no reason known).
+// The ssl_err result of StartSSLEx3: why the TLS start failed (TLS_ERR_NONE: no reason known).
 // The values never change: they are what ssl_err has always held
 #define TLS_ERR_NONE              0
 #define TLS_ERR_CERT_NOT_TRUSTED  85  // The peer certificate does not verify
@@ -203,7 +192,6 @@ UINT Recv(SOCK *sock, void *data, UINT size, bool secure);
 bool StartSSL(SOCK *sock, X *x, K *priv);
 bool StartSSLEx(SOCK *sock, X *x, K *priv, char *sni_hostname);
 bool StartSSLEx3(SOCK *sock, X *x, K *priv, LIST *chain, char *sni_hostname, SSL_VERIFY_OPTION *ssl_option, UINT *ssl_err);
-bool StartSSLServer(SOCK *sock, struct ssl_ctx_st *ctx, UINT *ssl_err);
 UINT AddChainSslCertOnDirectory(struct ssl_ctx_st *ctx);
 UINT GetChainCertGeneration();
 void PrepareChainCertDir();
@@ -251,8 +239,7 @@ bool IsMacAddressLocalFast(void *addr);
 void RefreshLocalMacAddressList();
 
 struct ssl_ctx_st *NewSSLCtx(bool server_mode);
-struct ssl_ctx_st *NewServerSSLCtx(X *x, K *priv, LIST *chain, char *cipher_list, SSL_ACCEPT_SETTINGS *settings);
-void ShareSSLCtx(struct ssl_ctx_st *ctx);
+struct ssl_ctx_st *NewServerSSLCtx(X *x, K *priv, LIST *chain);
 void FreeSSLCtx(struct ssl_ctx_st *ctx);
 UINT GetOSSecurityLevel();
 

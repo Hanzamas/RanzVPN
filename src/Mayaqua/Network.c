@@ -612,28 +612,22 @@ static void AddSslRootCerts(X509_STORE *store) {
 			X509_STORE_add_cert(store, sk_X509_value(ssl_root_certs, i));
 }
 
-// A TLS start needs a connected socket that does not listen, a key with a certificate, and a server socket for a shared server context
-static bool TlsCanStart(const SOCK *sock, const SSL_CTX *server_ctx, const X *x, const K *priv) {
+// A TLS start needs a connected socket that does not listen and a key with a certificate
+static bool TlsCanStart(const SOCK *sock, const X *x, const K *priv) {
 	if (sock->Connected == false || sock->socket == INVALID_SOCKET ||
 	    sock->ListenMode != false)
 		return false;
 	if (x != NULL && priv == NULL)
 		return false;
-	if (server_ctx != NULL && sock->ServerMode == false)
-		return false;
 
 	return true;
 }
 
-// The context of this TLS start: the shared server context (a reference of this call), a server context built from x, priv
-// and chain, or a client context. NULL when it cannot be built
-static SSL_CTX *TlsGetCtx(const SOCK *sock, SSL_CTX *server_ctx, X *x, K *priv, LIST *chain) {
-	if (server_ctx != NULL) {
-		ShareSSLCtx(server_ctx);
-		return server_ctx;
-	}
+// The context of this TLS start: a server context built from x, priv and chain, or a client context. NULL when it
+// cannot be built
+static SSL_CTX *TlsGetCtx(const SOCK *sock, X *x, K *priv, LIST *chain) {
 	if (sock->ServerMode)
-		return NewServerSSLCtx(x, priv, chain, NULL, NULL);
+		return NewServerSSLCtx(x, priv, chain);
 
 	return NewSSLCtx(false);
 }
@@ -761,21 +755,13 @@ static bool TlsCheckPeer(SOCK *sock, long ssl_verify_err, const char *sni_hostna
 	return false;
 }
 
-static bool StartSSLMain(SOCK *sock, struct ssl_ctx_st *server_ctx, X *x, K *priv, LIST *chain, char *sni_hostname, SSL_VERIFY_OPTION *ssl_option, UINT *ssl_err);
+static bool StartSSLMain(SOCK *sock, X *x, K *priv, LIST *chain, char *sni_hostname, SSL_VERIFY_OPTION *ssl_option, UINT *ssl_err);
 
 bool StartSSLEx3(SOCK *sock, X *x, K *priv, LIST *chain, char *sni_hostname, SSL_VERIFY_OPTION *ssl_option, UINT *ssl_err) {
-	return StartSSLMain(sock, NULL, x, priv, chain, sni_hostname, ssl_option, ssl_err);
+	return StartSSLMain(sock, x, priv, chain, sni_hostname, ssl_option, ssl_err);
 }
-// Start TLS on an accepted connection with a server context that is shared by many connections (NewServerSSLCtx).
-// The caller keeps its own reference of ctx
-bool StartSSLServer(SOCK *sock, struct ssl_ctx_st *ctx, UINT *ssl_err) {
-	if (ctx == NULL)
-		return false;
-
-	return StartSSLMain(sock, ctx, NULL, NULL, NULL, NULL, NULL, ssl_err);
-}
-// server_ctx NULL: a context of this call (a client context, or a server one built from x, priv and chain)
-static bool StartSSLMain(SOCK *sock, struct ssl_ctx_st *server_ctx, X *x, K *priv, LIST *chain, char *sni_hostname, SSL_VERIFY_OPTION *ssl_option, UINT *ssl_err) {
+// A context of this call: a client context, or a server one built from x, priv and chain
+static bool StartSSLMain(SOCK *sock, X *x, K *priv, LIST *chain, char *sni_hostname, SSL_VERIFY_OPTION *ssl_option, UINT *ssl_err) {
 	SSL_CTX *ssl_ctx;
 	UINT dummy_err = 0;
 	long ssl_verify_err;
@@ -784,7 +770,7 @@ static bool StartSSLMain(SOCK *sock, struct ssl_ctx_st *server_ctx, X *x, K *pri
 		return false;
 	if (ssl_err == NULL)
 		ssl_err = &dummy_err;
-	if (TlsCanStart(sock, server_ctx, x, priv) == false)
+	if (TlsCanStart(sock, x, priv) == false)
 		return false;
 
 	if (sock->SecureMode)
@@ -796,7 +782,7 @@ static bool StartSSLMain(SOCK *sock, struct ssl_ctx_st *server_ctx, X *x, K *pri
 		return true;
 	}
 
-	ssl_ctx = TlsGetCtx(sock, server_ctx, x, priv, chain);
+	ssl_ctx = TlsGetCtx(sock, x, priv, chain);
 	if (ssl_ctx == NULL)
 		goto FAIL;
 
