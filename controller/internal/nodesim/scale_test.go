@@ -38,6 +38,7 @@ func TestScaleValidate(t *testing.T) {
 		{"more routes for a node than the protocol carries", Scale{Nodes: 20, VRFs: 2, Routes: 20 * 16}},
 		{"VRFs that do not divide into the batches", Scale{Nodes: 60, VRFs: 6, Routes: 60, Batches: 4}},
 		{"a negative number of runs", Scale{Nodes: 20, VRFs: 2, Routes: 20, Runs: -1}},
+		{"a negative number of enrolments", Scale{Nodes: 20, VRFs: 2, Routes: 20, Enrolments: -1}},
 	} {
 		if err := c.s.Validate(); err == nil {
 			t.Errorf("%s: %+v was accepted", c.name, c.s)
@@ -48,6 +49,22 @@ func TestScaleValidate(t *testing.T) {
 	}
 	if ReducedScale.Nodes*10 != FullScale.Nodes || ReducedScale.VRFs*10 != FullScale.VRFs || ReducedScale.Routes*10 != FullScale.Routes {
 		t.Errorf("ReducedScale is %+v, not a tenth of FullScale", ReducedScale)
+	}
+	// The performance gate of a pull request judges the best of the changes and of the enrolments of a run (CI-FLAKE-9, #616)
+	if ReducedScale.Runs < 3 || ReducedScale.Enrolments < 3 {
+		t.Errorf("ReducedScale changes the VRFs %d times and enrols %d times, and the gate judges the best of at least 3 of each", ReducedScale.Runs, ReducedScale.Enrolments)
+	}
+}
+
+// TestRunScaleNeedsAControllerForEachEnrolment checks that a scale of more than one enrolment is refused, before anything runs,
+// when the target cannot give a controller for the later ones.
+func TestRunScaleNeedsAControllerForEachEnrolment(t *testing.T) {
+	s := SmallScale
+	if s.enrolments() < 2 {
+		t.Fatalf("SmallScale enrols %d times, and this test needs it to enrol more than once", s.enrolments())
+	}
+	if _, err := RunScale(context.Background(), ScaleTarget{}, s); err == nil || !strings.Contains(err.Error(), "ScaleTarget.Fresh") {
+		t.Errorf("a scale of %d enrolments ran against a target with no Fresh, or was refused for another reason: %v", s.enrolments(), err)
 	}
 }
 
@@ -193,6 +210,10 @@ func TestScaleReportFormats(t *testing.T) {
 		Env:          map[string]string{"goos": "linux"},
 		SetupApplyMs: []float64{100, 250},
 		Enrol:        ScaleEnrol{Nodes: 1000, ConvergeMs: 4000, PerSecond: 250, Ack: ack(10)},
+		MoreEnrols: []ScaleRound{
+			{SetupApplyMs: []float64{90, 200}, Enrol: ScaleEnrol{Nodes: 1000, ConvergeMs: 3000, PerSecond: 333.3, Ack: ack(20)}},
+			{SetupApplyMs: []float64{80}, Enrol: ScaleEnrol{Nodes: 1000, ConvergeMs: 5000, PerSecond: 200, Ack: ack(30)}},
+		},
 		Changes: []ScaleChange{
 			{Name: "change-1", Nodes: 1000, ApplyMs: []float64{800}, Ack: ack(900)},
 			{Name: "change-2", Nodes: 1000, ApplyMs: []float64{700}, Ack: ack(800)},
@@ -200,9 +221,9 @@ func TestScaleReportFormats(t *testing.T) {
 		Route:   ScaleChange{Name: "route", Nodes: 10, ApplyMs: []float64{600}, Ack: ack(650)},
 		TotalMs: 61000,
 	}
-	// The lines are the ones that bench-gate.py reads, and a run has the lines of its own change
+	// The lines are the ones that bench-gate.py reads, and a run has the lines of its own change and of its own enrolment
 	line := regexp.MustCompile(`^BENCH [a-z0-9_]+ -?[0-9]+(\.[0-9]+)? (ms|ops/s)$`)
-	for run := 1; run <= 2; run++ {
+	for run := 1; run <= 3; run++ {
 		for _, l := range strings.Split(strings.TrimSpace(r.Bench(run)), "\n") {
 			if !line.MatchString(l) {
 				t.Errorf("run %d: %q is no BENCH line of bench-gate.py", run, l)
@@ -214,11 +235,33 @@ func TestScaleReportFormats(t *testing.T) {
 			t.Errorf("run %d does not hold the line %q:\n%s", run, want, got)
 		}
 	}
-	if got := r.Bench(3); strings.Contains(got, "scale_change_") || !strings.Contains(got, "scale_enrol_rate 250.0 ops/s\n") {
-		t.Errorf("a run that did not happen holds the lines of a change, or none of the enrolment:\n%s", got)
+	// Each run has the enrolment of its own with the setup that came before it, and the change of a route is in the first run only
+	for run, wants := range map[int][]string{
+		1: {"scale_setup_apply 350.0 ms\n", "scale_enrol_converge 4000.0 ms\n", "scale_enrol_rate 250.0 ops/s\n", "scale_route_apply 600.0 ms\n"},
+		2: {"scale_setup_apply 290.0 ms\n", "scale_enrol_converge 3000.0 ms\n", "scale_enrol_rate 333.3 ops/s\n"},
+		3: {"scale_setup_apply 80.0 ms\n", "scale_enrol_converge 5000.0 ms\n", "scale_enrol_rate 200.0 ops/s\n"},
+	} {
+		got := r.Bench(run)
+		for _, want := range wants {
+			if !strings.Contains(got, want) {
+				t.Errorf("run %d does not hold the line %q:\n%s", run, want, got)
+			}
+		}
+	}
+	for run, unwanted := range map[int]string{2: "scale_route_", 3: "scale_route_"} {
+		if got := r.Bench(run); strings.Contains(got, unwanted) {
+			t.Errorf("run %d holds a line %q, which only the first run has:\n%s", run, unwanted, got)
+		}
+	}
+	if got := r.Bench(3); strings.Contains(got, "scale_change_") {
+		t.Errorf("a run that made no change holds the lines of a change:\n%s", got)
+	}
+	if got := r.Bench(4); got != "" {
+		t.Errorf("a run that did not happen holds lines:\n%s", got)
 	}
 	md := r.Markdown()
-	for _, want := range []string{"1000 nodes, 100 VRFs, 10000 routes", "| change-2, the MTU of every VRF | 1000 |", "| route, one more LAN subnet of one gateway | 10 |"} {
+	for _, want := range []string{"1000 nodes, 100 VRFs, 10000 routes", "| change-2, the MTU of every VRF | 1000 |", "| route, one more LAN subnet of one gateway | 10 |",
+		"| enrolment 3, on a controller of its own | 1000 |", "The 3 enrolments took 4000 ms, 3000 ms, 5000 ms"} {
 		if !strings.Contains(md, want) {
 			t.Errorf("the summary does not hold %q:\n%s", want, md)
 		}
@@ -228,10 +271,13 @@ func TestScaleReportFormats(t *testing.T) {
 	if err := r.Write(dir); err != nil {
 		t.Fatal(err)
 	}
-	for _, name := range []string{"scale.json", "scale-summary.md", "scale-bench.txt", "scale-bench-run2.txt"} {
+	for _, name := range []string{"scale.json", "scale-summary.md", "scale-bench.txt", "scale-bench-run2.txt", "scale-bench-run3.txt"} {
 		if _, err := os.Stat(filepath.Join(dir, name)); err != nil {
 			t.Errorf("Write made no %s: %v", name, err)
 		}
+	}
+	if _, err := os.Stat(filepath.Join(dir, "scale-bench-run4.txt")); err == nil {
+		t.Error("Write made a file for a fourth run, and the report has three enrolments and two changes")
 	}
 	b, err := os.ReadFile(filepath.Join(dir, "scale.json"))
 	if err != nil {
@@ -241,7 +287,8 @@ func TestScaleReportFormats(t *testing.T) {
 	if err := json.Unmarshal(b, &back); err != nil {
 		t.Fatal(err)
 	}
-	if back.Scale != r.Scale || len(back.Changes) != 2 || back.Changes[1].Ack.P99Ms != r.Changes[1].Ack.P99Ms || back.Env["goos"] != "linux" {
+	if back.Scale != r.Scale || len(back.Changes) != 2 || back.Changes[1].Ack.P99Ms != r.Changes[1].Ack.P99Ms || back.Env["goos"] != "linux" ||
+		len(back.MoreEnrols) != 2 || back.MoreEnrols[1].Enrol.ConvergeMs != 5000 {
 		t.Errorf("the JSON of the report does not read back as the report: %+v", back)
 	}
 }

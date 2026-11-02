@@ -22,6 +22,12 @@ def group(group_id, tags, generation=1):
     return option(0x01, struct.pack('>HHQI', group_id, 0, tags, generation))
 
 
+def trace(trace_id, ingress=bytes(range(0x11, 0x19))):
+    # The trace option (SDN-89 #388; src/Cedar/NodeTrace.c): the type 3 with the critical bit clear and 12 bytes of data,
+    # the trace ID and the first 8 bytes of the static key of the ingress node
+    return option(0x03, struct.pack('>I', trace_id) + ingress)
+
+
 def frame(options, version=1, words=None):
     # The header of a record of frame version 1 (or version) with the options, whose length is words when it is given
     words = len(options) // 4 if words is None else words
@@ -57,3 +63,13 @@ def make_seeds(h):
     # The option of the source group, then an option whose data runs past the options: the record is dropped with no
     # claim, which a crash input of the fuzzer once found left behind
     seed('group_then_past_options.bin', frame(group(5, 0x10) + struct.pack('>BBH', 0x02, 4, 0), words=6) + record)
+    # The trace option (SDN-89 #388): after the option of the source group, alone, two of them, of which the first counts,
+    # with the trace ID 0, which is no trace, with data of another length, which is no such option, with the critical bit
+    # set, which drops the record, and followed by an option whose data runs past the options, which drops it too
+    seed('trace.bin', frame(group(3, 0x4) + trace(0x2A)) + record)
+    seed('trace_alone.bin', frame(trace(0xFFFFFFFF, b'\xff' * 8)) + record)
+    seed('two_traces.bin', frame(trace(7) + trace(8)) + record)
+    seed('trace_zero_id.bin', frame(trace(0)) + record)
+    seed('trace_short.bin', frame(option(0x03, struct.pack('>I', 9))) + record)
+    seed('trace_critical.bin', frame(option(0x83, struct.pack('>I', 9) + bytes(8))) + record)
+    seed('trace_then_past_options.bin', frame(trace(5) + struct.pack('>BBH', 0x02, 4, 0), words=5) + record)

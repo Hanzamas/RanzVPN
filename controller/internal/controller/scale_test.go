@@ -53,10 +53,14 @@ func newScaleHarness(t *testing.T, s nodesim.Scale) *harness {
 	return h
 }
 
-// scaleTarget returns the controller of h as the target of a scale run: the API for the applies, the list of the nodes and the
-// intent, and the one address of its TLS port for the streams. The run stops the controller before it stops the nodes.
-func (h *harness) scaleTarget() nodesim.ScaleTarget {
+// scaleTarget returns the controller of h as the target of a scale run of s: the API for the applies, the list of the nodes and
+// the intent, and the one address of its TLS port for the streams. The run stops the controller before it stops the nodes. For
+// each enrolment of s after the first it gets a harness of its own, with a database of its own, as newScaleHarness makes it.
+func (h *harness) scaleTarget(s nodesim.Scale) nodesim.ScaleTarget {
 	return nodesim.ScaleTarget{
+		Fresh: func(context.Context) (nodesim.ScaleTarget, error) {
+			return newScaleHarness(h.t, s).scaleTarget(s), nil
+		},
 		Endpoints: []nodesim.Endpoint{{Address: h.ln.Addr().String(), Key: h.key.Public()}},
 		Apply: func(ctx context.Context, doc intent.Document) (map[string]uint64, error) {
 			res, err := h.api.Apply(ctx, doc)
@@ -96,6 +100,15 @@ func checkScaleReport(t *testing.T, s nodesim.Scale, rep *nodesim.ScaleReport) {
 	if rep.Enrol.Nodes != s.Nodes || rep.Enrol.Ack.Count != s.Nodes || rep.Enrol.PerSecond <= 0 {
 		t.Errorf("the enrolment in the report is %+v, want %d nodes and a rate", rep.Enrol, s.Nodes)
 	}
+	// Each enrolment after the first, on a controller of its own, declared the VRFs there and had every node acknowledge
+	if want := max(s.Enrolments, 1) - 1; len(rep.MoreEnrols) != want {
+		t.Fatalf("the report holds %d enrolments after the first, want %d", len(rep.MoreEnrols), want)
+	}
+	for i, m := range rep.MoreEnrols {
+		if len(m.SetupApplyMs) != s.Batches || m.Enrol.Nodes != s.Nodes || m.Enrol.Ack.Count != s.Nodes || m.Enrol.PerSecond <= 0 || m.Enrol.ConvergeMs <= 0 {
+			t.Errorf("enrolment %d in the report has %d applies of the setup and %+v, want %d applies and %d nodes and a rate", i+2, len(m.SetupApplyMs), m.Enrol, s.Batches, s.Nodes)
+		}
+	}
 	if len(rep.Changes) != s.Runs {
 		t.Fatalf("the report holds %d changes of every VRF, want %d", len(rep.Changes), s.Runs)
 	}
@@ -125,7 +138,7 @@ func TestScaleSmall(t *testing.T) {
 	h := newScaleHarness(t, s)
 	ctx, cancel := context.WithTimeout(context.Background(), 4*time.Minute)
 	defer cancel()
-	rep, err := nodesim.RunScale(ctx, h.scaleTarget(), s)
+	rep, err := nodesim.RunScale(ctx, h.scaleTarget(s), s)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -151,7 +164,7 @@ func TestScale(t *testing.T) {
 	h := newScaleHarness(t, s)
 	ctx, cancel := context.WithTimeout(context.Background(), 55*time.Minute)
 	defer cancel()
-	rep, err := nodesim.RunScale(ctx, h.scaleTarget(), s)
+	rep, err := nodesim.RunScale(ctx, h.scaleTarget(s), s)
 	if dir := os.Getenv("RANZ_SCALE_OUT"); dir != "" && rep != nil {
 		if werr := rep.Write(dir); werr != nil {
 			t.Errorf("writing the report to %s: %v", dir, werr)
