@@ -173,6 +173,12 @@ src/Cedar  NodeMimicParseAnswer   fuzz_nodemimic
 # The source groups of the overlay (SDN-87 #386): the header of a record of a Noise session, which carries the source
 # group of its packet from frame version 1 on
 src/Cedar  NodeFrameParse  fuzz_frame
+# The tag mode hmac (SDN-88 #387): the MAC of the source group that a datagram of a link of kind geneve carries in the option of
+# the authenticated source group, over that option and the inner IP and L4 headers of its packet, which a node checks for each
+# datagram. No parser word in the names, listed as the readers of a peer's bytes that they are
+src/Cedar  NodeTagMacHeaders     fuzz_tagmac
+src/Cedar  NodeTagMacCheck       fuzz_tagmac
+src/Cedar  NodeSourceGroupCheck  exempt  hands the claim and the packet of each datagram of a link, as they came, to NodeTagMacCheck (fuzz_tagmac) when the VRF is in the tag mode hmac; it reads no byte itself
 # The Capabilities of the Node (ONE-3 #312) come from the host, not from a peer
 src/Cedar  NodeCapsReadHost     exempt  reads no bytes of a peer or of a file: it asks Windows for the architecture of the host, whether the services SeLow and xdp are registered and whether three files of System32 exist
 # The peer agent of the overlay (CORE-S5-5 #411) takes the Signals that the Controller carries from a peer: no parser word in the
