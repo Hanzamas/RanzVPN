@@ -31,6 +31,7 @@ A few commands need a value from an earlier step. They show it in angle brackets
 | `<VIEWER-TOKEN>` | An API token that can only read | step 12 |
 | `<PC-A-OVERLAY>` | The overlay address of the Node `pc-a` | step 16 |
 | `<NODE-KEY>` | The static key of the Node service of PC A | step 20, `publicKey` |
+| `<LISTENER-THUMBPRINT>` | The thumbprint of the certificate of the front door of `pc-a`, 40 hex digits, for "A mimic server" only | step 3 of "A mimic server" |
 
 All commands are PowerShell commands, run in a window that was opened as Administrator. Each PC has its own window. A command that starts with `ranz` runs `ranz.exe` of step 1.
 
@@ -680,11 +681,11 @@ The first command prints nothing. In the answer of the second, `connected` is fa
 
 ## A mimic server
 
-This part is no step of the test: CI does not run it from this file, and the table of the steps does not list it. A mimic server needs a Node that dials it, and the Node service dials nowhere yet (Gap 3), so the session over the mimic transport is proven in CI by the mimic tracer of the build instead (`vpntest mimictrace`, `.github/scripts/mimic-tracer.ps1`): a real Controller, whose Intent holds the mimic server, and real Nodes of the new core on one runner, each with `ranz.exe` beside it. These are the steps of an operator, on the PCs of this test before the clean-up.
+This part is no step of the test: CI does not run it from this file, and the table of the steps does not list it. A mimic server needs a Node that dials it, and the Node service dials nowhere yet (Gap 3), so the session over the mimic transport is proven in CI by the mimic tracer of the build instead (`vpntest mimictrace`, `.github/scripts/mimic-tracer.ps1`): a real Controller, whose Intent holds the mimic server, and real Nodes of the new core on one runner, each with `ranz.exe` beside it. These are the steps of an operator on the two PCs of this test, after step 25 and before the clean-up: the Controller and the Node service of PC A, which is `pc-a` since step 20, run, and the stand-in that played `pc-b` stopped in step 24. Step 7 runs on PC B, the others on PC A.
 
 A mimic server is a Node whose mimicry sidecar, `ranz mimic`, listens on an address of its own and looks like a website to anyone who has no key (ADR-0023). You declare it once, in the Intent, and you type nothing on a Node: the Node makes the key of its mimic server itself, and the Controller gives every other Node that has it as a peer a link to it.
 
-1. Choose the address of the sidecar: an IP address of the server PC and a TCP port that the other Nodes reach, here `<PC-A>:8443`. The sidecar and the front door use different addresses: it is never the TCP port of the front door of the Listener. Choose the server names, the names of the decoy site, and the decoy: a site of its own with a certificate from ACME (`acme`) or from PEM files on the Node (`certFile` and `keyFile`), or a borrowed site (`mode` `borrow` with its `dest`). A self-signed decoy (`selfSigned`) is for tests only, since a prober that checks the chain sees it.
+1. Choose the address of the sidecar: an IP address of the server PC and a TCP port that the other Nodes reach, here `<PC-A>:8443`. The sidecar and the front door use different addresses: it is never the TCP port of the front door of the Listener. Choose the server names, the names of the decoy site, and the decoy: a site of its own with a certificate from ACME (`acme`) or from PEM files on the Node (`certFile` and `keyFile`), or a borrowed site (`mode` `borrow` with its `dest`). A self-signed decoy (`selfSigned`) is for tests only, since a prober that checks the chain sees it. The sidecar runs as the account of the Node service, `NT SERVICE\ranzvpnserver`, so that account must be able to read the PEM files of an own decoy and to write the `cacheDir` of its ACME.
 
 2. Open the port of the sidecar on PC A. `ranz install` opens the ports of what it installs only, so the port of a `mimic` section is yours (`docs/ports.md`):
 
@@ -692,36 +693,67 @@ A mimic server is a Node whose mimicry sidecar, `ranz mimic`, listens on an addr
 New-NetFirewallRule -DisplayName "Ranz mimic server" -Direction Inbound -Protocol TCP -LocalPort 8443 -Program "$env:ProgramFiles\Ranz VPN\ranz.exe" -Action Allow
 ```
 
-3. Give the Node resource `pc-a` a mimic endpoint at that address, and its Listener resource the `mimic` section. A Listener names the certificate of the front door of the Node as well, here a certificate of the LocalMachine\My store of PC A whose key is in a key storage provider, by its thumbprint `<LISTENER-THUMBPRINT>` (SDN-45). An apply replaces each resource that it names, so the endpoint of step 15 is in it again:
+3. Make the certificate of the front door. The `mimic` section is part of a Listener resource, and a Listener also starts the front door of its Node, with a certificate of its own (SDN-45): here a certificate of the LocalMachine\My store of PC A whose key is in a key storage provider, as the Node requires. The key of a certificate that `New-SelfSignedCertificate` makes there is for SYSTEM and the Administrators only, and the Node service runs as `NT SERVICE\ranzvpnserver`, so the key file gets a read rule for that account, as the key file of the Controller got one in step 21:
 
 ```powershell
-Set-Content -Path C:\ranz-test\mimic.json -Value '{"resources":[{"kind":"Node","name":"pc-a","spec":{"publicKey":"<NODE-KEY>","endpoints":[{"transport":"tls","address":"<PC-A>:<PORT>"},{"transport":"mimic","address":"<PC-A>:8443"}]}},{"kind":"Listener","name":"edge-a","spec":{"node":"pc-a","certificate":{"ksp":"<LISTENER-THUMBPRINT>"},"mimic":{"listen":"<PC-A>:8443","serverNames":["www.example.com"],"decoy":{"selfSigned":true}}}}]}'
+$edge = New-SelfSignedCertificate -Subject "CN=edge-a" -DnsName "edge-a" -CertStoreLocation Cert:\LocalMachine\My -KeyAlgorithm ECDSA_nistP256 -Provider "Microsoft Software Key Storage Provider"
+$edgeKey = [System.Security.Cryptography.X509Certificates.ECDsaCertificateExtensions]::GetECDsaPrivateKey($edge).Key.UniqueName
+icacls "$env:ProgramData\Microsoft\Crypto\Keys\$edgeKey" /grant "NT SERVICE\ranzvpnserver:R"
+$edge.Thumbprint
+```
+
+The last line prints the thumbprint of the certificate, 40 hex digits. Write it down as `<LISTENER-THUMBPRINT>`.
+
+4. Give the Node resource `pc-a` a mimic endpoint at the address of step 1, and give `pc-a` the Listener `edge-a` with the `mimic` section and the certificate of step 3. The Controller of PC A holds TCP 443 (step 6), or 5555 after its fallback, so the Listener names a port of its own for its front door and for QUIC, here 9443, which nothing dials in this part. An apply replaces each resource that it names, so the endpoint of step 15 is in it again:
+
+```powershell
+Set-Content -Path C:\ranz-test\mimic.json -Value '{"resources":[{"kind":"Node","name":"pc-a","spec":{"publicKey":"<NODE-KEY>","endpoints":[{"transport":"tls","address":"<PC-A>:<PORT>"},{"transport":"mimic","address":"<PC-A>:8443"}]}},{"kind":"Listener","name":"edge-a","spec":{"node":"pc-a","port":9443,"quicPort":9443,"certificate":{"ksp":"<LISTENER-THUMBPRINT>"},"mimic":{"listen":"<PC-A>:8443","serverNames":["www.example.com"],"decoy":{"selfSigned":true}}}}]}'
 ranz apply -f C:\ranz-test\mimic.json
 ```
 
 `ranz apply` refuses a section that is wrong, with a message that says which setting: an address without a port, a name that is no DNS name, no server name, a borrowed decoy without a destination, an own decoy without a certificate source or with two, a key or a short id, or the port of the front door.
 
-4. The Node applies its next Generation. It writes the settings of its mimic server into its Configuration store, makes the X25519 key of the server the first time that a state asks it for one, reports the public key on its control stream, and starts its sidecar as a server. Its node log (step 11) says `asks the node for a mimic server, so the node made the key of the server: it reports its public key` with the public key, and then `the sidecar of the server listens`. Ask the Controller what it waits for:
+5. The Node applies its next Generation. It writes the settings of its mimic server into its Configuration store, makes the X25519 key of the server the first time that a state asks it for one, reports the public key on its control stream, and starts its sidecar as a server. Its node log (step 11) says `asks the node for a mimic server, so the node made the key of the server: it reports its public key` with the public key, and then `the sidecar of the server listens`. It says `Listener edge-a: the front door listens on TCP port 9443` as well, or `Listener edge-a not started` with the reason, for example a key that the Node service cannot read (the `icacls` of step 3). The mimic server does not need the front door. Ask the Controller what it waits for:
 
 ```powershell
 ranz explain -listener edge-a
 ```
 
-It shows the section, whether the Node reported its key, the public key, and the Nodes that have a link: `pc-b`, at `<PC-A>:8443`, with the first server name `www.example.com`. Until the Node reports its key, it says that the Controller waits for the public key of `pc-a`, and no Node has a link.
+It shows the section, whether the Node reported its key, the public key, and the Nodes that have a link, each with the address that it dials and the first server name: `pc-b dials <PC-A>:8443 as www.example.com`. Until the Node reports its key, it says that the Controller waits for the public key of `pc-a`, and no Node has a link. Write down the public key for step 6.
 
-5. The private key stays in the Configuration store of the Node, which only SYSTEM, the Administrators and the account of the Node open. It reaches the sidecar over its control pipe only: it is in no log line, in no command line of a process, in no diagnostics bundle (`ranz doctor -bundle` blanks it, step 22), in the text dump of the store beside it (`node_config.txt` shows its digits as stars), and in nothing that the Controller holds. After a restart the Node reports the same key. It keeps the key until the `mimic` section goes, and a new section after that gets a new key.
+6. The private key stays in the Configuration store of the Node, which only SYSTEM, the Administrators and the account of the Node open. It reaches the sidecar over its control pipe only: it is in no log line, in no command line of a process, in no diagnostics bundle (`ranz doctor -bundle` blanks it, step 22) and in nothing that the Controller holds, and the text dump of the store beside it, `node_config.txt`, shows its digits as stars. After a restart the Node reports the same key. Restart the Node service, and look at the dump and the key:
 
-6. A connection that is no Ranz client, a browser or a TLS client that names a server name, gets the decoy site, and the Node counts it as a probe without a log line of its own: its node log has the counters of the sidecar (`Mimic server sidecar counters`) once a minute while they change.
+```powershell
+Restart-Service ranzvpnserver
+Select-String -Path "$env:ProgramData\Hanzcodes\Ranz VPN\node_config.txt" -Pattern private_key
+ranz explain -listener edge-a
+```
+
+The line of `node_config.txt` is the `MimicServer` setting, with 64 stars after `private_key`. The node log of the restart has `the sidecar of the server listens` again and no new line that the node made a key, and `ranz explain` shows the public key of step 5. The Node keeps the key until the `mimic` section goes, and a new section after that gets a new key.
+
+7. On PC B: a connection that is no Ranz client, a browser or a TLS client that names a server name, gets the decoy site, and the Node counts it as a probe without a log line of its own: its node log has the counters of the sidecar (`Mimic server sidecar counters`) at most once a minute while they change.
 
 ```powershell
 curl.exe -k -s -o NUL -w "%{http_code}" --resolve www.example.com:8443:<PC-A> https://www.example.com:8443/
 ```
 
-7. A Node that has the server as a peer with a mimic endpoint gets a link: the address of the endpoint, the first server name, the public key that the server reported and the short id that the Controller made. The link starts the client role of its sidecar, and the Node dials a link by its address. A change of the section restarts the sidecar of the server, a change of a link the sidecar of the client, and the other transports of a Node are not touched. A Node without `ranz.exe` beside it applies its state all the same, and its node log says `Mimic transport unavailable: ranz.exe, which holds the sidecar, is not installed at`, with the path. The data transport of the Node service dials no peer yet (Gap 3), so on these two PCs the link of `pc-b` waits for a dial: the mimic tracer of the build is where a client Node opens its Noise session over the mimic transport, with the same channel binding at both ends.
+It prints `200`, the landing page of the decoy, whose self-signed certificate `-k` takes. Without the rule of step 2 the connection fails.
 
-8. To end the mimic server, apply `pc-a` without the mimic endpoint and the Listener without the `mimic` section. The Node stops its sidecar and takes the settings and the key out, the Controller takes the link of `pc-b` out, and `ranz explain -listener edge-a` shows no section and no link. Then remove the rule of step 2:
+8. A Node that has the server as a peer with a mimic endpoint gets a link: the address of the endpoint, the first server name, the public key that the server reported and the short id that the Controller made. The link starts the client role of its sidecar, and the Node dials a link by its address. A change of the section restarts the sidecar of the server, a change of a link the sidecar of the client, and the other transports of a Node are not touched. A Node without `ranz.exe` beside it applies its state all the same, and its node log says `Mimic transport unavailable: ranz.exe, which holds the sidecar, is not installed at`, with the path. Here the link is the one of `pc-b`, whose stand-in stopped in step 24, and the data transport of the Node service dials no peer yet (Gap 3), so no Node of these two PCs takes it: the mimic tracer of the build is where a client Node opens its Noise session over the mimic transport, with the same channel binding at both ends.
+
+9. To end the mimic server, apply `pc-a` without the mimic endpoint and the Listener without the `mimic` section:
 
 ```powershell
+Set-Content -Path C:\ranz-test\mimic-end.json -Value '{"resources":[{"kind":"Node","name":"pc-a","spec":{"publicKey":"<NODE-KEY>","endpoints":[{"transport":"tls","address":"<PC-A>:<PORT>"}]}},{"kind":"Listener","name":"edge-a","spec":{"node":"pc-a","port":9443,"quicPort":9443,"certificate":{"ksp":"<LISTENER-THUMBPRINT>"}}}]}'
+ranz apply -f C:\ranz-test\mimic-end.json
+ranz explain -listener edge-a
+```
+
+The Node stops its sidecar and takes the settings and the key out: its node log says `has none, so its sidecar stopped, and the MimicServer setting and the key of the server are gone`, and it reports that it has no key. The Controller takes the link of `pc-b` out, and `ranz explain -listener edge-a` says `no mimic section: the Node is no mimic server`. The Intent of this test had no Listener before this part, so delete it, which stops the front door (the node log says `has none, so the node listens on no port of its own`), and then remove the certificate of step 3 and the rule of step 2:
+
+```powershell
+ranz delete Listener edge-a
+Remove-Item -Path Cert:\LocalMachine\My\<LISTENER-THUMBPRINT> -DeleteKey
 Remove-NetFirewallRule -DisplayName "Ranz mimic server"
 ```
 
@@ -800,5 +832,5 @@ The job `first_test` of `.github/workflows/windows.yml` runs on `windows-latest`
 - **The admin source allowlist is read back.** The script checks the line of `ranz install` about the list (step 5), the lines of the first start in `controller.log` about the list and the starter rule (step 6), and `adminAccess` and `starterRule` of `ranz status` (step 7). PC B then reaches the Controller from the address of the runner, which is not loopback, so the list must hold it: on a private subnet it is in the default list, and when the address is not private the script adds it with `ranz admin-sources set` first, as the troubleshooting says, and counts that change among the events of steps 21 and 23. A runner is on a private subnet, so the script also takes that branch for an address of the documentation range, `203.0.113.77`: it checks that `ranz admin-sources list` then holds the address and every entry that it held, puts the list back, and counts the two changes among the events as well.
 - **The firewall, the audit log and the state of the Node are read back.** After each install the script reads the rules of the group `Ranz VPN` from Windows Firewall, with their protocols, ports and programs: the three of the Node and the Controller, the same rules (by their ids) after the second install of step 10, none after the uninstall. It reads the enrolments and the refusal of the key of step 20 with `ranz get audit`, checks that a call without a valid token is refused, and reads `ranz node state` of the Node service before and after it joins, and once it is uninstalled.
 - **A Gap is read from the sources.** At the Gap step, which the script runs last, it looks in the sources for what the document says is missing: a data transport of the Node service that dials a peer (Gap 3). When it is there, the job fails, until this file has real steps for it. It also checks that the closed Gaps stay closed: the Node service sets the control stream of its overlay, the CLI has the verbs of steps 20 and 21, `ranz install` knows the firewall, and the CLI has the verbs for the audit log and the state of a Node. So does the part of Gap 3 that SDN-93 closed: a Node dials a peer through its endpoints.
-- **A mimic server is proven by the mimic tracer.** "A mimic server" is no step, so the script does not run it. The step `Mimic tracer` of the job `build_and_test`, on x64 and arm64, applies the same kind of Intent to a Controller of its own: a Node with a mimic endpoint, a Node that has it as a peer, and a Listener with a `mimic` section. Its Nodes of the new core, with `ranz.exe` beside them, make and report the key, take the link, open the Noise session over the mimic transport with the same channel binding at both ends, splice a link with a wrong short id to the decoy, restart the sidecars on a change, report the same key after a restart and take the settings and the key out with the section, and the private key is in no log, command line, bundle or file of the Controller (`vpntest mimictrace`, `.github/scripts/mimic-tracer.ps1`).
+- **A mimic server is proven by the mimic tracer.** "A mimic server" is no step, so the script does not run it. The step `Mimic tracer` of the job `build_and_test`, on x64 and arm64, applies the same kind of Intent to a Controller of its own: a Node with a mimic endpoint, a Node that has it as a peer, and a Listener with a `mimic` section. Its Nodes of the new core, with `ranz.exe` beside them, make and report the key, take the link, open the Noise session over the mimic transport with the same channel binding at both ends, splice a link with a wrong short id to the decoy, restart the sidecars on a change, report the same key after a restart and take the settings and the key out with the section, and the private key is in no log, command line, bundle or file of the Controller (`vpntest mimictrace`, `.github/scripts/mimic-tracer.ps1`). `TestRunbookSetsUpAMimicServer` (ranz.yml) applies the Intent documents of the part, with values in place of the ones in angle brackets, through the checks of `ranz apply`, and finds each line that the part quotes of the node log and of `ranz` in the code.
 - **What CI cannot do.** It cannot try two PCs, a browser, or the Gaps. The web UI is checked by its pages and by the API calls that the pages make. The overlay between two Nodes is the stand-in, with one real Wintun adapter and a fake host.
