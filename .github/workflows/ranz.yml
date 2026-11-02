@@ -181,7 +181,9 @@ jobs:
     # CI-SPEED-1 #547; about 10 minutes before), and the fuzz step runs each target of fuzz-targets.txt for 20 s,
     # one after the other, about 14 minutes now: a job of 25 minutes was cancelled in its static analysis, the last step,
     # with every step before it done
-    timeout-minutes: 40
+    # TEMPORARY (CI-FLAKE-4, #581): 240 minutes for the stress step at the end, which runs controller/internal/controller 100
+    # times under -race, about 80 s each, 40 again in the last commit of this pull request
+    timeout-minutes: 240
     steps:
     - uses: actions/checkout@v4
     - uses: actions/setup-go@v5
@@ -505,6 +507,81 @@ jobs:
         "$RUNNER_TEMP/gobin/govulncheck" -format json ./... > "$RUNNER_TEMP/govulncheck-linux.json"
         GOOS=windows "$RUNNER_TEMP/gobin/govulncheck" -format json ./... > "$RUNNER_TEMP/govulncheck-windows.json"
         python .github/scripts/govulncheck-gate.py --accepted .github/quality/govulncheck-accepted.txt "$RUNNER_TEMP/govulncheck-linux.json" "$RUNNER_TEMP/govulncheck-windows.json"
+    # TEMPORARY, removed in the last commit of this pull request (CI-FLAKE-4, #581): the two tests of the sightings and the
+    # package of the helper again and again under -race, while a program opens and closes thousands of connections, each of
+    # which takes a source port of the runner. go test runs 5 times at a time (the package once), until the runs or the
+    # minutes of the call are over, and the step fails at the first test that fails.
+    - name: 'Stress, temporary (CI-FLAKE-4, #581)'
+      if: ${{ !cancelled() }}
+      timeout-minutes: 210
+      run: |
+        mkdir -p "$RUNNER_TEMP/churn"
+        cat > "$RUNNER_TEMP/churn/main.go" <<'EOF'
+        package main
+
+        import (
+            "io"
+            "net"
+            "time"
+        )
+
+        func main() {
+            srv, err := net.Listen("tcp", "127.0.0.1:0")
+            if err != nil {
+                panic(err)
+            }
+            go func() {
+                for {
+                    c, err := srv.Accept()
+                    if err != nil {
+                        return
+                    }
+                    go func() {
+                        io.Copy(io.Discard, c)
+                        c.Close()
+                    }()
+                }
+            }()
+            addr := srv.Addr().String()
+            for range 4 {
+                go func() {
+                    for {
+                        var open []*net.TCPConn
+                        for range 500 {
+                            c, err := net.DialTimeout("tcp", addr, time.Second)
+                            if err != nil {
+                                break
+                            }
+                            open = append(open, c.(*net.TCPConn))
+                        }
+                        time.Sleep(200 * time.Millisecond)
+                        for _, c := range open {
+                            c.SetLinger(0)
+                            c.Close()
+                        }
+                    }
+                }()
+            }
+            select {}
+        }
+        EOF
+        (cd "$RUNNER_TEMP/churn" && go build -o churn main.go)
+        "$RUNNER_TEMP/churn/churn" &
+        churn=$!
+        trap 'kill "$churn" 2>/dev/null || true' EXIT
+        # stress <minutes> <runs> <batch> <name> <go test arguments>
+        stress() {
+          local end=$((SECONDS + $1 * 60)) want=$2 batch=$3 name=$4 runs=0
+          shift 4
+          while [ "$runs" -lt "$want" ] && [ "$SECONDS" -lt "$end" ]; do
+            go test -race -count="$batch" -failfast -timeout 20m "$@"
+            runs=$((runs + batch))
+            echo "$name: $runs runs in a row passed with the connections open, after $SECONDS s"
+          done
+        }
+        stress 20 100 5 TestRunServesTheCertificateOfItsSetting -run '^TestRunServesTheCertificateOfItsSetting$' ./controller
+        stress 35 100 1 TestRollingUpgrade -run '^TestRollingUpgrade$' ./controller
+        stress 160 100 1 controller/internal/controller ./controller/internal/controller
     - uses: actions/upload-artifact@v4
       if: failure()
       with:
@@ -617,7 +694,9 @@ jobs:
         platform: ${{ fromJSON(needs.plan.outputs.ranz_windows_matrix) }}
     name: ranz (Windows ${{ matrix.platform.ARCHITECTURE }})
     runs-on: ${{ matrix.platform.RUNNER }}
-    timeout-minutes: 40
+    # TEMPORARY (CI-FLAKE-5, #592): 240 minutes for the stress at the end, which runs the three packages 20 times, about 5
+    # minutes each, 40 again in the last commit of this pull request
+    timeout-minutes: 240
     env:
       # The Go code builds without cgo; the gcc of the arm64 runner builds x64 code only
       CGO_ENABLED: '0'
@@ -736,11 +815,8 @@ jobs:
     # TEMP and TMP name the temporary disk of the runner (CI-FLAKE-5, #592): the tests make the data of their rqlited and
     # of the members of their clusters, and the profile of the browser, in the temporary directory, and every rqlited syncs
     # its Raft log and its database at each change. The temporary directory of a Windows runner is on its system disk by
-    # default. A probe that timed a write and a sync on both disks while go test ./... ran twice, with TEMP on each disk in
-    # turn, saw 45 syncs of 0.25 s to 1.06 s on the system disk in the first 80 s of the first run, which took 4 min 41 s and
-    # failed TestLeaderServesTheLoginsOfUsers ("no member of the cluster leads at the moment"). The second run, with TEMP on
-    # the temporary disk, took 3 min 38 s, passed, and no sync of either disk took 0.25 s. It is one run of each, the system
-    # disk first, so it shows that the system disk can stall under the syncs of the tests and not how often.
+    # default. The step at the end of this job (TEMPORARY, it is removed in the last commit of this pull request, and this
+    # comment then says what the experiment of an earlier head measured) runs the stress that the ticket asks for.
     - name: Test
       if: matrix.platform.ARCHITECTURE == 'x64'
       shell: pwsh
@@ -854,6 +930,220 @@ jobs:
       timeout-minutes: 10
       run: |
         . .github/scripts/controller-service.ps1 -BinDir build\ranz
+    # TEMPORARY, removed in the last commit of this pull request (CI-FLAKE-5, #592): the stress that the ticket asks for,
+    # with the program that says when the host stalled beside it. A program writes a block to a file on each of the two
+    # disks of the runner, syncs it and times that, every tenth of a second, and says whenever a sync took a quarter of a
+    # second or more and what the syncs of each minute took, and beside it the same for a sleep and for a connection to
+    # itself over the loopback. The stress runs the three packages that start rqlited together 20 times in a row, or until
+    # 130 minutes are over, and then the three tests of the sightings again and again, all with TEMP on the temporary disk,
+    # as the step Test has it, while a program keeps every core of the runner busy. For the tests go test runs 5 times at a
+    # time, until the 20 runs or the minutes of the test are over. The stress fails the step at its first failure.
+    - name: 'Stress, temporary (CI-FLAKE-5, #592)'
+      if: ${{ !cancelled() && matrix.platform.ARCHITECTURE == 'x64' }}
+      shell: pwsh
+      timeout-minutes: 210
+      run: |
+        $dir = Join-Path $env:RUNNER_TEMP 'burn'
+        New-Item -ItemType Directory -Force -Path $dir | Out-Null
+        @'
+        package main
+
+        import "runtime"
+
+        func main() {
+            for range runtime.NumCPU() {
+                go func() {
+                    for {
+                    }
+                }()
+            }
+            select {}
+        }
+        '@ | Set-Content -Path (Join-Path $dir 'main.go')
+        $pdir = Join-Path $env:RUNNER_TEMP 'probe'
+        New-Item -ItemType Directory -Force -Path $pdir | Out-Null
+        @'
+        package main
+
+        import (
+            "fmt"
+            "net"
+            "os"
+            "path/filepath"
+            "slices"
+            "sync"
+            "time"
+        )
+
+        var mu sync.Mutex
+
+        // say prints a line with the time of day
+        func say(format string, args ...any) {
+            mu.Lock()
+            defer mu.Unlock()
+            fmt.Printf("%s %s\n", time.Now().Format("15:04:05.000"), fmt.Sprintf(format, args...))
+        }
+
+        // watchDisk writes a block to a file in dir and syncs it, again and again, says whenever that took a quarter of a
+        // second or more, and says what the syncs of each minute took
+        func watchDisk(dir string) {
+            f, err := os.Create(filepath.Join(dir, "probe.dat"))
+            if err != nil {
+                panic(err)
+            }
+            block := make([]byte, 4096)
+            var took []time.Duration
+            minute := time.Now()
+            for {
+                start := time.Now()
+                f.WriteAt(block, 0)
+                f.Sync()
+                d := time.Since(start)
+                took = append(took, d)
+                if d >= 250*time.Millisecond {
+                    say("%s: write and sync took %v", dir, d)
+                }
+                if time.Since(minute) >= time.Minute {
+                    slices.Sort(took)
+                    say("%s: %d syncs in the last minute, median %v, 99th percentile %v, longest %v",
+                        dir, len(took), took[len(took)/2], took[len(took)*99/100], took[len(took)-1])
+                    took, minute = took[:0], time.Now()
+                }
+                time.Sleep(100 * time.Millisecond)
+            }
+        }
+
+        // watchHost says whenever a sleep of 10 ms, or a connection to itself over the loopback with a byte back, took half
+        // a second or more longer than it should, and the longest of each minute
+        func watchHost() {
+            ln, err := net.Listen("tcp", "127.0.0.1:0")
+            if err != nil {
+                panic(err)
+            }
+            go func() {
+                for {
+                    c, err := ln.Accept()
+                    if err != nil {
+                        return
+                    }
+                    go func() {
+                        defer c.Close()
+                        b := make([]byte, 1)
+                        for {
+                            if _, err := c.Read(b); err != nil {
+                                return
+                            }
+                            c.Write(b)
+                        }
+                    }()
+                }
+            }()
+            var worstLate, worstConnect time.Duration
+            minute := time.Now()
+            for {
+                start := time.Now()
+                time.Sleep(10 * time.Millisecond)
+                late := time.Since(start) - 10*time.Millisecond
+
+                start = time.Now()
+                c, err := net.DialTimeout("tcp", ln.Addr().String(), time.Minute)
+                if err == nil {
+                    c.Write([]byte{1})
+                    c.Read(make([]byte, 1))
+                    c.Close()
+                }
+                connect := time.Since(start)
+
+                worstLate, worstConnect = max(worstLate, late), max(worstConnect, connect)
+                if late >= 500*time.Millisecond || connect >= 500*time.Millisecond {
+                    say("the host stalled: sleep late by %v, connect and echo %v (error %v)", late, connect, err)
+                }
+                if time.Since(minute) >= time.Minute {
+                    say("longest of the last minute: sleep late by %v, connect and echo %v", worstLate, worstConnect)
+                    worstLate, worstConnect = 0, 0
+                    minute = time.Now()
+                }
+                time.Sleep(200 * time.Millisecond)
+            }
+        }
+
+        // The directories to watch are the arguments
+        func main() {
+            go watchHost()
+            for _, dir := range os.Args[1:] {
+                go watchDisk(dir)
+            }
+            select {}
+        }
+        '@ | Set-Content -Path (Join-Path $pdir 'main.go')
+        foreach ($d in @($dir, $pdir)) {
+          Push-Location $d
+          go build -o "$(Split-Path -Leaf $d).exe" main.go
+          if ($LASTEXITCODE -ne 0) { throw "go build in $d exited with code $LASTEXITCODE" }
+          Pop-Location
+        }
+        # The two disks: the system disk, which TEMP names, and the temporary disk, which RUNNER_TEMP names
+        $system = $env:TEMP
+        $systemTmp = $env:TMP
+        $temporary = $env:RUNNER_TEMP
+        try {
+          Get-Volume | Where-Object DriveLetter | Format-Table DriveLetter, FileSystemType, DriveType, Size, SizeRemaining
+          Get-PhysicalDisk | Format-Table DeviceId, FriendlyName, BusType, MediaType, Size
+        } catch {
+          Write-Host "no list of the disks: $_"
+        }
+        $log = Join-Path $pdir 'probe.log'
+        $probe = Start-Process -FilePath (Join-Path $pdir 'probe.exe') -ArgumentList "`"$system`"", "`"$temporary`"" -RedirectStandardOutput $log -PassThru -WindowStyle Hidden
+        $shown = 0
+        $burn = $null
+        # Show-Probe prints what the probe said since its last call
+        function Show-Probe {
+          # The probe still has the file open, so it is read with the sharing that lets the probe go on writing
+          $stream = [System.IO.File]::Open($log, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read, [System.IO.FileShare]::ReadWrite)
+          $reader = New-Object System.IO.StreamReader($stream)
+          $text = $reader.ReadToEnd()
+          $reader.Close()
+          $lines = @($text -split "`r?`n" | Where-Object { $_ -ne '' })
+          foreach ($line in ($lines | Select-Object -Skip $script:shown)) { Write-Host $line }
+          $script:shown = $lines.Count
+        }
+        try {
+          $env:TEMP = $temporary
+          $env:TMP = $temporary
+          $burn = Start-Process -FilePath (Join-Path $dir 'burn.exe') -PassThru -WindowStyle Hidden
+          $packages = @('./controller/internal/webui', './controller', './controller/internal/controller')
+          $end = (Get-Date).AddMinutes(130)
+          $passes = 0
+          while ($passes -lt 20 -and (Get-Date) -lt $end) {
+            go test -count=1 -timeout 20m @packages
+            if ($LASTEXITCODE -ne 0) { throw "the three packages failed after $passes passes in a row with every core busy" }
+            $passes++
+            Write-Host "the three packages: $passes passes in a row passed with every core busy"
+          }
+          $tests = @(
+            @{ Name = 'TestTheUIWorksThroughTheAPI'; Package = './controller/internal/webui'; Minutes = 10 },
+            @{ Name = 'TestRqliteNeedsTheCredential'; Package = './controller'; Minutes = 12 },
+            @{ Name = 'TestARestoredKeyThatDoesNotOpenIsShown'; Package = './controller/internal/controller'; Minutes = 6 }
+          )
+          foreach ($t in $tests) {
+            $name = $t.Name
+            $package = $t.Package
+            $pattern = '^' + $name + '$'
+            $end = (Get-Date).AddMinutes($t.Minutes)
+            $runs = 0
+            while ($runs -lt 20 -and (Get-Date) -lt $end) {
+              go test -count=5 -failfast -timeout 20m -run $pattern $package
+              if ($LASTEXITCODE -ne 0) { throw "$name failed after $runs runs in a row with every core busy" }
+              $runs += 5
+              Write-Host "$name : $runs runs in a row passed with every core busy"
+            }
+          }
+        } finally {
+          if ($burn) { Stop-Process -Id $burn.Id -Force }
+          Stop-Process -Id $probe.Id -Force
+          Write-Host '--- what the host did during the stress'
+          Show-Probe
+        }
 
   # The EVPN of a gateway against FRR, the reference BGP speaker of a data-centre fabric (SDN-25 #201; ADR-0032). FRR runs
   # in a container of its own on a bridge of this runner, which stands in for the second host (ADR-0002 amendment of
