@@ -242,7 +242,7 @@ static void SplitTestMessage(BUF *b, UINT field, BUF *m)
 	FreeBuf(m);
 }
 
-// An Object of the Network name of corp and of the mode mode (NetworkMode: 1 for L3, 2 for L2), with tcp_split (field 9) when
+// An Object of the Network name of corp and of the mode mode (NetworkMode: 1 for L3, 2 for L2), with tcp_split (field 10) when
 // split
 static BUF *SplitTestNetworkObject(const char *name, UINT mode, bool split)
 {
@@ -254,7 +254,7 @@ static BUF *SplitTestNetworkObject(const char *name, UINT mode, bool split)
 	SplitTestField(nw, 3, mode, NULL);
 	if (split)
 	{
-		SplitTestField(nw, 9, 1, NULL);
+		SplitTestField(nw, 10, 1, NULL);
 	}
 	SplitTestMessage(o, 3, nw);
 
