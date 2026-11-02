@@ -10,6 +10,7 @@ import (
 	"runtime/debug"
 	"strings"
 	"sync/atomic"
+	"syscall"
 	"time"
 
 	hyserver "github.com/apernet/hysteria/core/v2/server"
@@ -174,7 +175,9 @@ func Run(ctx context.Context, conn net.Conn, opts Options) error {
 	for {
 		m, err := r.Read()
 		if err != nil {
-			if errors.Is(err, io.EOF) || ctx.Err() != nil {
+			// The node closed the pipe: between two messages, or while an event of the sidecar waited in it unread, which a
+			// Unix socket (the pipe of the tests off Windows) ends with a reset instead of the end of the stream
+			if errors.Is(err, io.EOF) || errors.Is(err, syscall.ECONNRESET) || ctx.Err() != nil {
 				return nil
 			}
 			return err
