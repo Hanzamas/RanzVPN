@@ -169,7 +169,12 @@ func TestNoStandardUserOpensANewDataDirWhileItIsMade(t *testing.T) {
 			return err
 		}
 		time.Sleep(5 * time.Millisecond)
-		return ownDataDir(dir)
+		f, err := openFolder(dir, setRights)
+		if err != nil {
+			return err
+		}
+		defer f.Close()
+		return ownDataDir(f, dir)
 	}
 	if caught := openedWhileMade(t, parent, "two-steps", controls, twoSteps); caught == 0 {
 		t.Fatalf("the watcher opened none of %d folders that had the list of their folder for 5 ms: this test shows nothing", controls)

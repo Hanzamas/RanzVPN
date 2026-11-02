@@ -25,6 +25,7 @@
 #include "Core/Noise.h"
 
 #include "NodeCaps.h"
+#include "NodeEvpn.h"
 #include "NodeInternal.h"
 #include "NodeThrottle.h"
 
@@ -405,6 +406,8 @@ void FreeNode(NODE *n) {
 		return;
 
 	NodeStop(n);
+	// The stretch of a gateway outlives its sidecars (NodeStretch.c; SDN-64, #291)
+	NodeStretchFree(n);
 
 	CsClose(n->Store);
 	ReleaseCedar(n->Cedar);
