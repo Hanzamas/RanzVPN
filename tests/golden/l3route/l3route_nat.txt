@@ -1,0 +1,5 @@
+# the uplink (198.18.83.1/24, with a route to 198.18.201.0/24 through the neighbour 198.18.83.2) stands in for the internet; lab-a asks for NAT, lab-b does not
+the NAT network of WinNAT of the node, RanzVPN-Egress: 198.18.81.0/24
+lab-a > outside ipv4 udp 198.18.81.10:40011 > 198.18.201.10:7: leaves by the uplink from 198.18.83.1, the address of the uplink, translated by WinNAT
+the answer of 198.18.201.10:7 to the uplink: delivered to the member 198.18.81.10:40011, translated back by WinNAT
+lab-b > outside ipv4 udp 198.18.82.10:40012 > 198.18.201.10:7: leaves by the uplink from 198.18.82.10, not translated

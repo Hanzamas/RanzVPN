@@ -205,6 +205,15 @@ src/Cedar  NodeEvpnRoute           exempt  puts the route that NodeEvpnParseRout
 src/Cedar  NodeEvpnOutput          exempt  a packet of the host's own IP stack, whose two ends NodeNatEnds (fuzz_nat) reads as for NodeOverlayInput, and which NodeNatCopy (fuzz_nat) writes into the frame for the fabric
 src/Cedar  NodeEvpnTransit         exempt  a packet of a peer that the overlay delivered, whose two ends NodeEvpnEnds (fuzz_evpn) reads, and which the session profile (NodeProfileInbound, fuzz_nodeprofile) and the policy of the VRF (fuzz_policy) judge before it goes to the fabric as it came, and NodeMirrorCopy (fuzz_mirror) copies; the source group that it carried is the claim that NodeFrameParse (fuzz_frame), VxlanParseGroup (fuzz_vxlan) or VxlanParseGroupOption (fuzz_geneve) read, which NodeSourceGroupInbound judges against the tables of the node without reading a byte
 src/Cedar  NodeOverlayFabricInput  exempt  a packet of the fabric that NodeEvpnParseFrame (fuzz_evpn) took, whose two ends NodeOverlayEnds reads as for NodeOverlayDeliver; NodeNatInbound (fuzz_nat) translates it for the host, or NodeNatEnds and NodeNatCopy (fuzz_nat) and the policy (fuzz_policy) take it on to a peer as for NodeOverlayInput
+# The routed networks of the server role (CORE-S6-1 #80): the frames that the host sends out of the KM-TEST adapter of a routed
+# network, which may carry what the kernel routed from a member of another network; the answers of its port to the ARP requests
+# and the Neighbor Solicitations among them; the IP packets of its members, which NodeRoutedFrame takes into a frame for the
+# host; and the Routed setting of the configuration store. NodeRoutedFrame and NodeRoutedAnswer have no parser word in their
+# names, listed as the reader and the writer of a member's and the host's bytes that they are.
+src/Cedar  NodeRoutedParseFrame    fuzz_routed
+src/Cedar  NodeRoutedParseSetting  fuzz_routed
+src/Cedar  NodeRoutedFrame         fuzz_routed
+src/Cedar  NodeRoutedAnswer        fuzz_routed
 
 # The control stream and the envelopes of the controller (SDN-2 #178, control.proto)
 controller/internal/control  Open                  FuzzOpen
