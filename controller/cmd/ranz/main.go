@@ -34,6 +34,11 @@
 //	                          configuration and the status of its Node and Controller and no secret (SDN-54, #247)
 //	ranz explain [flags] A B  walk the compiled model of the controller for a packet from A to B and name each VRF,
 //	                          route, 1:1 NAT rule, link and rule of the policy that it meets (explain.go, SDN-15 #191)
+//	ranz import-config [flags] FILE
+//	                          write the intent document that the Virtual Hubs of the Config file of the old server,
+//	                          ranz_server.config, make: each a VRF with one Network, its groups and users as Groups and
+//	                          Users, and its access list as the Policies of its VRF; ranz apply -f takes the document
+//	                          (importconfig.go, SDN-27 #203)
 //	ranz login [flags]        sign in as a user that holds an API role and take its user token: in the browser, with
 //	                          a device code (-device) or with the password of the user (-user); ranz node login enrols
 //	                          the Node of this PC as a device of the user who signs in (login.go, SDN-32 #226)
@@ -201,6 +206,7 @@ const usage = `usage:
   ranz test throughput [flags] HOST[:PORT]
   ranz doctor [-bundle [-o FILE]]
   ranz explain [flags] [-vrf VRF] [-protocol tcp|udp|icmp|N] [-sport PORT] [-port PORT] [-o text|json] A B
+  ranz import-config [-hub NAME]... [-mode L3|L2] [-pool NAME=PREFIX]... [-o yaml|json] FILE
   ranz login [-server URL] [-tls-fingerprint HEX] [-controller-dir DIR] [-device | -user NAME [-password-file FILE]] [-o FILE]
   ranz tray [-server URL] [-tls-fingerprint HEX] [-controller-dir DIR] [-pipe NAME] [status | login [-device] | up | down | exit NAME [VRF] | exit none]
   ranz [flags] apply -f FILE [-confirm DURATION]
