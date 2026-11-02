@@ -34,6 +34,8 @@
 
 #include "testlist.h"
 
+#include "Cedar/NodeSplit.h"
+
 #include "Mayaqua/Memory.h"
 #include "Mayaqua/Str.h"
 
@@ -61,11 +63,11 @@
 #define	LOSSYLINK_FLOOR			75				// The goodput with CoDel at least, in percent of what the link carries
 #define	LOSSYLINK_ALONE			0xFFFFFFFF		// The mode of a run of the outer TCP alone, beside TRANSPORT_QUEUE_*
 #define	LOSSYLINK_SPLIT			0xFFFFFFFE		// ... and of a run with TCP splitting
-#define	LOSSYLINK_SPLIT_CHUNK	16384			// The bytes of the stream in one data record of a split flow (NODE_SPLIT_CHUNK)
-#define	LOSSYLINK_SPLIT_RECORD	(LOSSYLINK_SPLIT_CHUNK + 6 + 4 + 1 + 22)	// ... and the record on the outer stream: the header of the split
-																		// record, the frame header, the record type and the overhead of a
-																		// TLS 1.3 record
-#define	LOSSYLINK_SPLIT_WINDOW	262144			// The bytes that the server node takes at first, and holds at most (NODE_SPLIT_WINDOW)
+#define	LOSSYLINK_SPLIT_CHUNK	NODE_SPLIT_CHUNK	// The bytes of the stream in one data record of a split flow, as the node sends them
+#define	LOSSYLINK_SPLIT_RECORD	(LOSSYLINK_SPLIT_CHUNK + NODE_SPLIT_HEADER + 4 + 1 + 22)	// ... and the record on the outer stream: the header
+																		// of the split record, the frame header, the record type and the
+																		// overhead of a TLS 1.3 record
+#define	LOSSYLINK_SPLIT_WINDOW	NODE_SPLIT_WINDOW	// The bytes that the server node takes at first, and holds at most, as the node grants them
 #define	LOSSYLINK_SPLIT_GAIN	108				// The goodput with splitting at least, in percent of the plain run and of the run with CoDel
 
 // The states of a segment of a sender

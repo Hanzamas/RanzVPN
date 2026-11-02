@@ -16,8 +16,8 @@
 // - A reset of the far side resets the runner's connection, and a reset of the runner's end resets the far side's.
 // - Timeout: a destination that does not answer (a listener with conditional accept that takes no connection) leaves the
 //   runner's connect waiting, neither taken by the listener of node-c nor refused, and node-c counts the flow as failed.
-// - Untouched: a UDP datagram of the runner from its address in fast, and the SYN of a TCP connection from its address in
-//   plain, reach the fake host of node-s as packets.
+// - Untouched: a UDP datagram and an ICMP echo request of the runner from its address in fast, and the SYN of a TCP
+//   connection from its address in plain, reach the fake host of node-s as packets.
 // - Off: once a Generation turns splitting off in fast, the SYN of a new connection reaches the fake host as a packet, and
 //   node-c splits nothing more.
 // First, without the nodes: the split Networks of a desired state as a client of the control module takes them from the wire
@@ -47,6 +47,9 @@
 #include "Core/Control.h"
 #include "Core/Transport.h"
 
+#include <iphlpapi.h>
+#include <icmpapi.h>
+
 #include <stdio.h>
 
 #define	SPLITTEST_BUDGET		180000		// The whole test ends within this time, or the watchdog ends the process (ms)
@@ -64,6 +67,8 @@
 #define	SPLITTEST_PORT_WATCH	7004		// ... one that tells whether its connection was reset ...
 #define	SPLITTEST_PORT_SILENT	7005		// ... and a destination that does not answer
 #define	SPLITTEST_PORT_UDP		7009		// The UDP port of node-s's address that the runner sends a datagram to
+#define	SPLITTEST_ECHO			1000		// ms that the runner's ICMP echo waits for a reply, which the fake host of node-s never sends
+#define	SPLITTEST_ICMP_DATA		"ranz split icmp"	// The data of that echo request
 #define	SPLITTEST_NODE_C		"node-c"
 #define	SPLITTEST_NODE_S		"node-s"
 
@@ -87,6 +92,7 @@ typedef struct SPLITTEST_HOST
 	volatile LONG SynFast;				// ... of them SYNs
 	volatile LONG SynPlain;				// TCP SYNs from the runner's address in plain
 	volatile LONG Udp;					// UDP datagrams from the runner's address in fast to SPLITTEST_PORT_UDP
+	volatile LONG Echo;					// ICMP echo requests from the runner's address in fast with SPLITTEST_ICMP_DATA
 } SPLITTEST_HOST;
 
 // The far side: plain Winsock servers on 127.0.0.1, which node-s dials in place of its own address in fast
@@ -851,6 +857,12 @@ static void SplitTestServerHost(NODE *n, void *param, UINT vrf_id, const UCHAR *
 	{
 		InterlockedIncrement(&h->Udp);
 	}
+	else if (packet[9] == IPPROTO_ICMP && size >= header + 8 + StrLen(SPLITTEST_ICMP_DATA) && src == splittest_c_fast && packet[header] == 8 &&
+		Cmp(packet + header + 8, SPLITTEST_ICMP_DATA, StrLen(SPLITTEST_ICMP_DATA)) == 0)
+	{
+		// An echo request (type 8) with the data of the runner's echo
+		InterlockedIncrement(&h->Echo);
+	}
 }
 
 //
@@ -1060,13 +1072,14 @@ static void SplitTestEnds(SPLITTEST_CTX *ctx, NODE *c, SPLITTEST_FAR *side)
 		(UINT)(pending != INVALID_SOCKET), err, before.Failed, after.Failed, before.Refused, after.Refused);
 }
 
-// Untouched: a UDP datagram from the runner's address in fast and the SYN of a connection from its address in plain reach
-// node-s's host as packets
+// Untouched: a UDP datagram and an ICMP echo request from the runner's address in fast and the SYN of a connection from its
+// address in plain reach node-s's host as packets
 static void SplitTestUntouched(SPLITTEST_CTX *ctx, SPLITTEST_HOST *host)
 {
 	SOCKADDR_IN to;
 	SOCKET pending = INVALID_SOCKET;
 	int err = 0;
+	UINT64 reply[64];
 
 	SOCKET u = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
 	Zero(&to, sizeof(to));
@@ -1081,6 +1094,19 @@ static void SplitTestUntouched(SPLITTEST_CTX *ctx, SPLITTEST_HOST *host)
 	SplitTestWait(&host->Udp, 1);
 	SplitTestCheck(ctx, ReadAcquire(&host->Udp) >= 1, "untouched: a UDP datagram of the runner from its address in fast reaches node-s's host as a packet",
 		"%u datagrams", (UINT)ReadAcquire(&host->Udp));
+
+	// An ICMP echo request from the runner's address in fast, which the fake host of node-s counts and does not answer
+	HANDLE icmp = IcmpCreateFile();
+	if (icmp != INVALID_HANDLE_VALUE)
+	{
+		Zero(reply, sizeof(reply));
+		IcmpSendEcho2Ex(icmp, NULL, NULL, NULL, (IPAddr)splittest_c_fast, (IPAddr)splittest_s_fast, (LPVOID)SPLITTEST_ICMP_DATA,
+			(WORD)StrLen(SPLITTEST_ICMP_DATA), NULL, reply, sizeof(reply), SPLITTEST_ECHO);
+		IcmpCloseHandle(icmp);
+	}
+	SplitTestWait(&host->Echo, 1);
+	SplitTestCheck(ctx, ReadAcquire(&host->Echo) >= 1, "untouched: an ICMP echo request of the runner from its address in fast reaches node-s's host as a packet",
+		"%u echo requests", (UINT)ReadAcquire(&host->Echo));
 
 	SOCKET k = SplitTestConnect(splittest_s_plain, SPLITTEST_PORT_ECHO, 1000, &err, &pending);
 	SplitTestWait(&host->SynPlain, 1);
@@ -1276,7 +1302,7 @@ static void SplitTestRun(SPLITTEST_CTX *ctx)
 	Free(host);
 }
 
-RANZ_TEST("tcpsplit", tcpsplit_test, "TCP splitting of an L3 Network (CORE-P2-3): the split Networks of a desired state from the wire and the Capability tcpSplit; the runner's TCP stack terminates its connections from its address in a Network that splits TCP, node-s opens them to the far side, an unmodified TCP server, and connect, data, half-close, refused, the resets of either end and timeout map to the far side; UDP and a Network without splitting take the packet path, and splitting is off by default (administrator rights, wintun.dll).");
+RANZ_TEST("tcpsplit", tcpsplit_test, "TCP splitting of an L3 Network (CORE-P2-3): the split Networks of a desired state from the wire and the Capability tcpSplit; the runner's TCP stack terminates its connections from its address in a Network that splits TCP, node-s opens them to the far side, an unmodified TCP server, and connect, data, half-close, refused, the resets of either end and timeout map to the far side; UDP, ICMP and a Network without splitting take the packet path, and splitting is off by default (administrator rights, wintun.dll).");
 void tcpsplit_test(UINT num, char **arg)
 {
 	SPLITTEST_CTX *ctx = ZeroMalloc(sizeof(SPLITTEST_CTX));
