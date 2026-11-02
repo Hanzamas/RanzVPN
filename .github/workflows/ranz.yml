@@ -563,12 +563,18 @@ jobs:
       run: go test -count=1 -v -timeout 25m -run '^TestScale$' ./controller/internal/controller
     # ADR-0040 item 5: every BENCH case of the run against the median recorded for its size, in .github/quality/scale-pr.txt
     # and scale-full.txt (bench-gate.py record makes them from the files of earlier runs); the best of the runs of each case
-    # counts, and one that is slower than its median by more than its margin fails the job
+    # counts, and one that is slower than its median by more than its margin fails the job. The run has three files, one for each
+    # change of every VRF and each enrolment, and the step prints how many of each it judged and fails when a file lacks the
+    # enrolment or the change that it should hold (CI-FLAKE-9, #616): a case that one sample stands for fails by the noise of
+    # the runner, which no margin can tell from a slowdown
     - name: Performance regression gate at a tenth of the target
       timeout-minutes: 5
       env:
         RANZ_SCALE_OUT: ${{ github.workspace }}/scale-out/pr
-      run: python .github/scripts/bench-gate.py compare --medians .github/quality/scale-pr.txt "${RANZ_SCALE_OUT}/scale-bench*.txt"
+      run: |
+        python .github/scripts/bench-gate.py compare --medians .github/quality/scale-pr.txt --runs 3 \
+          --min-samples 'scale_enrol_*' 3 enrolments --min-samples scale_setup_apply 3 enrolments \
+          --min-samples 'scale_change_*' 3 changes "${RANZ_SCALE_OUT}/scale-bench*.txt"
     # The target runs when the tenth failed too: a failure at one size and not at the other says what kind of failure it is
     - name: The scale scenario at the target
       id: scale-full
