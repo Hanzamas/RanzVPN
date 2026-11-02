@@ -89,9 +89,9 @@
         {
           "file": "NetworkTls.c",
           "group": "TLS group",
-          "description": "TLS: the server SSL context, SSL context sharing and the cipher list, Recv and Send with the TLS record send and receive behind them, and the SNI parser",
+          "description": "TLS: the server SSL context and the cipher list, Recv and Send with the TLS record send and receive behind them, and the SNI parser",
           "names": [
-            "AddChainSslCert", "NewServerSSLCtx", "StartSSL", "StartSSLEx", "Recv", "Send", "ShareSSLCtx", "FreeSSLCtx",
+            "AddChainSslCert", "NewServerSSLCtx", "StartSSL", "StartSSLEx", "Recv", "Send", "FreeSSLCtx",
             "GetOSSecurityLevel", "GetCipherList", "GetSniNameFromSslPacket"
           ]
         },
@@ -103,16 +103,13 @@
         }
       ],
       "remainder": {
-        "description": "network init and free and every group their file-local state ties to them (TCP connection counter with NewSock, CleanupSock, Accept and Disconnect; the accept host-name switch; the per-source IP client list; the chain certificate cache; the DH parameter with NewSSLCtx; the root-certificate store with the TLS handshake StartSSLEx3, StartSSLServer and StartSSLMain; the host IP address cache; the local MAC list), plus NIC lists, IPv6 support, the host IP address list and the private IP file",
+        "description": "network init and free and every group their file-local state ties to them (TCP connection counter with NewSock, CleanupSock, Accept and Disconnect; the accept host-name switch; the per-source IP client list; the DH parameter with NewSSLCtx; the root-certificate store with the TLS handshake StartSSLEx3 and StartSSLMain; the host IP address cache; the local MAC list), plus NIC lists, IPv6 support, the host IP address list and the private IP file",
         "names": [
           "InitNetwork", "FreeNetwork", "IsMacAddressLocalFast", "RefreshLocalMacAddressList", "IsMacAddressLocalInner",
           "GetNicList", "Win32GetNicList", "FreeNicList", "GetNumIpClient", "GetRateLimitKey", "EvictOldestIpClient",
           "AddIpClient", "DelIpClient", "SearchIpClient", "InitIpClientList", "FreeIpClientList", "CompareIpClientList",
-          "Win32InitSocketLibrary", "Win32FreeAsyncSocket", "IsIPv6Supported", "HasIPv6Address", "GetChainCertDirW",
-          "PrepareChainCertDir", "InvalidateChainCertCache", "GetChainCertScanCount", "FreeChainCertCache",
-          "ScanChainCertDir", "RefreshChainCertCache", "GetChainCertGeneration", "AddChainSslCertOnDirectory",
-          "SslHandshakeError", "AddSslRootCerts", "StartSSLEx3", "StartSSLServer", "StartSSLMain",
-          "DisableGetHostNameWhenAcceptInit", "AcceptInitEx", "Accept", "Disconnect", "CleanupSock", "NewSock",
+          "Win32InitSocketLibrary", "Win32FreeAsyncSocket", "IsIPv6Supported", "HasIPv6Address", "SslHandshakeError",
+          "AddSslRootCerts", "StartSSLEx3", "StartSSLMain", "DisableGetHostNameWhenAcceptInit", "AcceptInitEx", "Accept", "Disconnect", "CleanupSock", "NewSock",
           "TmpDhCallback", "NewSSLCtx", "SetDhParam", "GetNumTcpConnectionsCounter", "IsIPMyHost", "IsIPPrivate",
           "LoadPrivateIPFile", "IsOnPrivateIPFile", "FreePrivateIPFile", "CmpIpAddressList", "GetHostIPAddressList",
           "GetHostIPAddressListInternal"
@@ -192,29 +189,6 @@
       "remainder": {
         "description": "containers that Mayaqua keeps (hash list, stack, queue, list, int lists, FIFO, BUF, with BUF dump and file I/O) and the memory utilities (Clone, Copy, Move, Cmp, Zero, IsZero, SearchBin, compression, Base64, EndianUnicode and the little-endian check)",
         "patterns": ["."]
-      }
-    },
-    {
-      "source": "src/Mayaqua/HTTP.c",
-      "files": [
-        {
-          "file": "PackHttp.c",
-          "group": "Pack-over-HTTP framing and decoy page",
-          "description": "Pack over HTTP for the SE-VPN protocol (HttpClientSend, HttpClientRecv(Ex), HttpServerSend, HttpServerRecv with its NOOP handling) and the decoy web page that a plain HTTP client gets (HttpSendDecoyPage); one file because both build their reply header with the file-local NewHttpHeaderKeepAlive",
-          "names": [
-            "http_404_str", "http_403_str", "http_501_str", "http_decoy_pages", "GetHttpDateStr", "NewHttpHeaderKeepAlive",
-            "ReplaceUnsafeCharInHttpTarget", "HttpSendPack", "HttpRecvPackBody", "HttpClientSend", "HttpClientRecv",
-            "HttpClientRecvEx", "HttpServerSend", "HttpServerRecv", "HttpSendDecoyPage"
-          ]
-        }
-      ],
-      "remainder": {
-        "description": "generic HTTP message layer: HTTP_HEADER and HTTP_VALUE, header formatting and sending (HttpHeaderToStr, SendHttpHeader, PostHttp), header parsing over a line source (HttpParseHeaderLines with the SOCK and BUF line sources, RecvLine behind the SOCK one, RecvHttpHeader); used by Proxy.c CONNECT, Cedar, vpntest and fuzz_http",
-        "names": [
-          "NewHttpHeader", "FreeHttpHeader", "NewHttpValue", "FreeHttpValue", "CompareHttpValue", "GetHttpValue",
-          "AddHttpValue", "AddHttpValueStr", "GetContentLength", "PostHttp", "HttpHeaderToStr", "SendHttpHeader",
-          "HttpSockLineSource", "HttpBufLineSource", "HttpParseHeaderLines", "RecvHttpHeader", "RecvLine"
-        ]
       }
     },
     {
