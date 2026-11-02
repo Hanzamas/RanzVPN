@@ -9,16 +9,22 @@
 // QUIC transports that a Node dials the endpoints of its peers with: it dials node-s over TLS-443 and over QUIC and opens a
 // Noise session, which the overlay of node-s takes as the session of its peer. node-c reads the group of each session from
 // its stream, node-s from its overlay (NodeOverlayGetSessions), and the ServerHello on the wire of TLS-443 must carry it too.
-// The steps:
+// node-c's ClientHello shows what the host asks for: the test reads it on a TCP listener of its own, which closes the
+// connection once it has it. The two ends hold the one list of this host, so each session negotiates the first group that
+// node-c's ClientHello offers. The steps:
 // - the names of the groups, and which of them are quantum-resistant (TransportGroupName, TransportGroupPostQuantum);
 // - the host: the Windows build, whether CNG has ML-KEM, and the TLS group list in force (TransportTlsHybrid);
 // - switched on: no ECC Curve Order policy, and the machine's list with x25519_mlkem768 first, as the TLS transport of a Node
 //   writes it (TransportTlsSetGroups). The host asks for the hybrid where CNG has ML-KEM, a Node reports the Capability
-//   pq_tls (NodeCapsProc), and the QUIC and the TLS-443 session negotiate X25519MLKEM768, read on both ends, or X25519 where
-//   CNG has no ML-KEM;
+//   pq_tls (NodeCapsProc), node-c's ClientHello offers X25519MLKEM768 first with its key share, and the QUIC and the TLS-443
+//   session negotiate it, read on both ends; where CNG has no ML-KEM, a classical group;
 // - switched off: an ECC Curve Order policy whose list names the classical groups only, which wins over the list that a
-//   Node sets: the host does not ask for the hybrid, a Node does not report pq_tls, and the same sessions negotiate X25519
-//   and come up.
+//   Node sets, so the TLS transports of node-s and node-c leave both lists as they are, and the machine's list without the
+//   hybrid. Schannel takes a change of the machine's list at once, and a change of a policy only when Windows starts, which
+//   a runner cannot do within its job: the two lists together are what Schannel holds on a host with that policy once
+//   Windows started. The host does not ask for the hybrid, a Node does not report pq_tls, node-c's ClientHello offers no
+//   group with ML-KEM, and the same sessions come up with the classical group that it offers first, not quantum-resistant:
+//   X25519 where the list that Schannel holds puts it first.
 // The listeners of node-s start again in each step, so that their credentials take the list of the step. The test puts the
 // two lists back as it found them, also when its watchdog ends it.
 //
@@ -48,6 +54,8 @@
 #include "Core/Crypto.h"
 #include "Core/Transport.h"
 
+#include <WS2tcpip.h>
+
 #include <stdio.h>
 
 #define	PQTLSTEST_WATCHDOG		240000		// The test process is aborted after this (ms)
@@ -61,6 +69,15 @@
 #define	PQTLSTEST_SAN			L"localhost"	// ... and its subject alternative name
 #define	PQTLSTEST_LISTEN		"127.0.0.1:0"	// The listeners of the probe: test ports of the loopback interface, never 443
 #define	PQTLSTEST_MAX_SESSIONS	4			// The sessions of node-s that the test reads at most
+#define	PQTLSTEST_MAX_GROUPS	32			// The groups of node-c's ClientHello that the test keeps
+#define	PQTLSTEST_HELLO_SIZE	16384		// Bytes of the record of node-c's ClientHello that the test reads at most
+// What the test reads of node-c's ClientHello (RFC 8446 sections 4.1.2, 4.2.7 and 4.2.8)
+#define	PQTLSTEST_RECORD_HEADER	5			// A TLS record: its type, version and length, then its bytes
+#define	PQTLSTEST_HANDSHAKE		22			// A handshake record
+#define	PQTLSTEST_CLIENT_HELLO	1			// The ClientHello message
+#define	PQTLSTEST_RANDOM_SIZE	32			// The random of a ClientHello
+#define	PQTLSTEST_EXT_GROUPS	0x000A		// The extension supported_groups
+#define	PQTLSTEST_EXT_KEY_SHARE	0x0033		// The extension key_share
 // The TLS group lists: the machine's, which a Node writes, and the one of an ECC Curve Order policy, which wins over it
 #define	PQTLSTEST_LIST_KEY		L"SYSTEM\\CurrentControlSet\\Control\\Cryptography\\Configuration\\Local\\SSL\\00010002"
 #define	PQTLSTEST_POLICY_KEY	L"SOFTWARE\\Policies\\Microsoft\\Cryptography\\Configuration\\SSL\\00010002"
@@ -105,6 +122,31 @@ typedef struct PQTLSTEST_SESSION
 	UINT Server;						// ... and the one that the stack of node-s reported for its session
 	TRANSPORT_TLS_INFO Tls;				// TLS-443: what node-c's handshake gave, the group of the ServerHello among it
 } PQTLSTEST_SESSION;
+
+// What node-c's ClientHello offers: the groups of its supported_groups in their order, and the groups of its key shares
+typedef struct PQTLSTEST_HELLO
+{
+	bool Read;							// The test read and parsed it
+	UINT NumGroups;
+	UINT Groups[PQTLSTEST_MAX_GROUPS];
+	UINT NumShares;
+	UINT Shares[PQTLSTEST_MAX_GROUPS];
+} PQTLSTEST_HELLO;
+
+// A reader of the bytes of node-c's ClientHello: Pos stays at most Size, and a read past Size fails
+typedef struct PQTLSTEST_READER
+{
+	UCHAR *Data;
+	UINT Size;
+	UINT Pos;
+} PQTLSTEST_READER;
+
+// node-c's dial of the listener of the test that reads its ClientHello, on a thread of its own
+typedef struct PQTLSTEST_DIAL
+{
+	TRANSPORT *Transport;				// node-c's TLS transport
+	char Address[MAX_SIZE];				// The listener of the test
+} PQTLSTEST_DIAL;
 
 static bool PqTlsTestCheck(PQTLSTEST_CTX *ctx, bool ok, char *what, char *fmt, ...) RANZ_PRINTF_FORMAT(4, 5);
 static bool PqTlsTestCheck(PQTLSTEST_CTX *ctx, bool ok, char *what, char *fmt, ...)
@@ -239,6 +281,245 @@ static void PqTlsTestNames(PQTLSTEST_CTX *ctx)
 }
 
 //
+// node-c's ClientHello
+//
+
+// A big-endian value of n bytes (1 to 3) into *value; false when fewer are left
+static bool PqTlsTestGet(PQTLSTEST_READER *r, UINT n, UINT *value)
+{
+	UINT v = 0;
+
+	if (n > r->Size - r->Pos)
+	{
+		return false;
+	}
+
+	for (UINT i = 0;i < n;i++)
+	{
+		v = (v << 8) | r->Data[r->Pos + i];
+	}
+	r->Pos += n;
+	*value = v;
+
+	return true;
+}
+
+// A vector whose length takes len_size bytes into sub, and r past it; false when it does not fit
+static bool PqTlsTestVector(PQTLSTEST_READER *r, UINT len_size, PQTLSTEST_READER *sub)
+{
+	UINT len = 0;
+
+	if (PqTlsTestGet(r, len_size, &len) == false || len > r->Size - r->Pos)
+	{
+		return false;
+	}
+
+	sub->Data = r->Data + r->Pos;
+	sub->Size = len;
+	sub->Pos = 0;
+	r->Pos += len;
+
+	return true;
+}
+
+// A GREASE value of RFC 8701, which a client may offer among its groups and which no server picks
+static bool PqTlsTestGrease(UINT group)
+{
+	return ((group & 0x0F0F) == 0x0A0A && (group >> 8) == (group & 0xFF));
+}
+
+// The groups of a record that holds a whole ClientHello: those of its supported_groups in their order, and those of its
+// key shares, GREASE left out; false for anything else
+static bool PqTlsTestParseHello(UCHAR *data, UINT size, PQTLSTEST_HELLO *h)
+{
+	PQTLSTEST_READER r = {data, size, 0};
+	PQTLSTEST_READER record, hello, skip, ext;
+	UINT type = 0, version = 0;
+
+	Zero(h, sizeof(PQTLSTEST_HELLO));
+
+	// The handshake record and its ClientHello, then its version, random, session id, cipher suites and compression methods
+	if (PqTlsTestGet(&r, 1, &type) == false || type != PQTLSTEST_HANDSHAKE || PqTlsTestGet(&r, 2, &version) == false || PqTlsTestVector(&r, 2, &record) == false ||
+		PqTlsTestGet(&record, 1, &type) == false || type != PQTLSTEST_CLIENT_HELLO || PqTlsTestVector(&record, 3, &hello) == false ||
+		PqTlsTestGet(&hello, 2, &version) == false || hello.Size - hello.Pos < PQTLSTEST_RANDOM_SIZE)
+	{
+		return false;
+	}
+	hello.Pos += PQTLSTEST_RANDOM_SIZE;
+	if (PqTlsTestVector(&hello, 1, &skip) == false || PqTlsTestVector(&hello, 2, &skip) == false || PqTlsTestVector(&hello, 1, &skip) == false ||
+		PqTlsTestVector(&hello, 2, &ext) == false)
+	{
+		return false;
+	}
+
+	// The extensions: the groups of supported_groups, and the group of each key share, whose key the test steps over
+	while (ext.Pos < ext.Size)
+	{
+		PQTLSTEST_READER e, list, key;
+		UINT ext_type = 0, group = 0;
+
+		if (PqTlsTestGet(&ext, 2, &ext_type) == false || PqTlsTestVector(&ext, 2, &e) == false)
+		{
+			return false;
+		}
+		if (ext_type != PQTLSTEST_EXT_GROUPS && ext_type != PQTLSTEST_EXT_KEY_SHARE)
+		{
+			continue;
+		}
+		if (PqTlsTestVector(&e, 2, &list) == false)
+		{
+			return false;
+		}
+		while (list.Pos < list.Size)
+		{
+			if (PqTlsTestGet(&list, 2, &group) == false || (ext_type == PQTLSTEST_EXT_KEY_SHARE && PqTlsTestVector(&list, 2, &key) == false))
+			{
+				return false;
+			}
+			if (PqTlsTestGrease(group))
+			{
+				continue;
+			}
+			if (ext_type == PQTLSTEST_EXT_GROUPS && h->NumGroups < PQTLSTEST_MAX_GROUPS)
+			{
+				h->Groups[h->NumGroups++] = group;
+			}
+			else if (ext_type == PQTLSTEST_EXT_KEY_SHARE && h->NumShares < PQTLSTEST_MAX_GROUPS)
+			{
+				h->Shares[h->NumShares++] = group;
+			}
+		}
+	}
+
+	h->Read = (h->NumGroups != 0);
+
+	return h->Read;
+}
+
+// node-c dials the listener of the test, which closes the connection once it read the ClientHello: the handshake fails
+static DWORD WINAPI PqTlsTestDialThread(LPVOID param)
+{
+	PQTLSTEST_DIAL *d = (PQTLSTEST_DIAL *)param;
+
+	TransportClose(TransportDial(d->Transport, d->Address, NULL));
+
+	return 0;
+}
+
+// Whether s has something to read, or a connection to accept, within PQTLSTEST_TIMEOUT
+static bool PqTlsTestReadable(SOCKET s)
+{
+	WSAPOLLFD p;
+
+	Zero(&p, sizeof(p));
+	p.fd = s;
+	p.events = POLLRDNORM;
+
+	return (WSAPoll(&p, 1, PQTLSTEST_TIMEOUT) > 0);
+}
+
+// What node-c's TLS transport t offers in its ClientHello: it dials a TCP listener of the test on the loopback interface,
+// which reads the record of the ClientHello, in the segments that the transport splits it into, and closes the connection
+static void PqTlsTestClientHello(TRANSPORT *t, PQTLSTEST_HELLO *h)
+{
+	struct sockaddr_in sa;
+	int sa_size = sizeof(sa);
+	PQTLSTEST_DIAL d;
+	UINT got = 0, want = PQTLSTEST_RECORD_HEADER;
+
+	Zero(h, sizeof(PQTLSTEST_HELLO));
+	if (t == NULL)
+	{
+		return;
+	}
+
+	SOCKET l = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+	if (l == INVALID_SOCKET)
+	{
+		return;
+	}
+	Zero(&sa, sizeof(sa));
+	sa.sin_family = AF_INET;
+	sa.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+	if (bind(l, (struct sockaddr *)&sa, sizeof(sa)) != 0 || listen(l, 1) != 0 || getsockname(l, (struct sockaddr *)&sa, &sa_size) != 0)
+	{
+		closesocket(l);
+		return;
+	}
+
+	Zero(&d, sizeof(d));
+	d.Transport = t;
+	Format(d.Address, sizeof(d.Address), "127.0.0.1:%u", (UINT)ntohs(sa.sin_port));
+	HANDLE thread = CreateThread(NULL, 0, PqTlsTestDialThread, &d, 0, NULL);
+
+	// The record header, then the rest of the record
+	UCHAR *buf = ZeroMalloc(PQTLSTEST_HELLO_SIZE);
+	SOCKET s = (thread != NULL && PqTlsTestReadable(l) ? accept(l, NULL, NULL) : INVALID_SOCKET);
+	while (s != INVALID_SOCKET && got < want && PqTlsTestReadable(s))
+	{
+		int n = recv(s, (char *)(buf + got), (int)(want - got), 0);
+
+		if (n <= 0)
+		{
+			break;
+		}
+		got += (UINT)n;
+		if (got == PQTLSTEST_RECORD_HEADER)
+		{
+			want = PQTLSTEST_RECORD_HEADER + (((UINT)buf[3] << 8) | buf[4]);
+			if (want > PQTLSTEST_HELLO_SIZE)
+			{
+				break;
+			}
+		}
+	}
+	if (s != INVALID_SOCKET)
+	{
+		closesocket(s);
+	}
+	closesocket(l);
+
+	if (thread != NULL)
+	{
+		WaitForSingleObject(thread, INFINITE);
+		CloseHandle(thread);
+	}
+
+	if (got == want && got > PQTLSTEST_RECORD_HEADER)
+	{
+		PqTlsTestParseHello(buf, got, h);
+	}
+	Free(buf);
+}
+
+// The groups as text into str: "X25519MLKEM768 (0x11EC), X25519 (0x001D)", or "none"
+static void PqTlsTestGroupText(char *str, UINT size, UINT *groups, UINT num)
+{
+	char one[MAX_SIZE];
+
+	StrCpy(str, size, num == 0 ? "none" : "");
+	for (UINT i = 0;i < num;i++)
+	{
+		Format(one, sizeof(one), "%s%s (0x%04X)", i == 0 ? "" : ", ", TransportGroupName(groups[i]), groups[i]);
+		StrCat(str, size, one);
+	}
+}
+
+// Whether one of the groups is quantum-resistant
+static bool PqTlsTestAnyPostQuantum(UINT *groups, UINT num)
+{
+	for (UINT i = 0;i < num;i++)
+	{
+		if (TransportGroupPostQuantum(groups[i]))
+		{
+			return true;
+		}
+	}
+
+	return false;
+}
+
+//
 // The sessions between node-c and node-s
 //
 
@@ -344,7 +625,8 @@ static void PqTlsTestSession(PQTLSTEST_CTX *ctx, TRANSPORT *t, UINT port, bool t
 	Free(n);
 }
 
-// The checks of one session over the path what: it comes up, and both ends report want, the group of the step
+// The checks of one session over the path what: it comes up, and both ends report want, the first group that node-c's
+// ClientHello offers
 static void PqTlsTestSessionChecks(PQTLSTEST_CTX *ctx, char *what, PQTLSTEST_SESSION *r, UINT want, bool tls)
 {
 	char tmp[MAX_SIZE];
@@ -358,7 +640,7 @@ static void PqTlsTestSessionChecks(PQTLSTEST_CTX *ctx, char *what, PQTLSTEST_SES
 
 	Format(tmp, sizeof(tmp), "  %s: node-c's Noise session comes up, and the overlay of node-s takes it as the session of its peer", what);
 	PqTlsTestCheck(ctx, r->Up, tmp, "it did not");
-	Format(tmp, sizeof(tmp), "  %s: the stacks of node-c and node-s report %s (0x%04X), %s", what, TransportGroupName(want), want,
+	Format(tmp, sizeof(tmp), "  %s: the stacks of node-c and node-s report %s (0x%04X), the first group that node-c offers, %s", what, TransportGroupName(want), want,
 		TransportGroupPostQuantum(want) ? "quantum-resistant" : "not quantum-resistant");
 	PqTlsTestCheck(ctx, r->Client == want && r->Server == want, tmp, "node-c 0x%04X, node-s 0x%04X", r->Client, r->Server);
 	if (tls)
@@ -368,17 +650,20 @@ static void PqTlsTestSessionChecks(PQTLSTEST_CTX *ctx, char *what, PQTLSTEST_SES
 	}
 }
 
-// One step, the hybrid switched on or off: the lists as the step leaves them, the Capability of a node, and a session over
-// TLS-443 and one over QUIC between node-c and node-s on listeners that start under those lists
+// One step, the hybrid switched on or off: the lists as the step leaves them, the Capability of a node, node-c's ClientHello,
+// and a session over TLS-443 and one over QUIC between node-c and node-s on listeners that start under those lists
 static void PqTlsTestStep(PQTLSTEST_CTX *ctx, char *thumbprint, bool on)
 {
 	TRANSPORT_TLS_HYBRID h;
+	PQTLSTEST_HELLO hello;
 	CONTROL_CAPS caps;
 	CONTROL_LISTENER l;
 	NODE_LISTENER_STATUS st;
 	TRANSPORT_TLS_CONFIG tls_cfg;
 	TRANSPORT_QUIC_CONFIG quic_cfg;
 	PQTLSTEST_SESSION r;
+	char offered[MAX_SIZE * 2];
+	char shares[MAX_SIZE * 2];
 
 	if (on)
 	{
@@ -390,10 +675,12 @@ static void PqTlsTestStep(PQTLSTEST_CTX *ctx, char *thumbprint, bool on)
 	}
 	else
 	{
-		Print("[switched off: an ECC Curve Order policy whose list names the classical groups only]\n");
-		bool written = PqTlsTestWrite(PQTLSTEST_POLICY_KEY, REG_MULTI_SZ, pqtlstest_classical, sizeof(pqtlstest_classical));
+		// The policy first, so that no TLS transport of a Node puts the hybrid back into the machine's list
+		Print("[switched off: an ECC Curve Order policy that names the classical groups only, and the machine's list without the hybrid, which Schannel takes at once]\n");
+		bool written = PqTlsTestWrite(PQTLSTEST_POLICY_KEY, REG_MULTI_SZ, pqtlstest_classical, sizeof(pqtlstest_classical)) &&
+			PqTlsTestWrite(PQTLSTEST_LIST_KEY, REG_MULTI_SZ, pqtlstest_classical, sizeof(pqtlstest_classical));
 		UINT set = TransportTlsSetGroups();
-		PqTlsTestCheck(ctx, written && set == TRANSPORT_TLS_GROUPS_POLICY, "  the policy wins: the TLS transport of a Node leaves the list as the policy sets it",
+		PqTlsTestCheck(ctx, written && set == TRANSPORT_TLS_GROUPS_POLICY, "  the policy wins: the TLS transport of a Node leaves both lists as they are",
 			"written %u, set %u", (UINT)written, set);
 	}
 
@@ -415,8 +702,35 @@ static void PqTlsTestStep(PQTLSTEST_CTX *ctx, char *thumbprint, bool on)
 	PqTlsTestCheck(ctx, caps.PqTls == h.Asks, h.Asks ? "  a Node reports the Capability pq_tls in its Hello" : "  a Node does not report the Capability pq_tls in its Hello",
 		"it reports %u", (UINT)caps.PqTls);
 
-	// The group of the step: the hybrid where the host asks for it, else X25519
-	UINT want = (h.Asks ? CRYPTO_GROUP_X25519MLKEM768 : CRYPTO_GROUP_X25519);
+	// What the host asks for: the groups of node-c's ClientHello, with the TLS transport that a Node dials the endpoints of
+	// its peers with
+	TransportTlsDefaultConfig(&tls_cfg, thumbprint, false);
+	TRANSPORT *tls = TransportTlsClientNew(&tls_cfg);
+	PqTlsTestClientHello(tls, &hello);
+	PqTlsTestGroupText(offered, sizeof(offered), hello.Groups, hello.NumGroups);
+	PqTlsTestGroupText(shares, sizeof(shares), hello.Shares, hello.NumShares);
+	Print("  [GROUP] node-c's ClientHello offers %s, with the key shares of %s\n", offered, shares);
+	if (PqTlsTestCheck(ctx, hello.Read, "  the test reads the groups that node-c's ClientHello offers", "the transport %s, and no ClientHello came", tls != NULL ? "started" : "did not start"))
+	{
+		if (h.Asks)
+		{
+			bool shared = false;
+			for (UINT i = 0;i < hello.NumShares;i++)
+			{
+				shared = shared || hello.Shares[i] == CRYPTO_GROUP_X25519MLKEM768;
+			}
+			PqTlsTestCheck(ctx, hello.Groups[0] == CRYPTO_GROUP_X25519MLKEM768 && shared, "  node-c's ClientHello offers X25519MLKEM768 first, with its key share",
+				"it offers %s, with the key shares of %s", offered, shares);
+		}
+		else
+		{
+			PqTlsTestCheck(ctx, PqTlsTestAnyPostQuantum(hello.Groups, hello.NumGroups) == false && PqTlsTestAnyPostQuantum(hello.Shares, hello.NumShares) == false,
+				"  node-c's ClientHello offers no group with ML-KEM", "it offers %s, with the key shares of %s", offered, shares);
+		}
+	}
+
+	// The group of the step: the first that node-c offers, which the server, under the one list of this host, picks
+	UINT want = (hello.Read ? hello.Groups[0] : (h.Asks ? CRYPTO_GROUP_X25519MLKEM768 : CRYPTO_GROUP_X25519));
 
 	// The Listener of node-s, whose front door and QUIC start now, under the lists of the step
 	Zero(&l, sizeof(l));
@@ -428,16 +742,13 @@ static void PqTlsTestStep(PQTLSTEST_CTX *ctx, char *thumbprint, bool on)
 	if (PqTlsTestCheck(ctx, applied && st.Running && st.Port != 0, "  the front door of node-s listens with the certificate of the store", "applied %u, running %u, port %u, error %s",
 		(UINT)applied, (UINT)st.Running, st.Port, st.Error))
 	{
-		// TLS-443, with the transport that a Node dials the endpoints of its peers with
-		TransportTlsDefaultConfig(&tls_cfg, thumbprint, false);
-		TRANSPORT *tls = TransportTlsClientNew(&tls_cfg);
+		// TLS-443, with the transport of node-c that sent the ClientHello
 		Zero(&r, sizeof(r));
 		if (tls != NULL)
 		{
 			PqTlsTestSession(ctx, tls, st.Port, true, &r);
 		}
 		PqTlsTestSessionChecks(ctx, "TLS-443", &r, want, true);
-		TransportTlsFree(tls);
 
 		// QUIC, where msquic.dll is next to vpntest
 		if (TransportQuicAvailable() && st.QuicPort != 0)
@@ -457,6 +768,7 @@ static void PqTlsTestStep(PQTLSTEST_CTX *ctx, char *thumbprint, bool on)
 			Print("  msquic.dll is not next to vpntest: QUIC is not checked\n");
 		}
 	}
+	TransportTlsFree(tls);
 
 	// No Listener: the listeners stop, and the next step starts them again
 	PqTlsTestApply(ctx, NULL);
@@ -654,7 +966,7 @@ static void PqTlsTestProbe(PQTLSTEST_CTX *ctx)
 	}
 }
 
-RANZ_TEST_TAGS("pqtls", pqtls_test, "core", "The post-quantum key exchange of QUIC and TLS-443 (CORE-P2-5): with the hybrid switched on, the sessions of two Nodes negotiate X25519MLKEM768 as both stacks report it where CNG has ML-KEM, and a Node reports pq_tls; with it switched off by a policy, X25519, and no pq_tls; \"pqtls probe\" prints the groups under the list in force (administrator rights).");
+RANZ_TEST_TAGS("pqtls", pqtls_test, "core", "The post-quantum key exchange of QUIC and TLS-443 (CORE-P2-5): with the hybrid switched on, a Node offers X25519MLKEM768 first and reports pq_tls, and the sessions of two Nodes negotiate it as both stacks report it where CNG has ML-KEM; switched off, the first classical group that the Node offers, and no pq_tls; \"pqtls probe\" prints the groups under the list in force (administrator rights).");
 void pqtls_test(UINT num, char **arg)
 {
 	PQTLSTEST_CTX *ctx = ZeroMalloc(sizeof(PQTLSTEST_CTX));

@@ -7,6 +7,8 @@
 //
 // The list in force is read as Schannel reads it: the value EccCurves of an ECC Curve Order policy where it is set, else
 // the one of the machine, which TransportTlsSetGroups writes, else the default of Windows (TransportTls.c names the three).
+// Schannel takes a change of the machine's list at once, and a policy that changed since Windows started when it starts
+// again, so the policy is read as it will hold.
 
 #include "Core/Transport.h"
 
