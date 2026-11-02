@@ -315,7 +315,7 @@ static void TrTestTraces(TRTEST_CTX *ctx)
 		TrTestFields(fields, sizeof(fields), start, trtest_ranz_fields, sizeof(trtest_ranz_fields) / sizeof(trtest_ranz_fields[0]));
 		Format(line, sizeof(line), "  ranz frame: %s", fields);
 		TrTestLine(ctx, line);
-		TrTestReadRecord(line, line2, sizeof(line),start, size);
+		TrTestReadRecord(line, line2, sizeof(line), start, size);
 		TrTestLine(ctx, line);
 		TrTestLine(ctx, line2);
 		Format(what, sizeof(what), "trace %u: the record of frame version 0 goes with the header of frame version 1 and the trace option, %u bytes", trace.Id,
@@ -331,7 +331,7 @@ static void TrTestTraces(TRTEST_CTX *ctx)
 		TrTestFields(fields, sizeof(fields), start, trtest_ranz_group_fields, sizeof(trtest_ranz_group_fields) / sizeof(trtest_ranz_group_fields[0]));
 		Format(line, sizeof(line), "  ranz frame with the source group: %s", fields);
 		TrTestLine(ctx, line);
-		TrTestReadRecord(line, line2, sizeof(line),start, size);
+		TrTestReadRecord(line, line2, sizeof(line), start, size);
 		TrTestLine(ctx, line);
 		TrTestLine(ctx, line2);
 		Format(what, sizeof(what), "trace %u: the record of frame version 1 with the source group goes with the trace option after it, %u bytes", trace.Id,
@@ -417,7 +417,7 @@ static void TrTestOthers(TRTEST_CTX *ctx)
 	record[NODE_FRAME_HEADER] |= NODE_FRAME_CRITICAL;
 	TrTestRecord(record + NODE_FRAME_HEADER + NODE_FRAME_TRACE_OPTION, 1, 2, false);
 	TrTestLine(ctx, "a record of frame version 1 with the trace option whose critical bit is set");
-	TrTestReadRecord(line, line2, sizeof(line),record, sizeof(record));
+	TrTestReadRecord(line, line2, sizeof(line), record, sizeof(record));
 	TrTestLine(ctx, line);
 	TrTestLine(ctx, line2);
 
@@ -430,14 +430,14 @@ static void TrTestOthers(TRTEST_CTX *ctx)
 	trace.Id = 7;
 	TrTestRecord(record + NODE_FRAME_HEADER + NODE_FRAME_TRACE_OPTION, 1, 2, false);
 	TrTestLine(ctx, "a record of frame version 1 with the trace option of the trace ID 0");
-	TrTestReadRecord(line, line2, sizeof(line),record, sizeof(record));
+	TrTestReadRecord(line, line2, sizeof(line), record, sizeof(record));
 	TrTestLine(ctx, line);
 	TrTestLine(ctx, line2);
 
 	// A record of frame version 0
 	TrTestRecord(record, 1, 2, false);
 	TrTestLine(ctx, "a record of frame version 0, the data record of VRF 101");
-	TrTestReadRecord(line, line2, sizeof(line),record, TRTEST_RECORD);
+	TrTestReadRecord(line, line2, sizeof(line), record, TRTEST_RECORD);
 	TrTestLine(ctx, line);
 	TrTestLine(ctx, line2);
 

@@ -65,14 +65,6 @@
 //   bytes 8-15  the tag set, big-endian
 //   bytes 16-19 the group generation of the sender in the VRF, its 32 low bits, big-endian: the Generation of the state of
 //               the sender from which on it may assert what it asserts there (Core/Control.h, CONTROL_SOURCE_GROUP)
-//
-// The trace option (SDN-89, #388; VxlanTrace.c), GENEVE_TRACE_OPTION bytes, which a datagram of Geneve carries after the
-// option of the source group when the node that sends it traces its packet; the VXLAN header has no room for it:
-//   bytes 0-1   the class GENEVE_CLASS_RANZ
-//   byte 2      the type GENEVE_TYPE_TRACE, with the critical bit clear
-//   byte 3      the length of the data in 4-byte words: GENEVE_TRACE_DATA / 4
-//   bytes 4-7   the trace ID that the ingress node gave the packet, big-endian, never 0
-//   bytes 8-15  the ingress node: the first VXLAN_TRACE_INGRESS bytes of its static key
 
 #ifndef CORE_VXLAN_H
 #define CORE_VXLAN_H
@@ -104,15 +96,16 @@
 #define GENEVE_GROUP_DATA   16                      // The data of the option: the group ID, two reserved bytes, the tag set and the group generation
 #define GENEVE_GROUP_OPTION (4 + GENEVE_GROUP_DATA) // The option with its header
 
-// The trace option (SDN-89, #388). The type 2 is the option of the tests of SDN-87 that no node knows.
+// The encapsulation of a VTEP (VXLAN_ADDR)
+#define VXLAN_ENCAP_VXLAN  0 // VXLAN (RFC 7348), on VXLAN_PORT
+#define VXLAN_ENCAP_GENEVE 1 // Geneve (RFC 8926), on GENEVE_PORT
+
+// The trace option of Geneve (SDN-89, #388; VxlanTrace.c), whose class is the one of the option of the source group. The
+// type 2 is the option of the tests of SDN-87 that no node knows.
 #define GENEVE_TYPE_TRACE   0x03                    // The type of the trace option, whose critical bit is clear
 #define GENEVE_TRACE_DATA   12                      // The data of the option: the trace ID and the ingress node
 #define GENEVE_TRACE_OPTION (4 + GENEVE_TRACE_DATA) // The option with its header
 #define VXLAN_TRACE_INGRESS 8                       // The bytes of the static key of the ingress node that the option names it by
-
-// The encapsulation of a VTEP (VXLAN_ADDR)
-#define VXLAN_ENCAP_VXLAN  0 // VXLAN (RFC 7348), on VXLAN_PORT
-#define VXLAN_ENCAP_GENEVE 1 // Geneve (RFC 8926), on GENEVE_PORT
 
 // The frames that the module carries, and its datagrams
 #define VXLAN_MIN_FRAME    14   // The shortest frame: the two MAC addresses and the EtherType, without the FCS
@@ -189,13 +182,13 @@ typedef struct VXLAN_TRACE {
 // The source group that a datagram carries (SDN-87, #386): in the group policy extension of VXLAN, the group ID alone,
 // or in the option of the source group of Geneve, the group ID, the tag set and the group generation of the sender
 typedef struct VXLAN_GROUP {
+	VXLAN_TRACE Trace;  // The trace option of a datagram of Geneve, which goes and comes with the source group (SDN-89, #388)
 	bool Carried;       // The datagram carries a source group ...
 	bool HasTags;       // ... with its tag set ...
 	bool HasGeneration; // ... and the group generation of the sender
 	USHORT Group;       // The group ID
 	UINT64 Tags;        // The tag set
 	UINT Generation;    // The group generation, its 32 low bits
-	VXLAN_TRACE Trace;  // The trace option of a datagram of Geneve, which goes and comes with the source group (SDN-89, #388)
 } VXLAN_GROUP;
 
 // Takes one frame as VXLAN_RECV_PROC does, with the source group that its datagram carried, in place of the receiver of
@@ -227,6 +220,7 @@ bool VxlanParseGroupOption(const GENEVE_OPTION *o, VXLAN_GROUP *g);
 
 // VxlanTrace.c
 void VxlanWriteTraceOption(UCHAR *option, const VXLAN_TRACE *trace);
+UINT VxlanAddTraceOption(UCHAR *buf, UINT header, const VXLAN_ADDR *vtep, const VXLAN_TRACE *trace, UINT size);
 bool VxlanParseTraceOption(const GENEVE_OPTION *o, VXLAN_TRACE *t);
 
 // VxlanUdp.c

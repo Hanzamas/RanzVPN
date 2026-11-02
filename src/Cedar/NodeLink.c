@@ -232,14 +232,14 @@ static void NodeLinkReceive(VXLAN *x, void *param, UINT vni, const VXLAN_ADDR *f
 		} else {
 			NODE_SOURCE_CLAIM claim;
 
-			// The source group of the datagram, which the tag mode of the VRF decides on (NodeSourceGroup.c; SDN-87, #386), and
-			// its trace option (NodeTrace.c; SDN-89, #388)
+			// The source group of the datagram, which the tag mode of the VRF decides on (NodeSourceGroup.c; SDN-87, #386)
 			NodeSourceGroupClaim(&claim, kind == CONTROL_LINK_GENEVE ? NODE_CARRIER_GENEVE : NODE_CARRIER_VXLAN, group);
-			if (group != NULL)
-				Copy(&claim.Trace, &group->Trace, sizeof(VXLAN_TRACE));
 			WRITE_UINT(th->Record, lv->VrfId);
 			Copy(th->Record + NODE_OVERLAY_VRF_TAG, frame + NODE_LINK_ETHER, size - NODE_LINK_ETHER);
 			InterlockedIncrement64(&l->Delivered);
+			// ... and its trace option (NodeTrace.c; SDN-89, #388)
+			if (group != NULL)
+				Copy(&claim.Trace, &group->Trace, sizeof(VXLAN_TRACE));
 			NodeOverlayLinkDeliver(l->Node, v->Hops[peer], th->Record, NODE_OVERLAY_VRF_TAG + size - NODE_LINK_ETHER, th->Nat, &claim);
 		}
 	}

@@ -33,13 +33,13 @@
 // The source group that a packet of a peer carried, as the node that takes the packet reads it
 typedef struct NODE_SOURCE_CLAIM {
 	UINT Carrier;       // What carried the packet (NODE_CARRIER_*)
+	VXLAN_TRACE Trace;  // The trace option that a datagram of a link carried (NodeTrace.c; SDN-89, #388)
 	bool Carried;       // The packet carried a source group ...
 	bool HasTags;       // ... with its tag set ...
 	bool HasGeneration; // ... and the group generation of the peer, which the group policy extension of VXLAN has no room for
 	UINT Group;         // The group ID
 	UINT64 Tags;        // The tag set
 	UINT Generation;    // The group generation, its 32 low bits: the Generation of the state of the peer that the claim was made on
-	VXLAN_TRACE Trace;  // The trace option that a datagram of a link carried (NodeTrace.c; SDN-89, #388)
 } NODE_SOURCE_CLAIM;
 
 // What NodeSourceGroupGetStatus reports: the packets of the peers of a node by the tag mode in which it judged them
