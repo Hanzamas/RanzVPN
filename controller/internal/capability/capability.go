@@ -43,6 +43,9 @@ type Capabilities struct {
 	// Operations: the node answers the live operations of an operator (SDN-50), which read and clear the
 	// MAC table and the IP table of its L2 Networks.
 	Operations bool `json:"operations,omitempty"`
+	// Tags: the node carries the source group of its packets to its peers and judges theirs by the
+	// one they carry (SDN-87).
+	Tags bool `json:"tags,omitempty"`
 	// BGPPeering: the node runs the BGP peering of the standard mode (SDN-77): its release has it, and ranz.exe,
 	// which holds the sidecar that it starts, is next to it.
 	BGPPeering bool `json:"bgpPeering,omitempty"`
@@ -81,6 +84,7 @@ func FromProto(p *controlpb.Capabilities) *Capabilities {
 		WireGuard:       p.GetWireguard(),
 		PlainLinks:      p.GetPlainLinks(),
 		Operations:      p.GetOperations(),
+		Tags:            p.GetTags(),
 		BGPPeering:      p.GetBgpPeering(),
 		EVPN:            p.GetEvpn(),
 	}
@@ -102,6 +106,7 @@ func (c Capabilities) Proto() (*controlpb.Capabilities, error) {
 		Wireguard:       c.WireGuard,
 		PlainLinks:      c.PlainLinks,
 		Operations:      c.Operations,
+		Tags:            c.Tags,
 		BgpPeering:      c.BGPPeering,
 		Evpn:            c.EVPN,
 	}

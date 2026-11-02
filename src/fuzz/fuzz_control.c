@@ -11,9 +11,10 @@
 //   client ends then, or the next frame is empty or longer than the input left.
 // The owner checks each state that it is handed: its Generation is not 0, every count is within its array, every address
 // and prefix within its bytes, every string ends in its buffer, a TLS fingerprint is 64 hex digits in lower case, a
-// session profile of the node or of a peer that is not set holds nothing (ControlCopyProfiles; SDN-40 #233), and the BGP
+// session profile of the node or of a peer that is not set holds nothing (ControlCopyProfiles; SDN-40 #233), the BGP
 // peering of the node and of each peer has the address of a sidecar that is IPv4 or IPv6, and that of a peer a VRF
-// (ControlCopyPeerings; SDN-77 #357). After
+// (ControlCopyPeerings; SDN-77 #357), and a source group has a group ID of 16 bits and a VRF a tag mode that the node
+// knows (SDN-87 #386). After
 // a message whose Update was handed to the owner, the client must have taken it and stand at its Generation. Each message
 // is copied into a buffer of its size exactly, so that AddressSanitizer reports a read past it. The client allocates from
 // the process heap, which Mayaqua does not count: AddressSanitizer checks those blocks, and -rss_limit_mb bounds a leak.
@@ -142,6 +143,24 @@ static void FuzzProfile(const CONTROL_PROFILE *p, const char *what)
 	}
 }
 
+// The source groups of a node or of a peer (SDN-87 #386): num of them at most CONTROL_MAX_VRFS, each with a group ID from 1
+// to 65535
+static void FuzzGroups(const CONTROL_SOURCE_GROUP *g, UINT num, const char *what)
+{
+	if (num > CONTROL_MAX_VRFS)
+	{
+		FuzzFail(what);
+	}
+
+	for (UINT i = 0;i < num;i++)
+	{
+		if (g[i].Group == 0 || g[i].Group > 0xFFFF)
+		{
+			FuzzFail(what);
+		}
+	}
+}
+
 // The endpoints of a node or of a peer
 static void FuzzEndpoints(const CONTROL_ENDPOINT *e, UINT num, const char *what)
 {
@@ -209,6 +228,10 @@ static void FuzzVrfs(const CONTROL_STATE *st)
 		{
 			FuzzFail("a VRF has a name that does not end, a link of no kind, or a VNI of more than 24 bits");
 		}
+		if (v->TagMode != CONTROL_TAG_MODE_OFF && v->TagMode != CONTROL_TAG_MODE_TRUSTED)
+		{
+			FuzzFail("a VRF has a tag mode that is neither off nor trusted-underlay");
+		}
 		if (z == NULL)
 		{
 			continue;
@@ -261,6 +284,7 @@ static void FuzzPeers(const CONTROL_STATE *st)
 		FuzzEndpoints(p->Endpoints, p->NumEndpoints, "a peer has too many endpoints, or one that does not end");
 		FuzzVtep(&p->Vtep, "a peer has a tunnel endpoint that is neither IPv4 nor IPv6, or a port above 65535");
 		FuzzProfile(&p->Profile, "a peer has a session profile whose names do not end, or one that is not set and holds something");
+		FuzzGroups(p->Groups, p->NumGroups, "a peer has too many source groups, or one whose group ID is 0 or above 65535");
 	}
 }
 
@@ -338,6 +362,10 @@ static void FuzzListenerDevices(const CONTROL_STATE *st)
 		}
 		FuzzAddresses(d->Addresses, d->NumAddresses, CONTROL_DEVICE_ADDRESSES, "a Device has too many addresses, or one that does not fit");
 		FuzzTags(d->Tags, d->NumTags, CONTROL_MAX_TAGS, "a Device has a tag that does not end or too many tags");
+		if (d->Group > 0xFFFF)
+		{
+			FuzzFail("a Device has a source group whose group ID is above 65535");
+		}
 	}
 }
 
@@ -446,6 +474,7 @@ static void FuzzControlState(void *param, const CONTROL_STATE *st)
 	FuzzEndpoints(st->Endpoints, st->NumEndpoints, "the node has too many endpoints, or one that does not end");
 	FuzzVtep(&st->Vtep, "the node has a tunnel endpoint that is neither IPv4 nor IPv6, or a port above 65535");
 	FuzzProfile(&st->Profile, "the node has a session profile whose names do not end, or one that is not set and holds something");
+	FuzzGroups(st->Groups, st->NumGroups, "the node has too many source groups, or one whose group ID is 0 or above 65535");
 
 	if (st->NumNats > CONTROL_MAX_NATS)
 	{
