@@ -22,6 +22,11 @@ $PSNativeCommandUseErrorActionPreference = $false
 #     stretched Network with EVPN type-2 and type-3 routes, and a harness VTEP on each address. It needs no
 #     gobgpd, runs after vpntest evpn also when that failed, and must print "STRETCH TEST OK" and "NO MEMORY
 #     LEAKS".
+#   - vpntest irb runs the symmetric IRB of a stretch (SDN-67 #294, src/vpntest/irbtest.c): the sidecar of the
+#     gateway dials the sidecar of a leaf with symmetric IRB on 127.0.0.2, two stretched Networks with irb in two
+#     VRFs with the same addresses and one without, an overlay node of another Network of each VRF, and a harness
+#     VTEP of the leaf. It needs no gobgpd, runs after vpntest stretch also when that failed, and must print "IRB
+#     TEST OK" and "NO MEMORY LEAKS".
 # The log of gobgpd goes to build/harness-out/gobgpd.log and into the job log.
 
 $build = (Resolve-Path -LiteralPath $BuildDir).Path
@@ -117,6 +122,13 @@ Write-Host $stretch
 $stretchOk = ($stretch -cmatch '(?m)^STRETCH TEST OK\r?$')
 $stretchLeak = ($stretch -cmatch 'NO MEMORY LEAKS')
 
+# The symmetric IRB of a stretch, with the sidecars of two nodes and no gobgpd
+$irb = (Write-Output "q\n" | & (Join-Path $build 'vpntest.exe') irb | Out-String)
+$irbCode = $LASTEXITCODE
+Write-Host $irb
+$irbOk = ($irb -cmatch '(?m)^IRB TEST OK\r?$')
+$irbLeak = ($irb -cmatch 'NO MEMORY LEAKS')
+
 if (-not $ok -or -not $leak) {
 	throw "vpntest bgp failed (exit code $code, BGP TEST OK $ok, NO MEMORY LEAKS $leak)"
 }
@@ -126,4 +138,7 @@ if (-not $evpnOk -or -not $evpnLeak) {
 if (-not $stretchOk -or -not $stretchLeak) {
 	throw "vpntest stretch failed (exit code $stretchCode, STRETCH TEST OK $stretchOk, NO MEMORY LEAKS $stretchLeak)"
 }
-Write-Host 'BGP sidecar spike, EVPN gateway and L2 stretch: ok'
+if (-not $irbOk -or -not $irbLeak) {
+	throw "vpntest irb failed (exit code $irbCode, IRB TEST OK $irbOk, NO MEMORY LEAKS $irbLeak)"
+}
+Write-Host 'BGP sidecar spike, EVPN gateway, L2 stretch and symmetric IRB: ok'
