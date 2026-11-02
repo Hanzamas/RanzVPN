@@ -77,6 +77,13 @@
 // form, ip; with withdraw one goes), where full starts a full resync and more says that more of it
 // follows; from the sidecar the routes of the fabric (a type-2 route with its mac and ip, a type-3
 // route without a mac), each with the VTEP of the fabric as next_hop, and with withdraw once it went.
+//
+// A stretch may have irb (irb.go; SDN-67 #294), symmetric IRB on its Network: vrf, the EVPN VRF of
+// the Network, and gateway_ips, the gateway IPs of the Network with the prefix length of their
+// subnet, go with it. Its type-2 routes of the MAC plus IP form carry the L3 vni of the VRF and the
+// router MAC, its gateway IPs go to the peers as type-2 routes of a default gateway, and a type-2
+// route of the fabric in that form, within a gateway IP prefix, comes to the node as a learned
+// message of a host route of the VRF too, with the vni and the router_mac of the fabric.
 package sidecar
 
 import (
@@ -91,8 +98,9 @@ import (
 // ProtocolVersion is the version of the protocol that ready reports: 2 adds the peering of the
 // standard mode and the refused message, 3 the EVPN of a gateway, 4 the more of a peers message,
 // ping and pong, 5 the vteps of a learned message of an EVPN VRF (SDN-25-R3 #571), 6 the
-// stretches of a gateway and the stretch message (SDN-64 #291).
-const ProtocolVersion = 6
+// stretches of a gateway and the stretch message (SDN-64 #291), 7 the irb of a stretch (SDN-67
+// #294).
+const ProtocolVersion = 7
 
 // MaxLine is the size of one message at most, with its newline.
 const MaxLine = 64 * 1024

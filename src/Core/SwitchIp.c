@@ -513,6 +513,35 @@ UINT SwitchGetIps(SWITCH *sw, SWITCH_IP_ENTRY *list, UINT max) {
 	return num;
 }
 
+// The MAC address of the last frame from the address of size bytes at address, 4 for IPv4 or 16 for IPv6, in the VLAN vlan of
+// the IP table, into mac: false when the table has no entry of it. The IRB of a stretched Network finds the host of a packet
+// that it routes into the Network with it (Cedar/NodeIrb.c; SDN-67, #294).
+bool SwitchFindIp(SWITCH *sw, UINT vlan, const UCHAR *address, UINT size, UCHAR *mac) {
+	SWITCH_IP_TABLE *t = SwitchIpTable(sw);
+	UCHAR key[16];
+	bool found = false;
+
+	if (t == NULL || address == NULL || mac == NULL || (size != 4 && size != 16) || vlan < SWITCH_MIN_VLAN || vlan > SWITCH_MAX_VLAN)
+		return false;
+
+	ZeroMemory(key, sizeof(key));
+	CopyMemory(key, address, size);
+
+	UINT tag = (vlan << 8) | size;
+	UINT64 h = SwitchIpHash(t, tag, key);
+	SWITCH_IP_SHARD *s = SwitchIpShardOf(t, h);
+
+	AcquireSRWLockShared(&s->Lock);
+	const SWITCH_IP_SLOT *e = SwitchIpFind(s, tag, key, h);
+	if (e != NULL && e->Tag != 0) {
+		CopyMemory(mac, e->Mac, sizeof(e->Mac));
+		found = true;
+	}
+	ReleaseSRWLockShared(&s->Lock);
+
+	return found;
+}
+
 // Take out the entries of the address of size bytes at address, 4 for IPv4 or 16 for IPv6, in every VLAN, or every entry of
 // the IP table for NULL; their number
 UINT SwitchClearIps(SWITCH *sw, const UCHAR *address, UINT size) {

@@ -25,6 +25,10 @@ package sidecar
 // is one learned route, without a withdraw between. The node holds the MAC addresses of the fabric behind each VTEP, and the
 // type-3 routes are the flood list of each VNI. When the pipe closes, the session ends, and the next sidecar learns every
 // route of the peers again, which is the full resync of this direction.
+//
+// A stretch may have irb (irb.go; SDN-67 #294): its type-2 routes of the MAC plus IP form carry the L3 VNI of the VRF of its
+// Network and the router MAC, its gateway IPs go to the peers as type-2 routes of a default gateway, and the type-2 routes of
+// the fabric in that form are host routes of the VRF too.
 
 import (
 	"context"
@@ -57,6 +61,12 @@ type EVPNStretch struct {
 	VNI          uint32   `json:"vni"`
 	RD           string   `json:"rd,omitempty"`
 	RouteTargets []string `json:"route_targets"`
+	// The symmetric IRB of the Network (irb.go; SDN-67 #294): irb, the EVPN VRF of the Network that it routes in, and the
+	// gateway IPs of the Network with the prefix length of their subnet, one IPv4 and one IPv6 at most; vrf and gateway_ips
+	// go with irb alone
+	IRB        bool     `json:"irb,omitempty"`
+	VRF        uint32   `json:"vrf,omitempty"`
+	GatewayIPs []string `json:"gateway_ips,omitempty"`
 }
 
 // StretchRoute is one EVPN route of an L2 VNI in a stretch message: a MAC/IP advertisement route (type 2) when it has a
@@ -76,6 +86,7 @@ type stretchVNI struct {
 	rd      bgp.RouteDistinguisherInterface
 	targets []bgp.ExtendedCommunityInterface // imported and exported
 	imports map[string]bool                  // the same, as bgp prints them
+	irb     *stretchIRB                      // the IRB of the stretch (irb.go), nil without irb
 }
 
 // stretchKey is a route of a VNI: a type-2 route with its MAC, as net.HardwareAddr prints it, and its IP (the zero Addr for
@@ -102,9 +113,9 @@ type stretchState struct {
 	reported map[stretchKey]netip.Addr
 }
 
-// parseStretches checks the stretches of an evpn object whose router id is routerID, and whose VRFs have the L3 VNIs l3;
-// nil for none.
-func parseStretches(list []EVPNStretch, routerID netip.Addr, l3 map[uint32]uint32) (*stretchState, error) {
+// parseStretches checks the stretches of an evpn object whose router id is routerID, and whose VRFs, vrfs by id, have the L3
+// VNIs l3; nil for none.
+func parseStretches(list []EVPNStretch, routerID netip.Addr, l3 map[uint32]uint32, vrfs map[uint32]*evpnVRF) (*stretchState, error) {
 	if len(list) == 0 {
 		return nil, nil
 	}
@@ -116,7 +127,7 @@ func parseStretches(list []EVPNStretch, routerID netip.Addr, l3 map[uint32]uint3
 		reported:  make(map[stretchKey]netip.Addr),
 	}
 	for _, s := range list {
-		v, err := parseStretch(s, routerID)
+		v, err := parseStretch(s, routerID, vrfs)
 		if err != nil {
 			return nil, fmt.Errorf("start: evpn: stretch of vni %d: %w", s.VNI, err)
 		}
@@ -132,8 +143,8 @@ func parseStretches(list []EVPNStretch, routerID netip.Addr, l3 map[uint32]uint3
 	return st, nil
 }
 
-// parseStretch checks one stretch of an evpn object.
-func parseStretch(s EVPNStretch, routerID netip.Addr) (*stretchVNI, error) {
+// parseStretch checks one stretch of an evpn object whose VRFs are vrfs.
+func parseStretch(s EVPNStretch, routerID netip.Addr, vrfs map[uint32]*evpnVRF) (*stretchVNI, error) {
 	if s.VNI == 0 || s.VNI > maxVNI {
 		return nil, fmt.Errorf("vni %d is not a VNI of 24 bits", s.VNI)
 	}
@@ -160,6 +171,12 @@ func parseStretch(s EVPNStretch, routerID netip.Addr) (*stretchVNI, error) {
 		v.targets = append(v.targets, ec)
 		v.imports[ec.String()] = true
 	}
+	// ... and its IRB (irb.go; SDN-67 #294)
+	irb, err := parseIRB(s, vrfs)
+	if err != nil {
+		return nil, err
+	}
+	v.irb = irb
 	return v, nil
 }
 
@@ -204,18 +221,26 @@ func (e *evpnState) imetPath(v *stretchVNI) (*apiutil.Path, error) {
 }
 
 // macPath is the MAC/IP advertisement route (type 2) of the gateway of key on its stretch v: no ESI, Ethernet tag 0 and the
-// VNI as its label.
+// VNI as its label. With irb the MAC plus IP form has the L3 VNI of the VRF as its second label and the communities of
+// irbPath (irb.go; SDN-67 #294).
 func (e *evpnState) macPath(v *stretchVNI, key stretchKey) (*apiutil.Path, error) {
-	nlri, err := bgp.NewEVPNMacIPAdvertisementRoute(v.rd, bgp.EthernetSegmentIdentifier{}, 0, key.mac, key.ip, []uint32{v.vni})
+	labels := []uint32{v.vni}
+	if v.irb != nil && key.ip.IsValid() {
+		labels = append(labels, v.irb.vrf.vni)
+	}
+	nlri, err := bgp.NewEVPNMacIPAdvertisementRoute(v.rd, bgp.EthernetSegmentIdentifier{}, 0, key.mac, key.ip, labels)
 	if err != nil {
 		return nil, err
+	}
+	if len(labels) > 1 {
+		return e.irbPath(v, nlri, false)
 	}
 	return e.stretchPath(v, nlri)
 }
 
-// startStretch announces the type-3 route of the VTEP of the gateway on each stretch, and starts the watch of the best
-// paths of the peers that the routes of the stretches come from (onStretchPaths), which stops with the session. Nothing for
-// a session without a stretch.
+// startStretch announces the type-3 route of the VTEP of the gateway on each stretch, and the type-2 routes of the gateway IPs
+// of each stretch with irb (announceGateways), and starts the watch of the best paths of the peers that the routes of the
+// stretches come from (onStretchPaths), which stops with the session. Nothing for a session without a stretch.
 func (s *session) startStretch() error {
 	st := s.stretches()
 	if st == nil {
@@ -228,6 +253,10 @@ func (s *session) startStretch() error {
 		}
 		if err != nil {
 			return fmt.Errorf("the type-3 route of vni %d: %w", v.vni, err)
+		}
+		// ... and the gateway IPs of a stretch with irb (irb.go; SDN-67 #294)
+		if err := s.announceGateways(v); err != nil {
+			return fmt.Errorf("the IRB of vni %d: %w", v.vni, err)
 		}
 	}
 	wctx, cancel := context.WithCancel(context.Background())
