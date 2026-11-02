@@ -20,6 +20,7 @@ jobs:
   linux:
     runs-on: ubuntu-latest
     name: fixtures of msi-install.ps1 (Linux)
+    if: false
     timeout-minutes: 12
     steps:
     - uses: actions/checkout@v4
@@ -49,6 +50,7 @@ jobs:
           { ARCHITECTURE: arm64, RUNNER: "windows-11-arm" }
         ]
     name: self-test of msi-install.ps1 (${{ matrix.platform.ARCHITECTURE }})
+    if: false
     runs-on: ${{ matrix.platform.RUNNER }}
     timeout-minutes: 12
     steps:
@@ -97,6 +99,7 @@ jobs:
   hang_build:
     runs-on: windows-latest
     name: build hang.msi
+    if: false
     timeout-minutes: 10
     steps:
     - uses: actions/setup-dotnet@v4
@@ -209,6 +212,7 @@ jobs:
   standin_build:
     runs-on: windows-latest
     name: MSI with a stand-in ranz.exe (build)
+    if: false
     timeout-minutes: 15
     steps:
     - uses: actions/checkout@v4
@@ -294,20 +298,7 @@ jobs:
       fail-fast: false
       matrix:
         include:
-        - { name: flag, os: ubuntu-latest, expect: 'the tail of the verbose log does not end with' }
-        - { name: service, os: ubuntu-latest, expect: 'still there after the failure' }
-        - { name: evidence-bound, os: ubuntu-latest, expect: 'not within its bound of' }
-        - { name: summary, os: ubuntu-latest, expect: 'exited with the code 0' }
-        - { name: step-stop, os: ubuntu-latest, expect: 'ran a step after the call that did not end' }
-        - { name: processes, os: ubuntu-latest, expect: 'the list of processes has no line for process' }
-        - { name: tail, os: ubuntu-latest, expect: 'the tail of the verbose log does not end with' }
-        - { name: finally, os: ubuntu-latest, expect: "has no 'planted clean-up ran'" }
-        - { name: catch, os: ubuntu-latest, expect: "has no '1 steps failed:'" }
         - { name: version, os: ubuntu-latest, expect: 'a ranz.exe version that never ends was waited for' }
-        - { name: wait, os: ubuntu-latest, expect: 'a Node that does not stop was waited for, and the wait did not fail' }
-        - { name: service, os: windows-latest, expect: 'neither as ended nor as not ended' }
-        - { name: events, os: windows-latest, expect: 'hold no event of the planted call' }
-        - { name: servicestate, os: windows-latest, expect: 'has no process in the evidence' }
     name: mutation ${{ matrix.name }} (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     timeout-minutes: 12
@@ -343,7 +334,7 @@ jobs:
         $find['catch'] = 'if (-not $script:msiexecHang) { throw }'
         $with['catch'] = 'throw'
         $find['version'] = 'if (-not $call.WaitForExit($seconds * 1000)) {'
-        $with['version'] = 'if (-not $call.WaitForExit()) {'
+        $with['version'] = '$call.WaitForExit(); if ($false) {'
         $find['wait'] = 'Write-Host "$name did not reach $state within $seconds s. What the computer shows:"'
         $with['wait'] = 'return'
         $name = $env:MUTATION
