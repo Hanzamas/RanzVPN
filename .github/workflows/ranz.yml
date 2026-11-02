@@ -747,9 +747,25 @@ jobs:
     # each test and a slow runner ran out of the 10 minutes. The slowest package is controller, with its
     # cluster tests, about 220 s to 280 s. The limit stays 20 minutes, more than four times the time of
     # any package: it costs nothing, and a runner can be slow. A hang still ends the package, only later.
+    #
+    # TEMP and TMP name the temporary disk of the runner (CI-FLAKE-5, #592): the tests make the data of their rqlited and
+    # of the members of their clusters, and the profile of the browser, in the temporary directory, and every rqlited syncs
+    # its Raft log and its database at each change. The temporary directory of a Windows runner is on its system disk (C:)
+    # by default, and the runner has a second disk (D:, RUNNER_TEMP). Two experiments of that pull request measured the
+    # disks with a program that wrote a block to each, synced it and timed that, while the tests ran. Run 41323265872, go test
+    # ./... once with each disk as TEMP: with the system disk it took 4 min 41 s, lost TestLeaderServesTheLoginsOfUsers, and
+    # 45 syncs of that disk took 0.25 s to 1.06 s in 80 s; with the temporary disk it took 3 min 38 s, passed, and no sync of
+    # either disk took 0.25 s. That is one run of each, so it shows that the system disk can stall, not how often. Run
+    # 41376006594, every core busy and TEMP on the temporary disk: the three packages that start rqlited passed 20 times in a
+    # row, and each of the three tests of CI-FLAKE-5 20 times in a row. In its 108 minutes 186 syncs of the system disk and
+    # 58 of the temporary disk took 0.25 s or more (the longest 1.03 s and 2.36 s), so the temporary disk stalls less often
+    # in that run, not never.
     - name: Test
       if: matrix.platform.ARCHITECTURE == 'x64'
       shell: pwsh
+      env:
+        TEMP: ${{ runner.temp }}
+        TMP: ${{ runner.temp }}
       run: |
         go test -count=1 -timeout 20m ./...
         if ($LASTEXITCODE -ne 0) { throw "go test exited with code $LASTEXITCODE" }
