@@ -68,6 +68,10 @@ src/Core  TransportTlsHelloName       fuzz_transport
 src/Core  VxlanInput  fuzz_vxlan
 # Geneve in the VXLAN module (SDN-71 #347): the Geneve header of the datagrams of VTEPs of Geneve, with its options
 src/Core  VxlanParseGeneve  fuzz_geneve
+# The source group of a datagram (SDN-87 #386), which VxlanInput reads from the header of each one: the group policy
+# extension of VXLAN, and the option of the source group among the options of a Geneve header
+src/Core  VxlanParseGroup        fuzz_vxlan   via VxlanInput
+src/Core  VxlanParseGroupOption  fuzz_geneve  via VxlanInput
 
 # The switch module (CORE-S4-1 #74): the frames that the members of a Network send
 src/Core  SwitchInput  fuzz_switch
@@ -166,6 +170,9 @@ src/Cedar  NodeDnsAnswer  fuzz_nodedns
 src/Cedar  NodeMimicParseMessage  fuzz_nodemimic
 src/Cedar  NodeMimicParseBind     fuzz_nodemimic
 src/Cedar  NodeMimicParseAnswer   fuzz_nodemimic
+# The source groups of the overlay (SDN-87 #386): the header of a record of a Noise session, which carries the source
+# group of its packet from frame version 1 on
+src/Cedar  NodeFrameParse  fuzz_frame
 # The Capabilities of the Node (ONE-3 #312) come from the host, not from a peer
 src/Cedar  NodeCapsReadHost     exempt  reads no bytes of a peer or of a file: it asks Windows for the architecture of the host, whether the services SeLow and xdp are registered and whether three files of System32 exist
 # The peer agent of the overlay (CORE-S5-5 #411) takes the Signals that the Controller carries from a peer: no parser word in the
@@ -196,7 +203,7 @@ src/Cedar  NodeEvpnSortVteps       fuzz_evpn
 src/Cedar  NodeEvpnHasVtep         fuzz_evpn
 src/Cedar  NodeEvpnRoute           exempt  puts the route that NodeEvpnParseRoute (fuzz_evpn) read from a message of the node's own sidecar into the list of the routes; it reads no byte itself
 src/Cedar  NodeEvpnOutput          exempt  a packet of the host's own IP stack, whose two ends NodeNatEnds (fuzz_nat) reads as for NodeOverlayInput, and which NodeNatCopy (fuzz_nat) writes into the frame for the fabric
-src/Cedar  NodeEvpnTransit         exempt  a packet of a peer that the overlay delivered, whose two ends NodeEvpnEnds (fuzz_evpn) reads, and which the session profile (NodeProfileInbound, fuzz_nodeprofile) and the policy of the VRF (fuzz_policy) judge before it goes to the fabric as it came, and NodeMirrorCopy (fuzz_mirror) copies
+src/Cedar  NodeEvpnTransit         exempt  a packet of a peer that the overlay delivered, whose two ends NodeEvpnEnds (fuzz_evpn) reads, and which the session profile (NodeProfileInbound, fuzz_nodeprofile) and the policy of the VRF (fuzz_policy) judge before it goes to the fabric as it came, and NodeMirrorCopy (fuzz_mirror) copies; the source group that it carried is the claim that NodeFrameParse (fuzz_frame), VxlanParseGroup (fuzz_vxlan) or VxlanParseGroupOption (fuzz_geneve) read, which NodeSourceGroupInbound judges against the tables of the node without reading a byte
 src/Cedar  NodeOverlayFabricInput  exempt  a packet of the fabric that NodeEvpnParseFrame (fuzz_evpn) took, whose two ends NodeOverlayEnds reads as for NodeOverlayDeliver; NodeNatInbound (fuzz_nat) translates it for the host, or NodeNatEnds and NodeNatCopy (fuzz_nat) and the policy (fuzz_policy) take it on to a peer as for NodeOverlayInput
 # The MAC addresses and the addresses of the messages of the sidecar, which the stretch of a gateway reads with them too
 src/Cedar  NodeEvpnParseMac        fuzz_evpn  via NodeEvpnParseRoute

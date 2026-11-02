@@ -1,0 +1,54 @@
+# SDN-87: the source group in each carrier, as a node sends it and as a node reads it back
+# ranz frame: the VRF tag 0, the version, the length of the options, reserved | the type, the length, reserved, the group, reserved, the tag set, the group generation | the VRF tag of the record
+# vxlan: the flags, the flags D and A, the group, the VNI, reserved
+# geneve: the version and the length of the options, the flags O and C, the protocol, the VNI, reserved | the class, the type, the length, the group, reserved, the tag set, the group generation
+group 1, tag set 0x0000000000000001, group generation 1
+  ranz frame: 00000000 01 05 0000 | 01 04 0000 0001 0000 0000000000000001 00000001 | 00000065
+  read: group 1, tag set 0x0000000000000001, group generation 1; a header of 28 bytes, then the data record of VRF 101
+  vxlan: 88 00 0001 0013ed 00
+  read: group 1, no tag set and no group generation; the frame of 64 bytes as it was sent
+  geneve: 05 00 6558 0013ed 00 | fff0 01 04 0001 0000 0000000000000001 00000001
+  read: group 1, tag set 0x0000000000000001, group generation 1; the frame of 64 bytes as it was sent
+  the critical bit of the option of Geneve is clear, and so is the C bit of its header
+group 3, tag set 0x0000000000000004, group generation 7
+  ranz frame: 00000000 01 05 0000 | 01 04 0000 0003 0000 0000000000000004 00000007 | 00000065
+  read: group 3, tag set 0x0000000000000004, group generation 7; a header of 28 bytes, then the data record of VRF 101
+  vxlan: 88 00 0003 0013ed 00
+  read: group 3, no tag set and no group generation; the frame of 64 bytes as it was sent
+  geneve: 05 00 6558 0013ed 00 | fff0 01 04 0003 0000 0000000000000004 00000007
+  read: group 3, tag set 0x0000000000000004, group generation 7; the frame of 64 bytes as it was sent
+  the critical bit of the option of Geneve is clear, and so is the C bit of its header
+group 258, tag set 0x0102030405060708, group generation 16909060
+  ranz frame: 00000000 01 05 0000 | 01 04 0000 0102 0000 0102030405060708 01020304 | 00000065
+  read: group 258, tag set 0x0102030405060708, group generation 16909060; a header of 28 bytes, then the data record of VRF 101
+  vxlan: 88 00 0102 0013ed 00
+  read: group 258, no tag set and no group generation; the frame of 64 bytes as it was sent
+  geneve: 05 00 6558 0013ed 00 | fff0 01 04 0102 0000 0102030405060708 01020304
+  read: group 258, tag set 0x0102030405060708, group generation 16909060; the frame of 64 bytes as it was sent
+  the critical bit of the option of Geneve is clear, and so is the C bit of its header
+group 65535, tag set 0xffffffffffffffff, group generation 4294967295
+  ranz frame: 00000000 01 05 0000 | 01 04 0000 ffff 0000 ffffffffffffffff ffffffff | 00000065
+  read: group 65535, tag set 0xffffffffffffffff, group generation 4294967295; a header of 28 bytes, then the data record of VRF 101
+  vxlan: 88 00 ffff 0013ed 00
+  read: group 65535, no tag set and no group generation; the frame of 64 bytes as it was sent
+  geneve: 05 00 6558 0013ed 00 | fff0 01 04 ffff 0000 ffffffffffffffff ffffffff
+  read: group 65535, tag set 0xffffffffffffffff, group generation 4294967295; the frame of 64 bytes as it was sent
+  the critical bit of the option of Geneve is clear, and so is the C bit of its header
+a record of frame version 0, the data record of VRF 101
+  read: frame version 0, no source group; the data record of VRF 101
+a record of frame version 2, which no node knows yet
+  read: not read, the node drops the record
+a record of frame version 1 whose options run past its end
+  read: not read, the node drops the record
+a record of frame version 1 with the option of the source group, then an option whose data runs past the options
+  read: not read, the node drops the record
+a record of frame version 1 with an option of the type 0x82, critical, that the node does not know
+  read: not read, the node drops the record
+a record of frame version 1 with an option of the type 0x02 that the node does not know, then the option of the source group
+  read: group 7, tag set 0x0000000000000080, group generation 9; a header of 32 bytes, then the data record of VRF 101
+a datagram of VXLAN without the G flag
+  read: no source group; the frame of 64 bytes as it was sent
+a datagram of Geneve with the option of the source group whose critical bit is set
+  read: nothing, the module dropped the datagram
+a datagram of Geneve with an option of the class 0x0103, then the option of the source group
+  read: group 7, tag set 0x0000000000000080, group generation 9; the frame of 64 bytes as it was sent

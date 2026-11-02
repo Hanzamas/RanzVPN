@@ -190,6 +190,8 @@ add_library(corecontrol STATIC
   ControlSecurity.c
   # The events of the node that the client reports (AUD1-DT-11, #459)
   ControlEvent.c
+  # The source groups in a desired state and the counters of a node by tag mode (SDN-87, #386)
+  ControlSourceGroup.c
   # The Relays of a desired state and the Signals of the peers on the control stream (CORE-S5-5, #411)
   ControlSignal.c
   # The hubs and the ECMP of the VRFs, the LAN subnets of a node and the gateways that are down in a desired state (SDN-19,
