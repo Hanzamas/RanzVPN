@@ -15,6 +15,14 @@
 # or a leaking input fails the run. Crash and leak inputs land in <BuildDir>/fuzz-artifacts,
 # one log per run in <BuildDir>/fuzz-logs.
 #
+# One target after the other, or with -Parallel <n> n at a time (CI-FLAKE-7, #605). Each target then runs in a process of its own,
+# which is this script again with -Targets <that target> and no -Parallel, so the replay, the fuzz run and every check of a target
+# are the code below, unchanged, and each target still runs -Seconds s with the same -Seed. A libFuzzer process uses one core:
+# the job fuzz-asan of windows.yml gives -Parallel 3 on the 4 cores of its runner, so the 29 targets of its step take about ten
+# minutes where one after the other they took thirty. The output of a target is printed in one piece when it ends, with its time.
+# A target that fails fails the run after the others have run, as it does one at a time, and the line FAILED names it. A target
+# whose executable or source lines are wrong stops the run before any target runs.
+#
 # libFuzzer flags: https://llvm.org/docs/LibFuzzer.html#options
 #
 # Without -Targets, every fuzz_<name>.c of src/fuzz but fuzz_common.c is a target, built as fuzz_<name>.exe
@@ -27,12 +35,13 @@
 # would turn that check off without a word; the registry check (.github/scripts/fuzz-registry.py) fails without the
 # lines that a target must have.
 #
-# Usage: pwsh -File src/fuzz/run_fuzzers.ps1 [-BuildDir build] [-Seconds 60] [-Seed 1] [-Targets fuzz_pack,...]
+# Usage: pwsh -File src/fuzz/run_fuzzers.ps1 [-BuildDir build] [-Seconds 60] [-Seed 1] [-Parallel 1] [-Targets fuzz_pack,...]
 
 param(
 	[string] $BuildDir = 'build',
 	[int] $Seconds = 60,
 	[int] $Seed = 1,
+	[int] $Parallel = 1,
 	[string[]] $Targets = @()
 )
 
@@ -146,7 +155,103 @@ function Get-Covered([string] $Stderr) {
 	return $covered
 }
 
+# The worker of a target: this script, run again with that target alone as a process of its own (no -Parallel, so it runs the
+# target as the loop below does). Both of its streams are read as it writes, so that it never waits for the reader.
+function Start-Worker([string] $Pwsh, [string] $Target) {
+	$arguments = @('-NoProfile', '-NonInteractive')
+	if ($IsWindows) { $arguments += @('-ExecutionPolicy', 'Bypass') }
+	$arguments += @('-File', $PSCommandPath, '-BuildDir', $BuildDir, '-Seconds', "$Seconds", '-Seed', "$Seed", '-Targets', $Target)
+
+	$psi = New-Object System.Diagnostics.ProcessStartInfo
+	$psi.FileName = $Pwsh
+	$psi.Arguments = ($arguments | ForEach-Object { '"' + $_ + '"' }) -join ' '
+	$psi.UseShellExecute = $false
+	$psi.RedirectStandardInput = $true
+	$psi.RedirectStandardOutput = $true
+	$psi.RedirectStandardError = $true
+
+	$watch = [System.Diagnostics.Stopwatch]::StartNew()
+	$proc = [System.Diagnostics.Process]::Start($psi)
+	$proc.StandardInput.Close()
+	return @{ Target = $Target; Process = $proc; Watch = $watch; Stdout = $proc.StandardOutput.ReadToEndAsync(); Stderr = $proc.StandardError.ReadToEndAsync() }
+}
+
+# Runs $Names as workers, up to $Parallel at a time, and prints the output of each in one piece when it ends, with its time. Returns
+# what failed, as the loop below collects it: "<target> replay" or "<target> fuzz" as the worker says it, or the target and the
+# exit code of a worker that ended some other way (an exception, or an exit code of 0 without the line that says it passed).
+function Invoke-Workers([string[]] $Names) {
+	$pwsh = (Get-Process -Id $PID).Path
+	$queue = [System.Collections.Generic.Queue[string]]::new()
+	foreach ($name in $Names) { $queue.Enqueue($name) }
+	$running = [System.Collections.Generic.List[object]]::new()
+	$failures = @()
+	$spent = 0.0
+	$clock = [System.Diagnostics.Stopwatch]::StartNew()
+
+	Write-Host "Running $($Names.Count) targets, $Parallel at a time"
+	try {
+		while ($queue.Count -gt 0 -or $running.Count -gt 0) {
+			while ($queue.Count -gt 0 -and $running.Count -lt $Parallel) {
+				$running.Add((Start-Worker $pwsh ($queue.Dequeue())))
+			}
+			$ended = @($running | Where-Object { $_.Process.HasExited })
+			if ($ended.Count -eq 0) {
+				Start-Sleep -Milliseconds 200
+				continue
+			}
+
+			foreach ($worker in $ended) {
+				[void] $running.Remove($worker)
+				$took = $worker.Watch.Elapsed.TotalSeconds
+				$spent += $took
+				$proc = $worker.Process
+				$proc.WaitForExit()
+				$out = $worker.Stdout.Result
+				$err = $worker.Stderr.Result
+				$passed = ($proc.ExitCode -eq 0) -and ($out -match '(?m)^All fuzz targets passed\r?$')
+
+				# The line that says a worker passed is the verdict of the whole run, which the end of this script prints
+				$lines = @($out -split "`r?`n" | Where-Object { $_ -cne 'All fuzz targets passed' })
+				Write-Host (($lines -join "`n").TrimEnd())
+				if ($err.Trim().Length -ne 0) { Write-Host $err.TrimEnd() }
+				if ($passed) {
+					Write-Host "[$($worker.Target)] passed in $([math]::Round($took, 1)) s"
+				} else {
+					Write-Host "[$($worker.Target)] FAILED in $([math]::Round($took, 1)) s, exit code $($proc.ExitCode)"
+					$said = [regex]::Match($out, '(?m)^FAILED: (.+?)\r?$')
+					if ($said.Success) {
+						$failures += $said.Groups[1].Value
+					} else {
+						$failures += "$($worker.Target) (exit code $($proc.ExitCode))"
+					}
+				}
+			}
+		}
+	} finally {
+		# A run that stops on an error leaves no worker behind (one that ended since the check is not an error)
+		foreach ($worker in $running) {
+			try { $worker.Process.Kill($true) } catch { }
+		}
+	}
+
+	Write-Host "$($Names.Count) targets, $Parallel at a time: $([math]::Round($clock.Elapsed.TotalMinutes, 1)) min, where one after the other they take $([math]::Round($spent / 60, 1)) min"
+	return $failures
+}
+
 $failed = @()
+
+if ($Parallel -gt 1 -and $Targets.Count -gt 1) {
+	# What stops the loop below at its target stops the run here before any target runs, not after the others have
+	foreach ($target in $Targets) {
+		$exe = Join-Path $BuildDir "$target.exe"
+		if (-not (Test-Path $exe)) { throw "$exe not found (configure with -DRANZ_FUZZ=ON)" }
+		[void] (Get-MaxLen $target)
+		[void] (Get-Reach $target)
+	}
+	$failed = @(Invoke-Workers $Targets)
+	# Every target has run: none is left for the loop below, and the end of this script says what failed
+	$Targets = @()
+}
 
 foreach ($target in $Targets) {
 	$exe = Join-Path $BuildDir "$target.exe"
