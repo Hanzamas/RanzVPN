@@ -30,7 +30,7 @@ typedef struct NODE_LINK_STATUS {
 
 // NodeLink.c
 UINT NodeLinkKind(NODE_VRF_TABLES *v, UINT hop, UINT vrf_id);
-bool NodeLinkSend(NODE_VRF_TABLES *v, UINT hop, const UCHAR *record, UINT size);
+bool NodeLinkSend(NODE_VRF_TABLES *v, UINT hop, const UCHAR *record, UINT size, bool host);
 void NodeLinkAttach(NODE *n, NODE_VRF_TABLES *v, const struct CONTROL_STATE *st);
 void NodeLinkApplied(NODE *n, bool swapped);
 void NodeFreeLinkTable(NODE_LINK_TABLE *t);
@@ -38,6 +38,7 @@ void NodeLinkStop(NODE *n);
 void NodeLinkGetStatus(NODE *n, NODE_LINK_STATUS *st);
 
 // NodeOverlay.c
-void NodeOverlayLinkDeliver(NODE *n, void *hop, const UCHAR *record, UINT size, UCHAR *nat_buf);
+struct NODE_SOURCE_CLAIM;
+void NodeOverlayLinkDeliver(NODE *n, void *hop, const UCHAR *record, UINT size, UCHAR *nat_buf, const struct NODE_SOURCE_CLAIM *claim);
 
 #endif // NODE_LINK_H
