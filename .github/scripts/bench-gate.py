@@ -18,24 +18,36 @@
 #   slower than its median by more than SMALL_SLACK_US microseconds;
 # - every other case fails when it is slower than its median by more than its margin.
 #
+# What the best is the best of matters. A case that a run measures once has one sample, however many result files there are
+# (the enrolment of the scale scenario was measured once in a run, and its three files held that one number three times), and a
+# run that is slow in that one sample is slow for the gate. So the gate counts, for each case, the result files that hold it,
+# which are the samples that it judges the best of, and prints the count in its table. --min-samples PATTERN N WHAT fails the run
+# when a recorded case that matches PATTERN (a shell wildcard) has fewer than N: a run that measures its enrolments once, and not
+# the three that it should, fails and is not judged on the one.
+#
 # The recorded medians, one file per architecture (.github/quality/bench-<arch>.txt):
 #   <case> <median> <unit> <margin %>
 # record makes the file from the result files of several CI runs: the median of each case over the
 # runs, and a margin of twice the slowest run's distance from that median, rounded up to 5 %, and at
 # least --min-margin. A time that every run printed in whole units (2 us) also gets a margin of at
-# least two such units. A case whose median is 0 is left out: no margin is relative to 0.
+# least two such units. A case whose median is 0 is left out: no margin is relative to 0. Every result file
+# is a run of its own, unless --per-run says that a RESULTS argument names the files of one run: that run
+# is then the best of them, the number that compare judges, so the margin is the spread of what the gate
+# judges between runs and not the spread of its samples.
 #
 # Usage:
-#   python bench-gate.py compare --medians FILE [--runs N] RESULTS...
+#   python bench-gate.py compare --medians FILE [--runs N] [--min-samples PATTERN N WHAT]... RESULTS...
 #                                                            exit 1 when a recorded case is slower
 #                                                            than it may be, or missing, or fewer than
-#                                                            N result files are given
-#   python bench-gate.py record --out FILE [--min-margin 25] [--note TEXT] RESULTS...
+#                                                            N result files are given, or a case has
+#                                                            fewer samples than --min-samples asks for
+#   python bench-gate.py record --out FILE [--min-margin 25] [--per-run] [--note TEXT] RESULTS...
 # A RESULTS argument with a wildcard (bench-x64*.txt) names every file that matches it.
 #
 # Standard library only.
 
 import argparse
+import fnmatch
 import glob
 import math
 import os
@@ -83,10 +95,12 @@ def read_results(path):
 
 
 def best_results(paths):
-    # case -> (best value, unit) over the result files: the minimum of a time, the maximum of a rate
-    best, problems = {}, []
+    # case -> (best value, unit) over the result files: the minimum of a time, the maximum of a rate; and case -> the number of
+    # result files that hold it, the samples that the best is the best of
+    best, samples, problems = {}, {}, []
     for path in paths:
         for case, (value, unit) in read_results(path).items():
+            samples[case] = samples.get(case, 0) + 1
             if case not in best:
                 best[case] = (value, unit)
             elif best[case][1] != unit:
@@ -95,7 +109,7 @@ def best_results(paths):
                 best[case] = (max(best[case][0], value), unit)
             else:
                 best[case] = (min(best[case][0], value), unit)
-    return best, problems
+    return best, samples, problems
 
 
 def slowdown(median, value, unit):
@@ -131,15 +145,15 @@ def compare(args):
     problems += more
     if len(paths) < args.runs:
         problems.append('%d result files given, and the gate judges the best of %d runs' % (len(paths), args.runs))
-    results, more = best_results(paths)
+    results, samples, more = best_results(paths)
     problems += more
 
-    lines = ['| case | median | best of %d | slower by | margin | |' % max(len(paths), 1), '|---|---:|---:|---:|---:|---|']
+    lines = ['| case | median | best | samples | slower by | margin | |', '|---|---:|---:|---:|---:|---:|---|']
     for case in sorted(medians):
         median, unit, margin = medians[case]
         if case not in results:
             problems.append('%s: recorded in %s and not in this run\'s results' % (case, args.medians))
-            lines.append('| %s | %g %s | - | - | %g%% | missing |' % (case, median, unit, margin))
+            lines.append('| %s | %g %s | - | 0 | - | %g%% | missing |' % (case, median, unit, margin))
             continue
         value, got_unit = results[case]
         if got_unit != unit:
@@ -160,15 +174,34 @@ def compare(args):
             verdict = 'too slow'
             problems.append('%s: %g %s, %.1f%% slower than the recorded median %g %s; the margin is %g%%'
                             % (case, value, unit, slower * 100, median, unit, margin))
-        lines.append('| %s | %g %s | %g %s | %.1f%% | %g%% | %s |' % (case, median, unit, value, unit, slower * 100, margin, verdict))
+        lines.append('| %s | %g %s | %g %s | %d | %.1f%% | %g%% | %s |' % (case, median, unit, value, unit, samples[case], slower * 100, margin, verdict))
     new = sorted(set(results) - set(medians))
 
+    # What each case is judged on: the samples that --min-samples asks for, and how many the result files hold
+    counted = []
+    for pattern, wanted, what in args.min_samples:
+        matching = [case for case in sorted(medians) if fnmatch.fnmatchcase(case, pattern)]
+        if not matching:
+            problems.append('--min-samples %s %d %s: no case recorded in %s matches it' % (pattern, wanted, what, args.medians))
+            continue
+        held = [samples[case] for case in matching if case in results]
+        for case in matching:
+            if case in results and samples[case] < wanted:
+                problems.append('%s: the result files hold %d of the %d %s that the gate is asked to judge the best of (--min-samples %s %d %s)'
+                                % (case, samples[case], wanted, what, pattern, wanted, what))
+        if held:
+            counted.append('%s: %d %s, each judged on the best of %s %s (at least %d asked for)'
+                           % (pattern, len(matching), 'case' if len(matching) == 1 else 'cases',
+                              held[0] if min(held) == max(held) else '%d to %d' % (min(held), max(held)), what, wanted))
+
     print('\n'.join(lines))
+    for line in counted:
+        print(line)
     summary = os.environ.get('GITHUB_STEP_SUMMARY')
     if summary:
         with open(summary, 'a', encoding='utf-8') as f:
-            f.write('### Performance regression gate (%s, best of %d runs)\n\n%s\n\n'
-                    % (os.path.basename(args.medians), len(paths), '\n'.join(lines)))
+            f.write('### Performance regression gate (%s, best of %d runs)\n\n%s\n\n%s'
+                    % (os.path.basename(args.medians), len(paths), '\n'.join(lines), ''.join(line + '\n\n' for line in counted)))
     if new:
         print('Not compared, no recorded median (record one with bench-gate.py record): ' + ', '.join(new))
     for p in problems:
@@ -182,12 +215,24 @@ def compare(args):
 
 
 def record(args):
-    paths, problems = expand(args.results)
+    # The runs: every result file, or with --per-run the files that one RESULTS argument names, as the best of them
+    groups, problems = [], []
+    for arg in args.results:
+        paths, more = expand([arg])
+        problems += more
+        if args.per_run:
+            groups.append(paths)
+        else:
+            groups.extend([path] for path in paths)
+    runs = []
+    for group in groups:
+        best, _, more = best_results(group)
+        problems += more
+        runs.append(best)
     if problems:
         for p in problems:
             print(p, file=sys.stderr)
         return 1
-    runs = [read_results(path) for path in paths]
     cases = {}
     for run in runs:
         for case, (value, unit) in run.items():
@@ -195,7 +240,8 @@ def record(args):
 
     out = ['# The recorded medians of the performance regression gate (ADR-0040 item 5,',
            '# .github/scripts/bench-gate.py): <case> <median> <unit> <margin %>.',
-           '# Recorded by bench-gate.py record from %d CI runs, the margin twice the slowest run\'s distance' % len(runs),
+           '# Recorded by bench-gate.py record from %d CI runs%s the margin twice the slowest run\'s distance'
+           % (len(runs), ', each the best of its result files as compare judges them,' if args.per_run else ','),
            '# from the median, rounded up to 5 %%, at least %g %% and at least two units of a time printed' % args.min_margin,
            '# in whole units.']
     if args.note:
@@ -229,13 +275,25 @@ def main():
     p.add_argument('--medians', required=True)
     p.add_argument('--runs', type=int, default=1, help='the number of result files that must be given: the runs of which '
                    'the gate judges the best')
+    p.add_argument('--min-samples', nargs=3, action='append', default=[], metavar=('PATTERN', 'N', 'WHAT'),
+                   help='the recorded cases that match PATTERN (a shell wildcard) must each be in at least N result files, '
+                   'the N WHAT (enrolments, say) that the gate judges the best of')
     p.add_argument('results', nargs='+')
     p = sub.add_parser('record')
     p.add_argument('--out', required=True)
     p.add_argument('--min-margin', type=float, default=25)
+    p.add_argument('--per-run', action='store_true', help='a RESULTS argument names the result files of one CI run, which '
+                   'counts as the best of them, as compare judges it; without it every result file is a run')
     p.add_argument('--note', default='')
     p.add_argument('results', nargs='+')
     args = ap.parse_args()
+    if args.mode == 'compare':
+        rules = []
+        for pattern, wanted, what in args.min_samples:
+            if not wanted.isdigit() or int(wanted) < 1:
+                ap.error('--min-samples %s %s %s: N is not a whole number from 1' % (pattern, wanted, what))
+            rules.append((pattern, int(wanted), what))
+        args.min_samples = rules
     return compare(args) if args.mode == 'compare' else record(args)
 
 
