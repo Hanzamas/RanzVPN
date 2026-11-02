@@ -30,7 +30,7 @@ typedef struct NODE_LINK_STATUS {
 
 // NodeLink.c
 UINT NodeLinkKind(NODE_VRF_TABLES *v, UINT hop, UINT vrf_id);
-bool NodeLinkSend(NODE_VRF_TABLES *v, UINT hop, const UCHAR *record, UINT size, bool host);
+bool NodeLinkSend(NODE_VRF_TABLES *v, UINT hop, const UCHAR *record, UINT size, bool host, const VXLAN_TRACE *trace);
 void NodeLinkAttach(NODE *n, NODE_VRF_TABLES *v, const struct CONTROL_STATE *st);
 void NodeLinkApplied(NODE *n, bool swapped);
 void NodeFreeLinkTable(NODE_LINK_TABLE *t);
