@@ -29,8 +29,9 @@
 // The seeds (src/fuzz/seeds/fuzz_control.py) are the control messages that the controller conformance tests and the
 // cluster tests sent and received, each a seed of its own (wire-*.bin), and the messages that each simulated node
 // received, in their order, as one stream (stream-*.bin); a state with L2 and L3 Networks followed by Operations of
-// every kind (operation-*.bin); and a state whose VRFs peer by BGP followed by deltas with a peering that the node cannot
-// read, without it and with it again (peering-*.bin).
+// every kind (operation-*.bin); a state whose VRFs peer by BGP followed by deltas with a peering that the node cannot
+// read, without it and with it again (peering-*.bin); and a state whose node is a mimic server and the client of two
+// followed by deltas with what the node leaves out of its mimic part, without it and with it again (mimic-*.bin).
 //
 // fuzz-max-len: 8192
 // fuzz-libs: corecontrol
