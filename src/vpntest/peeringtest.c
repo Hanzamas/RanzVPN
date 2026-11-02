@@ -66,7 +66,7 @@
 //   worker takes to settle its sidecar on a Generation fails (NodePeeringFailNext). Node-a logs and counts it, keeps the change and
 //   tries again, so that its sidecar announces the LAN and the mesh converges, and not only at the next Generation.
 // - A sidecar of protocol 3: a stand-in of such a sidecar sends node-c its ready (NodePeeringFeed). Node-c needs a later protocol
-//   (NODE_PEERING_PROTOCOL, 6 since the route reflectors of SDN-79, #359): it ends the sidecar and says so with the version in its
+//   (NODE_PEERING_PROTOCOL, 7 since the route reflectors of SDN-79, #359): it ends the sidecar and says so with the version in its
 //   log, and the sidecar that starts after it brings the mesh back.
 // - The refusal line: the node log of node-a names the router of the operator that dials the tunnel endpoint among the sessions
 //   that the sidecar refuses, with the session from 127.0.0.9.
