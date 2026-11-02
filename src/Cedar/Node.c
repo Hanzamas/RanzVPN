@@ -26,6 +26,7 @@
 
 #include "NodeCaps.h"
 #include "NodeInternal.h"
+#include "NodeRouted.h"
 #include "NodeThrottle.h"
 
 #include <AclAPI.h>
@@ -618,8 +619,9 @@ static void NodeAddHub(NODE *n, char *name, bool online) {
 }
 
 // The server role: a Hub for each L2 network of the configuration store, or the DEFAULT hub when the store has no
-// network. The L3 networks come with the routed networks (CORE-S6-1, #80). The sessions of the QUIC and TLS
-// transports (CORE-S1-1 #67, CORE-S2-1 #69) end in the Hubs, as Sessions of a Tunnel (NodeAcceptSession, CORE-S1-2 #68).
+// network, and a routed network for each L3 network, which the Windows IP stack routes between (NodeRouted.c;
+// CORE-S6-1, #80). The sessions of the QUIC and TLS transports (CORE-S1-1 #67, CORE-S2-1 #69) end in the Hubs, as
+// Sessions of a Tunnel (NodeAcceptSession, CORE-S1-2 #68).
 static bool NodeServerStart(NODE *n) {
 	LIST *o = CsEnumNetworks(n->Store);
 
@@ -631,17 +633,19 @@ static bool NodeServerStart(NODE *n) {
 
 		if (net->Mode == CS_MODE_L2)
 			NodeAddHub(n, net->Name, net->Online);
-		else
-			NodeLog(n, "Network %s skipped: L3 networks come with CORE-S6-1 (#80)", net->Name);
 	}
 
 	CsFreeNetworkList(o);
 
-	return (LIST_NUM(n->HubList) != 0);
+	bool routed = NodeRoutedStart(n);
+
+	return (LIST_NUM(n->HubList) != 0 || routed);
 }
 
-// Stop the Hubs of the server role and release them
+// Stop the routed networks and the Hubs of the server role and release them
 static void NodeServerStop(NODE *n) {
+	NodeRoutedStop(n);
+
 	for (UINT i = 0; i < LIST_NUM(n->HubList); i++) {
 		HUB *h = LIST_DATA(n->HubList, i);
 

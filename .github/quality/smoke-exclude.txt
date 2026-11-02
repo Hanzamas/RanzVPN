@@ -16,6 +16,7 @@ sdntrace       needs the address and key of a running controller: .github/script
 firsttest      needs the address and key of a running controller, administrator rights and wintun.dll next to vpntest: .github/scripts/first-test.ps1 runs it
 kmtest         needs administrator rights, a KM-TEST adapter and the drivers of ranz install: the kmtest job runs it (.github/scripts/kmtest.ps1)
 nicbridge      needs administrator rights, a KM-TEST adapter, the runner's NIC, the Hyper-V switch of the job and the drivers of ranz install: the kmtest job runs it (.github/scripts/kmtest.ps1)
+l3route        needs administrator rights, KM-TEST adapters, WinNAT and the drivers of ranz install, and changes the NAT of Windows of the runner: the kmtest job runs it (.github/scripts/l3route.ps1)
 devicetrace    needs the address and key of a running controller, administrator rights, wintun.dll and wireguard.dll next to vpntest and ranz-wgpeer: .github/scripts/device-tracer.ps1 runs it
 listeneracme   needs a test ACME server, ranz next to vpntest and administrator rights: .github/scripts/listener-acme.ps1 runs it
 explain        needs the plans that ranz-explainplan writes from the scenarios of tests/explain: .github/scripts/explain-conformance.ps1 runs it

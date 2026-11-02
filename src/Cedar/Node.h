@@ -339,7 +339,7 @@ struct NODE_TABLE {
 struct NODE_TABLES {
 	UINT64 Generation;     // Set by NodeSwapTables and NodeSwapVrfs: one more than the snapshot it replaced
 	NODE_TABLE *Mac;       // The VLAN-aware MAC table: key NodeMacKey, value the port
-	NODE_TABLE *Route;     // The route table; its compiled form comes with the routed networks (CORE-S6-1, #80)
+	NODE_TABLE *Route;     // The route table; the routed networks need none, as the kernel routes them (CORE-S6-1, #80)
 	NODE_TABLE *Policy;    // The policy table; its compiled form comes with the policy engine (CORE-S4-2, #75)
 	NODE_VRF_TABLES *Vrfs; // The forwarding tables of the VRFs (NodeVrf.c; SDN-4, #180), NULL for none
 	// The IP prefix routes of the fabric of an EVPN gateway (NodeEvpn.c; SDN-25, #201), NULL for none: NodeSwapEvpn replaces
@@ -455,6 +455,9 @@ struct NODE {
 
 	// The client role (NodeClient.c; CORE-S3-1, #71), under Lock: NULL while the role holds nothing
 	NODE_CLIENT *Client;
+
+	// The routed networks of the server role (NodeRouted.c; CORE-S6-1, #80), under Lock: NULL while none is up
+	struct NODE_ROUTED_SET *Routed;
 
 	// The Controller of the node and its admin pipe (NodeController.c; SDN-90, #395), under Lock: NULL while the node
 	// does not run. The admin pipe is NODE_ADMIN_PIPE unless a test names another before NodeStart.

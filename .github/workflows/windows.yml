@@ -1892,7 +1892,8 @@ jobs:
   # Each run of vpntest has a time limit. arm64 is L3 only (no XDP runtime and no SeLow package for it): the l2adapter
   # test of build_and_test shows that no L2 adapter is offered there.
   # .github/scripts/kmtest.ps1. Then QTIP between two server node processes, each on its own KM-TEST adapter with XDP
-  # (CORE-S7-2, #83): .github/scripts/qtip.ps1.
+  # (CORE-S7-2, #83): .github/scripts/qtip.ps1. Then the routed networks of the server role, each on a KM-TEST adapter of
+  # its own, routed by the kernel and NATed by WinNAT (CORE-S6-1, #80): .github/scripts/l3route.ps1.
   kmtest:
     needs: [build_and_test, sign_and_integrity]
     strategy:
@@ -1951,6 +1952,16 @@ jobs:
       timeout-minutes: 20
       run: |
         . .github/scripts/qtip.ps1 -Ranz artifacts\ranz\ranz.exe -Vpntest artifacts\bin\vpntest.exe -Runner ${{ matrix.runner }}
+    # The routed networks of the server role (CORE-S6-1, #80; ADR-0010 decision 1; ADR-0002 amendment of 2026-10-21): ranz
+    # install, then vpntest l3route, two routed networks each on a KM-TEST adapter of its own with XDP: the routing of the
+    # kernel between them against the golden files of the family l3route, the forwarding of the kernel, and the NAT of a
+    # routed network to an uplink of the test through WinNAT; then ranz uninstall (.github/scripts/l3route.ps1)
+    - name: Routed networks on the Windows IP stack
+      if: ${{ !cancelled() }}
+      shell: pwsh
+      timeout-minutes: 20
+      run: |
+        . .github/scripts/l3route.ps1 -Ranz artifacts\ranz\ranz.exe -Vpntest artifacts\bin\vpntest.exe -Runner ${{ matrix.runner }}
 
   # The first test of the product on two PCs (docs/first-test.md, in simple English for the person who runs it by hand), proved on a
   # runner that plays both PCs, on windows-latest (x64) and windows-11-arm (arm64). .github/scripts/first-test.ps1 reads the
