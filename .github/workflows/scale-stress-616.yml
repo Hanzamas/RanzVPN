@@ -1,11 +1,13 @@
-# A temporary stress of CI-FLAKE-9 (#616), taken out again by the last commit of its pull request. It runs the scale scenario of
-# ranz.yml at a tenth of the target again and again on each of eight runners, with a probe of the sync latency of the disk before
-# each run, to show how the best of the three enrolments of a run is spread between runs and between runners. It runs when this
-# file changes in a push.
+# A temporary record of CI-FLAKE-9 (#616), taken out again by the last commit of its pull request. Round 3 runs the steps of the job
+# scale (Linux) of ranz.yml, as they are, once on each of sixteen runners, so that the baseline of the gate is recorded from runs of
+# that job on many runners, the slow ones among them: the artifact ranz-scale-pr-<n> of a leg holds what the artifact ranz-scale-pr
+# of the job holds. It runs when this file changes in a push.
 #
 # Round 1 (head 6ed6369c, the scenario of integration with one enrolment in a run, on six runners, in turn on the disk and on a
 # RAM disk): the enrolment took 2.8 s to 10.7 s on the disk and 2.6 s to 3.1 s on the RAM disk.
-# Round 2: the scenario of the head, three enrolments in a run, four runs on the disk of each of eight runners.
+# Round 2 (run 41407229696, head 8bd75773, the scenario of the head, three enrolments in a run, four runs on the disk of each of
+# eight runners): the best of the three enrolments of a run took 2.7 s to 3.7 s, between runners that differ in their CPU; in 5 of
+# the 32 runs the first enrolment took 5.5 s to 10.1 s and the other two of the run 2.7 s to 4.0 s.
 
 name: scale-stress-616
 
@@ -24,20 +26,23 @@ env:
   RQLITE_LINUX_AMD64_SHA256: '93dc04417d9d233e79eb359e325793b1f92daa84ec93694953f4bff6307fda2b'
 
 jobs:
-  stress:
-    name: stress ${{ matrix.n }}
+  record:
+    name: scale (Linux) copy ${{ matrix.n }}
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 40
     strategy:
       fail-fast: false
       matrix:
-        n: [1, 2, 3, 4, 5, 6, 7, 8]
+        n: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]
     steps:
     - uses: actions/checkout@v4
     - uses: actions/setup-go@v5
       with:
         go-version: ${{ env.GO_VERSION }}
         cache-dependency-path: go.sum
+    - uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'
     - name: Install rqlited
       timeout-minutes: 5
       run: |
@@ -49,59 +54,31 @@ jobs:
         test -n "$rqlited"
         "$rqlited" -version
         echo "RQLITED=$rqlited" >> "$GITHUB_ENV"
+    # What the runner is, beside the files of the run: the CPU of the runner tells its speed
     - name: The machine
       run: |
-        mkdir -p stress-out
+        mkdir -p scale-out/pr
         {
           lscpu
           echo
           uname -r
           findmnt -T "$RUNNER_TEMP" || true
-          lsblk || true
-        } > stress-out/machine.txt 2>&1
-        grep -E 'Model name|^CPU\(s\)|Hypervisor' stress-out/machine.txt || true
-        findmnt -T "$RUNNER_TEMP" || true
-    - name: Build the scale test
+        } > scale-out/pr/machine.txt 2>&1
+        grep -E 'Model name|^CPU\(s\)' scale-out/pr/machine.txt || true
+    # The steps of the job scale (Linux) of ranz.yml, as they are
+    - name: The scenario without a controller
       timeout-minutes: 10
-      run: go test -c -o "$RUNNER_TEMP/scale.test" ./controller/internal/controller
-    - name: Stress
-      timeout-minutes: 20
-      run: |
-        out="$GITHUB_WORKSPACE/stress-out"
-        cat > "$RUNNER_TEMP/probe.py" <<'PY'
-        import os
-        import sys
-        import time
-
-        d = sys.argv[1]
-        path = os.path.join(d, 'ranz-probe.bin')
-        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-        buf = b'x' * 4096
-        lat = []
-        for _ in range(400):
-            t = time.perf_counter()
-            os.write(fd, buf)
-            os.fsync(fd)
-            lat.append((time.perf_counter() - t) * 1000)
-        os.close(fd)
-        os.unlink(path)
-        lat.sort()
-        n = len(lat)
-        print('fsync in %s: n=%d mean=%.2f p50=%.2f p90=%.2f p99=%.2f max=%.2f ms' % (d, n, sum(lat) / n, lat[n // 2], lat[int(n * 0.9)], lat[int(n * 0.99)], lat[-1]))
-        PY
-        cd controller/internal/controller
-        for i in 1 2 3 4; do
-          echo "::group::run $i"
-          date -u +%H:%M:%S
-          python3 "$RUNNER_TEMP/probe.py" /tmp | sed "s/^/run $i before: /" | tee -a "$out/probe.txt"
-          RANZ_SCALE=pr RANZ_SCALE_OUT="$out/run$i" "$RUNNER_TEMP/scale.test" -test.run '^TestScale$' -test.v -test.timeout 10m > "$out/run$i.log" 2>&1 || echo "run $i failed"
-          grep -E 'enrolled|FAIL|panic' "$out/run$i.log" || true
-          echo "::endgroup::"
-        done
+      run: go test -count=1 -v ./controller/internal/nodesim
+    - name: The scale scenario at a tenth of the target
+      timeout-minutes: 30
+      env:
+        RANZ_SCALE: pr
+        RANZ_SCALE_OUT: ${{ github.workspace }}/scale-out/pr
+      run: go test -count=1 -v -timeout 25m -run '^TestScale$' ./controller/internal/controller
     - uses: actions/upload-artifact@v4
       if: ${{ !cancelled() }}
       with:
-        name: scale-stress-${{ matrix.n }}
+        name: ranz-scale-pr-${{ matrix.n }}
         retention-days: 30
         if-no-files-found: ignore
-        path: stress-out
+        path: ${{ github.workspace }}/scale-out/pr
