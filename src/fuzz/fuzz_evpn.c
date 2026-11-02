@@ -3,9 +3,13 @@
 // the node: the messages of its BGP sidecar, one JSON object per line, as IP prefix routes of an EVPN VRF
 // (NodeEvpnParseRoute), and the frames that the VTEPs of a fabric send on the L3 VNI of an EVPN VRF (NodeEvpnParseFrame,
 // which reads the two ends of the packet of a frame with NodeEvpnEnds), which the gateway takes only from a VTEP that it knows
-// for the VRF, the VTEP of a route of the VRF that it learned (NodeEvpnSortVteps, NodeEvpnHasVtep; SDN-25-R1 #549). The first
-// byte of an input, modulo 3, picks what the rest is: 0, the messages; 1, the frame; 2, the outer source of a frame and the
-// messages of the routes that the gateway learned. The messages are the rest of the input split at each newline, as the node
+// for the VRF, the VTEP of a route of the VRF that it learned (NodeEvpnSortVteps, NodeEvpnHasVtep; SDN-25-R1 #549), and the
+// stretch messages of the sidecar, the type-2 and type-3 routes of the fabric on the L2 VNIs of the stretches of the gateway
+// (NodeStretchParseRoutes; Cedar/NodeStretch.c, SDN-64 #291). The first byte of an input, modulo 4, picks what the rest is: 0,
+// the messages; 1, the frame; 2, the outer source of a frame and the messages of the routes that the gateway learned; 3, the
+// stretch messages. A route of a stretch message that the parser takes has a VNI of 24 bits, and a type-3 route no MAC address
+// and no IP address, a type-2 route the MAC address of one host and an IP address of 4 or 16 bytes or none; a parser of no room
+// takes no route. The messages are the rest of the input split at each newline, as the node
 // splits what it reads, each copied into a buffer of its size and its NUL exactly; the frame is the rest of the input, copied
 // into a buffer of its size exactly, so that AddressSanitizer reports a read past either. A route that a message gives has a
 // VRF, a VNI of 24 bits and a prefix of IPv4 or IPv6 whose texts end within their fields, and a learned one a VTEP, the
@@ -270,6 +274,80 @@ static void FuzzEvpnVteps(const uint8_t *data, size_t size)
 	free(source);
 }
 
+// One stretch message of the sidecar, without its newline: what NodeStretchParseRoutes finds in it, with room for
+// NODE_STRETCH_MAX_ROUTES routes in list and with none
+static void FuzzEvpnStretchLine(const uint8_t *data, size_t size, NODE_STRETCH_ROUTE *list)
+{
+	static const UCHAR zero[6] = {0};
+	char *line = malloc(size + 1);
+	UINT bad = 0;
+
+	if (line == NULL)
+	{
+		abort();
+	}
+
+	memcpy(line, data, size);
+	line[size] = 0;
+
+	UINT num = NodeStretchParseRoutes(line, list, NODE_STRETCH_MAX_ROUTES, &bad);
+	if (num == NODE_STRETCH_NO_MESSAGE)
+	{
+		if (bad != 0)
+		{
+			abort();
+		}
+	}
+	else if (num > NODE_STRETCH_MAX_ROUTES)
+	{
+		abort();
+	}
+
+	for (UINT i = 0;num != NODE_STRETCH_NO_MESSAGE && i < num;i++)
+	{
+		const NODE_STRETCH_ROUTE *r = &list[i];
+
+		if (r->Vni == 0 || r->Vni > VXLAN_MAX_VNI || (r->IpSize != 0 && r->IpSize != 4 && r->IpSize != 16) ||
+			(r->Imet && (r->IpSize != 0 || memcmp(r->Mac, zero, sizeof(zero)) != 0)) ||
+			(r->Imet == false && ((r->Mac[0] & 0x01) != 0 || memcmp(r->Mac, zero, sizeof(zero)) == 0)))
+		{
+			abort();
+		}
+	}
+
+	// A parser of no room takes no route
+	num = NodeStretchParseRoutes(line, NULL, 0, &bad);
+	if (num != 0 && num != NODE_STRETCH_NO_MESSAGE)
+	{
+		abort();
+	}
+
+	free(line);
+}
+
+// The stretch messages of the input, split at each newline
+static void FuzzEvpnStretch(const uint8_t *data, size_t size)
+{
+	NODE_STRETCH_ROUTE *list = malloc(sizeof(NODE_STRETCH_ROUTE) * NODE_STRETCH_MAX_ROUTES);
+	size_t start = 0;
+
+	if (list == NULL)
+	{
+		abort();
+	}
+
+	for (size_t i = 0;i <= size;i++)
+	{
+		if (i == size || data[i] == '\n')
+		{
+			FuzzEvpnStretchLine(data + start, i - start, list);
+			start = i + 1;
+		}
+	}
+
+	free(list);
+}
+
 static void FuzzEvpn(const uint8_t *data, size_t size)
 {
 	if (size == 0)
@@ -277,7 +355,7 @@ static void FuzzEvpn(const uint8_t *data, size_t size)
 		return;
 	}
 
-	switch (data[0] % 3)
+	switch (data[0] % 4)
 	{
 	case 0:
 		FuzzEvpnMessages(data + 1, size - 1, NULL);
@@ -285,8 +363,11 @@ static void FuzzEvpn(const uint8_t *data, size_t size)
 	case 1:
 		FuzzEvpnFrame(data + 1, size - 1);
 		break;
-	default:
+	case 2:
 		FuzzEvpnVteps(data + 1, size - 1);
+		break;
+	default:
+		FuzzEvpnStretch(data + 1, size - 1);
 		break;
 	}
 }
