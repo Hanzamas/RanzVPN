@@ -392,7 +392,7 @@ function Stop-HungCall([System.Diagnostics.Process] $call, [string] $what, [stri
 	} elseif ([int] $service.ProcessId -le 0) {
 		"has no process ($($service.State))"
 	} else {
-		"$($service.State), process $($service.ProcessId)"
+		"was $($service.State) in process $($service.ProcessId)"
 	}
 	if ($service -and [int] $service.ProcessId -gt 0) { Stop-ProcessTree ([int] $service.ProcessId) 'the service msiserver' $table $ended $notEnded }
 	$endedText = if ($ended.Count -gt 0) { $ended -join ', ' } else { 'nothing' }
@@ -723,14 +723,17 @@ function Invoke-SelfTest {
 	$work = New-PlantedWork
 	$script:LogDir = $work
 	try {
-		$script:msiexecSeconds = $bound
 		$notThere = Join-Path $work 'not-there.msi'
 		if ($IsWindows) {
+			# The real call ends in a few seconds, and the first one of a runner starts the service: its bound is wide, so that a slow start
+			# is no hang here. The bound is what the planted calls below test.
+			$script:msiexecSeconds = 60
 			$real = Invoke-Msiexec '/i' $notThere 'planted-not-there'
 			# 1619 is ERROR_INSTALL_PACKAGE_OPEN_FAILED: the real msiexec.exe took the command line, with its flush flag, and could not open the package
 			if ($real.Code -ne 1619) { throw "the real msiexec.exe gave the exit code '$($real.Code)' for a package that is not there, not 1619 (the package could not be opened)" }
 			Write-Host 'ok: the real msiexec.exe gives its exit code for a package that is not there, and takes its command line with the flush flag'
 		}
+		$script:msiexecSeconds = $bound
 		Set-PlantedMsiexec $work
 
 		$refused = Invoke-Msiexec '/i' (Join-Path $work 'refused.msi') 'planted-refused'

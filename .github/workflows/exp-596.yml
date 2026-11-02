@@ -286,8 +286,9 @@ jobs:
         path: ${{ runner.temp }}/msi-logs
 
   # A regression planted in a copy of the script must turn its self-test red, for the reason that the test is there: the flag of the
-  # log, the end of the service, the bound of the evidence, the final error of the flow, the stop after a hang, and on Windows the
-  # filter of the events and the query of the service
+  # log, the end of the service, the bound of the evidence, the final error, the catch and the clean-up of the flow, the stop after a
+  # hang, the processes and the tail of the log in the evidence, the bounds of the waits, and on Windows the filter of the events and
+  # the query of the service. The text of the failure is compared without the colors, the margin and the line breaks of the error view.
   mutation:
     strategy:
       fail-fast: false
@@ -298,6 +299,12 @@ jobs:
         - { name: evidence-bound, os: ubuntu-latest, expect: 'not within its bound of' }
         - { name: summary, os: ubuntu-latest, expect: 'exited with the code 0' }
         - { name: step-stop, os: ubuntu-latest, expect: 'ran a step after the call that did not end' }
+        - { name: processes, os: ubuntu-latest, expect: 'the list of processes has no line for process' }
+        - { name: tail, os: ubuntu-latest, expect: 'the tail of the verbose log does not end with' }
+        - { name: finally, os: ubuntu-latest, expect: "has no 'planted clean-up ran'" }
+        - { name: catch, os: ubuntu-latest, expect: "has no '1 steps failed:'" }
+        - { name: version, os: ubuntu-latest, expect: 'a ranz.exe version that never ends was waited for' }
+        - { name: wait, os: ubuntu-latest, expect: 'a Node that does not stop was waited for, and the wait did not fail' }
         - { name: service, os: windows-latest, expect: 'neither as ended nor as not ended' }
         - { name: events, os: windows-latest, expect: 'hold no event of the planted call' }
         - { name: servicestate, os: windows-latest, expect: 'has no process in the evidence' }
@@ -327,6 +334,18 @@ jobs:
         $with['events'] = "ProviderName = 'NoSuchProvider'"
         $find['servicestate'] = 'return Get-CimInstance Win32_Service -Filter "Name=''$name''" -OperationTimeoutSec 30'
         $with['servicestate'] = 'return Get-CimInstance Win32_Service -Filter "Name=''nosuchservice''" -OperationTimeoutSec 30'
+        $find['processes'] = "foreach (`$line in @(Get-ProcessEvidence `$ids @('msiexec.exe', 'Runner.Worker.exe', 'Runner.Listener.exe'))) { Add-Evidence `$line }"
+        $with['processes'] = '$null = $ids'
+        $find['tail'] = 'Get-Content -LiteralPath $log -Tail 40 | ForEach-Object { Add-Evidence "  $_" }'
+        $with['tail'] = '$null = 0'
+        $find['finally'] = '$null = & $cleanUp'
+        $with['finally'] = '$null = 0'
+        $find['catch'] = 'if (-not $script:msiexecHang) { throw }'
+        $with['catch'] = 'throw'
+        $find['version'] = 'if (-not $call.WaitForExit($seconds * 1000)) {'
+        $with['version'] = 'if (-not $call.WaitForExit()) {'
+        $find['wait'] = 'Write-Host "$name did not reach $state within $seconds s. What the computer shows:"'
+        $with['wait'] = 'return'
         $name = $env:MUTATION
         if ($name -eq 'step-stop') {
           $mutated = [regex]::Replace($text, '(?s)(the run stops after .*?\r?\n\s*)throw \$script:msiexecHang', '$1Write-Host ''continues''')
@@ -348,8 +367,19 @@ jobs:
         if (-not $p.WaitForExit(500000)) { $p.Kill($true); throw 'the self-test of the copy did not end within 500 s' }
         $seconds = [int] ((Get-Date) - $began).TotalSeconds
         $all = (Get-Content -LiteralPath $out -Raw) + (Get-Content -LiteralPath $err -Raw)
-        Write-Host "the self-test of the copy with the mutation '$name' exited with the code $($p.ExitCode) after $seconds s; its last lines:"
-        ($all -split "`r?`n") | Select-Object -Last 12 | ForEach-Object { Write-Host "  $_" }
+        # The error view of PowerShell colors the failure, breaks its lines at the width of the console and puts a margin before each
+        $plain = [regex]::Replace($all, '\x1b\[[0-9;]*m', '')
+        $plain = [regex]::Replace($plain, '\r?\n[ \t]*\| ?', ' ')
+        $plain = [regex]::Replace($plain, '\s+', ' ')
+        $want = [regex]::Replace($env:EXPECT, '\s+', ' ')
+        Write-Host "the self-test of the copy with the mutation '$name' exited with the code $($p.ExitCode) after $seconds s"
+        $at = $plain.IndexOf($want)
+        if ($at -ge 0) {
+          $from = [Math]::Max(0, $at - 300)
+          Write-Host "the failure, around the expected text: ...$($plain.Substring($from, [Math]::Min(700, $plain.Length - $from)))"
+        } else {
+          Write-Host "the end of its output: ...$($plain.Substring([Math]::Max(0, $plain.Length - 1500)))"
+        }
         if ($p.ExitCode -eq 0) { throw "the self-test passed on the regression '$name'" }
-        if (-not $all.Contains($env:EXPECT)) { throw "the self-test failed on the regression '$name', but not with '$($env:EXPECT)'" }
+        if ($at -lt 0) { throw "the self-test failed on the regression '$name', but not with '$($env:EXPECT)'" }
         Write-Host "ok: the self-test is red on the regression '$name', with '$($env:EXPECT)'"
