@@ -342,6 +342,11 @@ void PeerIceTickAt(PEER_AGENT *a, UINT64 now);
 // tick whose clock is older than an initiation that was sent or keys that were made after the tick read it
 void PeerSessionTickAt(PEER_AGENT *a, UINT64 now);
 
+// Peer.c: the timers of the binds, the bindings that the relay role drops and the binds that the node renews or retries,
+// at a clock that the caller gives (ms, the clock of PeerTick), for a test of a tick whose clock is older than a bind that
+// was sent or taken after the tick read it
+void PeerTickAt(PEER_AGENT *a, UINT64 now);
+
 // PeerSignal.c
 bool PeerKeyFromScalar(PEER_KEY *k, const UCHAR *priv);
 bool PeerKeyOpen(PEER_KEY *k, const wchar_t *name);
