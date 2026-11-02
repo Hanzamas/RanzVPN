@@ -24,8 +24,8 @@
 //   Windows started. The host does not ask for the hybrid, a Node does not report pq_tls, node-c's ClientHello offers no
 //   group with ML-KEM and X25519 first with its key share, and the same sessions come up with one classical group of those
 //   that node-c offers, not quantum-resistant: the one that the server of the host picks, which is not always the first
-//   that the client offers (secp384r1 on the x64 runner, whose image set an ECC Curve Order policy of NistP384 and NistP256
-//   when Windows started).
+//   that the client offers (secp384r1 on the x64 runner, Windows Server 2025, with no ECC Curve Order policy set: its
+//   Schannel server picked it of the X25519, secp256r1 and secp384r1 that node-c offered with a key share each).
 // The listeners of node-s start again in each step, so that their credentials take the list of the step. The test puts the
 // two lists back as it found them, also when its watchdog ends it.
 //
@@ -629,8 +629,7 @@ static void PqTlsTestSession(PQTLSTEST_CTX *ctx, TRANSPORT *t, UINT port, bool t
 // The checks of one session over the path what: it comes up, and both ends report one group. Where the host asks for the
 // hybrid, X25519MLKEM768, which node-c offers first. Where it does not, a classical group of those that node-c's ClientHello
 // offers, hello, the one that the server picks: node-c offers X25519 first with its key share, but the server of a host may
-// prefer another of the groups that both have, as the runner image whose ECC Curve Order policy named NistP384 first when
-// Windows started does
+// prefer another of the groups that both have, as the Schannel server of Windows Server 2025 prefers secp384r1
 static void PqTlsTestSessionChecks(PQTLSTEST_CTX *ctx, char *what, PQTLSTEST_SESSION *r, bool asks, PQTLSTEST_HELLO *hello, bool tls)
 {
 	char tmp[MAX_SIZE];

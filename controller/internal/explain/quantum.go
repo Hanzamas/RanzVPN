@@ -15,10 +15,10 @@ import (
 // shares of the first groups, and the server picks one of the groups that the client offers. So the session of two Nodes
 // that both report pqTls negotiates X25519MLKEM768, and every other session falls back to a classical group without
 // failing: the client offers X25519 first, as the list that a Node writes puts it, and the server picks one of the
-// classical groups, not always X25519 (secp384r1 on a host whose ECC Curve Order policy named NistP384 first when Windows
-// started). Explain says at each link of kind noise which of the two it negotiates and whether it is quantum-resistant,
-// from the Capabilities that the two Nodes reported last; a Node that reported none counts as one without pqTls. A link
-// of kind vxlan or geneve encrypts nothing, so it has no key exchange.
+// classical groups, not always X25519 (the Schannel server of Windows Server 2025 picked secp384r1 of the three that its
+// client offered, X25519 first). Explain says at each link of kind noise which of the two it negotiates and whether it is
+// quantum-resistant, from the Capabilities that the two Nodes reported last; a Node that reported none counts as one
+// without pqTls. A link of kind vxlan or geneve encrypts nothing, so it has no key exchange.
 
 // The key exchange of the outer session of a link of kind noise: the hybrid by its name in the TLS registry of IANA, or a
 // classical group, one without ML-KEM, which the server of the session picks.
