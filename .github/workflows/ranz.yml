@@ -570,11 +570,12 @@ jobs:
         RANZ_SCALE_OUT: ${{ github.workspace }}/scale-out/pr
       run: go test -count=1 -v -timeout 25m -run '^TestScale$' ./controller/internal/controller
     # ADR-0040 item 5: every BENCH case of the run against the median recorded for its size, in .github/quality/scale-pr.txt
-    # and scale-full.txt (bench-gate.py record makes them from the files of earlier runs); the best of the runs of each case
-    # counts, and one that is slower than its median by more than its margin fails the job. The run has three files, one for each
-    # change of every VRF and each enrolment, and the step prints how many of each it judged and fails when a file lacks the
-    # enrolment or the change that it should hold (CI-FLAKE-9, #616): a case that one sample stands for fails by the noise of
-    # the runner, which no margin can tell from a slowdown
+    # and scale-full.txt (bench-gate.py record makes them from the files of earlier runs; scale-pr.txt with --per-run, so that a
+    # run is the best of its files, the number that this step judges); the best of the runs of each case counts, and one that is
+    # slower than its median by more than its margin fails the job. The run has three files, one for each change of every VRF and
+    # each enrolment, and the step prints how many of each it judged and fails when a file lacks the enrolment or the change that
+    # it should hold (CI-FLAKE-9, #616): a case that one sample stands for fails by the noise of the runner, which no margin can
+    # tell from a slowdown
     - name: Performance regression gate at a tenth of the target
       timeout-minutes: 5
       env:
