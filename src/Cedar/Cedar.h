@@ -303,8 +303,6 @@ struct CEDAR {
 	COUNTER *ConnectionIncrement;
 	X *ServerX;
 	K *ServerK;
-	LIST *ServerChain;
-	char *CipherList;
 	UINT Version;
 	UINT Build;
 	char *ServerStr;
@@ -322,10 +320,6 @@ struct CEDAR {
 	UINT CurrentTcpQueueSize; // Changed only with InterlockedExchangeAdd
 	UINT QueueBudget;         // Changed only with InterlockedExchangeAdd
 	UINT FifoBudget;          // Changed only with InterlockedExchangeAdd
-	SSL_ACCEPT_SETTINGS SslAcceptSettings;
-	struct ssl_ctx_st *ServerSslCtx;          // The one server SSL_CTX of all accepted connections (GetCedarServerSslCtx), NULL until the first one
-	SSL_ACCEPT_SETTINGS ServerSslCtxSettings; // SslAcceptSettings that ServerSslCtx was built with
-	UINT ServerSslCtxChainGen;                // Generation of the chain_certs folder that ServerSslCtx was built with (ServerChain NULL)
 	UINT DhParamBits;
 	UCHAR MachineIdSalt[MACHINE_ID_SALT_SIZE]; // Machine identity salt: a random one from NewCedar, or the one that SetCedarMachineIdSalt sets
 	UCHAR MachineUniqueHash[SHA1_SIZE];        // Machine identity from MachineGuid and MachineIdSalt (SetCedarMachineIdSalt)
@@ -335,7 +329,6 @@ struct CEDAR {
 TRAFFIC *NewTraffic();
 void FreeTraffic(TRAFFIC *t);
 CEDAR *NewCedar(X *server_x, K *server_k);
-void SetCedarCertAndChain(CEDAR *c, X *server_x, K *server_k, LIST *server_chain);
 void ReleaseCedar(CEDAR *c);
 void StopCedar(CEDAR *c);
 void AddTraffic(TRAFFIC *dst, TRAFFIC *diff);
@@ -346,10 +339,6 @@ void DelHub(CEDAR *c, HUB *h);
 void AddConnection(CEDAR *cedar, CONNECTION *c);
 UINT GetUnestablishedConnections(CEDAR *cedar);
 void DelConnection(CEDAR *cedar, CONNECTION *c);
-// An invalid cipher spec makes the server fall back to its built-in list of modern ciphers.
-#define SERVER_DEFAULT_CIPHER_NAME "~DEFAULT~"
-void SetCedarCipherList(CEDAR *cedar, char *name);
-struct ssl_ctx_st *GetCedarServerSslCtx(CEDAR *c);
 void InitCedar();
 void FreeCedar();
 void GenerateMachineUniqueHash(CEDAR *c, void *data);
