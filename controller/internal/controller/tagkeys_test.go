@@ -21,6 +21,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -199,7 +200,9 @@ func TestTagKeysReachTheNodes(t *testing.T) {
 // each Node the new key beside the one that it sends with, and makes the new key the one to send with only once every
 // Node of dc acknowledged it. While db, which the controller cannot reach, forwards on its last Generation, gw-1 holds
 // both keys and still sends with the old one, and a second rotation is refused; once db acknowledged the new key, both
-// send with it. The next rotation drops the oldest key, so each Node holds two at most.
+// send with it. The next rotation drops the oldest key, so each Node holds two at most, and the controller allows it
+// only once every Node acknowledged the Generation that makes the new key the one to send with: while db has not taken
+// that Generation yet, it still sends with the oldest key, and the rotation is refused.
 func TestTagKeyRotation(t *testing.T) {
 	h := newTagKeysHarness(t, &logBuffer{})
 	ctx := context.Background()
@@ -224,13 +227,38 @@ func TestTagKeyRotation(t *testing.T) {
 		t.Errorf("a second rotation while db has not acknowledged key 2 answered %v, want 409 Conflict naming db", err)
 	}
 
-	// db comes back: it gets key 2, acknowledges it, and both send with it
+	// db comes back: it gets key 2 and acknowledges it, so the next Generation makes key 2 the one to send with. db takes
+	// that Generation late, as a Node on a slow stream does: until then it still sends with key 1, which a rotation would
+	// drop, so the rotation is refused and names db
+	release := make(chan struct{})
+	var hold sync.Once
+	db.OnAck = func(uint64) {
+		hold.Do(func() {
+			select {
+			case <-release:
+			case <-time.After(waitTimeout):
+			}
+		})
+	}
 	db.start(h)
-	waitTagKeys(t, db, "1 2:send")
 	waitTagKeys(t, gw, "1 2:send")
+	if got := tagKeysText(db); got != "1:send 2" {
+		t.Errorf("before db takes the Generation that makes key 2 the one to send with, it holds the keys %q, want key 1 to send with and key 2", got)
+	}
+	if _, err := h.api.RotateTagKey(ctx, "dc"); httpStatus(err) != http.StatusConflict || !strings.Contains(err.Error(), "db") {
+		t.Errorf("a rotation while db may still send with key 1 answered %v, want 409 Conflict naming db", err)
+	}
+	close(release)
+
+	// db takes it: both send with key 2, and the controller has the Ack of each
+	waitTagKeys(t, db, "1 2:send")
 	k2 := tagKey(gw, 2)
 	if !bytes.Equal(tagKey(db, 2), k2) || !bytes.Equal(tagKey(db, 1), k1) {
 		t.Errorf("db holds key 1 %x and key 2 %x, want those of gw-1, %x and %x", tagKey(db, 1), tagKey(db, 2), k1, k2)
+	}
+	for _, s := range []*sim{gw, db} {
+		gen, _ := s.State()
+		h.waitNode(s.name, gen, true)
 	}
 
 	// The next rotation drops key 1, and the Nodes, both connected, send with key 3 once both acknowledged it

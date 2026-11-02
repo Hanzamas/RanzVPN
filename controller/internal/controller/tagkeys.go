@@ -37,10 +37,12 @@ import (
 //   - Two keys are active at once. An operator rotates the key of a VRF (RotateTagKey): its Nodes get a
 //     new key beside the one that they send with, and once every Node whose state holds the new key
 //     acknowledged a Generation that holds it (advanceTagKeys), the next Generation makes it the key to
-//     send with. The older key stays until the next rotation, which drops it. So no Node sends with a key
-//     that another Node of the VRF does not hold, whichever gets its Generation first, and no packet of an
-//     open flow loses its source group. A Node that the controller cannot reach holds the switch back
-//     until it acknowledged, as it may still forward on the Generation that it holds.
+//     send with. The older key stays until the next rotation, which drops it. The controller allows that
+//     rotation only once every Node acknowledged a Generation that makes the new key the one to send with,
+//     as a Node that has not may still send with the older key. So no Node sends with a key that another
+//     Node of the VRF does not hold, whichever gets its Generation first, and no packet of an open flow
+//     loses its source group. A Node that the controller cannot reach holds the switch back until it
+//     acknowledged, as it may still forward on the Generation that it holds, and so the next rotation too.
 //   - A VRF that leaves the mode, or the intent, loses its keys (dropTagKeys). A key that does not open
 //     at the start, as one of a backup of another host does not, is replaced by a new key of the next ID,
 //     which the Nodes send with at once: they judge the claims of the Nodes that still send with the old
@@ -322,14 +324,15 @@ func (c *Controller) openTagKeys(u *controlpb.Update) *controlpb.Update {
 	return u
 }
 
-// holdsTagKey reports whether the state st holds the key id in the Vrf object of the VRF vrf.
-func holdsTagKey(st desired.State, vrf, id uint32) bool {
+// holdsTagKey reports whether the state st holds the key id in the Vrf object of the VRF vrf, with send as
+// the key to send with.
+func holdsTagKey(st desired.State, vrf, id uint32, send bool) bool {
 	for k, o := range st {
 		if k.Kind != controlpb.Kind_KIND_VRF || o.GetVrf().GetId() != vrf {
 			continue
 		}
 		for _, t := range o.GetVrf().GetTagKeys() {
-			if t.GetId() == id {
+			if t.GetId() == id && (!send || t.GetSend()) {
 				return true
 			}
 		}
@@ -338,12 +341,13 @@ func holdsTagKey(st desired.State, vrf, id uint32) bool {
 }
 
 // tagKeyWaits returns the Nodes, in name order, whose desired state holds the key id of the VRF vrf and
-// that have not acknowledged a state that holds it: the Nodes that the switch to the key waits for.
-// c.mu is held.
-func (c *Controller) tagKeyWaits(vrf, id uint32) []string {
+// that have not acknowledged a state that holds it: the Nodes that the switch to the key waits for. With
+// send, the key to send with in both: the Nodes that may still send with the key before it, which the
+// rotation that drops that key waits for. c.mu is held.
+func (c *Controller) tagKeyWaits(vrf, id uint32, send bool) []string {
 	waits := []string{}
 	for name, n := range c.nodes {
-		if holdsTagKey(n.state, vrf, id) && !holdsTagKey(n.acked, vrf, id) {
+		if holdsTagKey(n.state, vrf, id, send) && !holdsTagKey(n.acked, vrf, id, send) {
 			waits = append(waits, name)
 		}
 	}
@@ -363,7 +367,7 @@ func (c *Controller) advanceTagKeys() {
 	var ready []uint32
 	for _, vrf := range slices.Sorted(maps.Keys(c.tkeys.keys)) {
 		keys := c.tkeys.keys[vrf]
-		if len(keys) == 2 && !keys[1].send && len(c.tagKeyWaits(vrf, keys[1].id)) == 0 {
+		if len(keys) == 2 && !keys[1].send && len(c.tagKeyWaits(vrf, keys[1].id, false)) == 0 {
 			ready = append(ready, vrf)
 		}
 	}
@@ -393,9 +397,11 @@ func (c *Controller) advanceTagKeys() {
 
 // RotateTagKey gives the VRF vrf in the tag mode hmac a new key: its Nodes get it beside the key that they
 // send with, and send with it once each Node whose state holds it acknowledged it (advanceTagKeys). The
-// key that they sent with before stays until the next rotation. An error wraps intent.ErrNotFound for a
-// VRF that the intent does not hold, and ErrConflict for a VRF in another tag mode, one without a key, as
-// the controller cannot seal one, and one whose last rotation its Nodes do not all run yet.
+// key that they sent with before stays until the next rotation, which drops it. An error wraps
+// intent.ErrNotFound for a VRF that the intent does not hold, and ErrConflict for a VRF in another tag
+// mode, one without a key, as the controller cannot seal one, and one whose last rotation its Nodes do not
+// all run yet: a Node has not acknowledged the new key, or a Generation that makes it the key to send
+// with, so it may still send with the key that the rotation would drop.
 func (c *Controller) RotateTagKey(ctx context.Context, vrf string) (TagKeyRotation, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -413,7 +419,13 @@ func (c *Controller) RotateTagKey(ctx context.Context, vrf string) (TagKeyRotati
 	cur := keys[len(keys)-1]
 	if !cur.send {
 		return TagKeyRotation{}, fmt.Errorf("%w: the key %d of VRF %q is not in use yet: its nodes send with it once %s acknowledged it, and it can be rotated then",
-			ErrConflict, cur.id, vrf, strings.Join(c.tagKeyWaits(v.ID, cur.id), ", "))
+			ErrConflict, cur.id, vrf, strings.Join(c.tagKeyWaits(v.ID, cur.id, false), ", "))
+	}
+	// The rotation drops the key before cur, which a Node that has not acknowledged cur as the key to send
+	// with may still send with: its peers would not take the MACs of its packets
+	if waits := c.tagKeyWaits(v.ID, cur.id, true); len(keys) == 2 && len(waits) > 0 {
+		return TagKeyRotation{}, fmt.Errorf("%w: %s may still send with the key %d of VRF %q, which a rotation drops: it can be rotated once they acknowledged the key %d as the one to send with",
+			ErrConflict, strings.Join(waits, ", "), keys[0].id, vrf, cur.id)
 	}
 	next, err := c.makeTagKey(v.ID, cur.id+1)
 	if err != nil {
@@ -441,7 +453,7 @@ func (c *Controller) RotateTagKey(ctx context.Context, vrf string) (TagKeyRotati
 	if err != nil {
 		return TagKeyRotation{}, err
 	}
-	out := TagKeyRotation{VRF: vrf, KeyID: next.id, Nodes: res, Waits: c.tagKeyWaits(v.ID, next.id)}
+	out := TagKeyRotation{VRF: vrf, KeyID: next.id, Nodes: res, Waits: c.tagKeyWaits(v.ID, next.id, false)}
 	// No Node to wait for: the key is in use at once
 	c.advanceTagKeys()
 	return out, nil
