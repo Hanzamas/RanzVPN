@@ -58,6 +58,11 @@
 // found by its addresses, so a Device is never taken for the host of its gateway nor for the peer that is its gateway
 #define NODE_POLICY_WIREGUARD 3
 
+// The kind of the member of a source group (SDN-87, #386): one in a VRF for each group that a peer of the VRF may assert,
+// with the tags of the group, which judges a packet that carried that group where the map of address to group gives
+// another (NodeSourceGroup.c)
+#define NODE_POLICY_GROUP 4
+
 // A member of the engine in one VRF
 typedef struct NODE_POLICY_MEMBER {
 	UINT VrfId;                                     // The VRF
@@ -90,7 +95,14 @@ typedef struct NODE_POLICY_DEVICE {
 	UINT Size;
 	UINT Member;
 	bool Local;
+	UINT Group; // Its source group (SDN-87, #386), 0 for none
 } NODE_POLICY_DEVICE;
+
+// The member of one source group of a VRF of a policy table (SDN-87, #386)
+typedef struct NODE_POLICY_GROUP_MEMBER {
+	UINT Group;
+	UINT Member;
+} NODE_POLICY_GROUP_MEMBER;
 
 // One VRF of a policy table
 typedef struct NODE_POLICY_VRF {
@@ -102,6 +114,12 @@ typedef struct NODE_POLICY_VRF {
 	// The WireGuard Devices of the VRF, one entry for each of their addresses
 	UINT NumDevices;
 	NODE_POLICY_DEVICE *Devices;
+
+	// The source groups of the VRF (SDN-87, #386): the group of the peer of each next hop, 0 for none, and the member of
+	// each group that a peer may assert
+	UINT *HopGroups;
+	UINT NumGroups;
+	NODE_POLICY_GROUP_MEMBER *Groups;
 } NODE_POLICY_VRF;
 
 // The policy table of one Generation, on its forwarding tables (NODE_VRF_TABLES)
@@ -452,6 +470,7 @@ static NODE_POLICY_DEVICE *NodePolicyDevices(NODE_POLICY *p, LIST *refs, const C
 			e->Size = d->Addresses[j].AddressSize;
 			e->Member = member;
 			e->Local = d->HasKey;
+			e->Group = d->Group;
 		}
 	}
 
@@ -459,6 +478,66 @@ static NODE_POLICY_DEVICE *NodePolicyDevices(NODE_POLICY *p, LIST *refs, const C
 		Free(who);
 
 	return list;
+}
+
+// The source group of the peer cp in the VRF vrf_id (SDN-87, #386), 0 for none
+static UINT NodePolicyPeerGroup(const CONTROL_PEER *cp, UINT vrf_id) {
+	for (UINT i = 0; i < cp->NumGroups && i < CONTROL_MAX_VRFS; i++)
+		if (cp->Groups[i].VrfId == vrf_id)
+			return cp->Groups[i].Group;
+
+	return 0;
+}
+
+// The member of the source group group of the VRF cv, with the tags of the group, into the num groups of list, unless it
+// holds that group already; the table that is built holds it from now on (refs). The caller holds the lock.
+static void NodePolicyAddGroup(NODE_POLICY *p, LIST *refs, const CONTROL_VRF *cv, NODE_POLICY_GROUP_MEMBER *list, UINT *num, UINT group, const char (*tags)[CONTROL_NAME_SIZE], UINT num_tags) {
+	for (UINT i = 0; i < *num; i++)
+		if (list[i].Group == group)
+			return;
+
+	NODE_POLICY_GROUP_MEMBER *e = &list[(*num)++];
+	e->Group = group;
+	e->Member = NodePolicyHold(p, refs, cv, NODE_POLICY_GROUP, NULL, tags, num_tags);
+}
+
+// The source groups of the VRF cv of the state st into its entry e of the table that is built (SDN-87, #386): the group of
+// the peer of each next hop, and a member for each group that a peer may assert, its own or that of a Device whose
+// gateway it is, with the tags of the group. A group stands for one set of tags, so two endpoints of one group share its
+// member. The caller holds the lock.
+static void NodePolicyGroups(NODE_POLICY *p, LIST *refs, const CONTROL_VRF *cv, const CONTROL_STATE *st, NODE_POLICY_VRF *e) {
+	UINT max = (st->Devices != NULL ? st->NumDevices : 0);
+
+	e->HopGroups = ZeroMalloc(sizeof(UINT) * MAX(st->NumPeers, 1));
+	for (UINT i = 0; i < st->NumPeers; i++) {
+		e->HopGroups[i] = NodePolicyPeerGroup(&st->Peers[i], cv->Id);
+		max += MIN(st->Peers[i].NumGroups, CONTROL_MAX_VRFS);
+	}
+
+	e->NumGroups = 0;
+	e->Groups = ZeroMalloc(sizeof(NODE_POLICY_GROUP_MEMBER) * MAX(max, 1));
+	for (UINT i = 0; i < st->NumPeers; i++) {
+		const CONTROL_PEER *cp = &st->Peers[i];
+		UINT group = e->HopGroups[i];
+
+		if (group != 0)
+			NodePolicyAddGroup(p, refs, cv, e->Groups, &e->NumGroups, group, cp->Tags, cp->NumTags);
+	}
+	for (UINT i = 0; i < st->NumDevices && st->Devices != NULL; i++) {
+		const CONTROL_DEVICE *d = &st->Devices[i];
+
+		if (d->VrfId == cv->Id && d->Group != 0)
+			NodePolicyAddGroup(p, refs, cv, e->Groups, &e->NumGroups, d->Group, d->Tags, d->NumTags);
+	}
+}
+
+// The member of the source group group of the VRF e, POLICY_NO_MEMBER for a group that no peer of the VRF may assert
+static UINT NodePolicyGroupMember(const NODE_POLICY_VRF *e, UINT group) {
+	for (UINT i = 0; i < e->NumGroups; i++)
+		if (e->Groups[i].Group == group)
+			return e->Groups[i].Member;
+
+	return POLICY_NO_MEMBER;
 }
 
 // The policy table of the Generation of st onto its forwarding tables v, before they go in: in each VRF of the state that
@@ -497,6 +576,8 @@ void NodePolicyAttach(NODE *n, NODE_VRF_TABLES *v, const CONTROL_STATE *st) {
 			}
 			// The WireGuard Devices of the VRF, by their addresses (SDN-80, #375)
 			e->Devices = NodePolicyDevices(p, refs, cv, st, &e->NumDevices);
+			// The source groups of the VRF (SDN-87, #386)
+			NodePolicyGroups(p, refs, cv, st, e);
 		}
 	}
 	Unlock(p->Lock);
@@ -594,6 +675,9 @@ void NodePolicyFreeTable(NODE_POLICY_TABLE *t) {
 		Free(t->Vrfs[i].Hops);
 		if (t->Vrfs[i].Devices != NULL)
 			Free(t->Vrfs[i].Devices);
+		// The source groups (SDN-87, #386)
+		Free(t->Vrfs[i].HopGroups);
+		Free(t->Vrfs[i].Groups);
 	}
 	Free(t->Refs);
 
@@ -607,8 +691,9 @@ void NodePolicyFreeTable(NODE_POLICY_TABLE *t) {
 
 // The ends of a packet of the VRF e from the host when out is set, whose source or destination is an address of a
 // WireGuard Device (SDN-80, #375): a Device that the node terminates is the end at the host in place of the host, any
-// other the end at the peer in place of the peer that is its gateway
-static void NodePolicyDeviceEnds(const NODE_POLICY_VRF *e, const UCHAR *packet, UINT size, bool out, UINT *host, UINT *peer) {
+// other the end at the peer in place of the peer that is its gateway, and its source group the group of that end (SDN-87,
+// #386)
+static void NodePolicyDeviceEnds(const NODE_POLICY_VRF *e, const UCHAR *packet, UINT size, bool out, UINT *host, UINT *peer, UINT *peer_group) {
 	const UCHAR *src, *dst;
 	UINT addr_size;
 
@@ -633,16 +718,19 @@ static void NodePolicyDeviceEnds(const NODE_POLICY_VRF *e, const UCHAR *packet, 
 		if (d->Size != addr_size || d->Member == POLICY_NO_MEMBER)
 			continue;
 
-		if (d->Local && Cmp(d->Address, out ? src : dst, addr_size) == 0)
+		if (d->Local && Cmp(d->Address, out ? src : dst, addr_size) == 0) {
 			*host = d->Member;
-		else if (d->Local == false && Cmp(d->Address, out ? dst : src, addr_size) == 0)
+		} else if (d->Local == false && Cmp(d->Address, out ? dst : src, addr_size) == 0) {
 			*peer = d->Member;
+			*peer_group = d->Group;
+		}
 	}
 }
 
 // Judge a packet of the VRF vrf_id between the host and the next hop hop of the tables v, from the host when out is set,
-// as the overlay sees it. True when it passes. The caller is an online reader of the node's table snapshot, which holds v.
-static bool NodePolicyJudge(NODE *n, NODE_VRF_TABLES *v, UINT vrf_id, UINT hop, const UCHAR *packet, UINT size, bool out) {
+// as the overlay sees it, with the source group group that a packet of a peer carried, 0 for none. True when it passes.
+// The caller is an online reader of the node's table snapshot, which holds v.
+static bool NodePolicyJudge(NODE *n, NODE_VRF_TABLES *v, UINT vrf_id, UINT hop, UINT group, const UCHAR *packet, UINT size, bool out) {
 	const NODE_POLICY_TABLE *t = (v != NULL ? v->Policy : NULL);
 	const NODE_POLICY_VRF *e = NodePolicyFind(t, vrf_id);
 
@@ -655,10 +743,15 @@ static bool NodePolicyJudge(NODE *n, NODE_VRF_TABLES *v, UINT vrf_id, UINT hop, 
 
 	if (t->Closed == false && p->Engine != NULL) {
 		UINT peer = (hop < t->NumHops ? e->Hops[hop] : e->Outside);
+		UINT peer_group = (hop < t->NumHops ? e->HopGroups[hop] : 0);
 		UINT host = e->Host;
 
 		// A WireGuard Device is an end of its own, found by its address (SDN-80, #375)
-		NodePolicyDeviceEnds(e, packet, size, out, &host, &peer);
+		NodePolicyDeviceEnds(e, packet, size, out, &host, &peer, &peer_group);
+		// The source group that the packet carried is the end at the peer, unless the map of address to group gives that
+		// group already, whose member keeps the flows of the end (SDN-87, #386)
+		if (out == false && group != 0 && group != peer_group)
+			peer = NodePolicyGroupMember(e, group);
 		ok = PolicyInput(p->Engine, NodePolicyNow(n, p), out ? host : peer, out ? peer : host, 0, packet, size, NULL);
 	}
 	if (ok == false)
@@ -670,23 +763,31 @@ static bool NodePolicyJudge(NODE *n, NODE_VRF_TABLES *v, UINT vrf_id, UINT hop, 
 // A packet of the host in the VRF vrf_id on its way to the next hop hop of the tables v, after the 1:1 NAT rules: true when
 // the policy of the VRF lets it through
 bool NodePolicyOutbound(NODE *n, NODE_VRF_TABLES *v, UINT vrf_id, UINT hop, const UCHAR *packet, UINT size) {
-	return NodePolicyJudge(n, v, vrf_id, hop, packet, size, true);
+	return NodePolicyJudge(n, v, vrf_id, hop, 0, packet, size, true);
 }
 
 // A packet of the next hop hop of the tables v in the VRF vrf_id on its way to the host, before the 1:1 NAT rules: true
 // when the policy of the VRF lets it through
 bool NodePolicyInbound(NODE *n, NODE_VRF_TABLES *v, UINT vrf_id, UINT hop, const UCHAR *packet, UINT size) {
-	return NodePolicyJudge(n, v, vrf_id, hop, packet, size, false);
+	return NodePolicyJudge(n, v, vrf_id, hop, 0, packet, size, false);
+}
+
+// A packet of the next hop hop of the tables v in the VRF vrf_id on its way to the host that carried the source group
+// group, which the peer may assert (NodeSourceGroup.c; SDN-87, #386), before the 1:1 NAT rules: true when the policy of
+// the VRF lets it through, judged as from that group
+bool NodePolicyInboundGroup(NODE *n, NODE_VRF_TABLES *v, UINT vrf_id, UINT hop, UINT group, const UCHAR *packet, UINT size) {
+	return NodePolicyJudge(n, v, vrf_id, hop, group, packet, size, false);
 }
 
 // A packet of the VRF vrf_id that the node, the hub of the VRF, sends on from the next hop from of the tables v to the next
 // hop to, a peer (NodeGatewayTransit), as the peer of from sent it: true when the policy of the VRF lets it through. The
 // policy judges it by its two real ends, with the same engine and the same rules as a packet of the host: the member of
 // the peer that sent it, the end outside the VRF for a route that a VRF of the peer leaks, and the member of the peer that
-// it goes to; a WireGuard Device behind either peer is the end in place of its gateway (SDN-80, #375). A dropped packet
-// counts with the others that the policy dropped. The caller is an online reader of the node's table snapshot, which
-// holds v.
-bool NodePolicyTransit(NODE *n, NODE_VRF_TABLES *v, UINT vrf_id, UINT from, UINT to, const UCHAR *packet, UINT size) {
+// it goes to; a WireGuard Device behind either peer is the end in place of its gateway (SDN-80, #375). The source group
+// group that the packet carried, which the node took (NodeSourceGroupTransit; SDN-87, #386), 0 for none, is the end of
+// the sender as at a destination. A dropped packet counts with the others that the policy dropped. The caller is an online
+// reader of the node's table snapshot, which holds v.
+bool NodePolicyTransit(NODE *n, NODE_VRF_TABLES *v, UINT vrf_id, UINT from, UINT to, UINT group, const UCHAR *packet, UINT size) {
 	const NODE_POLICY_TABLE *t = (v != NULL ? v->Policy : NULL);
 	const NODE_POLICY_VRF *e = NodePolicyFind(t, vrf_id);
 
@@ -700,12 +801,18 @@ bool NodePolicyTransit(NODE *n, NODE_VRF_TABLES *v, UINT vrf_id, UINT from, UINT
 	if (t->Closed == false && p->Engine != NULL) {
 		UINT sender = (from < t->NumHops ? e->Hops[from] : e->Outside);
 		UINT receiver = (to < t->NumHops ? e->Hops[to] : e->Outside);
+		UINT sender_group = (from < t->NumHops ? e->HopGroups[from] : 0);
+		UINT receiver_group = 0;
 		UINT host = e->Host;
 
 		// A Device whose gateway sent the packet is its source, one whose gateway is the peer of its next hop its destination.
 		// No Device of the node's own is either: the forwarding table leads their addresses to the host, so host stays.
-		NodePolicyDeviceEnds(e, packet, size, false, &host, &sender);
-		NodePolicyDeviceEnds(e, packet, size, true, &host, &receiver);
+		NodePolicyDeviceEnds(e, packet, size, false, &host, &sender, &sender_group);
+		NodePolicyDeviceEnds(e, packet, size, true, &host, &receiver, &receiver_group);
+		// The source group that the packet carried is the end of the sender, unless the map of address to group gives that
+		// group already, whose member keeps the flows of the end (SDN-87, #386)
+		if (group != 0 && group != sender_group)
+			sender = NodePolicyGroupMember(e, group);
 		ok = PolicyInput(p->Engine, NodePolicyNow(n, p), sender, receiver, 0, packet, size, NULL);
 	}
 	if (ok == false)

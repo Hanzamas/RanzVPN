@@ -71,6 +71,15 @@
 #define CONTROL_TLS_PINS     4  // The fingerprints of a state (NodeConfig.controller_tls of control.options)
 #define CONTROL_TLS_PIN_SIZE 65 // A fingerprint: 64 hex digits and the terminating NUL
 
+// The source groups (SDN-87, #386): how a node trusts the source group that a link of kind vxlan or geneve of a VRF carries
+// (CONTROL_VRF.TagMode, TagMode of the control protocol), and the tag modes of the counters that it reports
+#define CONTROL_TAG_MODE_OFF     0     // It ignores the source group of such a link and sends none
+#define CONTROL_TAG_MODE_TRUSTED 1     // trusted-underlay: it takes it and sends it, as the operator vouches for the underlay
+#define CONTROL_TAG_MODE_SESSION 2     // Only in the counters: the records of the Noise sessions, which carry it authenticated
+#define CONTROL_TAG_MODES        3     // The tag modes of the counters
+#define CONTROL_GROUP_REPORT     5000  // ms between two looks of the client at the counters, which it sends when they changed ...
+#define CONTROL_GROUP_REFRESH    60000 // ... and at least this often while they hold any, so the controller never takes them for stale
+
 // The Listener of a node (SDN-45, #238): the source of its certificate, and the sizes of its fields (control.options)
 #define CONTROL_CERT_NONE       0   // No source: the node listens on no port of its own
 #define CONTROL_CERT_FILE       1   // A PKCS #12 file on the node (CertificateFile)
@@ -215,6 +224,31 @@ typedef struct CONTROL_RELAY {
 #define CONTROL_LINK_VXLAN  1 // Plain VXLAN between the tunnel endpoints of two nodes, on a network that the operator trusts
 #define CONTROL_LINK_GENEVE 2 // ... or plain Geneve
 
+// The source group of an endpoint in one VRF (SourceGroup of the control protocol; SDN-87, #386): its group ID, from 1 to
+// 65535, and its tag set, a bit for each of the first 64 tags of the VRF in name order; and the group generation of the
+// node in the VRF, the Generation of its state from which on it may assert the groups that it may assert there, which its
+// claims name. Held, in the node's own groups only: the node stamps no source group in the VRF, as a peer runs a state
+// that would drop one of them as an unknown group (SourceGroup.held)
+typedef struct CONTROL_SOURCE_GROUP {
+	UINT VrfId;        // The VRF
+	UINT Group;        // The group ID
+	UINT64 TagSet;     // The tag set
+	UINT64 Generation; // The group generation
+	bool Held;         // The node stamps no source group in the VRF yet
+} CONTROL_SOURCE_GROUP;
+
+// The packets of the peers that a node judged in one tag mode, which it reports (SourceGroupCounters of the control
+// protocol; SDN-87, #386): by the source group that they carried; with none, by the map of address to group; with one
+// that the node ignores, in the tag mode off, of a peer whose groups the node does not know yet, or one that a rollout of
+// the Generations explains, by that map too; and those that claimed a group that the sending node may not assert, which
+// it dropped
+typedef struct CONTROL_GROUP_COUNTERS {
+	UINT64 Carried;
+	UINT64 Missing;
+	UINT64 Ignored;
+	UINT64 Refused;
+} CONTROL_GROUP_COUNTERS;
+
 // The tunnel endpoint of a node or of a peer for the links of kind vxlan and geneve (Vtep of the control protocol;
 // SDN-76, #356)
 typedef struct CONTROL_VTEP {
@@ -323,6 +357,13 @@ typedef struct CONTROL_PEER {
 	// The session profile that it runs under as a device of a User (SDN-40, #233), which the node enforces on its session
 	// with it; not Set for none
 	CONTROL_PROFILE Profile;
+
+	// Its source group in each VRF that it shares with the node, ordered by VRF id (SDN-87, #386): with the groups of the
+	// Devices whose gateway it is, the groups that it may assert; and the frame version of the records of the Noise
+	// session that the node sends it, 1 when they carry the source group of their packet
+	UINT NumGroups;
+	CONTROL_SOURCE_GROUP Groups[CONTROL_MAX_VRFS];
+	UINT FrameVersion;
 } CONTROL_PEER;
 
 // A name of the zone of a VRF and the addresses that it answers (DnsRecord of the control protocol; SDN-11, #187)
@@ -360,6 +401,7 @@ typedef struct CONTROL_VRF {
 	UINT Vni;                     // ... and the VNI of a link of kind vxlan or geneve
 	char Hub[CONTROL_NAME_SIZE];  // The hub node of a VRF of topology hub-and-spoke (SDN-19, #195), "" for a full mesh
 	bool Ecmp;                    // The flows to a prefix of several gateways spread over the healthy ones (SDN-19, #195)
+	UINT TagMode;                 // How the node trusts the source group that such a link carries (CONTROL_TAG_MODE_OFF or _TRUSTED; SDN-87, #386)
 	bool Peering;                 // Its nodes exchange their routes by BGP (SDN-77, #357)
 } CONTROL_VRF;
 
@@ -448,6 +490,9 @@ typedef struct CONTROL_DEVICE {
 	// The node is its gateway, and Key is its WireGuard public key
 	bool HasKey;
 	UCHAR Key[NOISE_KEY_SIZE];
+	// Its source group in its VRF and the tag set of it (SDN-87, #386), 0 when the state has none
+	UINT Group;
+	UINT64 TagSet;
 	// The Device has a PresharedKey, a secret that the gateway hands to its WireGuard interface and never logs
 	bool HasPreshared;
 	UCHAR Preshared[NOISE_KEY_SIZE];
@@ -483,6 +528,14 @@ typedef struct CONTROL_EVENT {
 
 // The events that wait for the controller (CONTROL_CONFIG.Events), ControlEvent.c
 typedef struct CONTROL_EVENTS CONTROL_EVENTS;
+
+// Fills counters, CONTROL_TAG_MODES of them and zeroed, with the counters of the source groups of the node by tag mode
+// (CONTROL_TAG_MODE_*), cumulative since its overlay started (SDN-87, #386). It runs on the client's thread.
+typedef void(CONTROL_GROUPS_PROC)(void *param, CONTROL_GROUP_COUNTERS *counters);
+
+// The counters of the source groups that a client reports to the controller (CONTROL_CONFIG.SourceGroups),
+// ControlSourceGroup.c
+typedef struct CONTROL_SOURCE_GROUPS CONTROL_SOURCE_GROUPS;
 
 // Takes a Signal that the controller carried from the peer of the node name peer (CORE-S5-5, #411): its envelope of size
 // bytes, sealed to the node, which only the node's peer layer opens. It runs on the client's thread; the envelope is
@@ -562,6 +615,11 @@ typedef struct CONTROL_STATE {
 	// Its tunnel endpoint for the links of kind vxlan and geneve (SDN-76, #356): the ports it listens on
 	CONTROL_VTEP Vtep;
 
+	// Its own source group in each of its VRFs, ordered by VRF id (SDN-87, #386): none when it does not report the
+	// Capability tags
+	UINT NumGroups;
+	CONTROL_SOURCE_GROUP Groups[CONTROL_MAX_VRFS];
+
 	// The security of its L2 Networks (SDN-41, #234), in Network name order: a Network without one has none. Valid as the
 	// state is.
 	UINT NumSecurities;
@@ -639,6 +697,8 @@ typedef struct CONTROL_CAPS {
 	UCHAR WireGuardKey[NOISE_KEY_SIZE];
 	// The node runs the links of kind vxlan and geneve (SDN-76, #356)
 	bool PlainLinks;
+	// The node carries the source group of its packets to its peers and judges theirs by the one they carry (SDN-87, #386)
+	bool Tags;
 	// The node runs the BGP peering of the standard mode: ranz.exe, which holds its sidecar, is next to it (SDN-77-R2, #532)
 	bool BgpPeering;
 	// The Windows edition of the host (CONTROL_SKU_*), whether Hyper-V is present on it, and the Egress tier that the host
@@ -741,6 +801,10 @@ typedef struct CONTROL_CONFIG {
 	// (AUD1-DT-11, #459)
 	CONTROL_EVENTS *Events;
 
+	// The counters of the source groups that the client reports, NULL for none: the owner's, which must outlive the
+	// client (SDN-87, #386)
+	CONTROL_SOURCE_GROUPS *SourceGroups;
+
 	// Takes each Signal that the controller carried from a peer, NULL to drop them (CORE-S5-5, #411) ...
 	CONTROL_SIGNAL_PROC *SignalProc;
 	// ... and its first parameter
@@ -842,6 +906,15 @@ void ControlFreeEvents(CONTROL_EVENTS *e);
 bool ControlRaiseEvent(CONTROL_EVENTS *e, UINT type, const char *subject, const char *message);
 UINT ControlGetEvents(CONTROL_EVENTS *e, CONTROL_EVENT *list, UINT max);
 bool ControlWriteEvents(CONTROL_EVENTS *e, TRANSPORT_STREAM *s);
+
+// The counters of the source groups of a node (SDN-87, #386), ControlSourceGroup.c. NewSourceGroups makes the report that a
+// client sends (CONTROL_CONFIG.SourceGroups), whose counters proc gives with param; FreeSourceGroups frees it once no
+// client uses it. The client looks at the counters every CONTROL_GROUP_REPORT ms and sends them in one Telemetry message,
+// every tag mode, when they changed since it sent them, after each Hello, and every CONTROL_GROUP_REFRESH ms, once they
+// hold any. WriteSourceGroups writes that message when it is due, as the client does on its stream.
+CONTROL_SOURCE_GROUPS *ControlNewSourceGroups(CONTROL_GROUPS_PROC *proc, void *param);
+void ControlFreeSourceGroups(CONTROL_SOURCE_GROUPS *g);
+bool ControlWriteSourceGroups(CONTROL_SOURCE_GROUPS *g, TRANSPORT_STREAM *s);
 
 // The Signals of a node (CORE-S5-5, #411), ControlSignal.c. NewSignals makes the queue that a client sends
 // (CONTROL_CONFIG.Signals), FreeSignals frees it once no client uses it. SendSignal queues a Signal for the peer of the

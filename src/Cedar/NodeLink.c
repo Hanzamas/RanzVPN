@@ -40,6 +40,7 @@
 #include "Core/Control.h"
 
 #include "NodeInternal.h"
+#include "NodeSourceGroup.h"
 
 // The MAC address of both ends of the Ethernet header of a frame of a link, locally administered
 static const UCHAR node_link_mac[6] = {0x02, 0x52, 0x5A, 0x00, 0x00, 0x03};
@@ -186,9 +187,9 @@ static NODE_LINK_THREAD *NodeLinkThread(NODE_LINK *l) {
 
 // The receiver of the module: a frame of vni from the tunnel endpoint from, on the receive thread of a socket. It goes to
 // the overlay when vni is the VNI of a VRF of the Generation in the tables whose link has the encapsulation of from, from
-// is the tunnel endpoint of a peer that shares that VRF, and an IP packet follows its Ethernet header; else it is dropped
-// and counted.
-static void NodeLinkReceive(VXLAN *x, void *param, UINT vni, const VXLAN_ADDR *from, const UCHAR *frame, UINT size) {
+// is the tunnel endpoint of a peer that shares that VRF, and an IP packet follows its Ethernet header, with the source
+// group that its datagram carried (SDN-87, #386); else it is dropped and counted.
+static void NodeLinkReceive(VXLAN *x, void *param, UINT vni, const VXLAN_ADDR *from, const VXLAN_GROUP *group, const UCHAR *frame, UINT size) {
 	NODE_LINK *l = (NODE_LINK *)param;
 	NODE_LINK_THREAD *th = NodeLinkThread(l);
 	UINT kind = (from->Encap == VXLAN_ENCAP_GENEVE ? CONTROL_LINK_GENEVE : CONTROL_LINK_VXLAN);
@@ -229,10 +230,14 @@ static void NodeLinkReceive(VXLAN *x, void *param, UINT vni, const VXLAN_ADDR *f
 		} else if ((ether != MAC_PROTO_IPV4 && ether != MAC_PROTO_IPV6) || size - NODE_LINK_ETHER > VXLAN_MAX_FRAME) {
 			InterlockedIncrement64(&l->Malformed);
 		} else {
+			NODE_SOURCE_CLAIM claim;
+
+			// The source group of the datagram, which the tag mode of the VRF decides on (NodeSourceGroup.c; SDN-87, #386)
+			NodeSourceGroupClaim(&claim, kind == CONTROL_LINK_GENEVE ? NODE_CARRIER_GENEVE : NODE_CARRIER_VXLAN, group);
 			WRITE_UINT(th->Record, lv->VrfId);
 			Copy(th->Record + NODE_OVERLAY_VRF_TAG, frame + NODE_LINK_ETHER, size - NODE_LINK_ETHER);
 			InterlockedIncrement64(&l->Delivered);
-			NodeOverlayLinkDeliver(l->Node, v->Hops[peer], th->Record, NODE_OVERLAY_VRF_TAG + size - NODE_LINK_ETHER, th->Nat);
+			NodeOverlayLinkDeliver(l->Node, v->Hops[peer], th->Record, NODE_OVERLAY_VRF_TAG + size - NODE_LINK_ETHER, th->Nat, &claim);
 		}
 	}
 	NodeReaderOffline(&th->Reader);
@@ -244,12 +249,15 @@ static NODE_LINK *NodeNewLink(NODE *n) {
 
 	l->Node = n;
 	l->Lock = NewLock();
-	l->Vxlan = VxlanNew(NodeLinkUdpSend, l, NodeLinkReceive, l);
+	l->Vxlan = VxlanNew(NodeLinkUdpSend, l, NULL, l);
 	if (l->Vxlan == NULL) {
 		DeleteLock(l->Lock);
 		Free(l);
 		return NULL;
 	}
+
+	// The frames come with the source group of their datagram (SDN-87, #386)
+	VxlanSetGroupReceiver(l->Vxlan, NodeLinkReceive);
 
 	return l;
 }
@@ -470,9 +478,12 @@ UINT NodeLinkKind(NODE_VRF_TABLES *v, UINT hop, UINT vrf_id) {
 
 // Send the data record of size bytes of its IP packet, behind its VRF id, to the next hop hop of the tables v over the link
 // of kind vxlan or geneve of the VRF: the packet behind an Ethernet header on the VNI of the VRF, to the tunnel endpoint
-// of the peer in the encapsulation of the link. False when the peer has no tunnel endpoint, the frame is larger than the
-// module takes, or the datagram could not be sent. The caller reads v as a reader of the table snapshot of the node.
-bool NodeLinkSend(NODE_VRF_TABLES *v, UINT hop, const UCHAR *record, UINT size) {
+// of the peer in the encapsulation of the link. A packet of the host when host is set, which carries its source group in
+// the tag mode trusted-underlay of the VRF; else the packet of a spoke that the node, the hub of the VRF, sends on to
+// another, which carries none (NodeSourceGroup.c; SDN-87, #386). False when the peer has no tunnel endpoint, the frame is
+// larger than the module takes, or the datagram could not be sent. The caller reads v as a reader of the table snapshot of
+// the node.
+bool NodeLinkSend(NODE_VRF_TABLES *v, UINT hop, const UCHAR *record, UINT size, bool host) {
 	NODE_LINK_TABLE *t = (v != NULL ? v->Link : NULL);
 	UCHAR frame[VXLAN_MAX_FRAME];
 
@@ -493,7 +504,12 @@ bool NodeLinkSend(NODE_VRF_TABLES *v, UINT hop, const UCHAR *record, UINT size) 
 	WRITE_USHORT(frame + 12, (packet[0] >> 4) == 6 ? MAC_PROTO_IPV6 : MAC_PROTO_IPV4);
 	Copy(frame + NODE_LINK_ETHER, packet, size);
 
-	bool ok = VxlanSendTo(t->Link->Vxlan, lv->Vni, lv->Kind == CONTROL_LINK_GENEVE ? &p->Geneve : &p->Vxlan, frame, NODE_LINK_ETHER + size);
+	// The source group of a packet of the host, in the tag mode trusted-underlay of the VRF (NodeSourceGroup.c; SDN-87, #386)
+	VXLAN_GROUP group;
+	Zero(&group, sizeof(group));
+	if (host)
+		NodeSourceGroupStamp(v, lv->VrfId, packet, size, &group);
+	bool ok = VxlanSendToGroup(t->Link->Vxlan, lv->Vni, lv->Kind == CONTROL_LINK_GENEVE ? &p->Geneve : &p->Vxlan, &group, frame, NODE_LINK_ETHER + size);
 	InterlockedIncrement64(ok ? &t->Link->Sent : &t->Link->Failed);
 
 	return ok;
