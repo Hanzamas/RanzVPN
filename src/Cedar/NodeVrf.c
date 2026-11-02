@@ -19,6 +19,7 @@
 #include "NodeGateway.h"
 #include "NodeLink.h"
 #include "NodeProfile.h"
+#include "NodeSourceGroup.h"
 
 #include "Mayaqua/Memory.h"
 
@@ -300,6 +301,8 @@ void NodeFreeVrfTables(NODE_VRF_TABLES *v) {
 	NodeFreeLinkTable(v->Link);
 	// The groups of gateways and the hubs (NodeGateway.c; SDN-19, #195)
 	NodeFreeGatewayTable(v->Gateway);
+	// The source groups (NodeSourceGroup.c; SDN-87, #386)
+	NodeFreeSourceGroupTable(v->SourceGroups);
 	// The VRFs whose internet exit the node is (NodeEgress.c; SDN-12, #188)
 	NodeFreeEgressTable(v->Egress);
 	for (UINT i = 0; i < v->NumVrfs; i++)

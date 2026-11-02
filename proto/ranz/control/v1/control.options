@@ -168,6 +168,12 @@ ranz.control.v1.NodeConfig.controller_tls max_count:4 max_size:65
 # The tunnel endpoint of a node for the links of kind vxlan and geneve (SDN-76): an IPv4 or an IPv6
 # address. It makes a Peer and the NodeConfig about 30 bytes larger.
 ranz.control.v1.Vtep.address max_size:16
+# The source groups (SDN-87): one for each VRF of a node and for each VRF that a peer shares with it,
+# 16 at most (Peer.vrf_ids), and the counters of the four tag modes in one Telemetry. They make a Peer
+# and the NodeConfig about 300 bytes larger, and a Telemetry about 200 bytes.
+ranz.control.v1.NodeConfig.groups max_count:16
+ranz.control.v1.Peer.groups max_count:16
+ranz.control.v1.Telemetry.groups max_count:4
 # The live operations (SDN-50): an Operation names an L2 Network, a DNS label of at most 63 characters, and one MAC
 # address or one IP address. The OperationResult of a node holds at most 512 entries of a table, each with a MAC address,
 # an address and the name of the member, and why an operation failed. It is a frame of at most 57 kB, below
