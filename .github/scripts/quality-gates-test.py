@@ -456,6 +456,28 @@ def test_bench_gate():
             [bench(fps='100'), bench(fps='990'), bench(fps='100')], wildcard=True)
     compare('a wildcard that names no file', 1, ['no result file matches'], [], wildcard=True)
 
+    # The samples that a case is judged on are the result files that hold it (CI-FLAKE-9, #616): the gate prints how many, and
+    # --min-samples fails a case that has fewer than it is asked for
+    compare('a case is counted by the result files that hold it', 0,
+            ['| flood_fps_8 | 1000 frames/s | 1000 frames/s | 3 | 0.0% | 25% | ok |', '| expire_1024 | 200 us | 200 us | 3 |'],
+            [bench(), bench(), bench()], gate_args=('--runs', '3'))
+    without_flood = bench().replace('BENCH flood_fps_8 1000 frames/s\n', '')
+    compare('a case that two of three files hold has two samples', 0, ['| flood_fps_8 | 1000 frames/s | 1000 frames/s | 2 |'],
+            [bench(), without_flood, bench()], gate_args=('--runs', '3'))
+    compare('the samples that were asked for are printed', 0,
+            ['flood_*: 1 case, each judged on the best of 3 enrolments (at least 3 asked for)',
+             '*_case: 1 case, each judged on the best of 3 enrolments (at least 2 asked for)'],
+            [bench(), bench(), bench()],
+            gate_args=('--runs', '3', '--min-samples', 'flood_*', '3', 'enrolments', '--min-samples', '*_case', '2', 'enrolments'))
+    compare('a case with fewer samples than asked for fails', 1,
+            ['flood_fps_8: the result files hold 2 of the 3 enrolments that the gate is asked to judge the best of'],
+            [bench(), without_flood, bench()],
+            gate_args=('--runs', '3', '--min-samples', 'flood_*', '3', 'enrolments'))
+    compare('samples asked for of a pattern that matches no recorded case fails', 1, ['no case recorded in', 'matches it'],
+            [bench(), bench(), bench()], gate_args=('--runs', '3', '--min-samples', 'enrol_*', '3', 'enrolments'))
+    compare('a number of samples that is no number fails', 2, ['N is not a whole number from 1'], [bench()],
+            gate_args=('--min-samples', 'flood_*', '0', 'enrolments'))
+
     # A time case whose recorded median is under 50 us fails only when it is slower by more than 100 us
     compare('a time under 50 us is not judged by its margin', 0, ['ok, under 50 us'], [bench(tiny='6')])
     compare('a time under 50 us that is 100 us slower passes', 0, ['within their margin'], [bench(tiny='102')])
@@ -484,6 +506,31 @@ def test_bench_gate():
                 failures.append('bench-gate: record wrote no %r:\n%s' % (want, text))
         if '\nzero ' in text:
             failures.append('bench-gate: record kept a case with median 0:\n' + text)
+
+    # With --per-run the files that one argument names are one run, which counts as the best of them, the number that compare
+    # judges: the margin is the spread of that between runs. Without it every file is a run, and the slow file of a run is the
+    # slowest run. Three runs of two files, a rate and a time:
+    #   a: the best of each run is 1000, 800 and 1100 (median 1000, the slowest run 25 % slower, margin 50), the files 1000, 900,
+    #      800, 500, 1100 and 1000 (median 950, the slowest 90 % slower, margin 180)
+    #   t: the best of each run is 10, 12 and 11 (median 11, the slowest 9 % slower, margin 25), the files 10, 14, 12, 30, 11 and
+    #      11 (median 11.5, the slowest 161 % slower, margin 325)
+    with tempfile.TemporaryDirectory() as root:
+        args = []
+        for name, files in {'r1': [(1000, 10), (900, 14)], 'r2': [(800, 12), (500, 30)], 'r3': [(1100, 11), (1000, 11)]}.items():
+            for i, (fps, us) in enumerate(files):
+                write(root, '%s/bench%d.txt' % (name, i), 'BENCH a %d frames/s\nBENCH t %d us\n' % (fps, us))
+            args.append(os.path.join(root, name, 'bench*.txt'))
+        for mode, flags, wants in (('per run', ['--per-run'], ('a 1000 frames/s 50\n', 't 11 us 25\n', 'from 3 CI runs, each the best of its result files')),
+                                   ('per file', [], ('a 950 frames/s 180\n', 't 11.5 us 325\n', 'from 6 CI runs, the margin'))):
+            out = os.path.join(root, 'medians-%s.txt' % mode.replace(' ', '-'))
+            expect('bench-gate: record, %s' % mode, run('bench-gate.py', 'record', '--out', out, *flags, *args), 0)
+            with open(out, encoding='utf-8') as f:
+                text = f.read()
+            for want in wants:
+                if want not in text:
+                    failures.append('bench-gate: record, %s wrote no %r:\n%s' % (mode, want, text))
+        expect('bench-gate: record, a run that no file holds', run('bench-gate.py', 'record', '--per-run', '--out', os.path.join(root, 'x.txt'),
+                                                                   os.path.join(root, 'r4', 'bench*.txt')), 1, 'no result file matches')
 
 
 def test_static_findings():
