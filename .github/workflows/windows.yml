@@ -579,6 +579,21 @@ jobs:
       shell: pwsh
       run: |
         . .github/scripts/mimic-sidecar.ps1 -BuildDir build
+    # The mimic servers end to end (CORE-P2-7 #424; SDN-94 #423), on x64 and arm64: ranz controller on test ports with
+    # rqlited, whose Intent holds the Node mimic-server with a mimic endpoint, the Node mimic-client and the Listener of
+    # mimic-server with a mimic section, and the nodes of vpntest mimictrace, with the ranz.exe of the step before next to
+    # vpntest, which each node starts as its mimicry sidecar: the server makes the key of its mimic server and reports it, the
+    # client gets its link and its Noise session comes up over the mimic transport with the same binding at both ends, a link
+    # with a wrong short id is spliced to the decoy and counted, a change of the address restarts the sidecars, the restarted
+    # server reports the same key, the Intent without the section stops the sidecars and takes the settings and the key out,
+    # and the private key is in no log, command line, bundle or file of the controller (.github/scripts/mimic-tracer.ps1). It
+    # needs only the build and rqlited, so it runs after a test that failed too.
+    - name: Mimic tracer
+      if: ${{ !cancelled() }}
+      timeout-minutes: 15
+      shell: pwsh
+      run: |
+        . .github/scripts/mimic-tracer.ps1 -BuildDir build
     # The ACME source of the Listener of a node (SDN-45, #238), on x64 and arm64: ranz built next to vpntest, where the
     # node starts it as ranz acme, Pebble, the test ACME server of Let's Encrypt, at a pinned version on this runner, and
     # vpntest listeneracme: the certificate of the Listener issued and renewed, and the front door listening with it
