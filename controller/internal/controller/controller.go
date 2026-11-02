@@ -1185,9 +1185,6 @@ func (c *Controller) serveConn(tc *tls.Conn) {
 func (c *Controller) hello(n *node, s *stream, applied uint64) {
 	switch {
 	case applied == 0:
-		// TEMPORARY, CI-FLAKE-9 (#616): the proof that the scale gate fails when the enrolment is 3 times slower, which a
-		// revert commit takes out again. Each first Hello holds the lock 7 ms longer, so 1,000 nodes take 7 s more.
-		time.Sleep(7 * time.Millisecond)
 		s.known, s.base, s.baseGen = true, nil, 0
 	case applied == n.gen:
 		// The node runs the current generation. Its Ack may have been lost when the controller
