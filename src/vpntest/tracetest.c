@@ -12,8 +12,12 @@
 // option is clear. Then the records and the datagrams that a node drops or reads otherwise. Last, the trace of a Network
 // on and off at the ingress node (NodeTraceOutbound): with the trace of no Network on, no option goes and the record keeps
 // its size; with it on, a packet of the pools of the Network goes with the option, and the node records it. The text
-// matches the golden file tests/golden/trace/trace_carriers.txt (golden family "trace"). Print "TRACEOPTION TEST OK" only
-// when every check passes.
+// matches the golden file tests/golden/trace/trace_carriers.txt (golden family "trace"). Beside the golden text, the checks
+// of SDN-89-R1 (#630): the rate limit of the ingress node measured from a tick before its first packet, which a stall of
+// the test of 90 ms skips rather than fails; a record of a route that a VRF of the peer leaks, which goes without the
+// option, on the session and on a link, and traces nothing; a node that records the trace of a packet of a peer only when
+// it names that peer as its ingress node; and two threads that race on the first packet of a VRF, ever and after a pause,
+// of which one is traced, never both. Print "TRACEOPTION TEST OK" only when every check passes.
 
 #include "harness_int.h"
 #include "testlist.h"
@@ -23,6 +27,7 @@
 #include "Cedar/NodeTrace.h"
 
 #include "Mayaqua/FileIO.h"
+#include "Mayaqua/Kernel.h"
 #include "Mayaqua/Memory.h"
 #include "Mayaqua/Str.h"
 #include "Mayaqua/Tick64.h"
@@ -31,6 +36,10 @@
 #include "Core/Vxlan.h"
 
 #define	TRTEST_VRF				101			// The VRF of the records
+#define	TRTEST_LEAKED_VRF		102			// The VRF of the peer that a route of VRF 101 leads into (NodeLeak.c)
+#define	TRTEST_STALL			90			// A stall of the test between the first packet of a VRF and the check of the rate limit (ms)
+#define	TRTEST_BOUND			10000		// A bounded wait for the thread of the race (ms)
+#define	TRTEST_RACE_START		10000		// The clock of the node of the race when a race starts (ms)
 #define	TRTEST_VNI				5101		// The VNI of the datagrams
 #define	TRTEST_FRAME			64			// The frame of a datagram
 #define	TRTEST_PACKET			20			// The packet of a record: an IPv4 header
@@ -70,6 +79,10 @@ typedef struct TRTEST_CTX
 	VXLAN_GROUP Group;						// ... with this source group and trace option ...
 	UCHAR Frame[TRTEST_FRAME];				// ... and this frame, as much as fits
 	UINT FrameSize;
+	volatile LONG64 Now;					// The clock of the node of the race (TrTestRace), in ms ...
+	volatile LONG Hold;						// ... whose next read holds its thread ...
+	HANDLE Read;							// ... which sets this event once it read the time ...
+	HANDLE Go;								// ... and goes on once this one is set
 } TRTEST_CTX;
 
 static bool TrTestCheck(TRTEST_CTX *ctx, bool ok, char *what)
@@ -483,6 +496,265 @@ static void TrTestOthers(TRTEST_CTX *ctx)
 	TrTestLine(ctx, line);
 }
 
+// One packet of 10.0.0.1 to 10.0.0.2 in VRF 101 from the host of the ingress node n to the peer of next hop 0 over its
+// session: whether the node traced it, and into *same, unless NULL, whether its record went as it was
+static bool TrTestSendOne(NODE *n, NODE_VRF_TABLES *v, bool *same)
+{
+	UCHAR buf[NODE_TRACE_ROOM + TRTEST_RECORD];
+	UCHAR *record = buf + NODE_TRACE_ROOM;
+	VXLAN_TRACE trace;
+
+	Zero(buf, sizeof(buf));
+	TrTestRecord(record, 1, 2, false);
+	UINT size = TRTEST_RECORD;
+	const UCHAR *start = NodeTraceOutbound(n, v, 0, TRTEST_VRF, record, TRTEST_PACKET, record, &size, NOISE_MAX_PAYLOAD, true, false, &trace);
+	if (same != NULL)
+	{
+		*same = (start == record && size == TRTEST_RECORD);
+	}
+
+	return trace.Traced;
+}
+
+// The second packet of VRF 101 at the ingress node n, which traced the first after the test took tick, sent after a stall
+// of the test of stall ms: the node traces no packet of a VRF within NODE_TRACE_INTERVAL ms of the last. The check runs
+// when less than NODE_TRACE_INTERVAL / 2 ms passed since tick, as the clock of the node, GetTickCount64, steps by 15.6 ms;
+// so what the test does between the two packets, as its prints, counts, and a stall skips the check rather than fails it
+// (SDN-89-R1, #630). Whether the check ran.
+static bool TrTestSecond(TRTEST_CTX *ctx, NODE *n, NODE_VRF_TABLES *v, UINT64 tick, UINT stall)
+{
+	bool same = false;
+
+	if (stall != 0)
+	{
+		SleepThread(stall);
+	}
+
+	bool traced = TrTestSendOne(n, v, &same);
+	if (Tick64() - tick >= NODE_TRACE_INTERVAL / 2)
+	{
+		return false;
+	}
+
+	TrTestCheck(ctx, same && traced == false, "tracing on: the node traces one packet of a VRF in NODE_TRACE_INTERVAL ms at most");
+	return true;
+}
+
+// A stall of the test of TRTEST_STALL ms between the first packet of the VRF and the check of the rate limit, as a busy
+// runner may make one: the check measures from its tick before the first packet, so the stall skips it rather than fails
+// it, whatever the node did with the second packet (SDN-89-R1, #630)
+static void TrTestStall(TRTEST_CTX *ctx, NODE *n, NODE_VRF_TABLES *v, const CONTROL_STATE *st)
+{
+	NodeTraceAttach(n, v, st);
+	UINT64 tick = Tick64();
+	bool first = TrTestSendOne(n, v, NULL);
+
+	TrTestCheck(ctx, first && TrTestSecond(ctx, n, v, tick, TRTEST_STALL) == false,
+		"tracing on: a stall of 90 ms of the test between the first packet of the VRF and the check of the rate limit skips the check rather than fails it");
+}
+
+// A record of a route that a VRF of the peer leaks into VRF 101, which carries the id of that VRF (NodeLeakVrf), at the
+// ingress node of the state st, whose host sent its packet in VRF 101, to the peer of frame version 1: it goes as it is,
+// without the trace option, over the session and over a link of kind geneve, the node traces and records nothing, and it
+// traces the next packet of VRF 101 (SDN-89-R1, #630)
+static void TrTestLeaked(TRTEST_CTX *ctx, NODE *n, NODE_VRF_TABLES *v, const CONTROL_STATE *st)
+{
+	UCHAR buf[NODE_TRACE_ROOM + TRTEST_RECORD];
+	UCHAR *record = buf + NODE_TRACE_ROOM;
+	NODE_TRACE_STATUS *before = ZeroMalloc(sizeof(NODE_TRACE_STATUS));
+	NODE_TRACE_STATUS *after = ZeroMalloc(sizeof(NODE_TRACE_STATUS));
+	VXLAN_TRACE trace, read;
+	bool none = true;
+
+	NodeTraceAttach(n, v, st);
+	NodeTraceGetStatus(n, before);
+	for (UINT plain = 0;plain < 2;plain++)
+	{
+		Zero(buf, sizeof(buf));
+		TrTestRecord(record, 1, 2, false);
+		WRITE_UINT(record, TRTEST_LEAKED_VRF);
+		UINT size = TRTEST_RECORD;
+		const UCHAR *start = NodeTraceOutbound(n, v, 0, TRTEST_VRF, record, TRTEST_PACKET, record, &size, NOISE_MAX_PAYLOAD, true, plain != 0, &trace);
+
+		none = none && start == record && size == TRTEST_RECORD && trace.Traced == false && NodeTraceParse(start, size, &read) == false;
+	}
+	NodeTraceGetStatus(n, after);
+	bool next = TrTestSendOne(n, v, NULL);
+
+	TrTestCheck(ctx, none && after->Traced == before->Traced && after->Recorded == before->Recorded && next,
+		"tracing on: a record of a route that a VRF of the peer leaks goes without the trace option, over the session and over a link, the node records nothing, and it traces the next packet of the VRF");
+
+	Free(after);
+	Free(before);
+}
+
+// The trace option of a record of a peer of frame version 1 at the node of the tables v, whose Network of the pool
+// 10.0.0.0/24 in VRF 101 traces: the node records the packet when the option names the peer that sent the record as its
+// ingress node, and nothing when it names another node, as a peer may claim (SDN-89-R1, #630)
+static void TrTestInbound(TRTEST_CTX *ctx, NODE *n, NODE_VRF_TABLES *v)
+{
+	UCHAR buf[NODE_TRACE_ROOM + TRTEST_RECORD];
+	UCHAR *record = buf + NODE_TRACE_ROOM;
+	UCHAR peer[PEER_KEY_SIZE];
+	NODE_TRACE_STATUS *status = ZeroMalloc(sizeof(NODE_TRACE_STATUS));
+	VXLAN_TRACE trace;
+
+	Zero(&trace, sizeof(trace));
+	trace.Traced = true;
+	trace.Id = trtest_ids[1];
+	Copy(trace.Ingress, trtest_ingress[1], VXLAN_TRACE_INGRESS);
+
+	for (UINT own = 0;own < 2;own++)
+	{
+		NODE_SOURCE_CLAIM claim;
+		UINT header = 0;
+
+		// The static key of the peer that sent the record begins with the ingress node of the trace, or with other bytes
+		Zero(peer, sizeof(peer));
+		Copy(peer, trtest_ingress[own != 0 ? 1 : 0], VXLAN_TRACE_INGRESS);
+		Zero(buf, sizeof(buf));
+		TrTestRecord(record, 1, 2, false);
+		UINT size = TRTEST_RECORD;
+		const UCHAR *start = NodeTraceWrap(record, record, &size, NOISE_MAX_PAYLOAD, &trace);
+		bool parsed = NodeFrameParse(start, size, &claim, &header);
+		NodeTraceGetStatus(n, status);
+		UINT64 recorded = status->Recorded;
+
+		NodeTraceInbound(n, v, TRTEST_VRF, peer, start, header, &claim, start + header + NODE_OVERLAY_VRF_TAG, TRTEST_PACKET, true);
+		NodeTraceGetStatus(n, status);
+		const CONTROL_TRACE *r = (status->NumRecords != 0 ? &status->Records[status->NumRecords - 1] : NULL);
+
+		if (own != 0)
+		{
+			TrTestCheck(ctx, parsed && status->Recorded == recorded + 1 && r != NULL && r->Id == trace.Id && Cmp(r->Ingress, peer, CONTROL_TRACE_INGRESS) == 0 &&
+				r->VrfId == TRTEST_VRF && r->Allowed, "tracing on: the node records the packet of a peer whose trace names that peer as its ingress node");
+		}
+		else
+		{
+			TrTestCheck(ctx, parsed && status->Recorded == recorded,
+				"tracing on: the node records nothing of the packet of a peer whose trace names another node as its ingress node");
+		}
+	}
+
+	Free(status);
+}
+
+// The clock of the node of the race: the time that the test set. The read that the test armed (Hold) keeps the time that
+// it read and holds its thread until the test lets it go on, as the system may hold a thread between its read of the
+// clock and the rest of the rate limit
+static UINT64 TrTestClock(NODE *n, void *param)
+{
+	TRTEST_CTX *ctx = (TRTEST_CTX *)param;
+	UINT64 now = (UINT64)ReadAcquire64(&ctx->Now);
+
+	if (InterlockedCompareExchange(&ctx->Hold, 0, 1) == 1)
+	{
+		SetEvent(ctx->Read);
+		WaitForSingleObject(ctx->Go, TRTEST_BOUND);
+	}
+
+	return now;
+}
+
+// The thread of the race that reads the clock first: one packet of VRF 101, and whether the node traced it
+typedef struct TRTEST_RACER
+{
+	NODE *Node;
+	NODE_VRF_TABLES *Tables;
+	bool Traced;
+} TRTEST_RACER;
+
+static DWORD WINAPI TrTestRacer(LPVOID param)
+{
+	TRTEST_RACER *r = (TRTEST_RACER *)param;
+
+	r->Traced = TrTestSendOne(r->Node, r->Tables, NULL);
+
+	return 0;
+}
+
+// Two threads race on the first packet of VRF 101 at an ingress node of the state st, whose static key is key: the first
+// packet ever, and the first after a pause of a second. The racer reads the clock of the node first, and the system holds
+// it there; the test thread sends a packet of the VRF meanwhile, NODE_TRACE_INTERVAL / 2 ms later on that clock, and then
+// lets the racer go on. One of the two packets is traced, never both, and the node traces the next packet of the VRF only
+// NODE_TRACE_INTERVAL ms after it (SDN-89-R1, #630).
+static void TrTestRace(TRTEST_CTX *ctx, const CONTROL_STATE *st, const UCHAR *key)
+{
+	NODE *n = ZeroMalloc(sizeof(NODE));
+	NODE_VRF_TABLES *v = ZeroMalloc(sizeof(NODE_VRF_TABLES));
+	NODE_TRACE_STATUS *status = ZeroMalloc(sizeof(NODE_TRACE_STATUS));
+	char what[MAX_SIZE];
+
+	ctx->Read = CreateEventW(NULL, FALSE, FALSE, NULL);
+	ctx->Go = CreateEventW(NULL, FALSE, FALSE, NULL);
+	bool started = TrTestCheck(ctx, ctx->Read != NULL && ctx->Go != NULL && NodeTraceStart(n, key, TrTestClock, ctx) != NULL,
+		"the trace of the node of the race starts on the clock of the test");
+
+	for (UINT pause = 0;started && pause < 2;pause++)
+	{
+		TRTEST_RACER racer;
+		UINT64 start = TRTEST_RACE_START;
+
+		// A Generation of its own: the node traced no packet of the VRF yet, or one a second before the race
+		NodeTraceAttach(n, v, st);
+		InterlockedExchange64(&ctx->Now, (LONG64)start);
+		bool before = (pause == 0 || TrTestSendOne(n, v, NULL));
+		if (pause != 0)
+		{
+			start += 1000;
+			InterlockedExchange64(&ctx->Now, (LONG64)start);
+		}
+		NodeTraceGetStatus(n, status);
+		UINT64 recorded = status->Recorded;
+
+		// The racer reads the clock and is held there, while the test thread sends its packet later on that clock
+		Zero(&racer, sizeof(racer));
+		racer.Node = n;
+		racer.Tables = v;
+		ResetEvent(ctx->Read);
+		ResetEvent(ctx->Go);
+		InterlockedExchange(&ctx->Hold, 1);
+		HANDLE thread = CreateThread(NULL, 0, TrTestRacer, &racer, 0, NULL);
+		bool held = (thread != NULL && WaitForSingleObject(ctx->Read, TRTEST_BOUND) == WAIT_OBJECT_0);
+		InterlockedExchange(&ctx->Hold, 0);
+		InterlockedExchange64(&ctx->Now, (LONG64)(start + NODE_TRACE_INTERVAL / 2));
+		bool second = TrTestSendOne(n, v, NULL);
+		SetEvent(ctx->Go);
+		if (thread != NULL)
+		{
+			WaitForSingleObject(thread, INFINITE);
+			CloseHandle(thread);
+		}
+		NodeTraceGetStatus(n, status);
+		bool one = (racer.Traced != second && status->Recorded == recorded + 1);
+
+		// The last packet of the VRF that the node traced did not move back: the next is traced only NODE_TRACE_INTERVAL ms
+		// after it
+		InterlockedExchange64(&ctx->Now, (LONG64)(start + NODE_TRACE_INTERVAL));
+		bool soon = TrTestSendOne(n, v, NULL);
+		InterlockedExchange64(&ctx->Now, (LONG64)(start + NODE_TRACE_INTERVAL / 2 + NODE_TRACE_INTERVAL));
+		bool later = TrTestSendOne(n, v, NULL);
+
+		Format(what, sizeof(what), "tracing on: two threads race on the first packet of the VRF %s, and one of the two is traced, never both, and the next packet of the VRF only NODE_TRACE_INTERVAL ms after it",
+			pause == 0 ? "ever" : "after a pause of a second");
+		TrTestCheck(ctx, before && held && one && soon == false && later, what);
+	}
+
+	NodeFreeTraceTable(v->Trace);
+	NodeTraceStop(n);
+	if (ctx->Read != NULL)
+	{
+		CloseHandle(ctx->Read);
+	}
+	if (ctx->Go != NULL)
+	{
+		CloseHandle(ctx->Go);
+	}
+	Free(status);
+	Free(v);
+	Free(n);
+}
+
 // The trace of a Network at the ingress node (NodeTraceOutbound), off and on: the node of the test, whose static key begins
 // with the ingress node of the first trace, its own group 3 in VRF 101, and one peer, of frame version 1, or of frame
 // version 0 for the last case
@@ -561,6 +833,8 @@ static void TrTestIngressNode(TRTEST_CTX *ctx)
 		const UCHAR *frame = (c == 1 ? NodeSourceGroupWrap(v, 0, TRTEST_VRF, record, &size, NOISE_MAX_PAYLOAD) : record);
 		NODE_TRACE_STATUS before;
 		NodeTraceGetStatus(n, &before);
+		// The tick before the first packet of the VRF, which the check of the rate limit measures from (SDN-89-R1, #630)
+		UINT64 tick = Tick64();
 		const UCHAR *start = NodeTraceOutbound(n, v, 0, TRTEST_VRF, record, TRTEST_PACKET, frame, &size, NOISE_MAX_PAYLOAD, true, false, &trace);
 		NodeTraceGetStatus(n, status);
 		bool parsed = NodeTraceParse(start, size, &read);
@@ -594,18 +868,19 @@ static void TrTestIngressNode(TRTEST_CTX *ctx)
 				"tracing on: the record goes with the trace option of the node, which records it with its verdict");
 
 			// A second packet of the VRF within NODE_TRACE_INTERVAL ms is not traced
-			UINT64 tick = Tick64();
-			Zero(buf, sizeof(buf));
-			TrTestRecord(record, 1, 2, false);
-			size = TRTEST_RECORD;
-			start = NodeTraceOutbound(n, v, 0, TRTEST_VRF, record, TRTEST_PACKET, record, &size, NOISE_MAX_PAYLOAD, true, false, &trace);
-			if (Tick64() - tick < NODE_TRACE_INTERVAL)
-			{
-				TrTestCheck(ctx, start == record && size == TRTEST_RECORD && trace.Traced == false,
-					"tracing on: the node traces one packet of a VRF in NODE_TRACE_INTERVAL ms at most");
-			}
+			TrTestSecond(ctx, n, v, tick, 0);
 		}
 	}
+
+	// Beside the golden text (SDN-89-R1, #630), to the peer of frame version 1: a stall of the test across the check of the
+	// rate limit, a record of a route that a VRF of the peer leaks, the ingress node of the trace of the packet of a peer, and
+	// two threads that race on the first packet of the VRF
+	p->FrameVersion = NODE_FRAME_VERSION;
+	NodeSourceGroupAttach(n, v, st);
+	TrTestStall(ctx, n, v, st);
+	TrTestLeaked(ctx, n, v, st);
+	TrTestInbound(ctx, n, v);
+	TrTestRace(ctx, st, key);
 
 	NodeFreeSourceGroupTable(v->SourceGroups);
 	NodeFreeTraceTable(v->Trace);
@@ -618,7 +893,7 @@ static void TrTestIngressNode(TRTEST_CTX *ctx)
 }
 
 // traceoption: the trace option in each carrier
-RANZ_TEST_TAGS("traceoption", traceoption_test, "core", "Trace option carriers (SDN-89): the trace ID and the ingress node in the header of a record of frame version 1 of a Noise session and in the trace option of Geneve, sent and read back (golden family trace); the critical bit of the option of Geneve is clear and a node that does not know the option takes the record; the VXLAN header has no room for it; with the trace of no Network on no option goes and a record keeps its size.");
+RANZ_TEST_TAGS("traceoption", traceoption_test, "core", "Trace option carriers (SDN-89): the trace ID and the ingress node in the header of a record of frame version 1 of a Noise session and in the trace option of Geneve, sent and read back (golden family trace); the critical bit of the option of Geneve is clear and a node that does not know the option takes the record; the VXLAN header has no room for it; with the trace of no Network on no option goes and a record keeps its size. The rate limit holds across a stall of the test and a race of two threads, a record of a leaked route goes without the option, and a trace that names another ingress node than the peer records nothing (SDN-89-R1).");
 void traceoption_test(UINT num, char **arg)
 {
 	TRTEST_CTX *ctx = ZeroMalloc(sizeof(TRTEST_CTX));
