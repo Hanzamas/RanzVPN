@@ -13,7 +13,8 @@ package sidecar
 //
 // Into the fabric: each MAC/IP advertisement route (type 2) of the gateway in the MAC plus IP form carries the L3 VNI of the
 // VRF as its second label, the export route targets of the VRF besides those of the stretch, and the router MAC of the
-// gateway, so that the fabric routes to the host through the L3 VNI; the MAC only form stays as it is. At start the sidecar
+// gateway, so that the fabric routes to the host through the L3 VNI, and the node routes such a packet into the switch of the
+// Network (NodeStretchRoute of src/Cedar/NodeStretch.c); the MAC only form stays as it is. At start the sidecar
 // announces each gateway IP as a type-2 route of the router MAC in the same form, with the default gateway extended
 // community (RFC 7432 section 7.8).
 //

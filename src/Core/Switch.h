@@ -36,7 +36,8 @@
 // per VLAN, each with the MAC address and the port of its last frame, as the IP table of the Hub holds them: the source of an
 // IPv4 packet and the sender of an ARP packet, the source of an IPv6 packet, but no address that no host sends from (0.0.0.0/8,
 // 127.0.0.0/8, multicast, broadcast, the unspecified and the loopback address of IPv6). It reads them only; the frame passes
-// byte for byte all the same. The operators read and clear both tables (the live operations of the Controller).
+// byte for byte all the same. The operators read and clear both tables (the live operations of the Controller), and the IRB
+// of a stretched Network finds the member of an address in the IP table (SwitchFindIp; SDN-67, #294).
 //
 // Time is the caller's: SwitchInput and SwitchAge take it in ms (GetTickCount64, or the clock of a test), and the limits
 // and the ages of the MAC table run on it.
@@ -198,5 +199,6 @@ bool SwitchGetVlanStats(SWITCH *sw, UINT vlan, SWITCH_VLAN_STATS *st);
 // SwitchIp.c
 UINT SwitchGetIps(SWITCH *sw, SWITCH_IP_ENTRY *list, UINT max);
 UINT SwitchClearIps(SWITCH *sw, const UCHAR *address, UINT size);
+bool SwitchFindIp(SWITCH *sw, UINT vlan, const UCHAR *address, UINT size, SWITCH_IP_ENTRY *entry);
 
 #endif // CORE_SWITCH_H

@@ -41,7 +41,10 @@
 // packet of the version of its EtherType (NodeEvpnParseFrame), and an IP prefix route of the fabric in the VRF must hold the
 // source of the packet: the fabric speaks only for the prefixes that it announced there. Any VTEP that the gateway knows for
 // the VRF may send it, as any leaf of a fabric routes the subnets of its VRFs. The overlay takes it to the host or on to a
-// peer, as the table of the VRF routes its destination (NodeOverlayFabricInput). Any other frame is dropped and counted: one
+// peer, as the table of the VRF routes its destination (NodeOverlayFabricInput); a packet to a host of a stretched Network with
+// irb in the VRF the IRB of the stretch routes into the switch of the Network instead (NodeStretchRoute; SDN-67, #294), and a
+// host route of the fabric that a type-2 route of a leaf with symmetric IRB gives is an IP prefix route of the VRF like any
+// other (ranz-bgp/internal/sidecar/irb.go). Any other frame is dropped and counted: one
 // from another address as UnknownVtep, whatever it holds, which the node log also says once every 10 s at most (SDN-25-R3,
 // #571), and one of a known VTEP by what is wrong with it (NotOurs, Malformed, Strangers), so those count the frames of known
 // VTEPs alone.
@@ -583,9 +586,11 @@ static void NodeEvpnUnknownVtep(NODE_EVPN *e, UINT vrf_id, const VXLAN_ADDR *fro
 // from is a VTEP that the gateway knows for the VRF, the VTEP or one of the vteps of an IP prefix route of the VRF
 // (NodeEvpnHasVtep, NodeEvpnKnownVteps), NodeEvpnParseFrame takes it and an IP prefix route of the fabric in the VRF holds the
 // source of its packet. Any other frame is dropped and counted, one from another address as UnknownVtep, whatever it holds,
-// which the node log names once every NODE_EVPN_LOG_WAIT ms at most (NodeEvpnUnknownVtep).
+// which the node log names once every NODE_EVPN_LOG_WAIT ms at most (NodeEvpnUnknownVtep). A packet to a host of a stretched
+// Network with irb in the VRF goes into the switch of that Network instead of the overlay (NodeStretch.c; SDN-67, #294).
 static void NodeEvpnReceive(VXLAN *x, void *param, UINT vni, const VXLAN_ADDR *from, const UCHAR *frame, UINT size) {
 	NODE_EVPN *e = (NODE_EVPN *)param;
+	bool irb = false;
 
 	// A frame of the L2 VNI of a stretch goes to the switch of its Network (NodeStretch.c; SDN-64, #291)
 	if (NodeStretchInput(e->Node, vni, from, frame, size))
@@ -615,12 +620,19 @@ static void NodeEvpnReceive(VXLAN *x, void *param, UINT vni, const VXLAN_ADDR *f
 			InterlockedIncrement64(&e->NotOurs);
 		else if (NodeEvpnFind(et, vrf_id, f.Src, f.AddrSize) == NULL)
 			InterlockedIncrement64(&e->Strangers);
+		// A packet to a host of a stretched Network with irb in the VRF is the IRB's (NodeStretch.c; SDN-67, #294)
+		else if (NodeStretchOnLink(e->Node, vrf_id, f.Dst, f.AddrSize))
+			irb = true;
 		else if (NodeOverlayFabricInput(e->Node, vrf_id, f.Packet, f.Size, e->NatBuf))
 			InterlockedIncrement64(&e->Delivered);
 		else
 			InterlockedIncrement64(&e->Undelivered);
 	}
 	NodeReaderOffline(&e->Reader);
+
+	// ... which routes it into the switch of the Network offline, as a frame of an L2 VNI goes into it
+	if (irb)
+		InterlockedIncrement64(NodeStretchRoute(e->Node, vrf_id, e->RouterMac, f.Packet, f.Size, f.Dst, f.AddrSize) ? &e->Delivered : &e->Undelivered);
 }
 
 //
@@ -957,7 +969,8 @@ static bool NodeEvpnVrfs(NODE_EVPN *e, cJSON *vrfs, char *error, UINT error_size
 // setting cfg has an evpn object: the VTEP of the gateway (vtep), its router MAC (router_mac, NODE_EVPN_ROUTER_MAC without
 // one), the UDP port of its VTEP (port) and of the VTEPs of the fabric (fabric_port), VXLAN_PORT without them, its EVPN VRFs
 // (vrfs), each with its id (vrf) and its L3 VNI (vni), and the L2 Networks that it stretches into the fabric (stretches), each
-// with its Network (network) and its L2 VNI (vni; NodeStretch.c, SDN-64, #291), one of the two at least. The sidecar reads the
+// with its Network (network) and its L2 VNI (vni; NodeStretch.c, SDN-64, #291), and with irb the EVPN VRF of the Network (vrf) and
+// its gateway IPs (gateway_ips; SDN-67, #294), one of the two at least. The sidecar reads the
 // same object, with the route distinguisher, the route targets and the accept list of each VRF, and the route distinguisher and
 // the route targets of each stretch. A node whose evpn object is not one runs without EVPN, and the node log says why; the
 // sidecar refuses such an object too. The caller holds the node lock.
@@ -993,8 +1006,9 @@ void NodeEvpnStart(NODE *n, struct cJSON *cfg) {
 	else if ((vrfs != NULL && cJSON_IsArray(vrfs) == false) || cJSON_GetArraySize(vrfs) > NODE_EVPN_MAX_VRFS)
 		Format(error, sizeof(error), "vrfs is no array of %u VRFs at most", (UINT)NODE_EVPN_MAX_VRFS);
 	else if (vrfs == NULL || NodeEvpnVrfs(e, vrfs, error, sizeof(error)))
-		// The stretches of the gateway (NodeStretch.c; SDN-64, #291): L2 Networks, each on an L2 VNI that is no L3 VNI of a VRF
-		e->NumStretches = NodeStretchSettings(cJSON_GetObjectItemCaseSensitive(o, "stretches"), e->Vnis, e->NumVrfs, e->Stretches, error, sizeof(error));
+		// The stretches of the gateway (NodeStretch.c; SDN-64, #291): L2 Networks, each on an L2 VNI that is no L3 VNI of a VRF, and
+		// with irb in one of the VRFs (SDN-67, #294)
+		e->NumStretches = NodeStretchSettings(cJSON_GetObjectItemCaseSensitive(o, "stretches"), e->VrfIds, e->Vnis, e->NumVrfs, e->Stretches, error, sizeof(error));
 
 	if (IsEmptyStr(error) && e->NumVrfs == 0 && e->NumStretches == 0)
 		StrCpy(error, sizeof(error), "vrfs names no VRF, and stretches no L2 Network");

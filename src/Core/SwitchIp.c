@@ -8,7 +8,8 @@
 // address (224.0.0.0 and above), and the unspecified, the loopback and the multicast addresses of IPv6. A frame whose
 // EtherType after its addresses and its tag is another, a second tag among them, teaches the table nothing. The table forgets
 // the entries of a port that a member leaves or whose VLANs change, as the MAC table does, and ages with it (SwitchAge); the
-// operators read it (SwitchGetIps) and clear it, every entry or the entries of one address (SwitchClearIps).
+// operators read it (SwitchGetIps) and clear it, every entry or the entries of one address (SwitchClearIps), and the IRB of a
+// stretched Network finds the member of one address in it (SwitchFindIp; SDN-67, #294).
 //
 // The table is split into SWITCH_IP_SHARDS shards by a keyed hash of the VLAN and the address, each a table with open
 // addressing and linear probing under a lock of its own. The data path holds the lock of a shard shared to find the entry of
@@ -511,6 +512,41 @@ UINT SwitchGetIps(SWITCH *sw, SWITCH_IP_ENTRY *list, UINT max) {
 		qsort(list, num, sizeof(SWITCH_IP_ENTRY), SwitchIpCompare);
 
 	return num;
+}
+
+// The entry of the address of size bytes at address, 4 for IPv4 or 16 for IPv6, in the VLAN vlan of the IP table into *entry:
+// the MAC address and the port of the last frame from it. False when the table has none. The IRB of a stretched Network finds
+// the member that a packet of the fabric goes to with it (Cedar/NodeStretch.c; SDN-67, #294).
+bool SwitchFindIp(SWITCH *sw, UINT vlan, const UCHAR *address, UINT size, SWITCH_IP_ENTRY *entry) {
+	SWITCH_IP_TABLE *t = SwitchIpTable(sw);
+	UCHAR key[16];
+	bool found = false;
+
+	if (t == NULL || address == NULL || entry == NULL || (size != 4 && size != 16) || vlan < SWITCH_MIN_VLAN || vlan > SWITCH_MAX_VLAN)
+		return false;
+
+	ZeroMemory(key, sizeof(key));
+	CopyMemory(key, address, size);
+
+	UINT tag = (vlan << 8) | size;
+	UINT64 h = SwitchIpHash(t, tag, key);
+	SWITCH_IP_SHARD *s = SwitchIpShardOf(t, h);
+
+	AcquireSRWLockShared(&s->Lock);
+	const SWITCH_IP_SLOT *e = SwitchIpFind(s, tag, key, h);
+	if (e != NULL && e->Tag != 0) {
+		ZeroMemory(entry, sizeof(SWITCH_IP_ENTRY));
+		entry->Vlan = vlan;
+		CopyMemory(entry->Address, e->Address, sizeof(entry->Address));
+		entry->AddressSize = size;
+		CopyMemory(entry->Mac, e->Mac, sizeof(entry->Mac));
+		entry->Port = e->Port;
+		entry->LastSeen = e->LastSeen;
+		found = true;
+	}
+	ReleaseSRWLockShared(&s->Lock);
+
+	return found;
 }
 
 // Take out the entries of the address of size bytes at address, 4 for IPv4 or 16 for IPv6, in every VLAN, or every entry of
