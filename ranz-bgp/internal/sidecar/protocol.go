@@ -69,6 +69,14 @@
 // them (SDN-25-R3 #571). The message holds the prefix via the VTEP next_hop of the fabric, with the vni
 // and the router_mac to send it in VXLAN; a withdrawn message with a vni is one that went. The
 // node installs them into the forwarding of the VRF, never into the Windows routing table.
+//
+// The evpn object may also name stretches (stretch.go; SDN-64 #291): L2 Networks that the gateway
+// extends into the fabric, each with its L2 vni, rd and route_targets, with or without vrfs. A
+// stretch message carries routes of EVPN types 2 and 3 of their VNIs, MaxStretchRoutes at most:
+// from the node the MAC/IP advertisement routes of the gateway (vni, mac and, for the MAC plus IP
+// form, ip; with withdraw one goes), where full starts a full resync and more says that more of it
+// follows; from the sidecar the routes of the fabric (a type-2 route with its mac and ip, a type-3
+// route without a mac), each with the VTEP of the fabric as next_hop, and with withdraw once it went.
 package sidecar
 
 import (
@@ -82,8 +90,9 @@ import (
 
 // ProtocolVersion is the version of the protocol that ready reports: 2 adds the peering of the
 // standard mode and the refused message, 3 the EVPN of a gateway, 4 the more of a peers message,
-// ping and pong, 5 the vteps of a learned message of an EVPN VRF (SDN-25-R3 #571).
-const ProtocolVersion = 5
+// ping and pong, 5 the vteps of a learned message of an EVPN VRF (SDN-25-R3 #571), 6 the
+// stretches of a gateway and the stretch message (SDN-64 #291).
+const ProtocolVersion = 6
 
 // MaxLine is the size of one message at most, with its newline.
 const MaxLine = 64 * 1024
@@ -102,6 +111,7 @@ const (
 	TypeRefused   = "refused"
 	TypePing      = "ping"
 	TypePong      = "pong"
+	TypeStretch   = "stretch"
 )
 
 // The session states of a peer message.
@@ -125,7 +135,8 @@ type Message struct {
 	ListenAddresses []string `json:"listen_addresses,omitempty"`
 	Peers           []Peer   `json:"peers,omitempty"` // also of peers
 	Accept          []string `json:"accept,omitempty"`
-	// More says of a peers message that more peers follow in the next one
+	// More says of a peers message that more peers follow in the next one, and of a stretch message of a full resync that
+	// more of its routes follow
 	More bool `json:"more,omitempty"`
 	// Address is the node's own address in the peering of the standard mode
 	Address string `json:"address,omitempty"`
@@ -156,6 +167,11 @@ type Message struct {
 	EVPN      *EVPN  `json:"evpn,omitempty"`
 	VNI       uint32 `json:"vni,omitempty"`
 	RouterMAC string `json:"router_mac,omitempty"`
+
+	// The stretches of a gateway (stretch.go; SDN-64 #291): the routes of a stretch message, and full, the first message
+	// of a full resync of the node, whose more says that more of it follows
+	Routes []StretchRoute `json:"routes,omitempty"`
+	Full   bool           `json:"full,omitempty"`
 }
 
 // Peer is one router of the operator in a start message, or one Ranz node in the peering of the
