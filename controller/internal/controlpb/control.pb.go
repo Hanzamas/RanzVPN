@@ -3560,7 +3560,13 @@ type Network struct {
 	// The trace of the Network is on (SDN-89 #388): in the state of every node of its VRF, each of which traces a packet of
 	// the host whose source or destination is in a pool of the Network as its ingress node, and records each traced packet
 	// that it handles in the VRF. Off by default.
-	Trace         bool `protobuf:"varint,9,opt,name=trace,proto3" json:"trace,omitempty"`
+	Trace bool `protobuf:"varint,9,opt,name=trace,proto3" json:"trace,omitempty"`
+	// TCP splitting of an L3 Network (CORE-P2-3 #94, ADR-0022 amendment of 2026-10-21): in the state of every node of its
+	// VRF while it is on, off by default. A node terminates the TCP connections that its host opens from its address in the
+	// Network on the Windows TCP stack and carries only their byte streams to the peer that the destination routes to,
+	// which opens each connection to its real destination; that peer opens one only for a source in such a Network. A
+	// node of an older release skips the field it does not know. 9 is the trace of SDN-89 (#388), so this is 10.
+	TcpSplit      bool `protobuf:"varint,10,opt,name=tcp_split,json=tcpSplit,proto3" json:"tcp_split,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -3654,6 +3660,13 @@ func (x *Network) GetStretch() *Stretch {
 func (x *Network) GetTrace() bool {
 	if x != nil {
 		return x.Trace
+	}
+	return false
+}
+
+func (x *Network) GetTcpSplit() bool {
+	if x != nil {
+		return x.TcpSplit
 	}
 	return false
 }
@@ -4670,6 +4683,11 @@ type Capabilities struct {
 	// release has them, and ranz.exe is next to it. A node that does not report it is refused as a member of a VRF whose Intent
 	// names reflectors.
 	BgpReflection bool `protobuf:"varint,16,opt,name=bgp_reflection,json=bgpReflection,proto3" json:"bgp_reflection,omitempty"`
+	// The node runs the TCP splitting of the L3 Networks (CORE-P2-3 #94): it splits the TCP connections of its host in a Network
+	// with tcp_split, and answers the split flows that its peers open to it. A node that does not report it is refused as a
+	// member of a VRF that has such a Network, since the split connections of its peers to it would time out. 16 is the
+	// Capability bgp_reflection of SDN-79 (#359), so this is 17.
+	TcpSplit      bool `protobuf:"varint,17,opt,name=tcp_split,json=tcpSplit,proto3" json:"tcp_split,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -4812,6 +4830,13 @@ func (x *Capabilities) GetEvpn() bool {
 func (x *Capabilities) GetBgpReflection() bool {
 	if x != nil {
 		return x.BgpReflection
+	}
+	return false
+}
+
+func (x *Capabilities) GetTcpSplit() bool {
+	if x != nil {
+		return x.TcpSplit
 	}
 	return false
 }
@@ -7028,7 +7053,7 @@ const file_ranz_control_v1_control_proto_rawDesc = "" +
 	"\arecords\x18\x02 \x03(\v2\x1a.ranz.control.v1.DnsRecordR\arecords\"=\n" +
 	"\tDnsRecord\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x1c\n" +
-	"\taddresses\x18\x02 \x03(\fR\taddresses\"\x80\x03\n" +
+	"\taddresses\x18\x02 \x03(\fR\taddresses\"\x9d\x03\n" +
 	"\aNetwork\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x15\n" +
 	"\x06vrf_id\x18\x02 \x01(\rR\x05vrfId\x120\n" +
@@ -7038,7 +7063,9 @@ const file_ranz_control_v1_control_proto_rawDesc = "" +
 	"\x04dhcp\x18\x06 \x01(\v2\x15.ranz.control.v1.DhcpR\x04dhcp\x127\n" +
 	"\bsecurity\x18\a \x01(\v2\x1b.ranz.control.v1.L2SecurityR\bsecurity\x122\n" +
 	"\astretch\x18\b \x01(\v2\x18.ranz.control.v1.StretchR\astretch\x12\x14\n" +
-	"\x05trace\x18\t \x01(\bR\x05trace\"\xf2\x01\n" +
+	"\x05trace\x18\t \x01(\bR\x05trace\x12\x1b\n" +
+	"\ttcp_split\x18\n" +
+	" \x01(\bR\btcpSplit\"\xf2\x01\n" +
 	"\n" +
 	"L2Security\x12\x1b\n" +
 	"\tcheck_mac\x18\x01 \x01(\bR\bcheckMac\x12\x19\n" +
@@ -7119,7 +7146,7 @@ const file_ranz_control_v1_control_proto_rawDesc = "" +
 	"\bprefixes\x18\x02 \x03(\v2\x17.ranz.control.v1.PrefixR\bprefixes\"5\n" +
 	"\tPortRange\x12\x14\n" +
 	"\x05first\x18\x01 \x01(\rR\x05first\x12\x12\n" +
-	"\x04last\x18\x02 \x01(\rR\x04last\"\xac\x04\n" +
+	"\x04last\x18\x02 \x01(\rR\x04last\"\xc9\x04\n" +
 	"\fCapabilities\x12&\n" +
 	"\x03sku\x18\x01 \x01(\x0e2\x14.ranz.control.v1.SkuR\x03sku\x12A\n" +
 	"\farchitecture\x18\x02 \x01(\x0e2\x1d.ranz.control.v1.ArchitectureR\farchitecture\x12\x17\n" +
@@ -7142,7 +7169,8 @@ const file_ranz_control_v1_control_proto_rawDesc = "" +
 	"\vbgp_peering\x18\x0e \x01(\bR\n" +
 	"bgpPeering\x12\x12\n" +
 	"\x04evpn\x18\x0f \x01(\bR\x04evpn\x12%\n" +
-	"\x0ebgp_reflection\x18\x10 \x01(\bR\rbgpReflection\"k\n" +
+	"\x0ebgp_reflection\x18\x10 \x01(\bR\rbgpReflection\x12\x1b\n" +
+	"\ttcp_split\x18\x11 \x01(\bR\btcpSplit\"k\n" +
 	"\aAddress\x12\x18\n" +
 	"\anetwork\x18\x01 \x01(\tR\anetwork\x12\x15\n" +
 	"\x06vrf_id\x18\x02 \x01(\rR\x05vrfId\x12/\n" +
