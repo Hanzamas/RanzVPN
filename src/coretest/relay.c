@@ -10,7 +10,9 @@
 //   its bindings back from the keepalive of its nodes. A node's bind sent from another address binds nothing, and a
 //   bind or a signal sent again is a replay after the binding expired, the peer list changed or the receiver
 //   restarted (CORE-H2 #399, finding F3 of AUD-5). The datagrams that the relay forwards are records of peer sessions,
-//   which it forwards by their clear header (PeerSession.c).
+//   which it forwards by their clear header (PeerSession.c). Ticks at a clock older than a bind, as a tick that read its
+//   clock before another thread sent or took the bind would see it, send no bind early and drop no binding, on peer
+//   layers that hand their datagrams to each other, and at their times the timers run (CORE-S5-6-R4 #595).
 // The control plane is stood in for by the test, which hands each signal from one node to the other; the
 // controller's conformance test carries the same envelopes through the controller (controller/internal/controller).
 
@@ -774,6 +776,148 @@ static void relay_policy_replays(RELAY_WORLD *w) {
 	DeleteCriticalSection(&tap.Lock);
 }
 
+// A link of relay_clock: the datagrams of one peer layer go at once to the peer layer To, from the address From, as the
+// measurement of peersession.c hands them on; with To NULL they are lost on the way
+typedef struct RELAY_LINK {
+	PEER_AGENT *To; // The peer layer that the datagrams go to, NULL when they are lost
+	PEER_ADDR From; // The address they come from
+} RELAY_LINK;
+
+static bool relay_link_send(void *param, const PEER_ADDR *dst, const void *data, UINT size) {
+	RELAY_LINK *l = (RELAY_LINK *)param;
+
+	if (l->To != NULL)
+		PeerInput(l->To, &l->From, (const UCHAR *)data, size);
+
+	return true;
+}
+
+// The counters of a peer layer
+static PEER_STATS relay_stats(PEER_AGENT *a) {
+	PEER_STATS st;
+
+	PeerGetStats(a, &st);
+
+	return st;
+}
+
+// The clocks of the binds and the bindings (CORE-S5-6-R4 #595), at clocks that the test holds still (PeerTickAt): a tick
+// that read its clock before another thread sent a bind or took one sees that bind later than its clock. N1, whose
+// datagrams are lost, does not send its bind again before BindRetry; N, which R binds, does not renew its bind before
+// BindInterval; and R keeps N's binding for BindExpiry after N renewed it. At their times the timers run.
+// PeerPunchTick needs no such case and no seam: it reads its clock once it holds the lock of the layer and the lock of the
+// punches, both exclusively, and every time that it compares the clock with is taken under one of the two (the punch
+// handler takes LastHeard, LastProbe and LastSent under the lock of the layer, PeerPunchHeard takes LastHeard under it
+// shared, and the rate of the punches takes its times under the lock of the punches), so none is later than its clock.
+static void relay_clock() {
+	PEER_KEY kr, kn, k1;
+	RELAY_LINK lr, ln, l1;
+	PEER_CONFIG rc;
+	PEER_INFO p;
+	PEER_RELAY_INFO ri;
+
+	coretest_fixed_key(&kr, 129);
+	coretest_fixed_key(&kn, 1);
+	coretest_fixed_key(&k1, 33);
+	ZeroMemory(&lr, sizeof(lr));
+	ZeroMemory(&ln, sizeof(ln));
+	ZeroMemory(&l1, sizeof(l1));
+	PeerAddrSetV4(&lr.From, 198, 51, 100, 41, 3478);
+	PeerAddrSetV4(&ln.From, 198, 51, 100, 42, 5000);
+	PeerAddrSetV4(&l1.From, 198, 51, 100, 43, 5000);
+
+	PeerDefaultConfig(&rc);
+	rc.Relay = true;
+	PEER_AGENT *r = PeerNew(&kr, &rc, relay_link_send, &lr, NULL, NULL);
+	PEER_AGENT *n = PeerNew(&kn, NULL, relay_link_send, &ln, NULL, NULL);
+	PEER_AGENT *n1 = PeerNew(&k1, NULL, relay_link_send, &l1, NULL, NULL);
+	if (coretest_check(r != NULL && n != NULL && n1 != NULL, "R, N and N1, peer layers whose datagrams the test hands on at once, start") == false) {
+		PeerFree(r);
+		PeerFree(n);
+		PeerFree(n1);
+		PeerKeyClose(&kr);
+		PeerKeyClose(&kn);
+		PeerKeyClose(&k1);
+		return;
+	}
+
+	// R and N hand their datagrams to each other; what N1 sends is lost
+	lr.To = n;
+	ln.To = r;
+
+	// R binds N, a node of VRF 10; N and N1 bind to R
+	ZeroMemory(&p, sizeof(p));
+	strcpy_s(p.Name, sizeof(p.Name), "n");
+	CopyMemory(p.Key, kn.Public, PEER_KEY_SIZE);
+	p.NumVrfs = 1;
+	p.VrfIds[0] = 10;
+	PeerSetPeers(r, &p, 1);
+	ZeroMemory(&ri, sizeof(ri));
+	strcpy_s(ri.Name, sizeof(ri.Name), "r");
+	CopyMemory(ri.Key, kr.Public, PEER_KEY_SIZE);
+	ri.Addr = lr.From;
+
+	// N1's bind is lost, so no answer comes. A tick at a clock that the bind was sent after, as one that read its clock
+	// before PeerBind stamped the bind would, then one 1 ms short of BindRetry after the bind
+	ULONGLONG t0 = GetTickCount64();
+	PeerSetRelays(n1, &ri, 1);
+	ULONGLONG t1 = GetTickCount64();
+	UINT64 first = relay_stats(n1).Sent;
+	PeerTickAt(n1, t0 - 1);
+	UINT64 older = relay_stats(n1).Sent;
+	PeerTickAt(n1, t0 + PEER_DEFAULT_BIND_RETRY - 1);
+	coretest_check(first == 1 && older == 1 && relay_stats(n1).Sent == 1,
+	               "A tick of N1 at a clock that its bind was sent after, as when the tick read its clock before PeerBind stamped the bind, does not send the bind again, nor does one 1 ms short of BindRetry after it");
+
+	PeerTickAt(n1, t1 + PEER_DEFAULT_BIND_RETRY);
+	coretest_check(relay_stats(n1).Sent == 2, "BindRetry after the bind that had no answer, the tick of N1 sends it again");
+
+	// N binds to R: R challenges the bind, N binds again with the cookie, and R binds N and answers
+	PeerSetRelays(n, &ri, 1);
+	ULONGLONG t2 = GetTickCount64();
+	PEER_STATS sn = relay_stats(n);
+	PEER_STATS sr = relay_stats(r);
+	coretest_check(sn.Sent == 2 && sn.NumBound == 1 && sr.Binds == 1 && sr.Challenges == 1 && sr.NumBindings == 1,
+	               "N binds to R: R challenges its first bind, N binds again with the cookie, and R binds N and answers");
+
+	// BindInterval after the bind the tick of N renews it, and R renews N's binding: N and R both stamp the renewal between
+	// t3 and t4
+	ULONGLONG t3 = GetTickCount64();
+	PeerTickAt(n, t2 + PEER_DEFAULT_BIND);
+	ULONGLONG t4 = GetTickCount64();
+	sn = relay_stats(n);
+	sr = relay_stats(r);
+	coretest_check(sn.Sent == 3 && sn.NumBound == 1 && sr.Binds == 2 && sr.Challenges == 1 && sr.NumBindings == 1,
+	               "BindInterval after its bind the tick of N renews it: R takes the renewal, with the cookie, and renews N's binding");
+
+	// A tick of R at a clock that the renewal came after, as one that read its clock before the bind handler stamped the
+	// renewal would, then one 1 ms short of BindExpiry after the renewal
+	PeerTickAt(r, t3 - 1);
+	UINT kept = relay_stats(r).NumBindings;
+	PeerTickAt(r, t3 + PEER_DEFAULT_BIND_EXPIRY - 1);
+	coretest_check(kept == 1 && relay_stats(r).NumBindings == 1,
+	               "A tick of R at a clock that N's renewal came after, as when the tick read its clock before the bind handler stamped the renewal, keeps N's binding, and so does one 1 ms short of BindExpiry after the renewal");
+
+	// A tick of N at a clock that the renewal was sent after, as one that read its clock before PeerBind stamped the renewal
+	// would, then one 1 ms short of BindInterval after the renewal
+	PeerTickAt(n, t3 - 1);
+	UINT64 sent = relay_stats(n).Sent;
+	PeerTickAt(n, t3 + PEER_DEFAULT_BIND - 1);
+	coretest_check(sent == 3 && relay_stats(n).Sent == 3 && relay_stats(r).Binds == 2,
+	               "A tick of N at a clock that its renewal was sent after, as when the tick read its clock before PeerBind stamped the renewal, does not renew the bind again, nor does one 1 ms short of BindInterval after the renewal");
+
+	// N renews nothing more: BindExpiry after the renewal R drops the binding
+	PeerTickAt(r, t4 + PEER_DEFAULT_BIND_EXPIRY);
+	coretest_check(relay_stats(r).NumBindings == 0, "BindExpiry after N's renewal, R drops the binding that N did not renew again");
+
+	PeerFree(n1);
+	PeerFree(n);
+	PeerFree(r);
+	PeerKeyClose(&kr);
+	PeerKeyClose(&kn);
+	PeerKeyClose(&k1);
+}
+
 void relaypolicy_test() {
 	RELAY_WORLD w;
 	PEER_CONFIG rc;
@@ -794,4 +938,6 @@ void relaypolicy_test() {
 	}
 
 	relay_world_stop(&w);
+
+	relay_clock();
 }

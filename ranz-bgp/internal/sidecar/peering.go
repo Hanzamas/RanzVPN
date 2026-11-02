@@ -118,6 +118,10 @@ func parsePeer(p Peer, local netip.Addr) (peerConfig, error) {
 			accept = append(accept, prefix)
 		}
 		pc.vrfs[v.ID] = accept
+		// The role of the peer in a VRF of route reflectors (reflector.go; SDN-79 #359)
+		if err := pc.setRole(v); err != nil {
+			return pc, err
+		}
 	}
 	return pc, nil
 }
@@ -125,7 +129,7 @@ func parsePeer(p Peer, local netip.Addr) (peerConfig, error) {
 // equal reports whether two Ranz nodes of the peering have the same settings.
 func (p peerConfig) equal(q peerConfig) bool {
 	return p.address == q.address && p.asn == q.asn && p.port == q.port && p.holdTime == q.holdTime &&
-		maps.EqualFunc(p.vrfs, q.vrfs, func(a, b []netip.Prefix) bool { return slices.Equal(a, b) })
+		maps.EqualFunc(p.vrfs, q.vrfs, func(a, b []netip.Prefix) bool { return slices.Equal(a, b) }) && maps.Equal(p.roles, q.roles)
 }
 
 // nodePeer is the GoBGP peer of a Ranz node in the peering of the standard mode, with IPv4 and IPv6
@@ -205,8 +209,15 @@ func (s *session) setPeers(ctx context.Context, m Message) error {
 	s.nodes = next
 	s.mu.Unlock()
 
+	// The export policy of a route reflector, before a session of a new client starts (reflector.go; SDN-79 #359)
+	s.setReflectorExport(ctx, next)
+
 	for _, addr := range slices.SortedFunc(maps.Keys(prev), netip.Addr.Compare) {
 		if pc, ok := next[addr]; ok && pc.equal(prev[addr]) {
+			continue
+		}
+		// A node whose routes come through the reflectors has no session, so no peer in GoBGP (reflector.go)
+		if !prev[addr].session() {
 			continue
 		}
 		if err := s.bgp.DeletePeer(ctx, &api.DeletePeerRequest{Address: addr.String()}); err != nil {
@@ -219,12 +230,18 @@ func (s *session) setPeers(ctx context.Context, m Message) error {
 		if old, ok := prev[addr]; ok && old.equal(next[addr]) {
 			continue
 		}
+		if !next[addr].session() {
+			s.log.Info("peer known without a session: its routes come through the route reflectors", "address", addr, "vrfs", len(next[addr].vrfs))
+			continue
+		}
 		if err := s.bgp.AddPeer(ctx, &api.AddPeerRequest{Peer: s.peerRequest(next[addr])}); err != nil {
 			s.send(Message{Type: TypeError, Peer: addr.String(), Error: fmt.Sprintf("peer %s: %v", addr, err)})
 			continue
 		}
 		s.log.Info("peer added", "address", addr, "asn", next[addr].asn, "vrfs", len(next[addr].vrfs))
 	}
+	// The maximum of paths of a route reflector that stays follows the nodes of its VRFs (reflector.go; SDN-79 #359)
+	s.updateReflectorLimits(ctx, prev, next)
 	// What the peers may announce changed, so what the node learns may have changed too
 	s.kick()
 	return nil
@@ -303,7 +320,8 @@ func (s *session) accepts(peer netip.Addr, key routeKey) bool {
 			return true
 		}
 	}
-	return false
+	// A route reflector of the VRF passes on what the other nodes of the VRF may announce there (reflector.go)
+	return s.reflects(p, key.vrf, prefix)
 }
 
 // refused tells the node about a session that GoBGP refused: no peer has its address.
