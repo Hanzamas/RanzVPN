@@ -37,7 +37,6 @@
 #include "Cedar/Hub.h"
 #include "Cedar/Node.h"
 #include "Cedar/Sam.h"
-#include "Cedar/Server.h"
 
 #include "Mayaqua/Encrypt.h"
 #include "Mayaqua/FileIO.h"

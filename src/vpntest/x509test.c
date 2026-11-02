@@ -74,7 +74,7 @@
 #define	X509T_OVERLONG			1500		// Characters of the field longer than the buffer
 #define	X509T_DIGEST_INFO		(15 + SHA1_SIZE)	// Bytes of the SHA-1 DigestInfo and hash in a PKCS#1 v1.5 block
 #define	X509T_TRAILING			8			// Bytes after the DigestInfo and hash in the forged signature block
-#define	X509T_MAX_SIGN			(4096 / 8)	// Largest signature (bytes): the buffer Protocol.c receives it into
+#define	X509T_MAX_SIGN			(4096 / 8)	// Largest signature (bytes): the buffer that the SE-VPN login received it into
 #define	X509T_GUARD				16			// Guard bytes after a signature destination
 #define	X509T_GUARD_BYTE		0xA5		// Value of the guard bytes
 
@@ -370,7 +370,7 @@ static void X509TestRsa(X509T_CTX *ctx, K *priv, K *pub, UINT bits)
 	char what[MAX_SIZE];
 	UINT sign_size = bits / 8;
 
-	// The client signs the 20 random bytes of the server (c->Random in Protocol.c)
+	// The client signs the 20 random bytes of the server (c->Random of the SE-VPN login)
 	Rand(data, sizeof(data));
 	Copy(other, data, sizeof(other));
 	other[0] ^= 0x01;

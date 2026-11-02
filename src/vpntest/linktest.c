@@ -18,7 +18,7 @@
 //   a sender that runs through the switch loses no packet that the overlay took: node-b takes the Generation first.
 // Print "LINKS TEST OK" only when every check passes.
 
-#include "harness_int.h"
+#include "golden.h"
 #include "testlist.h"
 
 #include "Cedar/ConfigStore.h"

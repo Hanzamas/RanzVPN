@@ -51,7 +51,6 @@
 //   pipe of gw to state, which ranz node state prints, has the frames of unknown VTEPs of its EVPN.
 // Print "EVPN TEST OK" only when every check passes. .github/scripts/bgp-spike.ps1 runs it, with ranz.exe next to vpntest.
 
-#include "harness_int.h"
 #include "testlist.h"
 
 #include "Cedar/ConfigStore.h"

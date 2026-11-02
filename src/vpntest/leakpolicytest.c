@@ -21,7 +21,6 @@
 // The policy of each node counts what it dropped: node-r every packet of the test that was dropped, node-s none.
 // Print "LEAKPOLICY TEST OK" only when every check passes.
 
-#include "harness_int.h"
 #include "testlist.h"
 
 #include "Cedar/ConfigStore.h"

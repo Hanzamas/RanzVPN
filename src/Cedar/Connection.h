@@ -52,26 +52,6 @@ struct CLIENT_AUTH {
 	K *ClientK;
 };
 
-struct TCPSOCK {
-	SOCK *Sock;
-	FIFO *RecvFifo;
-	FIFO *SendFifo;
-	UINT Mode;
-	UINT WantSize;
-	UINT NextBlockNum;
-	UINT NextBlockSize;
-	UINT CurrentPacketNum;
-	UINT64 LastCommTime;
-	UINT LateCount;
-	UINT Direction;
-	UINT64 NextKeepAliveTime;
-	UINT64 DisconnectTick;
-};
-
-struct TCP {
-	LIST *TcpSockList;
-};
-
 struct BLOCK {
 	bool Compressed;
 	UINT Size;
@@ -88,7 +68,6 @@ struct CONNECTION {
 	struct SESSION *Session;
 	UINT Protocol;
 	SOCK *FirstSock;
-	TCP *Tcp;
 	bool ServerMode;
 	UINT Status;
 	char *Name;
@@ -104,14 +83,7 @@ struct CONNECTION {
 	UINT Err;
 	QUEUE *ReceivedBlocks;
 	QUEUE *SendBlocks;
-	QUEUE *SendBlocks2;
-	COUNTER *CurrentNumConnection;
-	LIST *ConnectingThreads;
-	LIST *ConnectingSocks;
 	bool flag1;
-	UCHAR *RecvBuf;
-	char ServerName[MAX_HOST_NAME_LEN + 1];
-	UINT ServerPort;
 	UINT CurrentSendQueueSize;
 	X *ServerX;
 	X *ClientX;
@@ -121,29 +93,8 @@ struct CONNECTION {
 	IP ClientIp;
 	char ClientHostname[MAX_HOST_NAME_LEN + 1];
 	UINT Type;
-	UINT AdditionalConnectionFailedCounter;
-	UINT64 LastCounterResetTick;
-	UINT LastTcpQueueSize;
 	UINT LastPacketQueueSize;
-	UINT LastRecvFifoTotalSize;
-	UINT LastRecvBlocksNum;
 	TUNNEL *Tunnel; // CONNECTION_NOISE: the Tunnel that the connection carries (ConnectionTunnel.c)
-};
-
-// What the admin RPCs report about one connection, copied by ConnectionGetInfo under the connection's lock
-struct CONNECTION_INFO {
-	char Name[MAX_SIZE];
-	UINT Type;
-	UINT64 ConnectedTick;
-	IP RemoteIp; // The remote end of the first socket; zero without one
-	UINT RemotePort;
-	char RemoteHostname[MAX_SIZE];
-	char ServerStr[MAX_SERVER_STR_LEN + 1];
-	UINT ServerVer;
-	UINT ServerBuild;
-	char ClientStr[MAX_CLIENT_STR_LEN + 1];
-	UINT ClientVer;
-	UINT ClientBuild;
 };
 
 // The Tunnel of a Connection of type CONNECTION_NOISE (ConnectionTunnel.c; CORE-S1-2, #68): the Noise sessions
@@ -161,27 +112,16 @@ struct TUNNEL_STATUS {
 };
 
 
-CONNECTION *NewClientConnectionEx(SESSION *s, char *client_str);
 CONNECTION *NewServerConnection(CEDAR *cedar, SOCK *s, THREAD *t);
-void GetServerProductName(SERVER *s, char *name, UINT size);
 void ReleaseConnection(CONNECTION *c);
 int CompareConnection(void *p1, void *p2);
 void StopConnection(CONNECTION *c, bool no_wait);
-UINT TlsErrToCedarErr(UINT tls_err);
-void StartTunnelingMode(CONNECTION *c);
-void EndTunnelingMode(CONNECTION *c);
-void DisconnectTcpSockets(CONNECTION *c);
 void ConnectionReceive(CONNECTION *c, CANCEL *c1, CANCEL *c2);
-void ConnectionSend(CONNECTION *c, UINT64 now);
-TCPSOCK *NewTcpSock(SOCK *s);
-void FreeTcpSock(TCPSOCK *ts);
+void ConnectionSend(CONNECTION *c);
 BLOCK *NewBlock(void *data, UINT size, int compress);
 void FreeBlock(BLOCK *b);
 void FreeBlockQueue(QUEUE *q);
-void StopAllAdditionalConnectThread(CONNECTION *c);
-UINT GenNextKeepAliveSpan(CONNECTION *c);
 void InsertReceivedBlockToQueue(CONNECTION *c, BLOCK *block);
-void ConnectionGetInfo(CONNECTION *c, CONNECTION_INFO *info);
 bool TunnelStart(CONNECTION *c, struct TRANSPORT_NOISE *first);
 bool TunnelJoin(CONNECTION *c, const UCHAR *id, struct TRANSPORT_NOISE *n);
 void TunnelStop(CONNECTION *c);

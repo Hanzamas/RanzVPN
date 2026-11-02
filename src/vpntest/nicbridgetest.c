@@ -63,7 +63,6 @@
 // it, without a bridge; and the datagrams of the member must then all reach the socket of the device, 5 of 5.
 // Prints "NICBRIDGE TEST OK" only when every check passes.
 
-#include "harness_int.h"
 #include "testlist.h"
 
 #include "Cedar/ConfigStore.h"

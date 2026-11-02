@@ -174,57 +174,10 @@ void GetPolicyValueRangeStr(wchar_t *str, UINT size, UINT id);
 void FormatPolicyValue(wchar_t *str, UINT size, UINT id, UINT value);
 
 
-struct RPC_CLIENT_GET_CONNECTION_STATUS {
-	wchar_t AccountName[MAX_ACCOUNT_NAME_LEN + 1];
-	bool Active;
-	bool Connected;
-	UINT SessionStatus;
-	char ServerName[MAX_HOST_NAME_LEN + 1];
-	UINT ServerPort;
-	char ServerProductName[MAX_SIZE];
-	UINT ServerProductVer;
-	UINT ServerProductBuild;
-	X *ServerX;
-	X *ClientX;
-	UINT64 StartTime;
-	/* !!! Do not correct the spelling to keep the backward protocol compatibility !!!  */
-	UINT64 FirstConnectionEstablisiedTime;
-	UINT64 CurrentConnectionEstablishTime;
-	UINT NumConnectionsEstablished;
-	bool HalfConnection;
-	bool QoS;
-	UINT MaxTcpConnections;
-	UINT NumTcpConnections;
-	UINT NumTcpConnectionsUpload;
-	UINT NumTcpConnectionsDownload;
-	bool UseEncrypt;
-	char CipherName[32];
-	char ProtocolName[64];
-	bool UseCompress;
-	char UnderlayProtocol[64];
-	char ProtocolDetails[256];
-	bool IsUdpAccelerationEnabled;
-	bool IsUsingUdpAcceleration;
-	char SessionName[MAX_SESSION_NAME_LEN + 1];
-	char ConnectionName[MAX_CONNECTION_NAME_LEN + 1];
-	UCHAR SessionKey[SHA1_SIZE];
-	POLICY Policy;
-	UINT64 TotalSendSize;
-	UINT64 TotalRecvSize;
-	UINT64 TotalSendSizeReal;
-	UINT64 TotalRecvSizeReal;
-	TRAFFIC Traffic;
-	bool IsBridgeMode;
-	bool IsMonitorMode;
-	UINT VLanId;
-};
-
-void CiGetSessionStatus(RPC_CLIENT_GET_CONNECTION_STATUS *st, SESSION *s);
 CLIENT_OPTION *CiLoadClientOption(FOLDER *f);
 CLIENT_AUTH *CiLoadClientAuth(FOLDER *f);
 void CiWriteClientOption(FOLDER *f, CLIENT_OPTION *o);
 void CiWriteClientAuth(FOLDER *f, CLIENT_AUTH *a);
-void CiFreeClientGetConnectionStatus(RPC_CLIENT_GET_CONNECTION_STATUS *st);
 void ClientAuthFree(CLIENT_AUTH *auth);
 CLIENT_AUTH *ClientAuthClone(CLIENT_AUTH *a);
 CLIENT_OPTION *ClientOptionClone(CLIENT_OPTION *o);

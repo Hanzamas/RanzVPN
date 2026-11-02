@@ -3,8 +3,7 @@
 
 #include "testlist.h"
 #include "Cedar/Account.h"
-#include "Cedar/Server.h"
-#include "Cedar/WaterMark.h"
+#include "Cedar/Cedar.h"
 
 #include "Mayaqua/Encrypt.h"
 #include "Mayaqua/Internat.h"
@@ -14,22 +13,6 @@
 #include "Mayaqua/Network.h"
 #include "Mayaqua/Str.h"
 #include "Mayaqua/Stun.h"
-
-RANZ_TEST("s", server_test, "VPN Server in Test Mode, enter key to graceful stop.");
-void server_test(UINT num, char **arg)
-{
-	Print("VPN Server Test. Press Enter key to stop the VPN Server .\n");
-
-	StInit();
-
-	StStartServer();
-
-	GetLine(NULL, 0);
-
-	StStopServer();
-
-	StFree();
-}
 
 RANZ_TEST("memory_leak", memory_leak_test, "Memory leak test: Try to leak one byte by malloc().");
 void memory_leak_test(UINT num, char **arg)
@@ -363,77 +346,6 @@ void stun_test(UINT num, char **arg)
 	}
 }
 
-// Size and SHA-256 of the former WaterMark[] array in Cedar/WaterMark.c, also used by fileio_test (runtime.c)
-UINT watermark_expect_size = 1411;
-char *watermark_expect_sha256 = "96A706BBAB378EC37DFEF21E02B1A3C177FBEBEFFA039EB0EFAC918630DF12A0";
-
-// Watermark test: the hamcore file must hold the bytes of the former WaterMark[] C array
-RANZ_TEST("watermark", watermark_test, "Watermark: hamcore watermark.bin size and SHA-256 against the former C array.");
-void watermark_test(UINT num, char **arg)
-{
-	UINT expect_size = watermark_expect_size;
-	char *expect_sha256 = watermark_expect_sha256;
-
-	UCHAR hash[SHA256_SIZE];
-	char hash_str[SHA256_SIZE * 2 + 1];
-	bool ok = true;
-
-	Print("Watermark test (hamcore %s)\n", WATERMARK_FILENAME);
-
-	// Same code path as InitWaterMark() at startup
-	BUF *b = LoadWaterMark();
-	if (b == NULL)
-	{
-		Print("  [FAIL] LoadWaterMark(): file missing, or its size or SHA-256 is wrong\n");
-		Print("WATERMARK TEST FAILED\n");
-		return;
-	}
-
-	if (b->Size == expect_size)
-	{
-		Print("  [PASS] Size = %u\n", b->Size);
-	}
-	else
-	{
-		Print("  [FAIL] Size = %u (expected %u)\n", b->Size, expect_size);
-		ok = false;
-	}
-
-	Sha2_256(hash, b->Buf, b->Size);
-	BinToStr(hash_str, sizeof(hash_str), hash, sizeof(hash));
-	if (StrCmpi(hash_str, expect_sha256) == 0)
-	{
-		Print("  [PASS] SHA-256 = %s\n", hash_str);
-	}
-	else
-	{
-		Print("  [FAIL] SHA-256 = %s (expected %s)\n", hash_str, expect_sha256);
-		ok = false;
-	}
-
-	// The buffer loaded by InitSeVpn() at startup must hold the same bytes
-	if (WaterMark != NULL && WaterMarkSize == b->Size && Cmp(WaterMark, b->Buf, b->Size) == 0)
-	{
-		Print("  [PASS] Startup buffer matches the file\n");
-	}
-	else
-	{
-		Print("  [FAIL] Startup buffer does not match the file\n");
-		ok = false;
-	}
-
-	FreeBuf(b);
-
-	if (ok)
-	{
-		Print("WATERMARK TEST OK\n");
-	}
-	else
-	{
-		Print("WATERMARK TEST FAILED\n");
-	}
-}
-
 // The registered tests (testlist.h): the linker puts the registrations of every test file between these two markers
 __declspec(allocate(".rztest$a")) const TEST_LIST *const ranz_test_first = NULL;
 __declspec(allocate(".rztest$z")) const TEST_LIST *const ranz_test_last = NULL;
@@ -642,16 +554,12 @@ int main(int argc, char *argv[])
 	InitMayaqua(memchk, true);
 	EnableProbe(true);
 	InitCedar();
-	// The SE-VPN code of the slim fork, which the in-process oracle of the tests runs: its watermark, and the hooks
-	// through which Cedar calls its cascades, client sessions and UDP Acceleration (CORE-S8-2, #576)
-	InitSeVpn();
 	SetHamMode();
 	wchar_t *args_w = MsCopyProcessArgsW();
 	char *args = CopyUniToStr(args_w);
 	status = TestMain(args);
 	Free(args);
 	Free(args_w);
-	FreeSeVpn();
 	FreeCedar();
 	FreeMayaqua();
 

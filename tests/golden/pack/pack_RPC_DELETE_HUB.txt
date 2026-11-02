@@ -1,9 +1,0 @@
-# RPC_DELETE_HUB RPC_DELETE_HUB syn
-[out]
-#0 HubName str[1] = ""
-bytes=27 sha1=287ad6ae8a01decf9ff0957323b624ebdc3916b7
-[in-out]
-#0 HubName str[1] = "HubName#0"
-bytes=36 sha1=ffcd5aa0c93fb13b5c99e21389973fd2b6cbba5b
-[in-out-in-out]
-same

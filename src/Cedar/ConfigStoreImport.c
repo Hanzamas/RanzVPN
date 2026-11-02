@@ -59,8 +59,8 @@ typedef struct CS_IMPORT_HUB {
 	UCHAR Vlans[CS_IMPORT_VLANS / 8];  // The VLANs of the users and groups of the hub
 } CS_IMPORT_HUB;
 
-// What the import reads of an entry of the access list of a hub, as the fork loads one (SiLoadHubAccessCfg of Server.c,
-// with the port ranges that AddAccessListEx of HubTable.c completes)
+// What the import reads of an entry of the access list of a hub, as the server of the fork loaded one (SiLoadHubAccessCfg
+// of the frozen Cedar, with the port ranges that AddAccessListEx of HubTable.c completes)
 typedef struct CS_IMPORT_ACCESS {
 	UINT Index;                         // Its place in the folder of the access list
 	bool Active;                        // Active

@@ -3,13 +3,10 @@
 
 #include "Cedar.h"
 
-#include "Admin.h"
-#include "Bridge.h"
 #include "BuildInfo.h"
 #include "Connection.h"
+#include "Hub.h"
 #include "HubLog.h"
-#include "Link.h"
-#include "Protocol.h"
 #include "Sam.h"
 #include "Session.h"
 
@@ -27,133 +24,7 @@
 #include "Mayaqua/Table.h"
 #include "Mayaqua/Tick64.h"
 
-static void DeleteOldNoSsl(CEDAR *c);
-static void MakeRoomInNoSslList(CEDAR *c);
-static NON_SSL *SearchNoSslList(CEDAR *c, const IP *ip);
 static void FreeNetSvcList(CEDAR *cedar);
-
-// The hooks of the SE-VPN code of the slim fork (Cedar.h): NULL until InitSeVpn fills them
-SEVPN_HOOKS SeVpnHooks;
-
-static bool IsSupportedWinVer(const RPC_WINVER *v) {
-	if (v == NULL)
-		return false;
-
-	if (v->IsWindows == false)
-		return true;
-
-	if (v->IsNT == false)
-		return true;
-
-	if (v->IsBeta)
-		return true;
-
-	if (v->VerMajor <= 4) {
-		// Windows NT
-		return true;
-	}
-
-	if (v->VerMajor == 5 && v->VerMinor == 0) {
-		// Windows 2000
-		if (v->ServicePack <= 4)
-			return true;
-	}
-
-	if (v->VerMajor == 5 && v->VerMinor == 1) {
-		// Windows XP x86
-		if (v->ServicePack <= 3)
-			return true;
-	}
-
-	if (v->VerMajor == 5 && v->VerMinor == 2) {
-		// Windows XP x64, Windows Server 2003
-		if (v->ServicePack <= 2)
-			return true;
-	}
-
-	if (v->VerMajor == 6 && v->VerMinor == 0) {
-		// Windows Vista, Server 2008
-		if (v->ServicePack <= 2)
-			return true;
-	}
-
-	if (v->VerMajor == 6 && v->VerMinor == 1) {
-		// Windows 7, Server 2008 R2
-		if (v->ServicePack <= 1)
-			return true;
-	}
-
-	if (v->VerMajor == 6 && v->VerMinor == 2) {
-		// Windows 8, Server 2012
-		if (v->ServicePack <= 0)
-			return true;
-	}
-
-	if (v->VerMajor == 6 && v->VerMinor == 3) {
-		// Windows 8.1, Server 2012 R2
-		if (v->ServicePack <= 0)
-			return true;
-	}
-
-	if ((v->VerMajor == 6 && v->VerMinor == 4) || (v->VerMajor == 10 && v->VerMinor == 0)) {
-		// Windows 10 or Windows Server 2016
-		if (v->ServicePack <= 0)
-			return true;
-	}
-
-	return false;
-}
-
-// Message for a peer that runs an unsupported Windows version (empty for any other peer)
-void FormatUnsupportedWinVerMsg(wchar_t *buf, UINT size, RPC_WINVER *peer) {
-	SYSTEMTIME st;
-
-	if (buf == NULL || size == 0)
-		return;
-
-	Zero(buf, size);
-
-	if (peer == NULL || IsSupportedWinVer(peer))
-		return;
-
-	LocalTime(&st);
-
-	UniFormat(buf, size, _UU("WINVER_ERROR_FORMAT"),
-	          _UU("WINVER_ERROR_PC_LOCAL"),
-	          peer->Title,
-	          _UU("WINVER_ERROR_VPNSERVER"),
-	          SUPPORTED_WINDOWS_LIST,
-	          _UU("WINVER_ERROR_PC_LOCAL"),
-	          _UU("WINVER_ERROR_VPNSERVER"),
-	          _UU("WINVER_ERROR_VPNSERVER"),
-	          _UU("WINVER_ERROR_VPNSERVER"),
-	          st.wYear, st.wMonth);
-}
-
-void GetWinVer(RPC_WINVER *v) {
-	const OSVERSIONINFOEXW *os = Win32GetOsVersion();
-
-	if (v == NULL)
-		return;
-
-	Zero(v, sizeof(RPC_WINVER));
-
-	v->IsWindows = true;
-	v->IsNT = true;
-	v->Build = os->dwBuildNumber;
-	v->ServicePack = os->wServicePackMajor;
-	v->IsServer = (os->wProductType != VER_NT_WORKSTATION);
-	v->VerMajor = os->dwMajorVersion;
-	v->VerMinor = os->dwMinorVersion;
-
-	// Windows 10 and later have no service packs
-	StrCpy(v->Title, sizeof(v->Title), GetOsInfo()->OsProductName);
-	Trim(v->Title);
-
-	if (InStr(GetOsInfo()->OsVersion, "rc") ||
-	    InStr(GetOsInfo()->OsVersion, "beta"))
-		v->IsBeta = true;
-}
 
 void FreeTinyLog(TINY_LOG *t) {
 	if (t == NULL)
@@ -205,162 +76,6 @@ TINY_LOG *NewTinyLog() {
 	t->Lock = NewLock();
 
 	return t;
-}
-
-static int CompareNoSslList(void *p1, void *p2) {
-	if (p1 == NULL || p2 == NULL)
-		return 0;
-	NON_SSL *n1 = *(NON_SSL **)p1;
-	NON_SSL *n2 = *(NON_SSL **)p2;
-	if (n1 == NULL || n2 == NULL)
-		return 0;
-	return CmpIpAddr(&n1->IpAddress, &n2->IpAddress);
-}
-
-void DecrementNoSsl(CEDAR *c, IP *ip, UINT num_dec) {
-	if (c == NULL || ip == NULL)
-		return;
-
-	LockList(c->NonSslList);
-	{
-		NON_SSL *n = SearchNoSslList(c, ip);
-
-		if (n != NULL) {
-			if (n->Count >= num_dec)
-				n->Count -= num_dec;
-		}
-	}
-	UnlockList(c->NonSslList);
-}
-
-bool IsInNoSsl(CEDAR *c, IP *ip) {
-	bool ret = false;
-	if (c == NULL || ip == NULL)
-		return false;
-
-	LockList(c->NonSslList);
-	{
-		NON_SSL *n = SearchNoSslList(c, ip);
-
-		if (n != NULL) {
-			if (n->EntryExpires > Tick64() && n->Count > NON_SSL_MIN_COUNT) {
-				n->EntryExpires = Tick64() + (UINT64)NON_SSL_ENTRY_EXPIRES;
-				ret = true;
-			}
-		}
-	}
-	UnlockList(c->NonSslList);
-
-	return ret;
-}
-
-bool AddNoSsl(CEDAR *c, IP *ip) {
-	NON_SSL *n;
-	bool ret = true;
-	if (c == NULL || ip == NULL)
-		return true;
-
-	LockList(c->NonSslList);
-	{
-		DeleteOldNoSsl(c);
-
-		n = SearchNoSslList(c, ip);
-
-		if (n == NULL) {
-			if (LIST_NUM(c->NonSslList) >= RATE_LIMIT_TABLE_MAX)
-				MakeRoomInNoSslList(c);
-
-			n = ZeroMalloc(sizeof(NON_SSL));
-			GetRateLimitKey(&n->IpAddress, ip);
-			n->Count = 0;
-
-			Insert(c->NonSslList, n);
-		}
-
-		n->EntryExpires = Tick64() + (UINT64)NON_SSL_ENTRY_EXPIRES;
-
-		n->Count++;
-
-		if (n->Count > NON_SSL_MIN_COUNT)
-			ret = false;
-	}
-	UnlockList(c->NonSslList);
-
-	return ret;
-}
-
-static bool IsNoSslExpired(void *p, void *param) {
-	NON_SSL *n = p;
-
-	return (n->EntryExpires <= *(UINT64 *)param);
-}
-
-static void DeleteOldNoSsl(CEDAR *c) {
-	if (c == NULL)
-		return;
-
-	UINT64 now = Tick64();
-
-	DeleteAndFreeIf(c->NonSslList, IsNoSslExpired, &now);
-}
-
-// NonSslList is full after DeleteOldNoSsl: drop the least recently seen entry; log the first time
-static void MakeRoomInNoSslList(CEDAR *c) {
-	NON_SSL *oldest = NULL;
-
-	for (UINT i = 0; i < LIST_NUM(c->NonSslList); i++) {
-		NON_SSL *n = LIST_DATA(c->NonSslList, i);
-
-		if (oldest == NULL || n->EntryExpires < oldest->EntryExpires)
-			oldest = n;
-	}
-
-	if (oldest != NULL) {
-		Delete(c->NonSslList, oldest);
-		Free(oldest);
-	}
-
-	if (c->NonSslListFullLogged == false) {
-		c->NonSslListFullLogged = true;
-		SLog(c, "LS_NON_SSL_TABLE_FULL", (UINT)RATE_LIMIT_TABLE_MAX);
-	}
-}
-
-static NON_SSL *SearchNoSslList(CEDAR *c, const IP *ip) {
-	NON_SSL t;
-	if (c == NULL || ip == NULL)
-		return NULL;
-
-	Zero(&t, sizeof(t));
-	GetRateLimitKey(&t.IpAddress, ip);
-
-	NON_SSL *n = Search(c->NonSslList, &t);
-
-	if (n == NULL)
-		return NULL;
-
-	return n;
-}
-
-static void InitNoSslList(CEDAR *c) {
-	if (c == NULL)
-		return;
-
-	c->NonSslList = NewList(CompareNoSslList);
-}
-
-static void FreeNoSslList(CEDAR *c) {
-	if (c == NULL)
-		return;
-
-	for (UINT i = 0; i < LIST_NUM(c->NonSslList); i++) {
-		NON_SSL *n = LIST_DATA(c->NonSslList, i);
-
-		Free(n);
-	}
-
-	ReleaseList(c->NonSslList);
-	c->NonSslList = NULL;
 }
 
 UINT64 GetTrafficPacketSize(TRAFFIC *t) {
@@ -590,8 +305,7 @@ UINT CedarGetCurrentTcpQueueSize(CEDAR *c) {
 	return c->CurrentTcpQueueSize;
 }
 
-// Stop the connections and the Hubs of c. The TCP listeners of the slim fork in its ListenerList are stopped by the
-// server that started them (StopAllListener, Listener.c), before it stops its Cedar
+// Stop the connections and the Hubs of c
 void StopCedar(CEDAR *c) {
 	if (c == NULL)
 		return;
@@ -604,7 +318,6 @@ static void CleanupCedar(CEDAR *c) {
 	if (c == NULL)
 		return;
 
-	ReleaseList(c->ListenerList);
 	ReleaseList(c->HubList);
 	ReleaseList(c->ConnectionList);
 	DeleteLock(c->lock);
@@ -636,20 +349,9 @@ static void CleanupCedar(CEDAR *c) {
 	Free(c->VerString);
 	Free(c->BuildInfo);
 
-	FreeLocalBridgeList(c);
-
-	DeleteCounter(c->AssignedBridgeLicense);
-	DeleteCounter(c->AssignedClientLicense);
-
-	FreeNoSslList(c);
-
 	DeleteLock(c->CedarSuperLock);
 
 	DeleteCounter(c->AcceptingSockets);
-
-	ReleaseIntList(c->UdpPortList);
-
-	DeleteCounter(c->CurrentActiveLinks);
 
 	Free(c);
 }
@@ -837,20 +539,13 @@ CEDAR *NewCedar(X *server_x, K *server_k) {
 
 	CEDAR *c = ZeroMalloc(sizeof(CEDAR));
 
-	c->CurrentActiveLinks = NewCounter();
-
 	c->AcceptingSockets = NewCounter();
 
 	c->CedarSuperLock = NewLock();
 
-	InitNoSslList(c);
-
-	c->AssignedBridgeLicense = NewCounter();
-	c->AssignedClientLicense = NewCounter();
-
 	Rand(c->UniqueId, sizeof(c->UniqueId));
 
-	// Machine identity (FIX-5): a fresh salt; a server replaces it with the salt of its config file
+	// Machine identity (FIX-5): a fresh salt
 	{
 		UCHAR salt[MACHINE_ID_SALT_SIZE];
 
@@ -863,8 +558,6 @@ CEDAR *NewCedar(X *server_x, K *server_k) {
 
 	c->CurrentTcpConnections = GetNumTcpConnectionsCounter();
 
-	// The TCP listeners of the slim fork (AddListener): the list is never sorted or searched, so it needs no compare
-	c->ListenerList = NewList(NULL);
 	c->HubList = NewList(CompareHub);
 	c->ConnectionList = NewList(CompareConnection);
 
@@ -887,13 +580,9 @@ CEDAR *NewCedar(X *server_x, K *server_k) {
 
 	SetCedarCipherList(c, SERVER_DEFAULT_CIPHER_NAME);
 
-	c->UdpPortList = NewIntList();
-
 	c->DhParamBits = DH_PARAM_BITS_DEFAULT;
 
 	InitNetSvcList(c);
-
-	InitLocalBridgeList(c);
 
 	Format(tmp, sizeof(tmp), "Version %u.%u.%u (%s)",
 	       CEDAR_VERSION_MAJOR, CEDAR_VERSION_MINOR, CEDAR_VERSION_BUILD,
@@ -967,9 +656,7 @@ void FreeTraffic(TRAFFIC *t) {
 	Free(t);
 }
 
-// Cedar has nothing of its own to start or end for the process. The watermark of the SE-VPN signature, which was
-// loaded here, belongs to the SE-VPN code: InitSeVpn (Server.c) loads it in the programs that run that code, so
-// ranz-node neither reads watermark.bin nor links WaterMark.c (CORE-S8-2, #576)
+// Cedar has nothing of its own to start or end for the process
 void InitCedar() {
 }
 
@@ -1014,9 +701,8 @@ static void GetMachineGuid(char *guid, UINT size) {
 	Free(s);
 }
 
-// Set the machine identity salt of a CEDAR (NewCedar: a random one; SiLoadMachineIdCfg: the one of the
-// config file) and derive its machine identity. Called before the hubs and listeners exist, so readers
-// of the identity need no lock.
+// Set the machine identity salt of a CEDAR (NewCedar: a random one) and derive its machine identity.
+// Called before the hubs exist, so readers of the identity need no lock.
 void SetCedarMachineIdSalt(CEDAR *c, void *salt) {
 	char guid[MAX_SIZE];
 	if (c == NULL || salt == NULL)
@@ -1029,7 +715,7 @@ void SetCedarMachineIdSalt(CEDAR *c, void *salt) {
 	ComputeMachineUniqueHash(c->MachineUniqueHash, guid, c->MachineIdSalt, sizeof(c->MachineIdSalt));
 }
 
-// The machine identity of a server (SHA1_SIZE bytes): virtual hub MAC address and address, Cascade unique_id
+// The machine identity of a server (SHA1_SIZE bytes): the MAC address and the address of a virtual hub
 void GenerateMachineUniqueHash(CEDAR *c, void *data) {
 	if (c == NULL || data == NULL)
 		return;

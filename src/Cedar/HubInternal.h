@@ -41,7 +41,6 @@ void DelAllAc(LIST *o);
 void NormalizeAcList(LIST *o);
 bool IsIpMaskedByAc(IP *ip, AC *ac);
 bool IsIPManagementTargetForHUB(IP *ip, HUB *hub);
-UINT GetHubAdminOptionData(RPC_ADMIN_OPTION *ao, char *name);
 void FreeUserListEntry(USERLIST *u);
 int CompareUserList(void *p1, void *p2);
 USERLIST *LoadUserList(LIST *o, char *filename);

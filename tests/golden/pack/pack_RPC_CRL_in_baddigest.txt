@@ -1,9 +1,0 @@
-# RPC_CRL_in_baddigest RPC_CRL in
-[in-out]
-#0 HubName str[1] = "HARNESS_A"
-#1 Key int[1] = 7
-#2 Serial data[1] = hex:a0a1a2a3
-#3 CommonName unistr[1] = "in_crl"
-bytes=114 sha1=229ff7eef43c10f8fa958ffb6276742aa32323fc
-[in-out-in-out]
-same

@@ -53,9 +53,8 @@ set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} /HIGHENTROPYVA /NXCOMPAT")
 # cmake/RanzSanitizers.cmake: the linker ignores it next to /OPT:REF, with a warning.
 # Debug builds keep CMake's flags. So do ASan builds (RANZ_ASAN): /OPT:ICF could fold two
 # instrumented globals into one address that ASan then registers twice.
-# /OPT:ICF gives identical functions one address. The only comparison of a function pointer
-# against a named function, r->ThreadProc == TCPAcceptedThread (Listener.c), names a function
-# whose body is unique. A log record says with IsCsv how its line starts (LogWriter.c).
+# /OPT:ICF gives identical functions one address, so no code may tell two functions apart by
+# their address: a log record says with IsCsv how its line starts (LogWriter.c).
 if(NOT RANZ_ASAN)
   message("Setting /OPT:REF /OPT:ICF /INCREMENTAL:NO")
   foreach(_ranz_config RELWITHDEBINFO RELEASE MINSIZEREL)

@@ -1,3 +1,0 @@
-GET /.well-known/acme-challenge/0123456789abcdef0123 HTTP/1.1
-Host: example.test
-
