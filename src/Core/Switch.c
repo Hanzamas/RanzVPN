@@ -1333,6 +1333,33 @@ UINT SwitchClearMac(SWITCH *sw, const UCHAR *mac) {
 	return SwitchSweep(sw, SWITCH_SWEEP_MAC, 0, 0, SwitchMacKey(0, mac));
 }
 
+// Learn that the address mac of the VLAN vlan is on port without a frame from it, at now, as the routes of a control plane say:
+// the remote MAC addresses of a Stretch at its port of the fabric (Cedar/NodeStretch.c; SDN-64, #291), so that a frame to one
+// goes to that port alone and floods nowhere. A new entry, or the entry of the port refreshed, as SwitchInput learns the source
+// of a frame; an address that the table has at another port stays there, as what a member sends wins over what a route says.
+// True when the table has the address at the port afterwards; false when no member holds the port, it does not carry the
+// VLAN, mac is a group address or the table is full.
+bool SwitchLearnAt(SWITCH *sw, UINT64 now, UINT port, UINT vlan, const UCHAR *mac) {
+	UINT gen = 0;
+	bool ok = false;
+
+	if (sw == NULL || mac == NULL || port >= sw->MaxPorts || (mac[0] & 1) != 0 || vlan < SWITCH_MIN_VLAN || vlan > SWITCH_MAX_VLAN)
+		return false;
+
+	SWITCH_PORT *p = &sw->Ports[port];
+	AcquireSRWLockShared(&p->Lock);
+	if (p->InUse && SwitchCarries(p, vlan)) {
+		UINT at = SwitchLookup(sw, vlan, mac, &gen);
+
+		if (at == SWITCH_PORT_NONE || at == port)
+			SwitchLearn(sw, now, vlan, mac, port, p->Gen);
+		ok = (SwitchLookup(sw, vlan, mac, &gen) == port && gen == p->Gen);
+	}
+	ReleaseSRWLockShared(&p->Lock);
+
+	return ok;
+}
+
 // The IP table of a switch, for SwitchIp.c
 SWITCH_IP_TABLE *SwitchIpTable(SWITCH *sw) {
 	return (sw != NULL ? sw->Ips : NULL);
