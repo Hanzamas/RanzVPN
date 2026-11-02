@@ -1,7 +1,11 @@
 # Seeds of fuzz_evpn, run by make_seeds.py (h is that module).
 #
-# The EVPN of a gateway node (src/Cedar/NodeEvpn.c): the first byte, modulo 3, picks the parser of fuzz_evpn.c: 0 the
-# messages of the BGP sidecar, 1 a frame of the fabric, 2 the outer source of a frame against the VTEPs of the routes. The
+# The EVPN of a gateway node (src/Cedar/NodeEvpn.c): the first byte, modulo 4, picks the parser of fuzz_evpn.c: 0 the
+# messages of the BGP sidecar, 1 a frame of the fabric, 2 the outer source of a frame against the VTEPs of the routes, 3 the
+# stretch messages of the sidecar (src/Cedar/NodeStretch.c, SDN-64 #291): the type-3 route of a VTEP of the fabric, type-2
+# routes MAC only and MAC plus IP of IPv4 and IPv6, a withdrawn one, a run of them with a message that is no stretch message,
+# and routes that the node cannot take: a VNI of 25 bits, the MAC address of a group, an IP address without a MAC address,
+# and no next hop. The
 # messages, one JSON object per line as ranz-bgp/internal/sidecar/evpn.go writes them: a learned IP prefix route of IPv4 and
 # of IPv6, a withdrawn one, a learned route of the unicast table without a vni, which is no route of an EVPN VRF, a run of
 # them, a learned route whose vteps name three leaves (SDN-25-R3 #571), and learned messages that the node cannot take: a VNI
@@ -89,3 +93,26 @@ def make_seeds(h):
     seed('vtep_ipv6.bin', source(101, bytes.fromhex('20010db8000000000000000000000010')))
     seed('vtep_other_vrf.bin', source(102, mapped(192, 0, 2, 10)))
     seed('vtep_stranger.bin', source(101, mapped(192, 0, 2, 99)))
+
+    # The stretch messages, as ranz-bgp/internal/sidecar/stretch.go writes them: the fields of a route in the order of
+    # StretchRoute (vni, mac, ip, next_hop, withdraw)
+    def stretch(*routes):
+        return message(type='stretch', routes=list(routes))
+
+    def route(**fields):
+        return {k: v for k, v in fields.items() if v is not None}
+
+    imet = stretch(route(vni=5010, next_hop='192.0.2.10'))
+    macs = stretch(route(vni=5010, mac='02:00:5e:50:00:0a', next_hop='192.0.2.10'),
+                   route(vni=5010, mac='02:00:5e:50:00:0a', ip='10.50.0.10', next_hop='192.0.2.10'),
+                   route(vni=5010, mac='02:00:5e:50:00:0b', ip='fd50::b', next_hop='2001:db8::11'))
+    gone = stretch(route(vni=5010, mac='02:00:5e:50:00:0a', next_hop='192.0.2.10', withdraw=True))
+
+    seed('stretch_imet.bin', b'3' + imet)
+    seed('stretch_macs.bin', b'3' + macs)
+    seed('stretch_withdrawn.bin', b'3' + gone)
+    seed('stretch_session.bin', b'3' + b'\n'.join([imet, macs, gone, learned()]))
+    seed('stretch_bad.bin', b'3' + stretch(route(vni=0x1000000, mac='02:00:5e:50:00:0a', next_hop='192.0.2.10'),
+                                           route(vni=5010, mac='01:00:5e:00:00:01', next_hop='192.0.2.10'),
+                                           route(vni=5010, ip='10.50.0.10', next_hop='192.0.2.10'),
+                                           route(vni=5010, mac='02:00:5e:50:00:0a')))
