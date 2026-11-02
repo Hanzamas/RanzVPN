@@ -52,6 +52,8 @@ type Capabilities struct {
 	// EVPN: the node can be the gateway of a Stretch (SDN-63): its host is a Windows Server and the VXLAN module of the node
 	// runs. The Controller refuses a Stretch whose gateway does not report it (stretch.go).
 	EVPN bool `json:"evpn,omitempty"`
+	// BGPReflection: the node runs the route reflectors of the BGP peering (SDN-79), as a reflector and as a client.
+	BGPReflection bool `json:"bgpReflection,omitempty"`
 	// TCPSplit: the node runs the TCP splitting of the L3 Networks (CORE-P2-3). The Controller refuses a node that does not
 	// report it as a member of a VRF with a Network that splits TCP (split.go).
 	TCPSplit bool `json:"tcpSplit,omitempty"`
@@ -90,6 +92,7 @@ func FromProto(p *controlpb.Capabilities) *Capabilities {
 		Tags:            p.GetTags(),
 		BGPPeering:      p.GetBgpPeering(),
 		EVPN:            p.GetEvpn(),
+		BGPReflection:   p.GetBgpReflection(),
 		TCPSplit:        p.GetTcpSplit(),
 	}
 	if len(p.GetWireguardKey()) > 0 {
@@ -113,6 +116,7 @@ func (c Capabilities) Proto() (*controlpb.Capabilities, error) {
 		Tags:            c.Tags,
 		BgpPeering:      c.BGPPeering,
 		Evpn:            c.EVPN,
+		BgpReflection:   c.BGPReflection,
 		TcpSplit:        c.TCPSplit,
 	}
 	if c.WireGuardKey != "" {
@@ -200,6 +204,19 @@ var requirements = []requirement{
 		},
 		capability: "bgpPeering",
 		has:        func(c *controlpb.Capabilities) bool { return c.GetBgpPeering() },
+	},
+	// A VRF whose Intent names route reflectors needs a node that runs them, as a reflector and as a client (SDN-79,
+	// #359): a node of an older release skips the roles of its peers and peers in a full mesh, which its peers refuse,
+	// so it would learn no route of another client, and a reflector of an older release would pass on none.
+	{
+		feature: func(o *controlpb.Object) string {
+			if v := o.GetVrf(); v.GetPeering() == controlpb.Peering_PEERING_BGP && len(v.GetReflectors()) > 0 {
+				return fmt.Sprintf("route reflection of VRF %q", v.GetName())
+			}
+			return ""
+		},
+		capability: "bgpReflection",
+		has:        func(c *controlpb.Capabilities) bool { return c.GetBgpReflection() },
 	},
 }
 

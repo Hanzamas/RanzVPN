@@ -49,6 +49,10 @@ type Peering struct {
 	// Two Nodes that share several VRFs that peer by BGP take the shortest of them, and a VRF that
 	// leaves it out counts as DefaultHoldTime there (Hold).
 	HoldTime uint32 `json:"holdTime,omitempty"`
+	// Reflectors are the route reflectors of the VRF (reflector.go; SDN-79), one or two of its Nodes:
+	// every other Node of the VRF is a client of each, which peers with them alone. Left out, the Nodes
+	// peer in a full mesh.
+	Reflectors []string `json:"reflectors,omitempty"`
 }
 
 // Hold returns the hold time of the sessions of a VRF with the peering p in seconds: its HoldTime, or
@@ -108,10 +112,12 @@ func RouterID(vtep netip.Addr) netip.Addr {
 	return netip.AddrFrom4([4]byte(sum[:4]))
 }
 
-// completePeering gives the peering of each VRF its one form: the protocol in lower case.
+// completePeering gives the peering of each VRF its one form: the protocol in lower case, and its
+// reflectors in name order (reflector.go).
 func (in Intent) completePeering() {
 	for name, v := range in.VRFs {
 		v.Peering.Protocol = strings.ToLower(v.Peering.Protocol)
+		v.Peering.Reflectors = completeReflectors(v.Peering.Reflectors)
 		in.VRFs[name] = v
 	}
 }
@@ -186,5 +192,6 @@ func (in Intent) validatePeering() []error {
 			ids[id] = name
 		}
 	}
-	return problems
+	// The route reflectors of the VRFs (reflector.go; SDN-79)
+	return append(problems, in.validateReflectors()...)
 }
