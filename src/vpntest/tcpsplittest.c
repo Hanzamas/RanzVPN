@@ -20,6 +20,10 @@
 //   plain, reach the fake host of node-s as packets.
 // - Off: once a Generation turns splitting off in fast, the SYN of a new connection reaches the fake host as a packet, and
 //   node-c splits nothing more.
+// First, without the nodes: the split Networks of a desired state as a client of the control module takes them from the wire
+// (Network.tcp_split, Core/ControlSplit.c), where an L3 Network with tcp_split is one, and an L3 Network without it and an L2
+// Network with it are none; and the Capability tcpSplit that the node reports in its Hello (NodeCapsProc), without which the
+// controller refuses it as a member of a VRF that splits TCP.
 // Print "TCPSPLIT TEST OK" only when every check passes. Needs administrator rights and wintun.dll next to vpntest
 // (.github/scripts/fetch-wintun.ps1).
 
@@ -27,6 +31,7 @@
 
 #include "Cedar/ConfigStore.h"
 #include "Cedar/Node.h"
+#include "Cedar/NodeCaps.h"
 #include "Cedar/NodeSplit.h"
 
 #include "Mayaqua/Encrypt.h"
@@ -111,6 +116,14 @@ typedef struct SPLITTEST_WATCH
 	HANDLE Done;
 } SPLITTEST_WATCH;
 
+// The owner of a client of the control module: the split Networks of the state that it took last
+typedef struct SPLITTEST_STATE
+{
+	UINT NumStates;
+	UINT NumSplits;
+	CONTROL_SPLIT Splits[CONTROL_MAX_SPLITS];
+} SPLITTEST_STATE;
+
 static bool SplitTestCheck(SPLITTEST_CTX *ctx, bool ok, char *what, char *fmt, ...) RANZ_PRINTF_FORMAT(4, 5);
 static bool SplitTestCheck(SPLITTEST_CTX *ctx, bool ok, char *what, char *fmt, ...)
 {
@@ -181,6 +194,191 @@ static bool SplitTestWait(volatile LONG *v, LONG want)
 	}
 
 	return (ReadAcquire(v) >= want);
+}
+
+//
+// The control stream
+//
+
+// A varint of the protobuf wire format into b
+static void SplitTestVarint(BUF *b, UINT64 v)
+{
+	UCHAR c;
+
+	for (;v >= 0x80;v >>= 7)
+	{
+		c = (UCHAR)(v | 0x80);
+		WriteBuf(b, &c, 1);
+	}
+	c = (UCHAR)v;
+	WriteBuf(b, &c, 1);
+}
+
+// The field field of the varint v, or of the size bytes at data when data is not NULL: a string or a message
+static void SplitTestField(BUF *b, UINT field, UINT64 v, const void *data)
+{
+	if (data == NULL)
+	{
+		SplitTestVarint(b, (UINT64)field << 3);
+		SplitTestVarint(b, v);
+		return;
+	}
+
+	SplitTestVarint(b, ((UINT64)field << 3) | 2);
+	SplitTestVarint(b, v);
+	WriteBuf(b, data, (UINT)v);
+}
+
+// The field field of the message m, which it frees
+static void SplitTestMessage(BUF *b, UINT field, BUF *m)
+{
+	SplitTestField(b, field, m->Size, m->Buf);
+	FreeBuf(m);
+}
+
+// An Object of the Network name of corp and of the mode mode (NetworkMode: 1 for L3, 2 for L2), with tcp_split (field 9) when
+// split
+static BUF *SplitTestNetworkObject(const char *name, UINT mode, bool split)
+{
+	BUF *nw = NewBuf();
+	BUF *o = NewBuf();
+
+	SplitTestField(nw, 1, StrLen(name), name);
+	SplitTestField(nw, 2, SPLITTEST_VRF, NULL);
+	SplitTestField(nw, 3, mode, NULL);
+	if (split)
+	{
+		SplitTestField(nw, 9, 1, NULL);
+	}
+	SplitTestMessage(o, 3, nw);
+
+	return o;
+}
+
+// A ControlMessage with the Update to the Generation gen from base (0 for a full state) that sets the num objects of set, which
+// it frees
+static BUF *SplitTestUpdate(UINT64 gen, UINT64 base, BUF **set, UINT num)
+{
+	BUF *u = NewBuf();
+	BUF *m = NewBuf();
+
+	SplitTestField(u, 1, gen, NULL);
+	if (base != 0)
+	{
+		SplitTestField(u, 2, base, NULL);
+	}
+	for (UINT i = 0;i < num;i++)
+	{
+		SplitTestMessage(u, 3, set[i]);
+	}
+	SplitTestMessage(m, 2, u);
+
+	return m;
+}
+
+// The owner of the client (CONTROL_STATE_PROC): it keeps the split Networks of the state
+static void SplitTestStateProc(void *param, const CONTROL_STATE *state)
+{
+	SPLITTEST_STATE *st = (SPLITTEST_STATE *)param;
+
+	st->NumStates++;
+	st->NumSplits = MIN(state->NumSplits, CONTROL_MAX_SPLITS);
+	Copy(st->Splits, state->Splits, sizeof(CONTROL_SPLIT) * st->NumSplits);
+}
+
+// Whether the split Networks of st are the names, num of them, each of corp, in that order
+static bool SplitTestSplitsAre(const SPLITTEST_STATE *st, const char *const *names, UINT num)
+{
+	if (st->NumSplits != num)
+	{
+		return false;
+	}
+
+	for (UINT i = 0;i < num;i++)
+	{
+		if (StrCmp(st->Splits[i].Network, names[i]) != 0 || st->Splits[i].VrfId != SPLITTEST_VRF)
+		{
+			return false;
+		}
+	}
+
+	return true;
+}
+
+// Give the client the Update to the Generation gen from base that sets the num objects of set, which it frees: whether the
+// client took it
+static bool SplitTestInput(CONTROL_CLIENT *c, UINT64 gen, UINT64 base, BUF **set, UINT num)
+{
+	BUF *m = SplitTestUpdate(gen, base, set, num);
+	bool ok = ControlInput(c, m->Buf, m->Size);
+
+	FreeBuf(m);
+
+	return ok;
+}
+
+// The split Networks of a desired state, as a client of the control module takes them from the wire, and the Capability
+// tcpSplit that the node reports in its Hello
+static void SplitTestControl(SPLITTEST_CTX *ctx)
+{
+	static const UCHAR key[NOISE_KEY_SIZE] = {0x01};
+	static TRANSPORT transport = {"tcpsplit"};
+	static const char *const fast[] = {"fast"};
+	static const char *const both[] = {"bulk", "fast"};
+	static const char *const bulk[] = {"bulk"};
+	SPLITTEST_STATE *st = ZeroMalloc(sizeof(SPLITTEST_STATE));
+	CONTROL_CONFIG cfg;
+	CONTROL_CAPS caps;
+	BUF *set[3];
+
+	Print("[control: the Networks that split TCP in a desired state, from the wire]\n");
+
+	Zero(&cfg, sizeof(cfg));
+	cfg.Transport = &transport;
+	StrCpy(cfg.Address, sizeof(cfg.Address), "controller");
+	cfg.StaticKey = key;
+	cfg.Proc = SplitTestStateProc;
+	cfg.Param = st;
+
+	CONTROL_CLIENT *c = ControlNew(&cfg);
+	if (SplitTestCheck(ctx, c != NULL, "control: ControlNew makes a client without its thread", "it refused a complete configuration") == false)
+	{
+		Free(st);
+		return;
+	}
+
+	// Generation 1: the L3 Network fast with tcp_split, the L3 Network lan without it, and the L2 Network dmz with it, which
+	// the node leaves out
+	set[0] = SplitTestNetworkObject("dmz", 2, true);
+	set[1] = SplitTestNetworkObject("fast", 1, true);
+	set[2] = SplitTestNetworkObject("lan", 1, false);
+	bool ok = SplitTestInput(c, 1, 0, set, 3);
+	SplitTestCheck(ctx, ok && st->NumStates == 1 && SplitTestSplitsAre(st, fast, 1),
+		"control: an L3 Network with tcp_split splits TCP; an L3 Network without it, the default, and an L2 Network with it do not",
+		"the client took it: %s, %u states, %u split Networks", ok ? "yes" : "no", st->NumStates, st->NumSplits);
+
+	// Generation 2, a delta: bulk splits TCP too, and the split Networks are in Network name order
+	set[0] = SplitTestNetworkObject("bulk", 1, true);
+	ok = SplitTestInput(c, 2, 1, set, 1);
+	SplitTestCheck(ctx, ok && st->NumStates == 2 && SplitTestSplitsAre(st, both, 2),
+		"control: a delta that turns splitting on in another L3 Network adds it, in Network name order", "the client took it: %s, %u split Networks",
+		ok ? "yes" : "no", st->NumSplits);
+
+	// Generation 3, a delta: fast without tcp_split
+	set[0] = SplitTestNetworkObject("fast", 1, false);
+	ok = SplitTestInput(c, 3, 2, set, 1);
+	SplitTestCheck(ctx, ok && st->NumStates == 3 && SplitTestSplitsAre(st, bulk, 1),
+		"control: a delta that leaves tcp_split out of a Network turns its splitting off and leaves the others", "the client took it: %s, %u split Networks",
+		ok ? "yes" : "no", st->NumSplits);
+
+	ControlFree(c);
+	Free(st);
+
+	// The Hello of the node reports the Capability, as the control client asks NodeCapsProc for each Hello
+	Zero(&caps, sizeof(caps));
+	NodeCapsProc(NULL, &caps);
+	SplitTestCheck(ctx, caps.TcpSplit, "the Capability tcpSplit: the node reports it in its Hello, so the controller lets it into a VRF that splits TCP",
+		"NodeCapsProc reports no tcpSplit");
 }
 
 //
@@ -1078,7 +1276,7 @@ static void SplitTestRun(SPLITTEST_CTX *ctx)
 	Free(host);
 }
 
-RANZ_TEST("tcpsplit", tcpsplit_test, "TCP splitting of an L3 Network (CORE-P2-3): the runner's TCP stack terminates its connections from its address in a Network that splits TCP, node-s opens them to the far side, an unmodified TCP server, and connect, data, half-close, refused, the resets of either end and timeout map to the far side; UDP and a Network without splitting take the packet path, and splitting is off by default (administrator rights, wintun.dll).");
+RANZ_TEST("tcpsplit", tcpsplit_test, "TCP splitting of an L3 Network (CORE-P2-3): the split Networks of a desired state from the wire and the Capability tcpSplit; the runner's TCP stack terminates its connections from its address in a Network that splits TCP, node-s opens them to the far side, an unmodified TCP server, and connect, data, half-close, refused, the resets of either end and timeout map to the far side; UDP and a Network without splitting take the packet path, and splitting is off by default (administrator rights, wintun.dll).");
 void tcpsplit_test(UINT num, char **arg)
 {
 	SPLITTEST_CTX *ctx = ZeroMalloc(sizeof(SPLITTEST_CTX));
@@ -1095,6 +1293,7 @@ void tcpsplit_test(UINT num, char **arg)
 
 	Print("TCP splitting test: a Network that splits TCP between a node on a Wintun adapter of the runner and a node that opens its connections to the far side\n");
 
+	SplitTestControl(ctx);
 	SplitTestRun(ctx);
 
 	SetEvent(w.Done);
