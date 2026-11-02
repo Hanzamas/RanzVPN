@@ -161,8 +161,16 @@ func (r *Rqlited) Done() <-chan struct{} {
 	return r.done
 }
 
+// ReadyTimeout is how long one request of the poll for readiness waits for its answer. The /readyz of rqlited asks the
+// leader for its metadata through the Raft port, on a connection of its own, and runs a query, before it answers. On a
+// host that is busy, with other programs that take every core and other test processes that open connections, that takes
+// more than a second, and a poll that cut each request at a second sent it again, and cut it again, for as long as the host
+// stayed busy, while the node was a leader that was ready: a request that the poll sends before the node listens is refused
+// at once, so a long wait for the answer costs a start on an idle host nothing.
+const ReadyTimeout = 10 * time.Second
+
 func ready(ctx context.Context, url, user, password string) bool {
-	ctx, cancel := context.WithTimeout(ctx, time.Second)
+	ctx, cancel := context.WithTimeout(ctx, ReadyTimeout)
 	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
