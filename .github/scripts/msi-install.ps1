@@ -69,9 +69,12 @@ $PSNativeCommandUseErrorActionPreference = $false
 #
 # The process of the service msiserver is ended only when sc.exe queryex gives it for the service at that moment and it is named
 # msiexec: the service may have ended while the evidence was collected, and its id may be another process by then (#624). A process
-# whose exit code the script reads is started with Process.Start (Start-ProcessWithHandle), which holds its handle from its creation: a
-# process that Start-Process -PassThru started and that ended before its handle was taken has no exit code to give, and ranz.exe version
-# prints one line and ends (#624).
+# that can end at once and whose exit code the script reads (ranz.exe version, the process of the evidence, sc.exe, the planted flow) is
+# started with Process.Start (Start-ProcessWithHandle), which holds its handle from its creation: a process that Start-Process -PassThru
+# started and that ended before its handle was taken has no exit code to give, and ranz.exe version prints one line and ends (#624).
+# The msiexec call is the one exception, and it is safe: Invoke-Msiexec waits for the call in the next statement, and a call of msiexec
+# takes a quarter of a second at the least (the real call on a package that is not there, in the self-test), so the handle is taken
+# while the call runs.
 #
 # -SelfTest plants a hang of each kind and checks all of that on any computer with PowerShell 7, Windows or Linux: quality-gates-test.py
 # runs it on Linux, and the msi job runs it on x64 and arm64. A planted hang ends the service msiserver with its tree, so on Windows it
@@ -549,6 +552,8 @@ function Invoke-Msiexec([string] $verb, [string] $package, [string] $step) {
 	# After a call that did not end Windows Installer is in a state that nobody knows: no other call starts
 	if ($script:msiexecHang) { throw "msiexec $verb $(Split-Path -Leaf $package) was not started: an earlier call did not end ($script:msiexecHang)" }
 	$log = Join-Path $LogDir "$step.log"
+	# Not Start-ProcessWithHandle: the call cannot end before the wait below, which comes within a few milliseconds, and msiexec takes a
+	# quarter of a second at the least (see the header, CI-FLAKE-6-R2, #624)
 	$call = Start-Process -FilePath $msiexecFile -ArgumentList ($msiexecPrefix + @($verb, "`"$package`"", '/qn', '/norestart', '/l*v!', "`"$log`"")) -PassThru
 	$script:lastLog = $log
 	if (-not $call.WaitForExit($msiexecSeconds * 1000)) {
@@ -715,7 +720,8 @@ function Invoke-Flow([scriptblock] $steps, [scriptblock] $cleanUp) {
 # too. Three more forms are forbidden (CI-FLAKE-6-R2, #624): a program started with a splat (Start-Process @splat), whose program is in
 # a hashtable that this check does not read; a command that is given msiexec as an argument, which is how a helper that takes the program
 # starts it (a command that prints, as Write-Host, only names it); and a call of a method of the Windows Installer object that installs
-# (InstallProduct, ConfigureProduct, ReinstallProduct, ConfigureFeature, ApplyPatch): an install that has no msiexec.exe and no bound.
+# (InstallProduct, ConfigureProduct, ReinstallProduct, ConfigureFeature, ReinstallFeature, ApplyPatch): an install that has no
+# msiexec.exe and no bound.
 # Not seen, and left to the review of the diff: a program named by another variable or built from pieces of text, a ProcessStartInfo
 # whose FileName is assigned, and a call of msi.dll through Add-Type.
 function Get-MsiexecLaunches([string] $path) {
@@ -727,7 +733,7 @@ function Get-MsiexecLaunches([string] $path) {
 	if ($null -eq $allowed) { throw "$path has no function Invoke-Msiexec" }
 	$starters = @('start-process', 'start', 'saps', 'start-processwithhandle', 'invoke-expression', 'iex', 'invoke-command', 'icm', 'cmd', 'cmd.exe')
 	$printers = @('write-host', 'write-output', 'write-warning', 'write-error', 'write-verbose', 'write-debug', 'write-information')
-	$installs = @('InstallProduct', 'ConfigureProduct', 'ReinstallProduct', 'ConfigureFeature', 'ApplyPatch')
+	$installs = @('InstallProduct', 'ConfigureProduct', 'ReinstallProduct', 'ConfigureFeature', 'ReinstallFeature', 'ApplyPatch')
 	$nodes = $ast.FindAll({ param($node) $node -is [System.Management.Automation.Language.CommandAst] -or $node -is [System.Management.Automation.Language.MemberExpressionAst] }, $true)
 	foreach ($node in $nodes) {
 		if ($node.Extent.StartOffset -ge $allowed.Extent.StartOffset -and $node.Extent.EndOffset -le $allowed.Extent.EndOffset) { continue }

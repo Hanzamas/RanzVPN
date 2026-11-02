@@ -816,6 +816,7 @@ def test_msi_install():
             ('a Start-Process with a splat', "\n$splat = @{ FilePath = 'msiexec.exe'; ArgumentList = '/x', 'x.msi'; Wait = $true }\nStart-Process @splat\n",
              'Start-Process @splat'),
             ('a Start-ProcessWithHandle with a splat', "\n$splat = @('msiexec.exe')\nStart-ProcessWithHandle @splat\n", 'Start-ProcessWithHandle @splat'),
+            ('a Start-ProcessWithHandle of msiexec.exe', "\n$null = Start-ProcessWithHandle 'msiexec.exe' @('/x', 'x.msi')\n", "Start-ProcessWithHandle 'msiexec.exe' @('/x', 'x.msi')"),
             ('a helper that is given the program as a string', "\nfunction Start-Other($program) { Start-Process -FilePath $program -Wait }\nStart-Other 'msiexec.exe' /x\n",
              "Start-Other 'msiexec.exe' /x"),
             ('a helper that is given the program as a bare word', "\nfunction Start-Other($program) { & $program /x }\nStart-Other msiexec /x\n",
@@ -827,7 +828,13 @@ def test_msi_install():
             ('a configure through the Windows Installer object', "\n$installer = New-Object -ComObject WindowsInstaller.Installer\n$installer.ConfigureProduct('{00000000-0000-0000-0000-000000000000}', 0, 3)\n",
              "$installer.ConfigureProduct('{00000000-0000-0000-0000-000000000000}', 0, 3)"),
             ('a reinstall through the Windows Installer object', "\n$installer = New-Object -ComObject WindowsInstaller.Installer\n$installer.ReinstallProduct('{00000000-0000-0000-0000-000000000000}', 0)\n",
-             "$installer.ReinstallProduct('{00000000-0000-0000-0000-000000000000}', 0)")):
+             "$installer.ReinstallProduct('{00000000-0000-0000-0000-000000000000}', 0)"),
+            ('a configure of a feature through the Windows Installer object', "\n$installer = New-Object -ComObject WindowsInstaller.Installer\n$installer.ConfigureFeature('{00000000-0000-0000-0000-000000000000}', 'Main', 3, 3)\n",
+             "$installer.ConfigureFeature('{00000000-0000-0000-0000-000000000000}', 'Main', 3, 3)"),
+            ('a reinstall of a feature through the Windows Installer object', "\n$installer = New-Object -ComObject WindowsInstaller.Installer\n$installer.ReinstallFeature('{00000000-0000-0000-0000-000000000000}', 'Main', 0)\n",
+             "$installer.ReinstallFeature('{00000000-0000-0000-0000-000000000000}', 'Main', 0)"),
+            ('a patch through the Windows Installer object', "\n$installer = New-Object -ComObject WindowsInstaller.Installer\n$installer.ApplyPatch('x.msp', '{00000000-0000-0000-0000-000000000000}', 0, '')\n",
+             "$installer.ApplyPatch('x.msp', '{00000000-0000-0000-0000-000000000000}', 0, '')")):
         launches(name, 1, ['msi-install.ps1:', line, 'start msiexec outside Invoke-Msiexec'], extra)
     launches('a script without Invoke-Msiexec', 1, ['has no function Invoke-Msiexec'], text=real.replace('function Invoke-Msiexec', 'function Invoke-Other'))
     launches('a script that does not parse', 1, ['does not parse'], extra='\nif ($true) {\n')

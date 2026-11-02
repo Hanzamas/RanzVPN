@@ -1748,17 +1748,17 @@ jobs:
   # version have a bound of 60 s too, with the state of the service and the processes printed when it is reached. The bounds of the
   # evidence and of the end of a hang add up to 200 s, more than 3 minutes (the query of the service 30 s, two reads of sc.exe
   # queryex 20 s, the evidence 60 s, the end of the evidence process 40 s, the table of processes 30 s, two waits of 10 s), so a
-  # hang in the last call that reaches all of them ends near 570 s of the 600 s of the step. The diagnostics of a failed step have
-  # limits of their own now, 80 s at the most (CIM 30 s for each of two services, the events of the System log 20 s), and would be
-  # cut by the timeout in that case. The step has a timeout of 10 minutes and the job one of 20 (the step, the step of the planted
-  # hangs, the setup and the upload): they are the second line, for a hang that the bounds cannot catch. The old ones, 30 and 45
-  # minutes, ended nothing in three jobs: the step was still running when the service cancelled each job after 55 minutes, the 45
-  # of the job and 10 more. A msiexec that hangs does not do that by itself, since the runner ends such a step at its timeout (the
-  # pull request of #593 has the runs), so the runner or the computer did not answer; the evidence that the bound prints is there
-  # to tell which. The fourth sighting (the push to integration at fe400338, job 124903044920, 2026-11-01) had the bound and the
-  # timeouts of #593 and was cancelled at 25 minutes (the 20 of the job and 5 more) with the step in progress; its log is gone
-  # too, so it is not known whether a call reached its bound and the evidence, which had no bound then, stalled, or the runner
-  # did not answer.
+  # hang in the last call that reaches all of them ends near 580 s of the 600 s of the step (300 s for the call, 77 s for the
+  # longest normal step, 200 s for the end). The diagnostics of a failed step have limits of their own now, 80 s at the most (CIM
+  # 30 s for each of two services, the events of the System log 20 s), and would be cut by the timeout in that case. The step has a
+  # timeout of 10 minutes and the job one of 20 (the step, the step of the planted hangs, the setup and the upload): they are the
+  # second line, for a hang that the bounds cannot catch. The old ones, 30 and 45 minutes, ended nothing in three jobs: the step was
+  # still running when the service cancelled each job after 55 minutes, the 45 of the job and 10 more. A msiexec that hangs does not
+  # do that by itself, since the runner ends such a step at its timeout (the pull request of #593 has the runs), so the runner or
+  # the computer did not answer; the evidence that the bound prints is there to tell which. The fourth sighting (the push to
+  # integration at fe400338, job 124903044920, 2026-11-01) had the bound and the timeouts of #593 and was cancelled at 25 minutes
+  # (the 20 of the job and 5 more) with the step in progress; its log is gone too, so it is not known whether a call reached its
+  # bound and the evidence, which had no bound then, stalled, or the runner did not answer.
   msi:
     needs: sign_and_integrity
     strategy:
@@ -1813,7 +1813,7 @@ jobs:
     # step above did, and it runs the real msiexec.exe once, on a package that is not there. Here, in GitHub Actions, the planted
     # hangs end the real service msiserver; the self-test does that on no other computer (CI-FLAKE-6-R2, #624), and it also plants a
     # process that ends at once, an evidence process that cannot be started, a service whose id was reused, and a CIM query and a
-    # query of the events that stall. The timeout is 5 minutes: the planted hangs take about 2 minutes.
+    # query of the events that stall. The timeout is 5 minutes: the planted hangs take about 90 s.
     - name: The bound of a msiexec call, on a planted hang
       if: ${{ !cancelled() }}
       shell: pwsh
