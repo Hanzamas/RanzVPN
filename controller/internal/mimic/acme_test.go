@@ -25,6 +25,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/Hanzamas/RanzVPN/controller/internal/rqlitetest"
 )
 
 // The own decoy with a certificate from an ACME service (ADR-0023, decoy mode 1): the decoy asks the
@@ -347,15 +349,12 @@ func (a *acmeServer) certificate(w http.ResponseWriter, r *http.Request) {
 	w.Write(chain)
 }
 
-// freeAddr is a loopback address that nothing listens on: a port that was free a moment ago.
+// freeAddr is a loopback address for the listener of a sidecar that starts later: no other test of the run holds it until
+// the test ends, and it is no port that the system hands out as the source port of a connection (rqlitetest.Addrs, CI-FLAKE-4,
+// #581), as the port of a listener that was closed would be.
 func freeAddr(t *testing.T) string {
 	t.Helper()
-	ln, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer ln.Close()
-	return ln.Addr().String()
+	return rqlitetest.Addrs(t, 1)[0]
 }
 
 // The own decoy gets a certificate for its name from an ACME service with the TLS-ALPN-01 challenge

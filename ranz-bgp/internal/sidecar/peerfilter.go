@@ -6,7 +6,8 @@ package sidecar
 // withdrawn. Three things keep such a path out:
 //
 //   - The import policy of GoBGP (setImport) takes a path of a peer only when its exact prefix is one that the accept lists of that
-//     peer hold in some VRF. A path that no VRF of its peer may carry never reaches the table, whatever its route distinguisher.
+//     peer hold in some VRF. A path that no VRF of its peer may carry never reaches the table, whatever its route distinguisher. A
+//     route reflector of a VRF of the node may carry there what the other nodes of the VRF may announce (SDN-79 #359, reflector.go).
 //   - A prefix that a peer may announce in one VRF can come with the route distinguisher of another, where a second peer announces
 //     it too, and GoBGP may rank the first above the second: a policy cannot see the route distinguisher. So the sidecar does not
 //     take the best path of GoBGP. It reads the paths of the table, which GoBGP keeps in the order of its selection, and for each
@@ -90,7 +91,8 @@ func (s *session) setImport(ctx context.Context, peers map[netip.Addr]peerConfig
 	}}
 	var sets []*api.DefinedSet
 	for i, addr := range slices.SortedFunc(maps.Keys(peers), netip.Addr.Compare) {
-		v4, v6 := peerPrefixes(peers[addr])
+		// A route reflector may announce what the other nodes of its VRFs may (reflector.go; SDN-79 #359)
+		v4, v6 := peerPrefixes(importable(peers, addr))
 		if len(v4) == 0 && len(v6) == 0 {
 			continue
 		}
@@ -245,7 +247,10 @@ func (s *session) vpnRoutes() (map[routeKey]learnedRoute, refusal, error) {
 					continue
 				}
 				if !p.PeerAddress.IsValid() {
-					own[key] = true
+					// A copy that a route reflector holds of the path of a client is not the node's own (reflector.go; SDN-79 #359)
+					if !s.reflector.isCopy(p) {
+						own[key] = true
+					}
 					continue
 				}
 				if !s.accepts(p.PeerAddress, key) {
