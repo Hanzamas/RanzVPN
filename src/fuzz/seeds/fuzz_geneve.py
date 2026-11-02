@@ -68,3 +68,13 @@ def make_seeds(h):
     seed('source_group_after_ovn.bin', geneve(6001, untagged, ovn + option(0xFFF0, 0x01, source_group)))
     seed('source_group_critical.bin', geneve(6001, untagged, option(0xFFF0, 0x81, source_group)))
     seed('source_group_short.bin', geneve(6001, untagged, option(0xFFF0, 0x01, source_group[:4])))
+    # The trace option (SDN-89 #388; Vxlan.h): the class 0xFFF0, the type 3 with the critical bit clear and 12 bytes of data,
+    # the trace ID and the first 8 bytes of the static key of the ingress node. After the option of the source group, alone,
+    # with the trace ID 0, which is no trace, with data of another length, which is no such option, and with the critical
+    # bit set, which the module does not know
+    trace = struct.pack('>I', 0x2A) + bytes(range(0x11, 0x19))
+    seed('trace.bin', geneve(6001, untagged, option(0xFFF0, 0x01, source_group) + option(0xFFF0, 0x03, trace)))
+    seed('trace_alone.bin', geneve(6001, untagged, option(0xFFF0, 0x03, trace)))
+    seed('trace_zero_id.bin', geneve(6001, untagged, option(0xFFF0, 0x03, bytes(4) + trace[4:])))
+    seed('trace_short.bin', geneve(6001, untagged, option(0xFFF0, 0x03, trace[:4])))
+    seed('trace_critical.bin', geneve(6001, untagged, option(0xFFF0, 0x83, trace)))
