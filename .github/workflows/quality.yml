@@ -125,10 +125,3 @@ jobs:
       run: python -I .github/scripts/formal.py selftest
     - name: Every function and field that the table names is in the code, every name of the models has a row
       run: python -I .github/scripts/formal.py check
-
-  # PLANTED JOB of the temporary commit of CI-INTEG-1-R1 (#597): it has no timeout-minutes, and the job above must fail on it
-  planted_job_without_a_timeout:
-    name: planted job without a timeout
-    runs-on: ubuntu-latest
-    steps:
-    - run: echo "a planted job with no timeout-minutes, taken out again by the next commit"

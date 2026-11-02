@@ -336,7 +336,6 @@ jobs:
         # the gate below judges the best run of each case
         RANZ_BENCH_RUNS: '3'
       run: |
-        throw 'PLANTED FAILURE of the Test step (CI-INTEG-1-R1, #597): a temporary commit, taken out again'
         . .github/scripts/vpntest.ps1
     # The performance regression gate (ADR-0040 item 5): every BENCH case of this job (vpntest bench and
     # the other tests that print BENCH lines) against its median recorded from earlier CI runs of the
