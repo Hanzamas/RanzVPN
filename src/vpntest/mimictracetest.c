@@ -14,10 +14,10 @@
 //   client role of its sidecar. The data transport of the overlay of each node is the dialler of this test: it dials a peer at
 //   the mimic endpoints of its Peer object through the mimic transport of the node, which dials the link of that address (the
 //   data transport of the Node service dials nowhere: Gap 3 of docs/first-test.md). The Noise session of the client comes up
-//   over the mimic transport, and both ends have the same channel binding. The command lines of the sidecars hold no key. The
-//   test writes the file "up", which holds the public key of the server.
+//   over the mimic transport, and both ends have the same channel binding. The command lines of the sidecars hold no key.
 // - mimic-prober, a node without a control stream, applies a link to the mimic server whose short id the test changed: its
-//   dial is spliced to the decoy and fails, and the server counts one probe.
+//   dial is spliced to the decoy and fails, and the server counts one probe. The test writes the file "up", which holds the
+//   public key of the server.
 // - The script applies the Intent with another address of the mimic server and writes "changed": the sidecar of each role
 //   restarts with its new setting, the key stays, and the session comes up again at the new address.
 // - mimic-server restarts: it reports the same key, which its store holds, before it applies a state, and the session comes up
@@ -1033,15 +1033,7 @@ static bool MimicTraceJoin(MIMICTRACE_CTX *ctx, UCHAR *binding, UINT64 *since)
 	MimicTraceCheck(ctx, has && server_line && client_line, "the command line of each sidecar is ranz.exe mimic with its pipe: no key, and no link", "server %u, client %u, the last \"%s\"",
 		(UINT)server_line, (UINT)client_line, cmdline);
 
-	if (up == false || bound == false || reported == false)
-	{
-		return false;
-	}
-
-	// The public key of the server, which the script finds in the API of the controller
-	Format(want, sizeof(want), "%s\n", ctx->Public);
-	return MimicTraceCheck(ctx, MimicTraceWriteFile(ctx, "up", want), "the test wrote the file up, with the public key of the mimic server, for the script", "%s",
-		"the file cannot be written");
+	return (up && bound && reported);
 }
 
 // mimic-prober, a node without a control stream, applies a state with a link to the mimic server whose short id the test
@@ -1113,10 +1105,12 @@ static void MimicTraceProbe(MIMICTRACE_CTX *ctx)
 }
 
 // The script gives the mimic server another address: the sidecar of each role restarts with its new setting, the server keeps
-// its key, and the session of the client comes up again at the new address, with a new binding
+// its key, and the session of the client comes up again at the new address, with a new binding. The file up, which holds the
+// public key of the server, lets the script go on once the test took the processes of the sidecars before the change.
 static bool MimicTraceChange(MIMICTRACE_CTX *ctx, UCHAR *binding, UINT64 *since)
 {
 	UCHAR again[NODE_MIMIC_BINDING];
+	char text[MAX_SIZE];
 	NODE_OVERLAY_SESSION s;
 	NODE_STATUS st;
 
@@ -1129,6 +1123,14 @@ static bool MimicTraceChange(MIMICTRACE_CTX *ctx, UCHAR *binding, UINT64 *since)
 	NodeGetStatus(ctx->Client.Node, &st);
 	UINT client_pid = st.Mimic[NODE_MIMIC_ROLE_CLIENT].ProcessId;
 	UINT client_starts = st.Mimic[NODE_MIMIC_ROLE_CLIENT].NumStarts;
+
+	// The public key of the server, which the script finds in the API of the controller before it applies the change
+	Format(text, sizeof(text), "%s\n", ctx->Public);
+	if (MimicTraceCheck(ctx, MimicTraceWriteFile(ctx, "up", text), "the test wrote the file up, with the public key of the mimic server, for the script", "%s",
+		"the file cannot be written") == false)
+	{
+		return false;
+	}
 
 	if (MimicTraceCheck(ctx, MimicTraceWaitFile(ctx, "changed"), "the script applied the Intent with another address of the mimic server", "no file changed within %u ms",
 		MIMICTRACE_SCRIPT) == false)
@@ -1221,12 +1223,11 @@ static bool MimicTraceRestart(MIMICTRACE_CTX *ctx, UCHAR *binding, UINT64 *since
 		MimicTraceBundle(ctx);
 	}
 
-	MimicTraceCheck(ctx, MimicTraceWriteFile(ctx, "restarted", "ok\n"), "the test wrote the file restarted for the script", "%s", "the file cannot be written");
-
 	return up;
 }
 
-// The script takes the mimic section out of the Intent: both sidecars stop, and the settings and the key are gone
+// The script takes the mimic section out of the Intent: both sidecars stop, and the settings and the key are gone. The file
+// restarted lets the script go on once the test took the processes of the sidecars before the change.
 static bool MimicTraceRemove(MIMICTRACE_CTX *ctx)
 {
 	UCHAR report[CONTROL_MIMIC_KEY_SIZE];
@@ -1239,6 +1240,11 @@ static bool MimicTraceRemove(MIMICTRACE_CTX *ctx)
 	UINT server_pid = ss.Mimic[NODE_MIMIC_ROLE_SERVER].ProcessId;
 	NodeGetStatus(ctx->Client.Node, &cs);
 	UINT client_pid = cs.Mimic[NODE_MIMIC_ROLE_CLIENT].ProcessId;
+
+	if (MimicTraceCheck(ctx, MimicTraceWriteFile(ctx, "restarted", "ok\n"), "the test wrote the file restarted for the script", "%s", "the file cannot be written") == false)
+	{
+		return false;
+	}
 
 	if (MimicTraceCheck(ctx, MimicTraceWaitFile(ctx, "removed"), "the script applied the Intent without the mimic section", "no file removed within %u ms",
 		MIMICTRACE_SCRIPT) == false)
