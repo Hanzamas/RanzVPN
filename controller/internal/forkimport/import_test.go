@@ -355,6 +355,85 @@ func TestTwoVirtualHubsDoNotShareNames(t *testing.T) {
 	}
 }
 
+// The Virtual Hub DEFAULT, which every server has, is not VRF default: a first install has the VRF default, its Network
+// default and the starter rule, and the document must leave them as they are, so that the access list of the hub is
+// not judged beside a rule that allows all.
+func TestTheHubDefaultDoesNotTakeTheNamesOfAFirstInstall(t *testing.T) {
+	acl := folder("AccessList", folder("1", "bool Active true", "bool Discard true", "uint Priority 100", "uint Protocol 6", "uint DestPortStart 23", "uint DestPortEnd 23"))
+	res := importOf(t, configText(folder("DEFAULT", acl), folder("Lab")), Options{})
+	if got, want := resourceNames(res.Document, intent.KindVRF), []string{"default-2", "lab"}; !slices.Equal(got, want) {
+		t.Errorf("the VRFs are %v, want %v", got, want)
+	}
+	if got, want := resourceNames(res.Document, intent.KindNetwork), []string{"default-2", "lab"}; !slices.Equal(got, want) {
+		t.Errorf("the Networks are %v, want %v", got, want)
+	}
+	if got, want := resourceNames(res.Document, intent.KindPolicy), []string{"default-2-acl-1", "default-2-default-allow", "lab-default-allow"}; !slices.Equal(got, want) {
+		t.Errorf("the Policies are %v, want %v", got, want)
+	}
+	if h := res.Hubs[0]; h.Name != "DEFAULT" || h.VRF != "default-2" || h.Network != "default-2" {
+		t.Errorf("the Virtual Hub DEFAULT is %+v, want VRF and Network default-2", h)
+	}
+	if notes := res.Hubs[0].Notes; len(notes) == 0 || !strings.Contains(notes[0], `the VRF and the Network are "default-2" and not "default", which is taken`) {
+		t.Errorf("the notes of DEFAULT are %q, want the first to say why its VRF is not default", notes)
+	}
+	if notes := res.Hubs[1].Notes; strings.Contains(strings.Join(notes, "\n"), "which is taken") {
+		t.Errorf("the notes of Lab are %q: its name is not taken", notes)
+	}
+
+	first, err := intent.Apply(intent.New(), intent.FirstInstall(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	next, err := intent.Apply(first, res.Document, nil)
+	if err != nil {
+		t.Fatalf("the document does not apply to the intent of a first install: %v", err)
+	}
+	if !reflect.DeepEqual(next.VRFs[intent.DefaultVRF], first.VRFs[intent.DefaultVRF]) {
+		t.Errorf("VRF default is %+v after the import, was %+v", next.VRFs[intent.DefaultVRF], first.VRFs[intent.DefaultVRF])
+	}
+	if !reflect.DeepEqual(next.Networks[intent.DefaultNetwork], first.Networks[intent.DefaultNetwork]) {
+		t.Errorf("Network default is %+v after the import, was %+v", next.Networks[intent.DefaultNetwork], first.Networks[intent.DefaultNetwork])
+	}
+	if !reflect.DeepEqual(next.Policies[intent.StarterRule], first.Policies[intent.StarterRule]) {
+		t.Errorf("the starter rule is %+v after the import, was %+v", next.Policies[intent.StarterRule], first.Policies[intent.StarterRule])
+	}
+}
+
+// A name does not depend on which Virtual Hubs an import takes: the second hub of a file makes the same resources when it
+// is taken alone as when both are taken, so hubs that move in several imports never make one name twice.
+func TestTheNamesDoNotDependOnWhichHubsAreTaken(t *testing.T) {
+	hub := func(name string) string {
+		groups := folder("GroupList", folder("staff"))
+		users := folder("UserList", folder("alice", "string GroupName staff"))
+		return folder(name, folder("SecurityAccountDatabase", groups, users),
+			folder("AccessList", folder("1", "bool Active true", "uint Priority 100", "string SrcUsername staff")))
+	}
+	text := configText(hub("a"), hub("b"))
+	both := importOf(t, text, Options{})
+	second := importOf(t, text, Options{Hubs: []string{"b"}})
+	if len(second.Hubs) != 1 || second.Hubs[0].VRF != "b" {
+		t.Fatalf("the import of the second hub alone made the hubs %+v", second.Hubs)
+	}
+	inBoth := map[string]string{}
+	for _, r := range both.Document.Resources {
+		inBoth[r.Kind+"/"+r.Name] = string(r.Spec)
+	}
+	for _, r := range second.Document.Resources {
+		if spec, ok := inBoth[r.Kind+"/"+r.Name]; !ok || spec != string(r.Spec) {
+			t.Errorf("the import of the second hub alone made %s %s as %s, which the import of both does not make", r.Kind, r.Name, r.Spec)
+		}
+	}
+	if got := resourceNames(second.Document, intent.KindUser); !slices.Equal(got, []string{"alice-2"}) {
+		t.Errorf("the Users of the second hub are %v, want alice-2: alice is the user of the first", got)
+	}
+	if got := resourceNames(second.Document, intent.KindGroup); !slices.Equal(got, []string{"staff-2"}) {
+		t.Errorf("the Groups of the second hub are %v, want staff-2: staff is the group of the first", got)
+	}
+	if first := importOf(t, text, Options{Hubs: []string{"a"}}); len(first.Document.Resources) != len(both.Document.Resources)-len(second.Document.Resources) {
+		t.Errorf("the first hub alone has %d resources, and the two make %d, the second with %d", len(first.Document.Resources), len(both.Document.Resources), len(second.Document.Resources))
+	}
+}
+
 // A User has the Group of its group, its expiry in UTC, and the flags FixPassword and NoSavePassword of its own policy,
 // else of the policy of its group, as the fork judges a session.
 func TestUsersCarryTheirGroupsExpiryAndFlags(t *testing.T) {

@@ -60,6 +60,17 @@ func newNamer() *namer {
 	return &namer{used: map[string]map[string]bool{}, next: map[string]int{}}
 }
 
+// reserve marks the name of the kind as given out, so that take gives it to nobody: the name of a resource that the
+// intent has before the import.
+func (n *namer) reserve(kind, name string) {
+	used := n.used[kind]
+	if used == nil {
+		used = map[string]bool{}
+		n.used[kind] = used
+	}
+	used[name] = true
+}
+
 // take returns a name of the kind kind that nobody has, for base.
 func (n *namer) take(kind, base string) string {
 	used := n.used[kind]

@@ -2,6 +2,7 @@ package forkimport
 
 import (
 	"os"
+	"reflect"
 	"testing"
 
 	"github.com/Hanzamas/RanzVPN/controller/internal/intent"
@@ -68,12 +69,17 @@ func FuzzParse(f *testing.F) {
 }
 
 // FuzzImport reads the bytes as a Config file and imports it (Import): it never panics, and the intent document that it
-// makes applies to an empty intent whatever the file holds, which is the one criterion of #203 that a fuzzer can hold it
-// to: the names of the resources are DNS labels that no other has, the users and their Groups exist, and every Policy
-// is one that the controller takes.
+// makes applies to an empty intent and to the intent of a first install whatever the file holds, which is the one
+// criterion of #203 that a fuzzer can hold it to: the names of the resources are DNS labels that no other has, the users
+// and their Groups exist, every Policy is one that the controller takes, and the VRF default, its Network and the starter
+// rule are as they were.
 func FuzzImport(f *testing.F) {
 	for _, s := range fuzzSeeds(f) {
 		f.Add(s)
+	}
+	first, err := intent.Apply(intent.New(), intent.FirstInstall(), nil)
+	if err != nil {
+		f.Fatal(err)
 	}
 	f.Fuzz(func(t *testing.T, b []byte) {
 		root, err := Parse(b)
@@ -86,6 +92,15 @@ func FuzzImport(f *testing.F) {
 		}
 		if _, err := intent.Apply(intent.New(), res.Document, nil); err != nil {
 			t.Fatalf("the import of %q does not apply: %v", b, err)
+		}
+		next, err := intent.Apply(first, res.Document, nil)
+		if err != nil {
+			t.Fatalf("the import of %q does not apply to the intent of a first install: %v", b, err)
+		}
+		if !reflect.DeepEqual(next.VRFs[intent.DefaultVRF], first.VRFs[intent.DefaultVRF]) ||
+			!reflect.DeepEqual(next.Networks[intent.DefaultNetwork], first.Networks[intent.DefaultNetwork]) ||
+			!reflect.DeepEqual(next.Policies[intent.StarterRule], first.Policies[intent.StarterRule]) {
+			t.Fatalf("the import of %q changes the VRF default, its Network or the starter rule of a first install", b)
 		}
 		if res.Report() == "" {
 			t.Fatal("the report is empty")

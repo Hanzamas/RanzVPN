@@ -14,9 +14,12 @@ import (
 	"github.com/Hanzamas/RanzVPN/controller/internal/intent"
 )
 
-// The mapping (ADR-0031 decision 11, SDN-27 #203). Each Virtual Hub is a VRF with one Network, both named after it. Each
-// group of the hub is a Group, whose name is a tag of policy, and each user is a User that belongs to the Group of its
-// group: the Node of a user carries the tags of its Groups (ADR-0031 amendment of 2026-10-25). The access list of the hub
+// The mapping (ADR-0031 decision 11, SDN-27 #203). Each Virtual Hub is a VRF with one Network, both named after it, but for
+// the name default, which the VRF and the Network of a first install have (ADR-0034): the Virtual Hub DEFAULT, which every
+// server has, is VRF default-2, so that the import never replaces them. Every Virtual Hub of the file is named, the ones
+// that an import does not take too, so a name is the same whichever hubs are taken. Each group of the hub is a Group,
+// whose name is a tag of policy, and each user is a User that belongs to the Group of its group: the Node of a user carries
+// the tags of its Groups (ADR-0031 amendment of 2026-10-25). The access list of the hub
 // is the Policies of its VRF (access.go), and one more Policy lets through what no entry matches, as the fork does where
 // the engine of a Node denies it. A user whom an entry names gets a Group of its own, the tag of that entry, unless the
 // hub has a group of that name, which the user then joins: the fork matches the name of an entry against the user and
@@ -44,7 +47,8 @@ var ErrNotConfig = errors.New("the file is no Config file of a server: it has no
 // Options says which Virtual Hubs Import takes and how it makes their Networks.
 type Options struct {
 	// Hubs are the Virtual Hubs to take, by name without regard to case. The old server runs on until every Virtual Hub
-	// has moved (ADR-0031 decision 11), so an operator moves them one at a time. Left out, every Virtual Hub.
+	// has moved (ADR-0031 decision 11), so an operator moves them one at a time: the names of the resources are those that
+	// the import of every Virtual Hub makes, so two imports of one file never make a name twice. Left out, every Virtual Hub.
 	Hubs []string
 	// Mode is the mode of the Networks, intent.ModeL3 or intent.ModeL2 in either case. Left out, intent.ModeL3.
 	Mode string
@@ -90,7 +94,8 @@ func Import(root *Folder, opts Options) (Result, error) {
 	if err != nil {
 		return Result{}, err
 	}
-	chosen, err := opts.choose(root.Child("VirtualHUB").Sorted())
+	hubs := root.Child("VirtualHUB").Sorted()
+	chosen, err := opts.choose(hubs)
 	if err != nil {
 		return Result{}, err
 	}
@@ -99,9 +104,22 @@ func Import(root *Folder, opts Options) (Result, error) {
 		return Result{}, err
 	}
 	im := &importer{mode: mode, names: newNamer()}
+	// The VRF and the Network of a first install and its starter rule are in the intent that the document applies to, and
+	// the document must not replace them: the Virtual Hub DEFAULT, which every server has, is not VRF default
+	im.names.reserve(kindHub, intent.DefaultVRF)
+	im.names.reserve(kindHub, intent.DefaultNetwork)
+	im.names.reserve(intent.KindPolicy, intent.StarterRule)
 	var res Result
-	for _, f := range chosen {
-		res.Hubs = append(res.Hubs, im.hub(f, pools[strings.ToLower(f.Name)]))
+	// Every Virtual Hub is named, the ones that Options leaves out too, so that a name is the same whichever hubs an import
+	// takes: hubs that move in several imports never make one name twice
+	for _, f := range hubs {
+		start := len(im.resources)
+		hub := im.hub(f, pools[strings.ToLower(f.Name)])
+		if !slices.Contains(chosen, f) {
+			im.resources = im.resources[:start]
+			continue
+		}
+		res.Hubs = append(res.Hubs, hub)
 	}
 	res.Document = intent.Document{Resources: im.resources}
 	return res, nil
@@ -224,7 +242,8 @@ func (h *hubImport) renamed(what, kind, raw, name string) {
 
 // hub imports the Virtual Hub f, whose Network gets the IPv4 pool pool, empty for none.
 func (im *importer) hub(f *Folder, pool string) Hub {
-	vrf := im.names.take(kindHub, slug(f.Name, "hub"))
+	base := slug(f.Name, "hub")
+	vrf := im.names.take(kindHub, base)
 	h := &hubImport{im: im, vrf: vrf, prefix: vrf, pool: pool}
 	if len(h.prefix) > ruleBase {
 		h.prefix = strings.TrimRight(h.prefix[:ruleBase], "-")
@@ -232,6 +251,9 @@ func (im *importer) hub(f *Folder, pool string) Hub {
 	h.groups, h.folders, h.users = map[string]string{}, map[string]*Folder{}, map[string]*Folder{}
 	h.tags, h.used = map[string]string{}, map[string]bool{}
 	out := Hub{Name: f.Name, VRF: vrf, Network: vrf}
+	if vrf != base {
+		h.say("the VRF and the Network are %q and not %q, which is taken: by another Virtual Hub, or by the VRF default and the Network default that a first install makes", vrf, base)
+	}
 	im.add(intent.KindVRF, vrf, intent.VRF{})
 	im.add(intent.KindNetwork, vrf, intent.Network{VRF: vrf, Mode: im.mode, IPv4Pool: pool})
 

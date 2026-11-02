@@ -82,8 +82,9 @@ go  controller/internal/event           90
 go  controller/internal/explain         86
 go  controller/internal/export          90
 # forkimport (SDN-27 #203): the Config file of the fork and its import into an intent document, which the package's own tests
-# run on the sample Config file of tests/golden/configimport and on small files of their own; the floor is that of the first run
-go  controller/internal/forkimport      80
+# run on the sample Config file of tests/golden/configimport and on small files of their own, 97.2% measured at the first run,
+# less two points
+go  controller/internal/forkimport      95
 # install (ONE-2 #311): the Linux job measures names.go and files.go (the SIDs, the access list, the
 # removal of the folder), not install_windows.go, whose services the install job of windows.yml runs
 go  controller/internal/install         80
