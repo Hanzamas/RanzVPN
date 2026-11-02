@@ -198,6 +198,5 @@ bool SwitchGetVlanStats(SWITCH *sw, UINT vlan, SWITCH_VLAN_STATS *st);
 // SwitchIp.c
 UINT SwitchGetIps(SWITCH *sw, SWITCH_IP_ENTRY *list, UINT max);
 UINT SwitchClearIps(SWITCH *sw, const UCHAR *address, UINT size);
-bool SwitchFindIp(SWITCH *sw, UINT vlan, const UCHAR *address, UINT size, UCHAR *mac);
 
 #endif // CORE_SWITCH_H

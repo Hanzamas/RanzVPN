@@ -16,10 +16,13 @@ import (
 )
 
 // The symmetric IRB of the tests (SDN-67 #294): the stretch of VNI 5010 routes in VRF 101 of testEVPN, whose L3 VNI is 10101,
-// with a gateway IP of each family; the stretch of VNI 5030 has no irb
+// with a gateway IP of each family; the stretch of VNI 5030 has no irb; and the stretch of VNI 5040 routes in VRF 102, whose L3
+// VNI is 10102, on the same Network addresses as the one of VNI 5010
 const (
-	testPlainVNI    = 5030
-	testPlainTarget = "65000:5030"
+	testPlainVNI      = 5030
+	testPlainTarget   = "65000:5030"
+	testOverlapVNI    = 5040
+	testOverlapTarget = "65000:5040"
 )
 
 func testIRBEVPN() *EVPN {
@@ -272,5 +275,85 @@ func TestIRB(t *testing.T) {
 	fabric.withdraw(in)
 	if r := node.wait("the host route 10.50.0.10/32 withdrawn", false, isEVPNRoute(TypeWithdrawn, 101, "10.50.0.10/32")); r.VNI != 10101 {
 		t.Errorf("the withdrawn host route: %+v", r)
+	}
+}
+
+// Overlapping VRFs stay apart (SDN-67 #294): two stretches with irb on the same Network addresses, each in its own EVPN VRF. The
+// gateway IP of each goes to the fabric with the L3 VNI and the route targets of its own VRF alone. A host of the fabric with the
+// same address on each stretch is a host route of the VRF of its own stretch alone, with the VNI and the router MAC of its route;
+// a type-2 route of one stretch with the route target of the VRF of the other gives no host route in either; and when one host
+// goes, its host route goes and the one of the other VRF stays.
+func TestIRBOverlap(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	port := freePort(t)
+
+	e := testEVPN()
+	e.Stretches = []EVPNStretch{
+		{VNI: testStretchVNI, RouteTargets: []string{testStretchTarget}, IRB: true, VRF: 101, GatewayIPs: []string{"10.50.0.1/24"}},
+		{VNI: testOverlapVNI, RouteTargets: []string{testOverlapTarget}, IRB: true, VRF: 102, GatewayIPs: []string{"10.50.0.1/24"}},
+	}
+	node := startNode(t, ctx)
+	node.send(Message{
+		Type:            TypeStart,
+		ASN:             65001,
+		RouterID:        "192.0.2.1",
+		ListenPort:      int32(port),
+		ListenAddresses: []string{"127.0.0.1"},
+		Peers:           []Peer{{Address: "127.0.0.3", ASN: 65010, Passive: true}},
+		EVPN:            e,
+	})
+	node.wait("ready", false, isType(TypeReady))
+	fabric := startFabric(t, 65010, "192.0.2.10", "127.0.0.3", port)
+	node.wait("the fabric established", true, isPeer("127.0.0.3", StateEstablished))
+
+	// The gateway IP of each stretch, with the L3 VNI and the export route targets of its own VRF besides its own route target
+	gateways := map[string]irbRoute{
+		fmt.Sprintf("%d %s 10.50.0.1", testStretchVNI, DefaultRouterMAC): {labels: []uint32{testStretchVNI, 10101}, targets: []string{"65000:10101", testStretchTarget}},
+		fmt.Sprintf("%d %s 10.50.0.1", testOverlapVNI, DefaultRouterMAC): {labels: []uint32{testOverlapVNI, 10102}, targets: []string{"192.0.2.1:102", "65000:10102", testOverlapTarget}},
+	}
+	waitUntil(t, "the fabric has the gateway IP of both stretches", func() bool { return len(fabric.irbRoutes()) == len(gateways) })
+	for k, r := range fabric.irbRoutes() {
+		want, ok := gateways[k]
+		if !ok || !slices.Equal(r.labels, want.labels) || !slices.Equal(r.targets, want.targets) || r.mac != DefaultRouterMAC || !r.gateway {
+			t.Errorf("a gateway IP at the fabric: %s %+v, want %+v", k, r, want)
+		}
+	}
+
+	// A host of the fabric with the same address on each stretch, with the L3 VNI, the route target and the router MAC of the VRF
+	// of its stretch; and a host on the stretch of VRF 101 whose route carries the route target of VRF 102
+	red := fabric.announceIRB("192.0.2.10:5010", []uint32{testStretchVNI, 10101}, testMAC(true, 1), "10.50.0.10", testFabricMAC, false, testStretchTarget, "65000:10101")
+	fabric.announceIRB("192.0.2.10:5040", []uint32{testOverlapVNI, 10102}, testMAC(true, 2), "10.50.0.10", testFabricMAC2, false, testOverlapTarget, "65000:10102")
+	fabric.announceIRB("192.0.2.10:5010", []uint32{testStretchVNI, 10102}, testMAC(true, 3), "10.50.0.30", testFabricMAC2, false, testStretchTarget, "65000:10102")
+
+	for _, want := range []struct {
+		vrf, vni uint32
+		mac      string
+	}{{101, 10101, testFabricMAC}, {102, 10102, testFabricMAC2}} {
+		r := node.wait(fmt.Sprintf("the host route 10.50.0.10/32 in VRF %d", want.vrf), true, isEVPNRoute(TypeLearned, want.vrf, "10.50.0.10/32"))
+		if r.NextHop != testFabricVTEP || r.VNI != want.vni || r.RouterMAC != want.mac || r.Peer != "127.0.0.3" {
+			t.Errorf("the host route 10.50.0.10/32 in VRF %d: %+v", want.vrf, r)
+		}
+	}
+	waitUntil(t, "the node learns the type-2 routes of the fabric on both stretches", func() bool { return len(node.learnedStretch()) == 3 })
+	time.Sleep(settleTime)
+	node.drain()
+	for _, m := range node.seen {
+		if m.Type != TypeLearned || m.VNI == 0 {
+			continue
+		}
+		if m.Prefix != "10.50.0.10/32" || (m.VRF == 101 && (m.VNI != 10101 || m.RouterMAC != testFabricMAC)) || (m.VRF == 102 && (m.VNI != 10102 || m.RouterMAC != testFabricMAC2)) {
+			t.Errorf("a host route that crosses from one VRF into the other: %+v", m)
+		}
+	}
+
+	// The host of VRF 101 goes, and its host route with it; the one of VRF 102 stays
+	seen := len(node.seen)
+	fabric.withdraw(red)
+	node.wait("the host route 10.50.0.10/32 of VRF 101 withdrawn", false, isEVPNRoute(TypeWithdrawn, 101, "10.50.0.10/32"))
+	time.Sleep(settleTime)
+	node.drain()
+	if n := node.countFrom(seen, isEVPNRoute(TypeWithdrawn, 102, "10.50.0.10/32")); n != 0 {
+		t.Errorf("the host route 10.50.0.10/32 of VRF 102 went %d times with the host of VRF 101", n)
 	}
 }

@@ -6,9 +6,10 @@ package sidecar
 // two owners of one address break ARP.
 //
 // A stretch with irb names the EVPN VRF of its Network (vrf), whose L3 VNI and route targets the IRB uses, and the gateway IPs
-// of the Network with the prefix length of their subnet (gateway_ips), one IPv4 and one IPv6 at most, which the node answers
-// ARP and neighbour discovery for with its router MAC, and routes for (src/Cedar/NodeIrb.c). A stretch without irb names
-// neither, so the gateway announces no gateway IP or MAC of its Network.
+// of the Network with the prefix length of their subnet (gateway_ips), one IPv4 and one IPv6 at most: the addresses of the IRB
+// of the gateway on the Network, which the fabric learns with the router MAC of the gateway, and whose prefixes bound the host
+// routes that the gateway takes from the fabric. A stretch without irb names neither, so the gateway announces no gateway IP or
+// MAC of its Network.
 //
 // Into the fabric: each MAC/IP advertisement route (type 2) of the gateway in the MAC plus IP form carries the L3 VNI of the
 // VRF as its second label, the export route targets of the VRF besides those of the stretch, and the router MAC of the
@@ -19,11 +20,12 @@ package sidecar
 // Out of the fabric: a type-2 route of a peer that the stretch takes, in the MAC plus IP form, with a second label, a router
 // MAC and an import route target of the VRF, whose IP address lies in a gateway IP prefix of the stretch, is also a host route
 // of the VRF, a /32 or a /128: the node gets it in a learned message with the vrf, the second label as its vni, the router MAC
-// and the VTEP of the fabric as its next hop, as it gets an IP prefix route of the fabric (evpn.go), so that a packet of the
-// VRF to the host goes through the L3 VNI and the node takes the frames of the host from the L3 VNI. A route of the MAC plus
-// IP form without a second label, as a fabric without symmetric IRB sends it, and a route of a default gateway give none. The
-// gateway IP prefixes, not the accept list of the VRF, hold what the fabric may give the VRF this way. The watch of the EVPN
-// (onEVPNPaths) takes these routes, so that the routes of the VRFs stay the state of one goroutine.
+// and the VTEP of the fabric as its next hop, as it gets an IP prefix route of the fabric (evpn.go), and takes it into the
+// forwarding of the VRF as one (src/Cedar/NodeEvpn.c), so that a packet of the VRF to the host goes through the L3 VNI and the
+// node takes the frames of the host from the L3 VNI. A route of the MAC plus IP form without a second label, as a fabric
+// without symmetric IRB sends it, and a route of a default gateway give none. The gateway IP prefixes, not the accept list of
+// the VRF, hold what the fabric may give the VRF this way. The watch of the EVPN (onEVPNPaths) takes these routes, so that the
+// routes of the VRFs stay the state of one goroutine.
 
 import (
 	"encoding/binary"
