@@ -174,6 +174,11 @@ ranz.control.v1.Vtep.address max_size:16
 ranz.control.v1.NodeConfig.groups max_count:16
 ranz.control.v1.Peer.groups max_count:16
 ranz.control.v1.Telemetry.groups max_count:4
+# The trace of a packet (SDN-89): the records of the traced packets that a node handled, at most 32 in
+# one Telemetry, each with the first 8 bytes of the static key of the ingress node. They make a
+# Telemetry about 1 kB larger.
+ranz.control.v1.Telemetry.traces max_count:32
+ranz.control.v1.TraceRecord.ingress max_size:8
 # The live operations (SDN-50): an Operation names an L2 Network, a DNS label of at most 63 characters, and one MAC
 # address or one IP address. The OperationResult of a node holds at most 512 entries of a table, each with a MAC address,
 # an address and the name of the member, and why an operation failed. It is a frame of at most 57 kB, below
@@ -210,6 +215,13 @@ ranz.control.v1.NodePeering.announce max_count:16
 ranz.control.v1.PeerPeering.address max_size:16
 ranz.control.v1.PeerPeering.vrf_ids max_count:16
 ranz.control.v1.PeerPeering.accept max_count:32
+# The route reflectors of a VRF (SDN-79): two node names at most (controller/internal/intent
+# MaxReflectors), and the roles of each peer, each a part of the VRFs of the peering, 16 at most. They
+# make a Vrf about 130 bytes larger and a Peer about 200 bytes.
+ranz.control.v1.Vrf.reflectors max_count:2 max_size:64
+ranz.control.v1.PeerPeering.reflector_vrf_ids max_count:16
+ranz.control.v1.PeerPeering.client_vrf_ids max_count:16
+ranz.control.v1.PeerPeering.reflected_vrf_ids max_count:16
 # What a node reports of the peering in its Telemetry (SDN-77): the peers of its sidecar, at most one
 # for each of its 64 Peer objects, each with the address of its sidecar, the state of its session,
 # a word of at most 11 letters, and the prefixes that the node learned from it, at most what the

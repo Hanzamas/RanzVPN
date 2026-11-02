@@ -40,11 +40,13 @@ var pool struct {
 	idle []*member
 }
 
-// member is one rqlited of the pool, with its data and its log in a temporary directory of its own.
+// member is one rqlited of the pool, with its data and its log in a temporary directory of its own, and the function
+// that gives its addresses back once it stopped.
 type member struct {
-	rq  *sidecar.Rqlited
-	dir string
-	log *os.File
+	rq      *sidecar.Rqlited
+	dir     string
+	log     *os.File
+	release func()
 }
 
 // leases are the values that Fresh returned from the pool, while their tests run, which Restart and
@@ -226,12 +228,14 @@ func newMember(path string, logf func(format string, args ...any)) (*member, err
 		os.RemoveAll(dir)
 		return nil, err
 	}
-	m := &member{rq: &sidecar.Rqlited{Path: path, DataDir: filepath.Join(dir, "data"), Output: out}, dir: dir, log: out}
-	if err := launch(m.rq, logf); err != nil {
+	m := &member{rq: &sidecar.Rqlited{Path: path, DataDir: filepath.Join(dir, "data"), Output: out}, dir: dir, log: out, release: func() {}}
+	release, err := launch(m.rq, logf)
+	if err != nil {
 		output := m.output(0)
 		m.stop()
 		return nil, fmt.Errorf("%w\nrqlited output:\n%s", err, output)
 	}
+	m.release = release
 	pool.mu.Lock()
 	pool.all = append(pool.all, m)
 	pool.mu.Unlock()
@@ -306,9 +310,10 @@ func (m *member) drop() {
 	pool.mu.Unlock()
 }
 
-// stop stops the rqlited of m and removes its directory.
+// stop stops the rqlited of m, gives its addresses back and removes its directory.
 func (m *member) stop() {
 	m.rq.Stop()
+	m.release()
 	m.log.Close()
 	os.RemoveAll(m.dir)
 }

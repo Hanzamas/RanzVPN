@@ -408,6 +408,8 @@ static void ControlDeliver(CONTROL_CLIENT *c, UINT64 gen) {
 	ControlCopyLinks(&st, c->Objects, c->NumObjects);
 	// The source groups of the node, its peers and the Devices, and the tag modes of the VRFs (ControlSourceGroup.c; SDN-87, #386)
 	ControlCopySourceGroups(&st, c->Objects, c->NumObjects);
+	// The pools of the Networks whose trace is on (ControlTrace.c; SDN-89, #388)
+	ControlCopyTraced(&st, c->Objects, c->NumObjects);
 	// The security of the L2 Networks (ControlSecurity.c; SDN-41, #234)
 	ControlCopySecurities(&st, c->Objects, c->NumObjects);
 	// The relays that the node may use, its home relay first (ControlSignal.c; CORE-S5-5, #411)
@@ -549,8 +551,9 @@ static void ControlSetCaps(CONTROL_CLIENT *c, ranz_control_v1_Hello *hello) {
 	hello->capabilities.plain_links = caps.PlainLinks;
 	// The source groups (SDN-87, #386)
 	hello->capabilities.tags = caps.Tags;
-	// The BGP peering of the standard mode (SDN-77-R2, #532)
+	// The BGP peering of the standard mode (SDN-77-R2, #532), and its route reflectors (SDN-79, #359)
 	hello->capabilities.bgp_peering = caps.BgpPeering;
+	hello->capabilities.bgp_reflection = caps.BgpReflection;
 	// The Windows edition and Hyper-V of the host, and the Egress tier that they give the node (SDN-12, #188)
 	hello->capabilities.sku = (ranz_control_v1_Sku)caps.Sku;
 	hello->capabilities.hyper_v = caps.HyperV;
@@ -648,6 +651,8 @@ static void ControlRun(CONTROL_CLIENT *c) {
 		ok = ok && ControlWriteSourceGroups(c->Config.SourceGroups, s);
 		// The keys that the node reports about itself when they changed (ControlMimic.c; CORE-P2-7, #424)
 		ok = ok && ControlWriteKeys(c->Config.Keys, s);
+		// The records of the traced packets that wait (ControlTrace.c; SDN-89, #388)
+		ok = ok && ControlWriteTraces(c->Config.Traces, s);
 		if (ok == false)
 			break;
 

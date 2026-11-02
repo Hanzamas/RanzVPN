@@ -72,6 +72,8 @@ src/Core  VxlanParseGeneve  fuzz_geneve
 # extension of VXLAN, and the option of the source group among the options of a Geneve header
 src/Core  VxlanParseGroup        fuzz_vxlan   via VxlanInput
 src/Core  VxlanParseGroupOption  fuzz_geneve  via VxlanInput
+# The trace option of a datagram of Geneve (SDN-89 #388), which VxlanInput reads among the options of each Geneve header
+src/Core  VxlanParseTraceOption  fuzz_geneve  via VxlanInput
 
 # The switch module (CORE-S4-1 #74): the frames that the members of a Network send
 src/Core  SwitchInput  fuzz_switch
@@ -177,6 +179,11 @@ src/Cedar  NodeMimicParseAnswer   fuzz_nodemimic
 # The source groups of the overlay (SDN-87 #386): the header of a record of a Noise session, which carries the source
 # group of its packet from frame version 1 on
 src/Cedar  NodeFrameParse  fuzz_frame
+# The trace of a packet (SDN-89 #388): the trace option in the header of a record of a Noise session. NodeTraceInbound and
+# NodeTraceOutbound have no parser word in their names, listed as the readers of the bytes of a packet that they are.
+src/Cedar  NodeTraceParse     fuzz_frame
+src/Cedar  NodeTraceInbound   exempt  reads the trace option of a record through NodeTraceParse (fuzz_frame), or takes the one that VxlanParseTraceOption (fuzz_geneve) read of a datagram, and of the packet only the two addresses of its IPv4 or IPv6 header, within its size, to find the pool of a Network that traces
+src/Cedar  NodeTraceOutbound  exempt  a packet of the host's own IP stack, of which it reads only the two addresses of its IPv4 or IPv6 header within its size, and the header of frame version 1 that NodeSourceGroupWrap wrote before it, through NodeFrameParse (fuzz_frame)
 # The Capabilities of the Node (ONE-3 #312) come from the host, not from a peer
 src/Cedar  NodeCapsReadHost     exempt  reads no bytes of a peer or of a file: it asks Windows for the architecture of the host, whether the services SeLow and xdp are registered and whether three files of System32 exist
 # The peer agent of the overlay (CORE-S5-5 #411) takes the Signals that the Controller carries from a peer: no parser word in the

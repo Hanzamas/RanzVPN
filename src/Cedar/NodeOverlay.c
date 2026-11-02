@@ -48,6 +48,7 @@
 #include "NodePeering.h"
 #include "NodeProfile.h"
 #include "NodeSourceGroup.h"
+#include "NodeTrace.h"
 
 // One peer of the overlay, from a Peer object of the desired state: a next hop of the forwarding tables
 typedef struct NODE_OVERLAY_PEER {
@@ -244,6 +245,8 @@ static bool NodeOverlaySwapTables(NODE_OVERLAY *ov, const CONTROL_STATE *st, con
 	NodeProfileAttach(ov->Node, v, st);
 	// The source groups of the Generation go in with its tables (NodeSourceGroup.c; SDN-87, #386)
 	NodeSourceGroupAttach(ov->Node, v, st);
+	// ... and the Networks whose trace is on (NodeTrace.c; SDN-89, #388)
+	NodeTraceAttach(ov->Node, v, st);
 	// The VRFs whose internet exit the node is go in with its tables (NodeEgress.c; SDN-12, #188)
 	NodeEgressAttach(ov->Node, v, st);
 	// The exit nodes of the Generation go in with its tables (NodeExit.c; SDN-55, #248)
@@ -712,6 +715,10 @@ static void NodeOverlayDeliver(NODE_OVERLAY *ov, NODE_OVERLAY_PEER *p, const UCH
 		ok = ok && NodeSourceGroupInbound(ov->Node, v, vrf_id, from, claim, packet, packet_size);
 	}
 
+	// A traced packet of a Network whose trace is on: the node records the group that it carried and its verdict on it
+	// (NodeTrace.c; SDN-89, #388)
+	NodeTraceInbound(ov->Node, v, vrf_id, record - header, header, claim, packet, packet_size, ok);
+
 	// A Mirror copies the packet as the peer sent it, before a 1:1 NAT rule translates it (NodeMirror.c)
 	if (ok)
 		NodeMirrorCopy(v, vrf_id, packet, packet_size, false);
@@ -963,6 +970,8 @@ bool NodeOverlayStart(NODE *n, NODE_OVERLAY_CONFIG *cfg) {
 	cc.Events = ov->Events;
 	// The counters of the source groups, which go on the stream too (NodeSourceGroup.c; SDN-87, #386)
 	cc.SourceGroups = NodeSourceGroupStart(n);
+	// ... and the records of the traced packets, the node named by its static key as the ingress node (NodeTrace.c; SDN-89, #388)
+	cc.Traces = NodeTraceStart(n, cfg->Key->Public);
 	// The peer agent, the datagram path to the peers that the node reaches on no stream session: its Signals go on the control
 	// stream, both ways (NodeAgent.c; CORE-S5-5, #411)
 	cc.Signals = NodeAgentStart(n, cfg);
@@ -1059,6 +1068,8 @@ void NodeOverlayStop(NODE *n) {
 	NodeProfileStop(n);
 	// No table, thread or control stream reads the source groups any more (NodeSourceGroup.c; SDN-87, #386)
 	NodeSourceGroupStop(n);
+	// ... nor the trace (NodeTrace.c; SDN-89, #388)
+	NodeTraceStop(n);
 
 	n->Overlay = NULL;
 	ReleaseList(ov->Peers);
@@ -1090,8 +1101,9 @@ bool NodeOverlayApply(NODE *n, const CONTROL_STATE *st) {
 static bool NodeOverlayForward(NODE *n, UINT vrf_id, const UCHAR *packet, UINT size, bool fabric) {
 	NODE_OVERLAY *ov = (n != NULL ? n->Overlay : NULL);
 	UCHAR src[16], dst[16];
-	// The record, after the room of the header of frame version 1 (NodeSourceGroup.c; SDN-87, #386)
-	UCHAR buf[NODE_FRAME_ROOM + NODE_OVERLAY_RECORD];
+	// The record, after the room of the header of frame version 1 (NodeSourceGroup.c; SDN-87, #386) with the trace option
+	// (NodeTrace.c; SDN-89, #388)
+	UCHAR buf[NODE_TRACE_ROOM + NODE_OVERLAY_RECORD];
 	UINT addr_size = 0;
 	UINT hop = NODE_VRF_NONE;
 
@@ -1123,8 +1135,8 @@ static bool NodeOverlayForward(NODE *n, UINT vrf_id, const UCHAR *packet, UINT s
 	}
 
 	NODE_OVERLAY_PEER *peer = (NODE_OVERLAY_PEER *)v->Hops[hop];
-	UCHAR *room = (NODE_FRAME_ROOM + size + NODE_OVERLAY_VRF_TAG <= sizeof(buf) ? buf : Malloc(NODE_FRAME_ROOM + size + NODE_OVERLAY_VRF_TAG));
-	UCHAR *record = room + NODE_FRAME_ROOM;
+	UCHAR *room = (NODE_TRACE_ROOM + size + NODE_OVERLAY_VRF_TAG <= sizeof(buf) ? buf : Malloc(NODE_TRACE_ROOM + size + NODE_OVERLAY_VRF_TAG));
+	UCHAR *record = room + NODE_TRACE_ROOM;
 
 	// A route that a VRF of the peer leaks takes the packet into that VRF (NodeLeak.c; SDN-7, #183)
 	WRITE_UINT(record, NodeLeakVrf(v, hop, vrf_id));
@@ -1148,9 +1160,14 @@ static bool NodeOverlayForward(NODE *n, UINT vrf_id, const UCHAR *packet, UINT s
 	// (NodeSourceGroup.c; SDN-87, #386)
 	UINT frame_size = size + NODE_OVERLAY_VRF_TAG;
 	const UCHAR *frame = (plain ? record : NodeSourceGroupWrap(v, hop, vrf_id, record, &frame_size, datagram ? PEER_MAX_PAYLOAD : NOISE_MAX_PAYLOAD));
+	// A packet of a Network whose trace is on: the node, its ingress node, records it with the group that it carries and the
+	// verdict of its policy, and the trace option goes with it in the header of frame version 1 of the session or the
+	// datagram path, or in the header of a link of kind geneve (NodeTrace.c; SDN-89, #388)
+	VXLAN_TRACE trace;
+	frame = NodeTraceOutbound(n, v, hop, vrf_id, record, size, frame, &frame_size, datagram ? PEER_MAX_PAYLOAD : NOISE_MAX_PAYLOAD, allowed, plain, &trace);
 	// The MTU of the VRF clamps the MSS of a TCP SYN as the overlay sees it, after the 1:1 NAT rules, and the rate limits
 	// of the VRF and the node may drop it (NodeShape.c)
-	bool ok = (allowed && (s != NULL || plain || datagram) && NodeShapeOutput(n, v, vrf_id, record + NODE_OVERLAY_VRF_TAG, size) && (plain ? NodeLinkSend(v, hop, record, size, true) : (datagram ? NodeAgentSend(n, peer->Key, frame, frame_size) : TransportNoiseSend(s, NOISE_RECORD_DATA, frame, frame_size))));
+	bool ok = (allowed && (s != NULL || plain || datagram) && NodeShapeOutput(n, v, vrf_id, record + NODE_OVERLAY_VRF_TAG, size) && (plain ? NodeLinkSend(v, hop, record, size, true, &trace) : (datagram ? NodeAgentSend(n, peer->Key, frame, frame_size) : TransportNoiseSend(s, NOISE_RECORD_DATA, frame, frame_size))));
 	InterlockedDecrement(&peer->Senders);
 
 	// A Mirror copies the packet as it went to the peer (NodeMirror.c)
@@ -1360,7 +1377,7 @@ bool NodeOverlaySendRecord(NODE *n, NODE_VRF_TABLES *v, UINT hop, const UCHAR *r
 	InterlockedIncrement(&peer->Senders);
 	TRANSPORT_NOISE *s = ReadPointerAcquire((PVOID const volatile *)&peer->Session);
 	bool plain = (NodeLinkKind(v, hop, READ_UINT(record)) != CONTROL_LINK_NOISE);
-	bool ok = (plain ? NodeLinkSend(v, hop, record, size - NODE_OVERLAY_VRF_TAG, false) : (s != NULL && TransportNoiseSend(s, NOISE_RECORD_DATA, record, size)));
+	bool ok = (plain ? NodeLinkSend(v, hop, record, size - NODE_OVERLAY_VRF_TAG, false, NULL) : (s != NULL && TransportNoiseSend(s, NOISE_RECORD_DATA, record, size)));
 	InterlockedDecrement(&peer->Senders);
 
 	// The datagram path of the peer agent carries it to a peer that has no Noise session (NodeAgent.c; SDN-19-R1, #507)

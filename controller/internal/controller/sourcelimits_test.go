@@ -10,7 +10,9 @@ import (
 	"crypto/elliptic"
 	"crypto/rand"
 	"fmt"
+	mrand "math/rand/v2"
 	"net"
+	"runtime"
 	"sync"
 	"testing"
 	"time"
@@ -96,16 +98,20 @@ func TestStatusReportsWhatTheLimitsRefused(t *testing.T) {
 
 // reaches opens a control stream as the Node with key, as a Node does, and says Hello; it returns when the controller
 // answers with a Refuse for an unknown Node, which a Hello that the controller read gets. The controller may close a
-// stream before the Hello is read, because the streams of one source that wait for one are capped (CS-4), and then
-// the Node asks again, as it does after a close.
+// stream before the Hello is read, because the streams of one source that wait for one are capped (CS-4), and the host
+// may reset a connection that it has no room for, and then the Node asks again, as it does after a close. It asks again
+// after a pause that doubles each time, up to two seconds, and that is not the same for all Nodes, so that the Nodes that
+// were turned away do not come back in the same instant.
 func (h *harness) reaches(key keys.Static) error {
 	deadline := time.Now().Add(2 * time.Minute)
+	pause := 50 * time.Millisecond
 	for {
 		err := h.hello(key)
 		if err == nil || time.Now().After(deadline) {
 			return err
 		}
-		time.Sleep(50 * time.Millisecond)
+		time.Sleep(pause/2 + mrand.N(pause))
+		pause = min(2*pause, 2*time.Second)
 	}
 }
 
@@ -141,13 +147,25 @@ func (h *harness) hello(key keys.Static) error {
 // Nodes, all from the loopback address, which is one source, open their control streams over two seconds, as the Nodes
 // of a site do after a restart of the controller, with the default limits. Every Node reaches the controller with its
 // Hello, and the limits of the TLS port refuse none of the connections. The Nodes are none of the intent, so the
-// controller refuses each, which is the answer to a Hello that it read.
+// controller refuses each, which is the answer to a Hello that it read. On Windows no more than a hundred Nodes are on
+// their way at once, as the host cannot take more in one instant (below).
 func TestThousandNodesBehindOneAddressReachTheController(t *testing.T) {
 	// A thousand handshakes in two seconds keep the processor busy, and the handshakes that wait are near the cap of
 	// 1024 for a source, and a thousand streams are most of the goroutines that the race detector allows: so no test
 	// runs beside this one.
 	rqlitetest.Alone(t)
 	const nodes = 1000
+	// room is how many Nodes are on their way at once. The loopback of Windows resets the connections that it has no room
+	// for in the queue of the listener, when more than a few hundred are opened in one instant, which is the backlog of the
+	// host and no limit of the port, and on a runner whose cores another program had taken the controller took no
+	// connection for minutes after the first resets, while the Nodes that were reset asked again (CI-FLAKE-5, #592: 94 of
+	// the 1000 Nodes reached the controller in two minutes, and the others met a reset every time). A Node waits for a place
+	// before it opens its first connection, as the Nodes of the same test in internal/port do (CI-FLAKE-2, #562). The other
+	// systems take all of them in the same instant, which is what the cap of 1024 for a source is for.
+	room := nodes
+	if runtime.GOOS == "windows" {
+		room = 100
+	}
 	h := newLimitsHarness(t, port.Limits{})
 	nodeKeys := make([]keys.Static, nodes)
 	for i := range nodeKeys {
@@ -161,11 +179,14 @@ func TestThousandNodesBehindOneAddressReachTheController(t *testing.T) {
 	var wg sync.WaitGroup
 	var mu sync.Mutex
 	var failed []error
+	places := make(chan struct{}, room)
 	for i, k := range nodeKeys {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
 			time.Sleep(time.Duration(i) * 2 * time.Millisecond)
+			places <- struct{}{}
+			defer func() { <-places }()
 			if err := h.reaches(k); err != nil {
 				mu.Lock()
 				failed = append(failed, err)

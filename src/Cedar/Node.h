@@ -390,6 +390,8 @@ struct NODE_VRF_TABLES {
 	struct NODE_PROFILE_TABLE *Profile;
 	// The source groups of the same Generation (NodeSourceGroup.c; SDN-87, #386), NULL for none
 	struct NODE_SOURCE_GROUP_TABLE *SourceGroups;
+	// The Networks whose trace is on in the same Generation (NodeTrace.c; SDN-89, #388), NULL for none
+	struct NODE_TRACE_TABLE *Trace;
 	// The VRFs whose internet exit the node is in the same Generation (NodeEgress.c; SDN-12, #188), NULL for none
 	struct NODE_EGRESS_TABLE *Egress;
 	// The exit nodes of the same Generation and the one that the user of the client role chose (NodeExit.c; SDN-55, #248), NULL
@@ -522,6 +524,10 @@ struct NODE {
 	// The source groups of the overlay (NodeSourceGroup.c; SDN-87, #386): the counters by tag mode, NULL while the overlay
 	// does not run
 	struct NODE_SOURCE_GROUPS *SourceGroups;
+
+	// The trace of the overlay (NodeTrace.c; SDN-89, #388): the node as the ingress node of a traced packet and the records
+	// of the traced packets, NULL while the overlay does not run
+	struct NODE_TRACES *Trace;
 
 	// The peer agent of the overlay (NodeAgent.c; CORE-S5-5, #411): the datagram path to the peers that the node reaches on no
 	// stream session, NULL while the overlay does not run

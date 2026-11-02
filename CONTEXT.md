@@ -223,6 +223,12 @@ The part of the import of a fork Config file (`CsImportForkConfig`) that carries
 The 20 bytes that `GenerateMachineUniqueHash` returns for a server: a hash of the Windows MachineGuid and the `MachineIdSalt` of the Config file, kept in the `CEDAR`. It sets the MAC address and the 172.31.x.x address of every Hub and the `unique_id` of a Cascade login. It stays the same across restarts, renames and IP changes; servers cloned from one image differ only when each has its own config file, and so its own salt (FIX-5, `docs/upgrade-notes.md`).
 _Avoid_: machine ID (Windows' name for the MachineGuid), `UniqueId` (a random value per `CEDAR`, copied into `NODE_INFO`)
 
+**Frozen Cedar**:
+The Cedar and Mayaqua of the slim fork with every module of its SE-VPN server (listener, admin RPC, **Cascade**, **UDP Acceleration**, **Local Bridge**), at the commit of the branch `frozen/cedar-se-vpn` that `compat/CMakeLists.txt` pins by sha (`RANZ_FROZEN_CEDAR_SHA`). CORE-S8-3 (#577) deletes that code from this tree, and `ranz-compat`, the sidecar for stock SE-VPN clients, builds from the Frozen Cedar instead (ADR-0037, ADR-0022 amendment of 2026-10-20). The job `ranz-compat (frozen Cedar)` of `windows.yml` builds it (CORE-S8-2).
+
+**SE-VPN hooks** (`SEVPN_HOOKS`, `InitSeVpn`):
+The function pointers through which the Hub and Session code of Cedar reaches the SE-VPN code of the slim fork that it still calls: the **Cascades** of a Hub, the additional connections of a client Session and the **UDP Acceleration** of a Session. A program that runs that code fills them with `InitSeVpn` (`Server.c`): `vpntest` does, because that code is its in-process oracle. `ranz-node` never does, so the hooks stay NULL there and it links none of that code (CORE-S8-2). CORE-S8-3 (#577) deletes them with that code.
+
 **Node**:
 One Windows host running `ranz-node`, the data plane, in one or more Roles (`server`, `client`, `bridge`, `relay`). It joins VRFs and applies the desired state that the Controller sends it. `ranz-node` is the new core's one binary, installed as the `ranzvpnserver` service (ADR-0011, ADR-0020 decision 4), and its in-process object is `NODE` (the Node module): the Roles of its configuration, one Worker per core, one I/O thread per Adapter queue and the Table snapshot. It reuses the fork's Hub, Account, Sam and Logging in-process, and Cfg for the one-time import of a fork Config file. Its data directory is `%ProgramData%\Hanzcodes\Ranz VPN` (`NodeDefaultDataDir`), whose protected DACL lets only SYSTEM and the Administrators in (`NodeMakeDataDir`); it holds the Configuration store `ranz_node.db` and `node_log`. Its identity key, the Noise static key, is a key of the software KSP named by the `IdentityKey` setting of the Configuration store (`Ranz Node` without it), in the machine key set when the process runs elevated, as the service does.
 _Avoid_: agent, server (the slim fork's `vpnserver`, or the server Role), peer (the other end of a link), client product
@@ -253,7 +259,7 @@ _Avoid_: routing table (the Windows one), MAC table
 What a route of a Forwarding table leads to: the host (`NODE_VRF_LOCAL`) or one of the next hops of its Generation, a peer reached over the overlay.
 
 **VRF tag**:
-The VRF id, 4 bytes big-endian, before the IP packet in a data record of the overlay (`NODE_OVERLAY_VRF_TAG`), so the receiving Node looks the packet up in the Forwarding table of the right VRF.
+The VRF id, 4 bytes big-endian, before the IP packet in a data record of the overlay (`NODE_OVERLAY_VRF_TAG`), so the receiving Node looks the packet up in the Forwarding table of the right VRF. A VRF tag of 0 begins a record of **Frame version** 1, which carries a **Source group** (SDN-87).
 
 **Overlay** (of a Node):
 The part of a Node (`NodeOverlay.c`) that joins its VRFs: the control stream to the Controller, the Noise sessions to its peers and the packets of the host's own IP stack on the overlay adapter.
@@ -293,7 +299,7 @@ _Avoid_: BGP daemon, BGP role (it is no Role), RRAS BGP
 `VRF.peering`: how the Nodes of a VRF of the standard mode exchange their routes: `bgp`, by BGP in a full mesh, or left out, by the routes of the Controller.
 
 **Accept list (of a peer)**:
-`PeerPeering.accept`: the prefixes that a peer may announce in each VRF of the session, with their more specific ones: its addresses and its LAN subnets there.
+`PeerPeering.accept`: the prefixes that a peer may announce in each VRF of the session: its addresses and its LAN subnets there. The sidecar takes exactly these prefixes from the peer, and a more specific prefix is none of them (SDN-77-R1). A path of the peer outside them takes no part in the best-path selection (SDN-77-R3, see **Hostile peer**).
 
 **Refused session**:
 A BGP session from an address that no Peer object names, which the sidecar refuses and the Node counts (`PeeringReport.refused`).
@@ -303,6 +309,31 @@ A BGP session from an address that no Peer object names, which the sidecar refus
 
 **Hung sidecar**:
 A BGP sidecar of the peering that does not answer `ping` with `pong` within 10 s (`NODE_PEERING_ANSWER`): its Node asks 5 s after the last answer, and the sidecar answers once GoBGP answered it too. The Node ends it through its job, its learned routes go, and another starts (`NODE_PEERING_STATUS.NumHung`, SDN-77-R1).
+
+**Path maximum (of a peer)**:
+The most paths of one address family that a Ranz Node may hold in the BGP sidecar of the peering of another Node, the paths that the sidecar refused included: 64 (`peerMaxPaths`, GoBGP `max-prefixes`), twice the 32 that an honest Node announces. A peer that announces more loses its session, which the sidecar logs (`peer announced more paths than the maximum`). The session stays down until the peers of the Node change that peer (SDN-77-R3).
+
+**Hostile peer**:
+A member of a VRF whose **Peering** is `bgp` that announces what its **Accept list** does not hold: for example the exact prefix of another peer, with the route distinguisher of any VRF id and any LOCAL_PREF, or a flood of candidate prefixes. Its paths take no part in the best-path selection, and the **Path maximum** ends its session (SM-6 of `docs/threat-model.md`, SDN-77-R3).
+
+**Failed settle**:
+A settle of the BGP sidecar of the peering on the Generation in force whose copy of the state failed. The Node logs and counts it (`NODE_PEERING_STATUS.NumSettleFailed`), keeps the change, and tries again after `NODE_PEERING_RETRY` (SDN-77-R3).
+
+**Old sidecar**:
+A BGP sidecar of the peering whose `ready` names a pipe protocol older than the one that the Node needs (`NODE_PEERING_PROTOCOL`). The Node ends it, and its log names the version of the sidecar and the `ranz.exe` file (`NODE_PEERING_STATUS.NumOld`, SDN-77-R3).
+
+**Route reflector (of a VRF)**:
+`VRF.peering.reflectors`: one or two Nodes (`MaxReflectors`) of a VRF that peers by BGP, which pass on the routes of each other Node of the VRF to the others, so that the VRF needs no full mesh of BGP sessions. Two reflectors of a VRF peer with each other, and every other Node is a **Client (of the route reflectors)** of both. Only the BGP sessions go through the reflectors: the links stay a full mesh, and a reflected route leads to the client that announced it, so a reflector carries no packet of its clients (SDN-79).
+
+**Client (of the route reflectors)**:
+A Node of a VRF of route reflectors that is not one of them: it has a BGP session with each reflector and with no other client.
+
+**Peering role**:
+The role of a peer in a VRF of route reflectors as the Peer object gives it (`PeerPeering.reflector_vrf_ids`, `client_vrf_ids`, `reflected_vrf_ids`): reflector; client; or reflected, when both are clients and the routes of the peer come through the reflectors. It is no **Role** of a Node (ADR-0011).
+
+**Copy (of a route reflector)**:
+A path that the sidecar of a reflector holds for the route of a client, in the VRF of that route, with the client as its next hop and its ORIGINATOR_ID, and the large community 4200000000:79:1 that marks it. The reflector holds one only for a path that its client may announce there: exactly a prefix of its **Accept list**. It goes to the clients of its VRF alone.
+_Avoid_: Copy (of the Cluster key: the Cluster key sealed to one member)
 
 **ranz.exe**:
 The one signed executable of the product, one per architecture (ADR-0011 amendment of 2026-10-22): a Go multi-call binary (`ranz controller`, `ranz bgp`, `ranz tray` and the CLI verbs) that carries the Node and what it needs as Payloads. `ranz install` unpacks and registers them and `ranz uninstall` reverses it. Decided and ticketed (ONE-1 to ONE-5, #310 to #314). ONE-1 built the Go part: `ranz controller`, `ranz bgp`, `ranz notice`, `ranz version` and the CLI verbs are one executable. The Payloads, `ranz install` and the thin MSI come with ONE-2 to ONE-5; until then `ranz-node` is a separate file.
@@ -440,6 +471,18 @@ The last /64 of a VRF's ULA, reserved for 4via6 and outside every pool.
 One service (an IP address and port) of a source VRF published into a consumer VRF, so the consumer reaches only that service.
 _Avoid_: service, port forward; "endpoint" for the end of a connection (say peer or address)
 
+**Serving Node**:
+The Node of the source VRF of an Endpoint whose host, or the LAN behind it, holds the service (`node` of the Endpoint). It applies the 1:1 NAT rule from the address of the service to the **Published address**, and it holds the **Route back**.
+
+**Consumer**:
+A Node that reaches the service of an Endpoint in the consumer VRF (`consumer` of the Endpoint, with overlay DNS on, so that its zone answers the name). It is a Node that has one of the `consumerTags`, or every Node of the consumer VRF when the Endpoint names none, but not a Node that is a member of the source VRF too, which reaches the service in the source VRF itself. The consumers hold the route to the **Published address**.
+
+**Published address**:
+The address that the service of an Endpoint has in the overlay (`as`): the outside prefix of the 1:1 NAT rule of the **Serving Node**. No pool, LAN subnet, 1:1 NAT rule or leak of either VRF holds it. The consumers reach the service at it, and the name in the zone of the consumer VRF answers it.
+
+**Route back**:
+The route in the source VRF of an Endpoint to the address of a **Consumer** (its own, or the outside prefix of its own 1:1 NAT rule), held by the **Serving Node** only. A Node takes a packet of a peer only from a source that its VRF routes back to that peer, so without it the Serving Node would drop what the consumers send.
+
 **Mirror**:
 A rate-limited copy of matching overlay traffic, sent to a sensor over VXLAN.
 _Avoid_: tap, SPAN, monitor (the Local Bridge `Monitor` flag is a different thing)
@@ -478,6 +521,24 @@ How long the remote MAC addresses of a Stretch stay in use after its BGP session
 A Stretch that the Controller does not deliver to its gateway, because the licence in force lacks EVPN and BGP (an Enterprise feature) or the gateway is above the node cap of the licence. The Intent keeps it, and `ranz get stretches` lists it with the reason (`held`) until the licence allows it again. An apply that declares a Stretch is refused while the licence lacks EVPN and BGP, so a Stretch is held when the licence runs out or a rollback brings it back.
 _Avoid_: Held back (a Node whose key ended or that waits for approval)
 
+**Stretch message**:
+The message `stretch` on the pipe between a Node and its **BGP sidecar**, which carries EVPN routes of type 2 and type 3 of the L2 VNIs of its Stretches, 500 routes at most (`MaxStretchRoutes`, `NODE_STRETCH_MAX_ROUTES`). The Node sends its own type-2 routes, with `withdraw` for one that went, and `full` and `more` for a **Full resync (of a Stretch)**. The sidecar sends the routes of the fabric, each with its VTEP as `next_hop`, and `withdraw` for one that went (SDN-64).
+
+**Full resync (of a Stretch)**:
+The stretch messages that a gateway sends a sidecar that has just started: every route of its own, the first message with `full` and each but the last with `more`. The sidecar then withdraws each route that it announced and the resync did not name. The other way, when the pipe closes, the Node forgets the routes of the fabric, and the new sidecar learns every route of the fabric again from its peers.
+
+**Port of the fabric**:
+The port of the **Switch** of a stretched Network that the fabric holds while a sidecar with a Stretch of that Network runs: an access port of the VLAN of the Network that subscribes to every group. A frame of the overlay goes through it to the VTEP of the type-2 route of its destination, or to each VTEP of the **Flood list** of the VNI once (ingress replication), and a frame of the fabric enters the Switch through it.
+
+**Remote MAC**:
+The MAC address of a type-2 route of the fabric, which the gateway puts into the MAC table of the Switch at the **Port of the fabric** (`SwitchLearnAt`). A frame of the overlay to it goes to the VTEP of that route alone and floods nowhere. An address that the table holds at another port stays there, since what a member sends wins over what a route says.
+
+**MAC/IP advertisement route**:
+An EVPN route of type 2 (RFC 7432): a MAC address on an L2 VNI, with its route distinguisher, its route targets and the VTEP that holds it as next hop. It has the MAC only form, or the MAC plus IP form, with an IP address of that MAC, which lets a fabric answer ARP and ND for the host itself.
+
+**Inclusive multicast Ethernet tag route**:
+An EVPN route of type 3 (RFC 7432, RFC 8365): a VTEP on an L2 VNI, with a PMSI tunnel of ingress replication labelled with the VNI. The type-3 routes of the fabric fill the **Flood list** of the VNI, and the sidecar announces one for the VTEP of the gateway on each L2 VNI at start.
+
 **EVPN VRF**:
 A VRF of a gateway Node that the gateway hands to a data-centre fabric as **IP prefix routes**: its L3 VNI, route distinguisher, import and export route targets and accept list (the `vrfs` of the `evpn` object of the `Bgp` setting).
 
@@ -491,7 +552,13 @@ The MAC address of a VTEP in an EVPN VRF, carried in the Router's MAC extended c
 The boundary between an EVPN gateway and the fabric of a data centre, where VXLAN datagrams and EVPN routes cross. The gateway carries the packets of its VRFs there in plain VXLAN, between its own **VTEP** and the VTEPs of the fabric, so the source address of a datagram is all that names a VTEP of the fabric. Its threats are the row SM-11 of `docs/threat-model.md` (SDN-25-R1).
 
 **Unknown VTEP** (`UnknownVtep`):
-A frame of the fabric whose outer source address is the VTEP of no IP prefix route of the VRF of its VNI. The gateway checks the outer source before anything else in the frame, and drops and counts a frame from an unknown VTEP whatever it holds (`NODE_EVPN_STATUS.UnknownVtep`). The address alone names a VTEP, since a VTEP sends from any source port.
+A frame of the fabric whose outer source address is the VTEP of no IP prefix route of the VRF of its VNI. The VTEPs that the gateway knows for a VRF are, for each route of the VRF, its VTEP and its **vteps**. A frame of the L2 VNI of a **Stretch** is one too, when its outer source address is the VTEP of no type-2 or type-3 route of the VNI (`NODE_STRETCH_STATUS.UnknownVtep`). The gateway checks the outer source before anything else in the frame, and drops and counts a frame from an unknown VTEP whatever it holds (`NODE_EVPN_STATUS.UnknownVtep`). The address alone names a VTEP, since a VTEP sends from any source port. The node log names such a frame once every 10 s at most, with the number of them since the EVPN started, and the count is in `ranz node state` and in the metric `ranz_evpn_dropped_frames_total` with the reason `unknown-vtep` (SDN-25-R3).
+
+**vteps** (of a learned message of an EVPN VRF):
+The next hops of every route that the peers of the fabric offer for a prefix of the VRF, each once and in order, the next hop of the route of the message among them, 16 at most (`evpn_vteps.go`, `NODE_EVPN_ROUTE.Vteps`, `NODE_EVPN_MAX_OFFERS`). The sidecar sends the learned message again when they change. So a leaf that announces a shared prefix and loses, with no prefix of its own in the VRF, has its frames delivered, and a stranger has its frames dropped as an **Unknown VTEP** (SDN-25-R3).
+
+**EvpnCounters**:
+The counters of the EVPN of a gateway since its sidecar started (`Telemetry.evpn`): the packets that went to a VTEP of the fabric and the ones that could not go, the packets of the fabric that the overlay took and the ones that it did not take, and the frames that the gateway dropped, by reason, the **Unknown VTEP** among them. The Node reports them on its control stream as it reports the **Path counters**, and the Controller exports them as `ranz_evpn_packets_total{direction}` and `ranz_evpn_dropped_frames_total{reason}` and in the JSON of its telemetry API. `ranz node state` shows them as the `evpn` of the Node (SDN-25-R3).
 
 **Front door**:
 The TCP 443 listener of a Node that reads the first bytes of each connection and hands the socket to the process that owns that protocol.
@@ -553,6 +620,12 @@ _Avoid_: `CAPS` (the slim fork's server capability list), feature flag
 
 **bgpPeering (a Capability)**:
 `Capabilities.bgp_peering`, reported in the Hello by a Node whose release has the BGP peering of the standard mode and whose `ranz.exe`, which holds the **BGP sidecar** that it starts, is next to it. The Controller refuses a Node that does not report it as a member of a VRF whose **Peering** is `bgp` (ADR-0033 amendment of 2026-10-30, SDN-77-R2).
+
+**bgpReflection (a Capability)**:
+`Capabilities.bgp_reflection` (field 16), reported in the Hello by a Node that runs the **Route reflectors** as a reflector and as a client: its release has them, and the `ranz.exe` that holds the **BGP sidecar** is next to it. A Node of the release of SDN-77 reports **bgpPeering** and ignores the roles, so it would peer in a full mesh that its peers refuse. The Controller refuses an apply that makes a Node that does not report it a member of a VRF whose Intent names reflectors, and refuses the Hello of such a Node (SDN-79).
+
+**tags (a Capability)**:
+`Capabilities.tags` (field 13), reported in the Hello by a Node that carries the **Source group** of its packets and judges the packets of its peers by the group that they carry (SDN-87). A Node that reports it gets its own source group in each of its VRFs, and those of its peers that report it too. A Node that does not gets the state that the Intent compiled to before, and no record of **Frame version** 1. A Hello that changes it recompiles the Intent, so that the Node and its peers get their next Generation.
 
 **Relay**:
 A Node with the relay Role (ADR-0015). It binds the nodes of its VRFs and forwards a datagram from one of them to another only when the two share a VRF, through `PeerInput`, the same ingress where a node takes its own datagrams. It holds no state beyond the Bindings that its nodes renew, so a restart loses nothing for good. The Relay objects of a node's desired state are the relays it may use; the first one is its home relay. The `relay` item of a Node resource is the address its relay role listens on.
@@ -829,6 +902,15 @@ The session id of the ClientHello of a Mimic link, which seals the version and t
 **Temporary certificate**:
 The certificate that a REALITY server presents to a client that proved the key. It is signed with the HMAC of its key under the auth key, and it is the pin check of the mimic path.
 
+**Hysteria mode**:
+The mode of the **Mimicry sidecar** on Hysteria 2 for links that lose many packets (the `hysteria` part of the `MimicServer` setting and of a **Mimic link**, CORE-P2-4), beside REALITY in the same sidecar. msquic keeps the ordinary QUIC transport of the Node. The server part is a QUIC listener on a UDP address of its own. A client that presents one of its secrets gets its streams to the Node over the **Data pipe**, and any other HTTP/3 request (a browser, a prober, a wrong secret) is answered by the own **Decoy**. The client part keeps one QUIC connection for each link. The library gives no TLS exporter, so the **Channel binding** of a stream of the mode is `tls-server-end-point`: the SHA-256 of the certificate that the server presented. It is off by default: with no `hysteria` part there is no UDP listener and no Hysteria link.
+
+**Brutal**:
+The congestion control of Hysteria that sends at a fixed rate for the link and does not back off on loss. A link of the **Hysteria mode** uses it only when it names its rates (`brutal.up_mbps` and `brutal.down_mbps`), and BBR otherwise. The server may cap the rates (`max_mbps`). It is unfair to the other traffic of a link, which backs off where Brutal does not, so a link that other traffic shares should leave it off.
+
+**Salamander**:
+The optional obfuscation of the QUIC packets of the **Hysteria mode** (the `salamander` key, the same on both ends): each UDP packet is XORed with the BLAKE2b-256 of the key and a random salt that leads the packet, so that the packets do not parse as plain QUIC.
+
 **PinsInterval**:
 The least time between two changes of the keys of one Node that the Controller applies: 10 s (`controller/internal/controller/mimic.go`, AUD1-DT-20). The keys are the public key of the mimic server of the Node, which the Node reports in `Pins`. A change that is applied gives each client of that server a **Mimic link** with the new key, in one Generation. The limit is for each Node and is kept in memory.
 
@@ -895,6 +977,9 @@ A tag of the BGP form `ASN:NUMBER` or `IPV4:NUMBER` that a VRF imports or export
 **Leak**:
 A route of one VRF that a Route target puts into the forwarding table of another VRF (a leaked route). On the wire it is a `Peer.routes` entry with `peer_vrf_id`.
 
+**Held by** (`LeakedRoute.Nodes`):
+A leaked route that only the Nodes it names hold. A route with no Nodes is held by every member of its VRF, as the routes of **Route targets** are. The route to the **Published address** of an Endpoint is held by its **Consumers** only, and its **Route back** by its **Serving Node** only.
+
 **Connect**:
 The "connect VRF" shortcut: `ranz connect vrf A B`, `POST /api/v1/connect` and the UI action `connect`. It makes the two route-target edits of a two-way Leak in one revision.
 
@@ -943,6 +1028,34 @@ A Geneve option whose type has its high bit set. A tunnel endpoint that does not
 **Tunnel endpoint of a Node**:
 `Node.vtep`, `Vtep`: the address and ports of the Node for Plain links. It is a VTEP in the sense of this glossary.
 
+**Source group**:
+The group ID and the tag set of the source of a packet, as a packet between two Nodes carries them (SDN-87). It travels in a record of **Frame version** 1 of a Noise session, in the group policy extension of a VXLAN datagram, or in an option of a Geneve datagram. A receiving Node that takes the **Claim** lets the policy of the VRF judge the packet as coming from that group, and not from the group of its address. It judges any other packet by the map of address to group, as before.
+
+**Group ID**:
+A 16-bit number from 1 to 65535 that the Controller gives each distinct set of tags of the Nodes and Devices of one VRF. It stays with that set of tags for good, also once no Node or Device has it, because a Node may still forward on a Generation that holds it. The Controller keeps the numbers in its store, not in the Intent, so an **Intent export** holds none and a **Store backup** holds them.
+
+**Tag set**:
+64 bits, one for each tag that the VRF gave a bit, 64 tags at most. A bit stays with its tag for good. The **Source group** carries it beside the **Group ID**.
+
+**Tag mode**:
+`Network.tagMode`: how the Nodes of a VRF trust the **Source group** that a **Plain link** carries. In `off`, the default, a Node sends none and ignores the one that arrives. In `trusted-underlay` it sends and takes it, as the operator vouches for the underlay, and `ranz explain` marks the Network "tags not authenticated" where its VRF has a plain link. All Networks of one VRF have the same tag mode, because the links of a VRF carry all of its Networks. On a link of kind `noise` the mode decides nothing, since its Noise session authenticates the group, and the counters call that case the mode `session`. The mode `hmac` comes with SDN-88.
+
+**Frame version**:
+The version of the data records of a Noise session (`NODE_FRAME_VERSION`). Version 0 is the plain data record: the **VRF tag** and the IP packet. Version 1 carries a **Source group** before the data record of version 0: it begins with the VRF tag 0, the version, the length of the options and an option of type 1, whose critical bit is clear, with the group ID, the tag set and the **Group generation**. A Node reads both versions. It drops a later version, options that run past the record and a critical option that it does not know, and it skips an option that it does not know whose critical bit is clear. A record that does not fit its path with the 28 bytes before it goes as version 0.
+
+**Claim (of a source group)**:
+The source group that a packet of a peer carries, which the receiving Node takes, ignores or refuses. It takes the claim of a record of a Noise session in every tag mode, and the claim of a datagram of a plain link in `trusted-underlay` only. It takes it only when the group is one that the sending peer may assert in that VRF: its own group, or the group of a Device whose gateway it is. The Node counts the packets of its peers by tag mode and by result (`carried`, `missing`, `ignored` or `refused`), and the Controller exports the counts as `ranz_source_group_packets_total`.
+
+**Unknown group**:
+A claim of a group that the sending Node may not assert, which no rollout of the Generations explains. The receiving Node drops the packet, counts it as `refused` and logs it, once every 10 s at most. A **Hub node** and an EVPN gateway judge the claim of a packet that they send on in the same way.
+
+**Group generation**:
+The Generation of a Node's state from which on the Node may assert the source groups that it asserts in a VRF (`SourceGroup.generation`). Each claim of the Node names it, with its 32 low bits, so that a receiving Node can tell a claim made on another state of the peer from an **Unknown group**. The VXLAN extension has no room for it.
+
+**Held (source group)**:
+The mark that the Controller puts on the own group of a Node in a VRF (`SourceGroup.held`) while a peer that judges its claims runs a state that would refuse one of them. The Node then stamps no source group in that VRF, and its peers judge its packets by the map of address to group. The next Generation of the Node clears the mark once the last peer that it waited for acknowledged.
+_Avoid_: Held Stretch (a Stretch that the licence leaves out), Held back (a Node whose key ended)
+
 **Client setting**:
 The `Client` setting of the Configuration store: one JSON object that names the Wintun adapter, the DNS servers and suffix, the pipe of the logged-in user and each server (node name, certificate thumbprint, fallback list). Without it the client role holds nothing.
 
@@ -984,6 +1097,9 @@ The registry key `HKLM\SOFTWARE\Hanzcodes\Ranz VPN\Drivers`, one value for each 
 
 **Firewall group**:
 The Windows Firewall group `Ranz VPN` (`FirewallGroup`) that holds every rule that `ranz install` makes, and the rule of `ranz test throughput -listen` while it serves. `ranz uninstall` removes the whole group.
+
+**Kept data directory**:
+A data directory of the Controller (`C:\ProgramData\Ranz\controller`) that exists when `ranz controller install` runs: one that `ranz uninstall` left, or that an administrator or the service made. The install opens it as itself, without following a link, and keeps it with what it holds when SYSTEM, the Administrators, the account of the service or the account that runs the install owns it and everything in it, at any depth; it then sets its owner (the Administrators) and its protected list through that handle. It refuses it, names the file or the folder and changes nothing, when a file or a folder in it is owned by another account, is a reparse point (a junction or a symbolic link, for example), is a file with more than one name (a hard link), or cannot be read (`checkDataDirChildren`, AUD1-DT-18 and AUD1-DT-18-R1). The look opens each entry once, by its exact name and as itself. It runs again once the list is set, and what a user added in between is refused by that second look, after the install gave the folder its owner and its list: the install then undoes nothing and registers no service (ST-3). A data directory that another account owns is not kept: it is made again when it is empty and refused otherwise (ADR-0026).
 
 **Stand-in Node**:
 A Node that `vpntest firsttest` runs in place of the Node service, which cannot join a Controller yet. It opens the control stream of a Node resource of the Intent.
@@ -1241,7 +1357,7 @@ The control record that a Node sends each gateway of a **Gateway group** every 1
 - "Policy" is the SDN resource kind, one rule of a VRF's policy. The slim fork's `POLICY` is the per-Session policy of a Hub user or group, a different thing.
 - "Route" is a LAN subnet that a gateway Node advertises in a VRF (`intent.Route`). A route inside a Forwarding table, a route of the Windows routing table and the Path of a peer are different things.
 - "Tunnel" is the Noise sessions of up to 16 connections between two Nodes (`NOISE_TUNNEL`), and the Cedar `TUNNEL` is the object around one, held by a Connection of type `CONNECTION_NOISE`. A Cascade is not a Tunnel.
-- "Endpoint" is one service published into another VRF (SDN-24). The `endpoints` of a Node (SDN-93, the Go type `intent.Endpoint`, the message `Endpoint` of `control.proto`) are the transports and addresses under which other Nodes reach it. Whichever of the two merges second may need a new name for its type.
+- "Endpoint" is one service published into another VRF (SDN-24). The `endpoints` of a Node (SDN-93, the Go type `intent.Endpoint`, the message `Endpoint` of `control.proto`) are the transports and addresses under which other Nodes reach it. The Go type of the first is `intent.PublishedEndpoint`, so `intent.Endpoint` stays the transport address of a Node and neither needs a new name.
 - "Listener" in the slim fork is the TCP listener of Cedar (the `Listener` module). The new core has the Listener resource of the Intent, which says where a Node listens.
 - "Owner" is the User that a Node is a device of (`Node.owner`), and also the Front door owner, the process that takes the connections of one entry of the owner table. They are unrelated.
 - "Guard" is the isolation set of a Member of the Policy engine, and also the Guard of the Controller's API, which sets the Origin of a call. They are unrelated.

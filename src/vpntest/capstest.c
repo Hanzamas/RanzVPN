@@ -13,7 +13,8 @@
 // default VRF tracer of windows.yml read the same Capabilities from a node on a machine that ranz install changed (the
 // node log) and from the controller that its Hello reached (the API).
 // The BGP peering is a Capability of the install of the node (SDN-77-R2, #532): NodeCapsPeering reports it for a node
-// whose sidecar, ranz.exe, is where the node looks for it, and for no other.
+// whose sidecar, ranz.exe, is where the node looks for it, and for no other, and with it the route reflectors of the peering,
+// which the same sidecar runs (SDN-79, #359).
 // The Windows edition, Hyper-V and the Egress tier (SDN-12, #188): the editions of Windows 11 and Windows Server that a
 // node runs on, each as the product type of its version and the product of GetProductInfo, give the SKU of the control
 // protocol, a product that it does not count gives none, and a version that cannot be read gives none either. Hyper-V is
@@ -291,45 +292,51 @@ void caps_test(UINT num, char **arg)
 
 	GetExeNameW(node->BgpSidecar, sizeof(node->BgpSidecar));
 	caps.BgpPeering = false;
+	caps.BgpReflection = false;
 	NodeCapsPeering(node, &caps);
-	if (caps.BgpPeering == false)
+	if (caps.BgpPeering == false || caps.BgpReflection == false)
 	{
-		Print("  [FAIL] A node whose sidecar is there does not report the BGP peering\n");
+		Print("  [FAIL] A node whose sidecar is there does not report the BGP peering (%u) or its route reflectors (%u)\n", (UINT)caps.BgpPeering,
+			(UINT)caps.BgpReflection);
 		failed++;
 	}
 	else
 	{
-		Print("  [OK] A node whose sidecar is there reports the BGP peering\n");
+		Print("  [OK] A node whose sidecar is there reports the BGP peering and its route reflectors\n");
 	}
 
 	UniStrCat(node->BgpSidecar, sizeof(node->BgpSidecar), L".missing");
 	caps.BgpPeering = true;
+	caps.BgpReflection = true;
 	NodeCapsPeering(node, &caps);
-	if (caps.BgpPeering)
+	if (caps.BgpPeering || caps.BgpReflection)
 	{
-		Print("  [FAIL] A node whose sidecar is not there reports the BGP peering\n");
+		Print("  [FAIL] A node whose sidecar is not there reports the BGP peering (%u) or its route reflectors (%u)\n", (UINT)caps.BgpPeering,
+			(UINT)caps.BgpReflection);
 		failed++;
 	}
 	else
 	{
-		Print("  [OK] A node whose sidecar is not there reports no BGP peering\n");
+		Print("  [OK] A node whose sidecar is not there reports no BGP peering and no route reflectors\n");
 	}
 
 	// A node that names no sidecar at all, and no node
 	Zero(node->BgpSidecar, sizeof(node->BgpSidecar));
 	caps.BgpPeering = true;
+	caps.BgpReflection = true;
 	NodeCapsPeering(node, &caps);
-	if (caps.BgpPeering)
+	if (caps.BgpPeering || caps.BgpReflection)
 	{
-		Print("  [FAIL] A node that names no sidecar reports the BGP peering\n");
+		Print("  [FAIL] A node that names no sidecar reports the BGP peering or its route reflectors\n");
 		failed++;
 	}
 
 	caps.BgpPeering = true;
+	caps.BgpReflection = true;
 	NodeCapsPeering(NULL, &caps);
-	if (caps.BgpPeering)
+	if (caps.BgpPeering || caps.BgpReflection)
 	{
-		Print("  [FAIL] No node reports the BGP peering\n");
+		Print("  [FAIL] No node reports the BGP peering or its route reflectors\n");
 		failed++;
 	}
 

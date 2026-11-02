@@ -75,6 +75,8 @@ func Compile(in intent.Intent) (map[string]State, error) {
 		withTopology(vrfs[name], v)
 		// How the Nodes of the VRF exchange their routes (peering.go; SDN-77)
 		vrfs[name].Peering = vrfPeering(v)
+		// ... and its route reflectors (reflector.go; SDN-79)
+		vrfs[name].Reflectors = vrfReflectors(v)
 		// The tag mode of its Networks (sourcegroup.go; SDN-87)
 		vrfs[name].TagMode = tagMode(in.VRFTagMode(name))
 	}
@@ -97,6 +99,8 @@ func Compile(in intent.Intent) (map[string]State, error) {
 		}
 		// The security of an L2 Network, for every node of its VRF (security.go; SDN-41)
 		nw.Security = security(in, name)
+		// The trace of its packets, for every node of its VRF (SDN-89)
+		nw.Trace = n.Trace
 		networks[n.VRF] = append(networks[n.VRF], nw)
 	}
 	keys := map[string][]byte{}
@@ -190,6 +194,8 @@ func Compile(in intent.Intent) (map[string]State, error) {
 			peer.Vtep = peerVtep(in, o, sharedVRFs)
 			// The BGP peering with the peer in the shared VRFs that peer by BGP (peering.go; SDN-77)
 			peer.Peering = peerPeering(in, other, o, sharedVRFs, vrfs)
+			// ... with the role of the peer in each VRF of route reflectors (reflector.go; SDN-79)
+			withReflection(in, name, other, peer.Peering, vrfs)
 			// The session profile of the peer, which this node enforces on its session with it (profile.go; SDN-40)
 			peer.Profile = profiles[other]
 			s.add(&controlpb.Object{Kind: &controlpb.Object_Peer{Peer: peer}})

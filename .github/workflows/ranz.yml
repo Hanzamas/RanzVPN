@@ -71,7 +71,9 @@
 # target, 1,000 nodes, 100 VRFs and 10,000 routes; the full set runs that and the target, 10,000 nodes, 1,000 VRFs and 100,000
 # routes. Each run writes its report, a summary table and BENCH lines; the performance gate (.github/scripts/bench-gate.py) compares
 # them with the medians recorded in .github/quality/scale-pr.txt and scale-full.txt, the job summary shows the table, and the
-# artifact ranz-scale-<size> keeps the report of each run, so a regression is visible.
+# artifact ranz-scale-<size> keeps the report of each run, so a regression is visible. At a tenth of the target a run changes
+# every VRF three times and enrols the nodes three times, each enrolment on a controller of its own, and the gate judges the
+# best of three of each (CI-FLAKE-9, #616).
 #
 # No job here touches the C build, so they run beside windows.yml and add nothing to its time.
 #
@@ -522,13 +524,15 @@ jobs:
   # controller/internal/nodesim/scale.go against one controller on an rqlited of its own, without the race detector, which would
   # change what it measures: the VRFs of the intent are declared, the simulated nodes enrol, the MTU of every VRF changes, and a
   # route changes, and at the end every node is at the generation that it acknowledged with the state of the intent. Every run of
-  # the job measures a tenth of the target (pr: 1,000 nodes, 100 VRFs, 10,000 routes, the change of every VRF three times); the
-  # full set measures the target as well (full: 10,000 nodes, 1,000 VRFs, 100,000 routes, the VRFs declared and changed in 5
-  # applies each), after the tenth, so that the runs that record the medians of the target record those of the tenth too. The
-  # test writes scale.json, scale-summary.md and the BENCH lines to RANZ_SCALE_OUT, a directory for each size; the gate compares
-  # them with the recorded medians of the size, the summary goes to the job summary, and the artifact ranz-scale-<size> holds all
-  # of it for 90 days. The time of a run is the time of the applies, which compile the whole intent: 15 seconds at the tenth,
-  # 9 to 12 minutes at the target.
+  # the job measures a tenth of the target (pr: 1,000 nodes, 100 VRFs, 10,000 routes, the change of every VRF three times, and
+  # the enrolment three times, each on a controller of its own with its own rqlited: the store writes of an enrolment make it the
+  # phase that the disk of a runner slows now and then, and one enrolment of a run could not be told from a slowdown, CI-FLAKE-9,
+  # #616); the full set measures the target as well (full: 10,000 nodes, 1,000 VRFs, 100,000 routes, the VRFs declared and
+  # changed in 5 applies each, and enrolled once), after the tenth, so that the runs that record the medians of the target record
+  # those of the tenth too. The test writes scale.json, scale-summary.md and the BENCH lines to RANZ_SCALE_OUT, a directory for
+  # each size; the gate compares them with the recorded medians of the size, the summary goes to the job summary, and the artifact
+  # ranz-scale-<size> holds all of it for 90 days. The time of a run is the time of the applies, which compile the whole intent,
+  # and of the enrolments: 30 seconds at the tenth, 9 to 12 minutes at the target.
   scale:
     name: scale (Linux)
     needs: plan
@@ -566,13 +570,20 @@ jobs:
         RANZ_SCALE_OUT: ${{ github.workspace }}/scale-out/pr
       run: go test -count=1 -v -timeout 25m -run '^TestScale$' ./controller/internal/controller
     # ADR-0040 item 5: every BENCH case of the run against the median recorded for its size, in .github/quality/scale-pr.txt
-    # and scale-full.txt (bench-gate.py record makes them from the files of earlier runs); the best of the runs of each case
-    # counts, and one that is slower than its median by more than its margin fails the job
+    # and scale-full.txt (bench-gate.py record makes them from the files of earlier runs; scale-pr.txt with --per-run, so that a
+    # run is the best of its files, the number that this step judges); the best of the runs of each case counts, and one that is
+    # slower than its median by more than its margin fails the job. The run has three files, one for each change of every VRF and
+    # each enrolment, and the step prints how many of each it judged and fails when a file lacks the enrolment or the change that
+    # it should hold (CI-FLAKE-9, #616): a case that one sample stands for fails by the noise of the runner, which no margin can
+    # tell from a slowdown
     - name: Performance regression gate at a tenth of the target
       timeout-minutes: 5
       env:
         RANZ_SCALE_OUT: ${{ github.workspace }}/scale-out/pr
-      run: python .github/scripts/bench-gate.py compare --medians .github/quality/scale-pr.txt "${RANZ_SCALE_OUT}/scale-bench*.txt"
+      run: |
+        python .github/scripts/bench-gate.py compare --medians .github/quality/scale-pr.txt --runs 3 \
+          --min-samples 'scale_enrol_*' 3 enrolments --min-samples scale_setup_apply 3 enrolments \
+          --min-samples 'scale_change_*' 3 changes "${RANZ_SCALE_OUT}/scale-bench*.txt"
     # The target runs when the tenth failed too: a failure at one size and not at the other says what kind of failure it is
     - name: The scale scenario at the target
       id: scale-full
@@ -736,9 +747,25 @@ jobs:
     # each test and a slow runner ran out of the 10 minutes. The slowest package is controller, with its
     # cluster tests, about 220 s to 280 s. The limit stays 20 minutes, more than four times the time of
     # any package: it costs nothing, and a runner can be slow. A hang still ends the package, only later.
+    #
+    # TEMP and TMP name the temporary disk of the runner (CI-FLAKE-5, #592): the tests make the data of their rqlited and
+    # of the members of their clusters, and the profile of the browser, in the temporary directory, and every rqlited syncs
+    # its Raft log and its database at each change. The temporary directory of a Windows runner is on its system disk (C:)
+    # by default, and the runner has a second disk (D:, RUNNER_TEMP). Two experiments of that pull request measured the
+    # disks with a program that wrote a block to each, synced it and timed that, while the tests ran. Run 41323265872, go test
+    # ./... once with each disk as TEMP: with the system disk it took 4 min 41 s, lost TestLeaderServesTheLoginsOfUsers, and
+    # 45 syncs of that disk took 0.25 s to 1.06 s in 80 s; with the temporary disk it took 3 min 38 s, passed, and no sync of
+    # either disk took 0.25 s. That is one run of each, so it shows that the system disk can stall, not how often. Run
+    # 41376006594, every core busy and TEMP on the temporary disk: the three packages that start rqlited passed 20 times in a
+    # row, and each of the three tests of CI-FLAKE-5 20 times in a row. In its 108 minutes 186 syncs of the system disk and
+    # 58 of the temporary disk took 0.25 s or more (the longest 1.03 s and 2.36 s), so the temporary disk stalls less often
+    # in that run, not never.
     - name: Test
       if: matrix.platform.ARCHITECTURE == 'x64'
       shell: pwsh
+      env:
+        TEMP: ${{ runner.temp }}
+        TMP: ${{ runner.temp }}
       run: |
         go test -count=1 -timeout 20m ./...
         if ($LASTEXITCODE -ne 0) { throw "go test exited with code $LASTEXITCODE" }

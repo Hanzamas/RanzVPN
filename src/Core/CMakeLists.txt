@@ -194,6 +194,8 @@ add_library(corecontrol STATIC
   ControlEvent.c
   # The source groups in a desired state and the counters of a node by tag mode (SDN-87, #386)
   ControlSourceGroup.c
+  # The Networks whose trace is on in a desired state and the records of the traced packets of a node (SDN-89, #388)
+  ControlTrace.c
   # The Relays of a desired state and the Signals of the peers on the control stream (CORE-S5-5, #411)
   ControlSignal.c
   # The hubs and the ECMP of the VRFs, the LAN subnets of a node and the gateways that are down in a desired state (SDN-19,

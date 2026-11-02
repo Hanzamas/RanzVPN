@@ -345,6 +345,17 @@ typedef struct CONTROL_PEER_PEERING {
 	UINT VrfIds[CONTROL_MAX_VRFS];            // ... ascending
 	UINT NumAccept;                           // What the peer may announce in them: its addresses and its LAN subnets
 	CONTROL_ROUTE Accept[CONTROL_MAX_ACCEPT]; // ... ordered by VRF id, then prefix
+
+	// The roles of the peer in the VRFs of the session whose Intent names route reflectors (SDN-79, #359), each list ascending:
+	// the VRFs in which the peer is a route reflector, those in which it is a client of the node, a reflector there, and those
+	// in which both are clients, whose routes come through the reflectors. A VRF of a full mesh is in none of them, and a peer
+	// all of whose VRFs are reflected has no session with the node (NodePeering.c).
+	UINT NumReflectorVrfs;
+	UINT ReflectorVrfIds[CONTROL_MAX_VRFS];
+	UINT NumClientVrfs;
+	UINT ClientVrfIds[CONTROL_MAX_VRFS];
+	UINT NumReflectedVrfs;
+	UINT ReflectedVrfIds[CONTROL_MAX_VRFS];
 } CONTROL_PEER_PEERING;
 
 // One peer of the sidecar of a node, as the node reports it (PeeringPeer of the control protocol; SDN-77, #357)
@@ -582,6 +593,31 @@ typedef void(CONTROL_GROUPS_PROC)(void *param, CONTROL_GROUP_COUNTERS *counters)
 // ControlSourceGroup.c
 typedef struct CONTROL_SOURCE_GROUPS CONTROL_SOURCE_GROUPS;
 
+// The trace of a packet (SDN-89, #388): the pools of the Networks whose trace is on in a state, and what a node records of
+// a traced packet that it handled (TraceRecord of the control protocol), which a client reports to the controller
+#define CONTROL_TRACE_INGRESS 8   // The bytes of the static key of the ingress node that a record names it by (TraceRecord.ingress of control.options)
+#define CONTROL_MAX_TRACES    32  // The records that one Telemetry message holds (Telemetry.traces of control.options)
+#define CONTROL_TRACE_QUEUE   256 // The records that wait for a stream at most: a new one takes the place of the oldest
+#define CONTROL_MAX_TRACED    16  // The pools of the Networks that trace in a state at most, an IPv4 and an IPv6 pool for each
+
+// A pool of a Network whose trace is on (Network.trace of the control protocol), in the VRF of the Network
+typedef struct CONTROL_TRACED {
+	UINT VrfId;
+	CONTROL_PREFIX Pool;
+} CONTROL_TRACED;
+
+// One record of a traced packet
+typedef struct CONTROL_TRACE {
+	UINT Id;                              // The trace ID that the ingress node gave the packet, never 0
+	UCHAR Ingress[CONTROL_TRACE_INGRESS]; // The first bytes of the static key of the ingress node
+	UINT VrfId;                           // The VRF of the packet at the node
+	UINT Group;                           // The group ID that the packet carried, 0 for none
+	bool Allowed;                         // The node let the packet through; else it dropped it
+} CONTROL_TRACE;
+
+// The records that wait for the controller (CONTROL_CONFIG.Traces), ControlTrace.c
+typedef struct CONTROL_TRACES CONTROL_TRACES;
+
 // Takes a Signal that the controller carried from the peer of the node name peer (CORE-S5-5, #411): its envelope of size
 // bytes, sealed to the node, which only the node's peer layer opens. It runs on the client's thread; the envelope is
 // valid until it returns.
@@ -695,6 +731,10 @@ typedef struct CONTROL_STATE {
 	// of no VRF
 	UINT NumEgress;
 	UINT EgressVrfIds[CONTROL_MAX_VRFS];
+
+	// The pools of the Networks of its VRFs whose trace is on (SDN-89, #388): none while no Network traces
+	UINT NumTraced;
+	CONTROL_TRACED Traced[CONTROL_MAX_TRACED];
 } CONTROL_STATE;
 
 // A copy of a state that holds its own memory, for an owner that applies the state again later (the BGP peering of the node,
@@ -754,6 +794,9 @@ typedef struct CONTROL_CAPS {
 	// The node can be the gateway of a Stretch of an L2 Network (SDN-63, #290): its host is a Windows Server, and its VXLAN
 	// module runs
 	bool Evpn;
+	// The node runs the route reflectors of the BGP peering of the standard mode, as a reflector and as a client: its release
+	// has them, and ranz.exe, which holds its sidecar, is next to it (SDN-79, #359)
+	bool BgpReflection;
 } CONTROL_CAPS;
 
 // Fills caps, which is zeroed, with the Capabilities of the node. The client calls it for each Hello, so a node
@@ -849,6 +892,10 @@ typedef struct CONTROL_CONFIG {
 	// The counters of the source groups that the client reports, NULL for none: the owner's, which must outlive the
 	// client (SDN-87, #386)
 	CONTROL_SOURCE_GROUPS *SourceGroups;
+
+	// The records of the traced packets that the client reports, NULL for none: the owner's, which must outlive the client
+	// (SDN-89, #388)
+	CONTROL_TRACES *Traces;
 
 	// Takes each Signal that the controller carried from a peer, NULL to drop them (CORE-S5-5, #411) ...
 	CONTROL_SIGNAL_PROC *SignalProc;
@@ -964,6 +1011,19 @@ bool ControlWriteEvents(CONTROL_EVENTS *e, TRANSPORT_STREAM *s);
 CONTROL_SOURCE_GROUPS *ControlNewSourceGroups(CONTROL_GROUPS_PROC *proc, void *param);
 void ControlFreeSourceGroups(CONTROL_SOURCE_GROUPS *g);
 bool ControlWriteSourceGroups(CONTROL_SOURCE_GROUPS *g, TRANSPORT_STREAM *s);
+
+// The records of the traced packets of a node (SDN-89, #388), ControlTrace.c. NewTraces makes the queue that a client
+// sends (CONTROL_CONFIG.Traces), FreeTraces frees it once no client uses it. AddTrace puts one record into the queue, from
+// any thread: the client writes the records that wait in one Telemetry message, CONTROL_MAX_TRACES at most, at once while
+// its stream is open, and after the Hello of the next stream when it is not, and a record leaves the queue once its write
+// succeeded. At most CONTROL_TRACE_QUEUE wait, and a new record above that takes the place of the oldest. GetTraces copies
+// the records that wait, at most max, into list: their number. WriteTraces writes the first records that wait, as the
+// client does on its stream.
+CONTROL_TRACES *ControlNewTraces();
+void ControlFreeTraces(CONTROL_TRACES *q);
+bool ControlAddTrace(CONTROL_TRACES *q, const CONTROL_TRACE *record);
+UINT ControlGetTraces(CONTROL_TRACES *q, CONTROL_TRACE *list, UINT max);
+bool ControlWriteTraces(CONTROL_TRACES *q, TRANSPORT_STREAM *s);
 
 // The Signals of a node (CORE-S5-5, #411), ControlSignal.c. NewSignals makes the queue that a client sends
 // (CONTROL_CONFIG.Signals), FreeSignals frees it once no client uses it. SendSignal queues a Signal for the peer of the

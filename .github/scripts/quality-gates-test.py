@@ -2,8 +2,9 @@
 # "// fuzz-reach:" and the coverage report of libFuzzer that it reads for them, and its -Parallel, with PowerShell 7),
 # coverage-floor.py, bench-gate.py, static-findings.py and govulncheck-gate.py; for the guards of the start of
 # ranz-node in service-eventlog.ps1 (the source scan of the VBScript firewall path and the checks of the firewall
-# rules and of the script hosts, with PowerShell 7); and for the bound of every msiexec call of msi-install.ps1 (a
-# planted hang, with PowerShell 7).
+# rules and of the script hosts, with PowerShell 7); and for the bounds of the waits of msi-install.ps1, the
+# evidence that a hang prints and the one place where it starts msiexec (planted hangs and planted launches, with
+# PowerShell 7).
 #
 # Each gate runs on a throwaway tree or input made here and must pass what it should pass and fail
 # what it should fail: a new parser without a fuzz target, a stale registry line, a fuzz target that
@@ -455,6 +456,28 @@ def test_bench_gate():
             [bench(fps='100'), bench(fps='990'), bench(fps='100')], wildcard=True)
     compare('a wildcard that names no file', 1, ['no result file matches'], [], wildcard=True)
 
+    # The samples that a case is judged on are the result files that hold it (CI-FLAKE-9, #616): the gate prints how many, and
+    # --min-samples fails a case that has fewer than it is asked for
+    compare('a case is counted by the result files that hold it', 0,
+            ['| flood_fps_8 | 1000 frames/s | 1000 frames/s | 3 | 0.0% | 25% | ok |', '| expire_1024 | 200 us | 200 us | 3 |'],
+            [bench(), bench(), bench()], gate_args=('--runs', '3'))
+    without_flood = bench().replace('BENCH flood_fps_8 1000 frames/s\n', '')
+    compare('a case that two of three files hold has two samples', 0, ['| flood_fps_8 | 1000 frames/s | 1000 frames/s | 2 |'],
+            [bench(), without_flood, bench()], gate_args=('--runs', '3'))
+    compare('the samples that were asked for are printed', 0,
+            ['flood_*: 1 case, each judged on the best of 3 enrolments (at least 3 asked for)',
+             '*_case: 1 case, each judged on the best of 3 enrolments (at least 2 asked for)'],
+            [bench(), bench(), bench()],
+            gate_args=('--runs', '3', '--min-samples', 'flood_*', '3', 'enrolments', '--min-samples', '*_case', '2', 'enrolments'))
+    compare('a case with fewer samples than asked for fails', 1,
+            ['flood_fps_8: the result files hold 2 of the 3 enrolments that the gate is asked to judge the best of'],
+            [bench(), without_flood, bench()],
+            gate_args=('--runs', '3', '--min-samples', 'flood_*', '3', 'enrolments'))
+    compare('samples asked for of a pattern that matches no recorded case fails', 1, ['no case recorded in', 'matches it'],
+            [bench(), bench(), bench()], gate_args=('--runs', '3', '--min-samples', 'enrol_*', '3', 'enrolments'))
+    compare('a number of samples that is no number fails', 2, ['N is not a whole number from 1'], [bench()],
+            gate_args=('--min-samples', 'flood_*', '0', 'enrolments'))
+
     # A time case whose recorded median is under 50 us fails only when it is slower by more than 100 us
     compare('a time under 50 us is not judged by its margin', 0, ['ok, under 50 us'], [bench(tiny='6')])
     compare('a time under 50 us that is 100 us slower passes', 0, ['within their margin'], [bench(tiny='102')])
@@ -483,6 +506,31 @@ def test_bench_gate():
                 failures.append('bench-gate: record wrote no %r:\n%s' % (want, text))
         if '\nzero ' in text:
             failures.append('bench-gate: record kept a case with median 0:\n' + text)
+
+    # With --per-run the files that one argument names are one run, which counts as the best of them, the number that compare
+    # judges: the margin is the spread of that between runs. Without it every file is a run, and the slow file of a run is the
+    # slowest run. Three runs of two files, a rate and a time:
+    #   a: the best of each run is 1000, 800 and 1100 (median 1000, the slowest run 25 % slower, margin 50), the files 1000, 900,
+    #      800, 500, 1100 and 1000 (median 950, the slowest 90 % slower, margin 180)
+    #   t: the best of each run is 10, 12 and 11 (median 11, the slowest 9 % slower, margin 25), the files 10, 14, 12, 30, 11 and
+    #      11 (median 11.5, the slowest 161 % slower, margin 325)
+    with tempfile.TemporaryDirectory() as root:
+        args = []
+        for name, files in {'r1': [(1000, 10), (900, 14)], 'r2': [(800, 12), (500, 30)], 'r3': [(1100, 11), (1000, 11)]}.items():
+            for i, (fps, us) in enumerate(files):
+                write(root, '%s/bench%d.txt' % (name, i), 'BENCH a %d frames/s\nBENCH t %d us\n' % (fps, us))
+            args.append(os.path.join(root, name, 'bench*.txt'))
+        for mode, flags, wants in (('per run', ['--per-run'], ('a 1000 frames/s 50\n', 't 11 us 25\n', 'from 3 CI runs, each the best of its result files')),
+                                   ('per file', [], ('a 950 frames/s 180\n', 't 11.5 us 325\n', 'from 6 CI runs, the margin'))):
+            out = os.path.join(root, 'medians-%s.txt' % mode.replace(' ', '-'))
+            expect('bench-gate: record, %s' % mode, run('bench-gate.py', 'record', '--out', out, *flags, *args), 0)
+            with open(out, encoding='utf-8') as f:
+                text = f.read()
+            for want in wants:
+                if want not in text:
+                    failures.append('bench-gate: record, %s wrote no %r:\n%s' % (mode, want, text))
+        expect('bench-gate: record, a run that no file holds', run('bench-gate.py', 'record', '--per-run', '--out', os.path.join(root, 'x.txt'),
+                                                                   os.path.join(root, 'r4', 'bench*.txt')), 1, 'no result file matches')
 
 
 def test_static_findings():
@@ -660,32 +708,93 @@ def test_service_eventlog():
 
 
 def test_msi_install():
-    # msi-install.ps1 (CI-FLAKE-6, #593) gives every msiexec call a bound: a call that never ends fails its step after 300 s with the
-    # evidence, and its process tree is ended, where it held the job for 55 minutes in three runs. -SelfTest plants the hang: a
-    # stand-in for msiexec.exe that never ends and starts a child that never ends either, run through Invoke-Msiexec with a bound of
-    # 20 s. The call must fail within it, naming the verb and the package, with the evidence printed and kept, and both processes
-    # must be ended; a call with no bound returns after the 120 s that the stand-in sleeps, and the fixture fails on that. The same
-    # check runs on Windows, on x64 and arm64, in the msi jobs of windows.yml, with the real msiexec.exe and the process list of
-    # the evidence. PowerShell 7 runs the script here, on Linux.
+    # msi-install.ps1 (CI-FLAKE-6, #593 and CI-FLAKE-6-R1, #596) gives every wait a bound: a msiexec call that never ends fails its
+    # step after 300 s with the evidence, and its process tree and the process of the service msiserver are ended, where it held the
+    # job for 55 minutes in three runs; the evidence has a bound of its own, and so have the wait for the Node to stop and to start
+    # and ranz.exe version. -SelfTest plants a hang of each kind (a stand-in for msiexec.exe that never ends and starts a child that
+    # never ends either, a stand-in for the service on Linux, a stall in the evidence, a Node that does not stop or start, a
+    # ranz.exe that never prints) and runs the main flow on a planted hang in a process of its own. Each must fail within its bound,
+    # naming the call, with the evidence printed and kept, and every process that the failure lists as ended must be gone; a call
+    # with no bound returns after the 120 s that a stand-in sleeps, and the fixture fails on that. The evidence is checked part by
+    # part, and the check is run on evidence that lacks each part. The same self-test runs on Windows, on x64 and arm64, in the msi
+    # jobs of windows.yml, with the real msiexec.exe, the real event log and the real service. -CheckLaunches reads the script with
+    # the parser of PowerShell and fails when msiexec is started anywhere but in Invoke-Msiexec; it runs here on the script and on
+    # copies with a planted launch. PowerShell 7 runs the script here, on Linux.
     pwsh = shutil.which('pwsh')
     if pwsh is None:
         failures.append('msi-install: no pwsh on the PATH, which the self-test of msi-install.ps1 needs')
         print('FAIL', 'msi-install: no pwsh')
         return
     script = os.path.join(HERE, 'msi-install.ps1')
-    try:
-        p = subprocess.run([pwsh, '-NoProfile', '-NonInteractive', '-File', script, '-SelfTest'], stdout=subprocess.PIPE,
-                           stderr=subprocess.STDOUT, timeout=300)
-        result = (p.returncode, p.stdout.decode('utf-8', errors='replace'))
-    except subprocess.TimeoutExpired as e:
-        result = (-1, (e.stdout or b'').decode('utf-8', errors='replace') + '\nthe self-test did not end within 300 s')
-    expect('msi-install: a msiexec that never ends fails within its bound, with the evidence, and its process tree is ended', result, 0,
+
+    def run_script(*args, timeout=120):
+        try:
+            p = subprocess.run([pwsh, '-NoProfile', '-NonInteractive', '-File', script] + list(args), stdout=subprocess.PIPE,
+                               stderr=subprocess.STDOUT, timeout=timeout)
+            return p.returncode, p.stdout.decode('utf-8', errors='replace')
+        except subprocess.TimeoutExpired as e:
+            return -1, (e.stdout or b'').decode('utf-8', errors='replace') + '\nthe script did not end within %d s' % timeout
+
+    expect('msi-install: planted hangs fail within their bounds, with the evidence, and what they say was ended is gone',
+           run_script('-SelfTest', timeout=420), 0,
            'ok: a call that ends gives its exit code, and leaves no evidence of a hang',
-           'ok: a msiexec that never ends fails within its bound (20 s, after ',
+           'ok: a msiexec that never ends fails within its bound (15 s, after ',
            'and the failure names the verb and the package',
-           'ok: the evidence holds the processes, the end of the verbose log, the events of Windows Installer and the state of msiserver, and is kept in a file',
-           'ok: the process tree of the call is ended: the stand-in and its child',
-           'ok: no other call starts after a call that did not end')
+           'ok: the process tree of the call and the process of the service msiserver (with its child) are ended, and the failure lists exactly what was ended',
+           'ok: the evidence holds the processes, the end of the verbose log, the state of msiserver and the events of Windows Installer, and is kept in a file',
+           'ok: the verbose log is written with the flush flag, and the tail that the evidence prints holds its last line',
+           'ok: the check of the evidence fails on a list of processes that is not there',
+           'ok: the check of the evidence fails on a list of processes that could not be read',
+           'ok: the check of the evidence fails on a list that holds none of the processes of the call',
+           'ok: the check of the evidence fails on a tail without the last line of the log',
+           'ok: the check of the evidence fails on a log that is not there',
+           'ok: the check of the evidence fails on a state of the service that could not be read',
+           'ok: the check of the evidence fails on a state of the service that is not there',
+           'ok: the check of the evidence fails on events that are none',
+           'ok: the check of the evidence fails on events that could not be read',
+           'ok: the check of the evidence fails on events without the one of the planted call',
+           'ok: no other call starts after a call that did not end',
+           'ok: a stall in the evidence still ends the call and its processes and fails the step within its bound (15 s and the 10 s of the evidence, after ',
+           'and the failure names the bound',
+           'ok: a Node that does not stop fails the wait within its bound (3 s, after ',
+           'ok: a Node that does not start fails the wait within its bound (3 s, after ',
+           'ok: a Node that stops and starts is left alone, and its store is hashed while it is stopped',
+           'ok: a ranz.exe version that never ends fails within its bound (3 s, after ',
+           'ok: the main flow on a planted hang exits with the code 1, with the call in its message, after its clean-up, and runs no step after the call')
+
+    # The one place where msiexec is started: the script as it is passes, and a copy with a launch outside Invoke-Msiexec fails, each
+    # form of a launch on its own. A comment, a string and a message that name msiexec start nothing.
+    with open(script, encoding='utf-8') as f:
+        real = f.read()
+
+    def launches(name, code, texts, extra='', text=None):
+        with tempfile.TemporaryDirectory() as root:
+            path = os.path.join(root, 'msi-install.ps1')
+            with open(path, 'w', encoding='utf-8', newline='\n') as f:
+                f.write(real + extra if text is None else text)
+            expect('msi-install launches: ' + name, run_script('-CheckLaunches', path), code, *texts)
+
+    launches('the script as it is', 0, ['starts msiexec in Invoke-Msiexec and nowhere else'])
+    for name, extra in (('a comment that names a launch', "\n# Start-Process -FilePath 'msiexec.exe' -ArgumentList '/x' -Wait\n"),
+                        ('a string that names a launch', "\n$example = 'Start-Process msiexec.exe -Wait'\n"),
+                        ('a message that names msiexec', "\nWrite-Host 'msiexec is not started here'\n"),
+                        ('a failure that names msiexec', "\nif ($false) { throw 'msiexec exited with code 1' }\n")):
+        launches(name + ' is no launch', 0, ['starts msiexec in Invoke-Msiexec and nowhere else'], extra)
+    for name, extra, line in (
+            ('a Start-Process of msiexec.exe', "\nStart-Process -FilePath 'msiexec.exe' -ArgumentList '/x', 'x.msi' -Wait\n",
+             "Start-Process -FilePath 'msiexec.exe' -ArgumentList '/x', 'x.msi' -Wait"),
+            ('a Start-Process of the variable of the program', "\nfunction Remove-Other { Start-Process $msiexecFile -ArgumentList '/x' -Wait }\n",
+             "Start-Process $msiexecFile -ArgumentList '/x' -Wait"),
+            ('a call of msiexec.exe with &', "\n& msiexec.exe /x x.msi /qn\n", '& msiexec.exe /x x.msi /qn'),
+            ('a call of the variable of the program with &', "\n& $msiexecFile /x x.msi\n", '& $msiexecFile /x x.msi'),
+            ('msiexec by its name', "\nmsiexec /x x.msi /qn | Out-Null\n", 'msiexec /x x.msi /qn'),
+            ('msiexec by its path', "\n& 'C:\\Windows\\System32\\msiexec.exe' /x x.msi\n", "& 'C:\\Windows\\System32\\msiexec.exe' /x x.msi"),
+            ('msiexec through cmd', "\ncmd /c msiexec /x x.msi\n", 'cmd /c msiexec /x x.msi'),
+            ('a Process started by the framework', "\n[void][System.Diagnostics.Process]::Start('msiexec.exe', '/x x.msi')\n",
+             "[System.Diagnostics.Process]::Start('msiexec.exe', '/x x.msi')")):
+        launches(name, 1, ['msi-install.ps1:', line, 'start msiexec outside Invoke-Msiexec'], extra)
+    launches('a script without Invoke-Msiexec', 1, ['has no function Invoke-Msiexec'], text=real.replace('function Invoke-Msiexec', 'function Invoke-Other'))
+    launches('a script that does not parse', 1, ['does not parse'], extra='\nif ($true) {\n')
 
 
 if __name__ == '__main__':
