@@ -18,7 +18,8 @@ $ErrorActionPreference = 'Stop'
 # the API must also show the Capabilities that each node put in its Hello (ONE-3, #312): the architecture of
 # this runner, and SeLow and the XDP runtime as this machine holds them, which the script reads from the
 # registry and the files of Windows without the code of the node, and the Windows edition, Hyper-V and the
-# Egress tier of each node (SDN-12, #188), which it reads from CIM, the services and the registry;
+# Egress tier of each node (SDN-12, #188), which it reads from CIM, the services and the registry, and pqTls
+# where ranz doctor says that this host can negotiate X25519MLKEM768 (CORE-P2-5, #382);
 # both nodes report the Capability tags, so the controller gives each the source group of the other, which the records
 # of their Noise session carry (SDN-87, #386): the counters of the tag mode session that each reports must reach the
 # telemetry of the API, with at least two records of the other node that it judged by the group that they carried,
@@ -208,6 +209,12 @@ try {
 	$tier = 3
 	if ($haveRras) { $tier = 1 } elseif ($haveHyperV -and $haveWinNat) { $tier = 2 }
 	Write-Host "this runner: $($os.Caption), product type $($os.ProductType), SKU $($os.OperatingSystemSKU): edition '$sku', Hyper-V $haveHyperV, Routing and Remote Access as a LAN router $haveRras, WinNAT $haveWinNat, $otherNats NAT networks of WinNAT of another program, which nodes that never looked do not count: Egress tier $tier"
+	# The hybrid X25519MLKEM768 on QUIC and TLS-443 (CORE-P2-5, #382): a node reports pqTls when its host asks for it, which
+	# ranz doctor tells with code of its own (controller/internal/doctor) from CNG and the TLS group list in force
+	$doctor = (& $ranz doctor | Out-String)
+	$pqTls = $doctor -match 'This host can negotiate X25519MLKEM768'
+	if (-not $pqTls -and $doctor -notmatch 'This host cannot negotiate X25519MLKEM768') { throw "ranz doctor printed no report of the post-quantum key exchange: $doctor" }
+	Write-Host "this runner: ranz doctor says that it can negotiate X25519MLKEM768: $pqTls"
 	foreach ($s in $states | Where-Object { $nodes.Contains($_.name) }) {
 		$caps = $s.capabilities
 		if (-not $caps) { throw "the API lists no Capabilities for node $($s.name), which its Hello carries: $($s | ConvertTo-Json -Compress -Depth 4)" }
@@ -221,6 +228,9 @@ try {
 		if ([int] $caps.egressTier -ne $tier) { throw "node $($s.name) reports the Egress tier $($caps.egressTier), not $tier, the tier of this runner" }
 		# The gateway of a Stretch of an L2 Network (SDN-63, #290): a Windows Server, whose VXLAN module runs on every node
 		if ([bool] $caps.evpn -ne ($sku -eq 'Server')) { throw "node $($s.name) reports evpn $($caps.evpn), and this runner is '$sku': only a Windows Server can be the gateway of a Stretch" }
+		# The Capability pq_tls of its Hello, in the API as pqTls (CORE-P2-5, #382)
+		Write-Host "API: node $($s.name) reports pqTls $([bool] $caps.pqTls)"
+		if ([bool] $caps.pqTls -ne $pqTls) { throw "node $($s.name) reports pqTls $([bool] $caps.pqTls), and ranz doctor says that this runner can negotiate X25519MLKEM768: $pqTls" }
 	}
 	Write-Host 'the Hello of each node carried its Capabilities, which are the ones of this machine'
 
