@@ -87,8 +87,59 @@ typedef struct NODE_EVPN_STATUS {
 	UINT64 Malformed;   // Datagrams of no VXLAN frame, from any address (the module, before the source check), and frames of a known VTEP without an IP packet: dropped
 } NODE_EVPN_STATUS;
 
+// The stretch of a gateway (NodeStretch.c; SDN-64, #291; ADR-0032 amendment of 2026-10-22): the L2 Networks that it extends into
+// the fabric, each on its own L2 VNI, with EVPN route types 2 and 3 through the sidecar
+#define NODE_STRETCH_MAX        16         // The stretches of an evpn object at most
+#define NODE_STRETCH_NAME       64         // A Network name with its NUL (CONTROL_NAME_SIZE of Core/Control.h)
+#define NODE_STRETCH_MAX_ROUTES 500        // The routes of one stretch message at most, either way (MaxStretchRoutes of the sidecar)
+#define NODE_STRETCH_MAX_REMOTE 65536      // The routes of the fabric that a gateway holds at most
+#define NODE_STRETCH_MAX_LOCAL  16384      // The routes of its own that a gateway announces at most: entries of the MAC and IP tables
+#define NODE_STRETCH_NO_MESSAGE 0xFFFFFFFF // What NodeStretchParseRoutes returns for a message that is no stretch message
+
+typedef struct NODE_STRETCH NODE_STRETCH;
+
+// One stretch of the evpn object of the Bgp setting: the L2 Network and its L2 VNI. The sidecar reads the same object, with the
+// route distinguisher and the route targets of each.
+typedef struct NODE_STRETCH_SETTING {
+	char Network[NODE_STRETCH_NAME]; // The L2 Network
+	UINT Vni;                        // Its L2 VNI
+} NODE_STRETCH_SETTING;
+
+// A route of the fabric on the L2 VNI of a stretch, as a stretch message of the sidecar names it (NodeStretchParseRoutes) and as
+// the gateway holds it (NodeStretchGetRoutes): a MAC/IP advertisement route (type 2), MAC only or MAC plus IP, or an inclusive
+// multicast Ethernet tag route (type 3), which puts its VTEP into the flood list of the VNI
+typedef struct NODE_STRETCH_ROUTE {
+	UINT Vni;       // The L2 VNI
+	bool Imet;      // A type-3 route, whose VTEP is all of its key; else a type-2 route
+	UCHAR Mac[6];   // A type-2 route: the MAC address of one host ...
+	UCHAR Ip[16];   // ... and in the MAC plus IP form its IP address: 4 bytes for IPv4, 16 for IPv6 ...
+	UINT IpSize;    // ... their number, 0 for MAC only
+	UCHAR Vtep[16]; // The VTEP of the fabric, the next hop of the route, an IPv4 address as an IPv4-mapped one
+	bool Withdraw;  // In a message: the route went
+} NODE_STRETCH_ROUTE;
+
+// What NodeStretchGetStatus reports: the stretch of the gateway since the node started, all 0 without one
+typedef struct NODE_STRETCH_STATUS {
+	UINT NumStretches;  // The stretches of the running sidecar
+	UINT NumAttached;   // ... whose switch the L2 data path attached, with the port of the fabric on it
+	UINT NumMacs;       // The type-2 routes of the fabric that the gateway holds
+	UINT NumVteps;      // ... and its type-3 routes: the VTEPs of the flood lists
+	UINT NumAnnounced;  // The type-2 routes of the gateway that its sidecar announces
+	UINT64 Resyncs;     // The full resyncs that the gateway sent: one after each start of a sidecar
+	UINT64 Unicast;     // Frames of the overlay sent to the VTEP of the type-2 route of their destination
+	UINT64 Flooded;     // Frames of the overlay sent to each VTEP of the flood list once: broadcast, multicast, unknown unicast
+	UINT64 Failed;      // Frames of the overlay for the fabric that could not go: no flood list, too large, or a failed send
+	UINT64 Delivered;   // Frames of the fabric that the switch of their Network delivered to a port
+	UINT64 Undelivered; // ... that it delivered to none, or that came while the fabric was on no switch
+	UINT64 UnknownVtep; // Frames of an L2 VNI from an address that is the VTEP of no route of the VNI (NodeStretchInput): dropped, whatever they hold
+	UINT64 Refused;     // Routes of the fabric that the gateway did not take: none that it can take, of no stretch, or one too many
+} NODE_STRETCH_STATUS;
+
 // NodeEvpn.c
 UINT NodeEvpnParseRoute(const char *line, NODE_EVPN_ROUTE *r);
+bool NodeEvpnParseMac(const char *str, UCHAR *mac);
+UINT NodeEvpnParseAddr(const char *str, DWORD types, UCHAR *addr, UINT *prefix_len);
+void NodeEvpnMacText(char *str, UINT size, const UCHAR *mac);
 UINT NodeEvpnParseFrame(const UCHAR *frame, UINT size, const UCHAR *router_mac, NODE_EVPN_FRAME *f);
 bool NodeEvpnEnds(const UCHAR *packet, UINT size, UCHAR *src, UCHAR *dst, UINT *addr_size);
 UINT NodeEvpnSortVteps(NODE_EVPN_VTEP *vteps, UINT num);
@@ -105,6 +156,27 @@ struct NODE_SOURCE_CLAIM;
 bool NodeEvpnTransit(NODE *n, NODE_VRF_TABLES *v, UINT vrf_id, UINT from, const struct NODE_SOURCE_CLAIM *claim, const UCHAR *packet, UINT size);
 void NodeEvpnGetStatus(NODE *n, NODE_EVPN_STATUS *st);
 UINT NodeEvpnGetRoutes(NODE *n, NODE_EVPN_ROUTE *list, UINT max);
+
+// NodeStretch.c (SDN-64, #291)
+struct SWITCH;
+UINT NodeStretchParseRoutes(const char *line, NODE_STRETCH_ROUTE *list, UINT max, UINT *bad);
+UINT NodeStretchSettings(struct cJSON *stretches, const UINT *l3_vnis, UINT num_l3, NODE_STRETCH_SETTING *list, char *error, UINT error_size);
+void NodeStretchBind(NODE *n, VXLAN *vxlan, USHORT fabric_port, const NODE_STRETCH_SETTING *list, UINT num);
+void NodeStretchUnbind(NODE *n);
+bool NodeStretchInput(NODE *n, UINT vni, const VXLAN_ADDR *from, const UCHAR *frame, UINT size);
+void NodeStretchMessage(NODE *n, const char *line);
+void NodeStretchCommit(NODE *n);
+UINT NodeStretchFlush(NODE *n);
+void NodeStretchRun(NODE *n, NODE_BGP *b);
+void NodeStretchHalt(NODE *n);
+void NodeStretchFree(NODE *n);
+bool NodeStretchAttach(NODE *n, const char *network, struct SWITCH *sw, UINT vlan);
+void NodeStretchDetach(NODE *n, const char *network);
+void NodeStretchGetStatus(NODE *n, NODE_STRETCH_STATUS *st);
+UINT NodeStretchGetRoutes(NODE *n, NODE_STRETCH_ROUTE *list, UINT max);
+
+// NodeBgp.c: one message to the sidecar, from the node lock or from the thread of the stretch, which NodeBgpStop joins first
+bool NodeBgpSend(NODE_BGP *b, struct cJSON *m);
 
 // NodeTable.c
 bool NodeSwapEvpn(NODE *n, NODE_EVPN_TABLE *e);
