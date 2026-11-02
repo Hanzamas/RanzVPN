@@ -40,12 +40,12 @@ typedef struct NODE_TRACES NODE_TRACES;
 UINT NodeTraceWrite(UCHAR *option, const VXLAN_TRACE *trace);
 bool NodeTraceParse(const UCHAR *record, UINT size, VXLAN_TRACE *trace);
 const UCHAR *NodeTraceWrap(UCHAR *record, const UCHAR *frame, UINT *frame_size, UINT max, const VXLAN_TRACE *trace);
-CONTROL_TRACES *NodeTraceStart(NODE *n, const UCHAR *key);
+CONTROL_TRACES *NodeTraceStart(NODE *n, const UCHAR *key, NODE_CLOCK_PROC *clock, void *clock_param);
 void NodeTraceStop(NODE *n);
 void NodeTraceAttach(NODE *n, NODE_VRF_TABLES *v, const CONTROL_STATE *st);
 void NodeFreeTraceTable(NODE_TRACE_TABLE *t);
 const UCHAR *NodeTraceOutbound(NODE *n, NODE_VRF_TABLES *v, UINT hop, UINT vrf_id, UCHAR *record, UINT size, const UCHAR *frame, UINT *frame_size, UINT max, bool allowed, bool plain, VXLAN_TRACE *trace);
-void NodeTraceInbound(NODE *n, NODE_VRF_TABLES *v, UINT vrf_id, const UCHAR *header, UINT header_size, const NODE_SOURCE_CLAIM *claim, const UCHAR *packet, UINT size, bool ok);
+void NodeTraceInbound(NODE *n, NODE_VRF_TABLES *v, UINT vrf_id, const UCHAR *peer, const UCHAR *header, UINT header_size, const NODE_SOURCE_CLAIM *claim, const UCHAR *packet, UINT size, bool ok);
 void NodeTraceGetStatus(NODE *n, NODE_TRACE_STATUS *st);
 
 #endif // NODE_TRACE_H

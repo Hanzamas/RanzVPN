@@ -501,7 +501,7 @@ static void TrTestIngressNode(TRTEST_CTX *ctx)
 
 	Zero(key, sizeof(key));
 	Copy(key, trtest_ingress[0], VXLAN_TRACE_INGRESS);
-	TrTestCheck(ctx, NodeTraceStart(n, key) != NULL, "the trace of a node starts with the queue of its records");
+	TrTestCheck(ctx, NodeTraceStart(n, key, NULL, NULL) != NULL, "the trace of a node starts with the queue of its records");
 
 	st->NumVrfs = 1;
 	st->Vrfs[0].Id = TRTEST_VRF;

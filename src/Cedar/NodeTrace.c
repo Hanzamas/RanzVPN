@@ -7,7 +7,9 @@
 // node gives it a trace ID of 32 bits, never 0, from a counter that starts at a random number at the start of its
 // overlay, and the trace option carries the trace ID and the ingress node, the first VXLAN_TRACE_INGRESS bytes of its
 // static key, which the controller and the peers of the node know. The option carries nothing else of the packet: no
-// address, no port, no payload and no timestamp, which waits for synchronised clocks.
+// address, no port, no payload and no timestamp, which waits for synchronised clocks. A packet on a route that a VRF of a
+// peer leaks into the VRF of the host goes into that VRF, and no node traces it, as it carries no source group either
+// (SDN-89-R1, #630).
 //
 // The carriers. A record of a Noise session, or of the datagram path of the peer agent, to a peer that takes records of
 // frame version 1 (CONTROL_PEER.FrameVersion) carries the trace option in the header of frame version 1, after the
@@ -27,8 +29,11 @@
 // trace option, in a VRF of which the pool of a Network that traces holds its source or its destination, records the
 // trace ID, the ingress node, the VRF, the group that the packet carried and its verdict on it: allowed when it goes to
 // the host, denied when the node drops it, by its policy, the session profile of the peer or a claim of a group that
-// the peer may not assert (NodeTraceInbound). A node whose state has no Network that traces records nothing and leaves
-// the option where it is. A record waits in the queue of the control stream (Core/ControlTrace.c), which the controller
+// the peer may not assert (NodeTraceInbound). It records the packet only when its trace names the peer that sent it as
+// its ingress node: no node but the ingress node sends the option, so a trace of another ingress node is the claim of a
+// peer about another node, or of a host that sends from the tunnel endpoint of a peer on a link whose tag mode is off,
+// which would push the real traces out of those that the controller keeps (SDN-89-R1, #630). A node whose state has no
+// Network that traces records nothing and leaves the option where it is. A record waits in the queue of the control stream (Core/ControlTrace.c), which the controller
 // takes and `ranz explain -trace` shows as the path of the packet: each node with the group and the verdict.
 //
 // What it costs. With the trace of no Network of a Generation on, its tables hold no trace table (NODE_VRF_TABLES.Trace
@@ -52,7 +57,7 @@ struct NODE_TRACE_TABLE {
 	CONTROL_TRACED Pools[CONTROL_MAX_TRACED]; // ... each with its VRF
 	UINT NumVrfs;                             // The VRFs of those Networks ...
 	UINT VrfIds[CONTROL_MAX_VRFS];            // ...
-	volatile LONG64 Last[CONTROL_MAX_VRFS];   // ... and when the node last traced a packet of each as its ingress node (GetTickCount64), 0 for never
+	volatile LONG64 Last[CONTROL_MAX_VRFS];   // ... and when the node last traced a packet of each as its ingress node (NodeTraceNow), 0 for never
 	UINT NumPeers;                            // The peers ...
 	bool *Versioned;                          // ... and whether each takes records of frame version 1
 };
@@ -65,6 +70,8 @@ struct NODE_TRACES {
 	volatile LONG64 Traced;               // The packets that it traced as their ingress node
 	volatile LONG64 Recorded;             // The records that it made
 	CONTROL_TRACES *Report;               // The queue of the records that the control stream sends, NULL when it could not be made
+	NODE_CLOCK_PROC *Clock;               // The clock of its rate limit, NULL for GetTickCount64 ...
+	void *ClockParam;                     // ... and its second parameter
 };
 
 //
@@ -275,18 +282,26 @@ static void NodeTraceRecord(NODE_TRACES *g, const VXLAN_TRACE *trace, UINT vrf_i
 		InterlockedIncrement64(&g->Recorded);
 }
 
-// Whether the node traces the packet of the host of size bytes in the VRF vrf_id of the table t as its ingress node, with
+// The time of the rate limit of the trace g of the node n, in ms: its clock, GetTickCount64 without one
+static UINT64 NodeTraceNow(NODE *n, const NODE_TRACES *g) {
+	return (g->Clock != NULL ? g->Clock(n, g->ClockParam) : GetTickCount64());
+}
+
+// Whether the node n traces the packet of the host of size bytes in the VRF vrf_id of the table t as its ingress node, with
 // its trace in *trace: a packet of a Network whose trace is on, when the node traced no packet of the VRF in the last
-// NODE_TRACE_INTERVAL ms. Of two threads at the same moment one takes it.
-static bool NodeTraceTake(NODE_TRACES *g, NODE_TRACE_TABLE *t, UINT vrf_id, const UCHAR *packet, UINT size, VXLAN_TRACE *trace) {
+// NODE_TRACE_INTERVAL ms. Of two threads at the same moment one takes it. Each reads when the node last traced a packet of
+// the VRF before it reads the clock, so that a thread that the system holds between the two reads finds the slot taken
+// when it goes on, and a time before that of the last packet traces none, as the difference of the two never wraps
+// (SDN-89-R1, #630).
+static bool NodeTraceTake(NODE *n, NODE_TRACES *g, NODE_TRACE_TABLE *t, UINT vrf_id, const UCHAR *packet, UINT size, VXLAN_TRACE *trace) {
 	UINT slot = NodeTraceVrf(t, vrf_id);
 
 	if (slot == t->NumVrfs || NodeTraceHolds(t, vrf_id, packet, size) == false)
 		return false;
 
-	UINT64 now = GetTickCount64();
 	LONG64 last = ReadAcquire64(&t->Last[slot]);
-	if ((last != 0 && now - (UINT64)last < NODE_TRACE_INTERVAL) || InterlockedCompareExchange64(&t->Last[slot], (LONG64)now, last) != last)
+	UINT64 now = NodeTraceNow(n, g);
+	if ((last != 0 && now < (UINT64)last + NODE_TRACE_INTERVAL) || InterlockedCompareExchange64(&t->Last[slot], (LONG64)now, last) != last)
 		return false;
 
 	UINT id = (UINT)InterlockedIncrement(&g->Next);
@@ -303,7 +318,8 @@ static bool NodeTraceTake(NODE_TRACES *g, NODE_TRACE_TABLE *t, UINT vrf_id, cons
 
 // A packet of the host in the VRF vrf_id, size bytes after the VRF tag of its data record at record, which the node sends
 // to the next hop hop of the tables v as the frame of *frame_size bytes at frame (NodeOverlayInput), and the verdict of
-// its session profiles and its policy, allowed. When the node traces it as its ingress node (NodeTraceTake), it records
+// its session profiles and its policy, allowed. When the record is of the VRF vrf_id, as the record of a route that a VRF
+// of the peer leaks is not (NodeLeakVrf), and the node traces the packet as its ingress node (NodeTraceTake), it records
 // it with the group that it carries and the verdict, and the trace option goes with it: in *trace, which the link of kind
 // geneve of a plain path carries (NodeLinkSend), and on the session or the datagram path, whose payload is max bytes at
 // most, in the header of frame version 1 of the frame to a peer that takes it, when it fits (NodeTraceWrap). *trace
@@ -321,17 +337,21 @@ const UCHAR *NodeTraceOutbound(NODE *n, NODE_VRF_TABLES *v, UINT hop, UINT vrf_i
 	if (t == NULL || g == NULL || record == NULL || frame == NULL || frame_size == NULL)
 		return frame;
 
+	// A route that a VRF of the peer leaks takes the packet into that VRF, whose id its record carries (NodeLeak.c; SDN-7,
+	// #183): the packet goes without a trace, as it goes without its source group (NodeSourceGroupWrap), so the node traces
+	// a packet only in the VRF where it entered the overlay (SDN-89-R1, #630)
+	UINT record_vrf = READ_UINT(record);
 	const UCHAR *packet = record + NODE_OVERLAY_VRF_TAG;
-	if (NodeTraceTake(g, t, vrf_id, packet, size, trace) == false)
+	if (record_vrf != vrf_id || NodeTraceTake(n, g, t, vrf_id, packet, size, trace) == false)
 		return frame;
 
-	// The group that the packet carries: in the header of the link, as the tag mode of its VRF decides, or in the header
-	// of frame version 1 of the session or the datagram path
+	// The group that the packet carries: in the header of the link, as the tag mode of the VRF of its record decides, as the
+	// link stamps it (NodeLinkSend), or in the header of frame version 1 of the session or the datagram path
 	UINT group = 0;
 	if (plain) {
 		VXLAN_GROUP stamp;
 
-		if (NodeSourceGroupStamp(v, vrf_id, packet, size, &stamp))
+		if (NodeSourceGroupStamp(v, record_vrf, packet, size, &stamp))
 			group = stamp.Group;
 	} else if (frame != record) {
 		NODE_SOURCE_CLAIM claim;
@@ -349,12 +369,16 @@ const UCHAR *NodeTraceOutbound(NODE *n, NODE_VRF_TABLES *v, UINT hop, UINT vrf_i
 	return NodeTraceWrap(record, frame, frame_size, max, trace);
 }
 
-// A packet of a peer in the VRF vrf_id, size bytes at packet, as the peer sent it, with the header of frame version 1 of
-// its record, header_size bytes at header, 0 for a record of frame version 0 and for a datagram of a link, whose trace
-// option claim carries with its source group, and the verdict of the node on it, ok: it goes to the host, or the node
-// drops it. A traced packet in a VRF of which the pool of a Network that traces holds its source or its destination is
-// recorded with the group that it carried. The caller is an online reader of the node's table snapshot, which holds v.
-void NodeTraceInbound(NODE *n, NODE_VRF_TABLES *v, UINT vrf_id, const UCHAR *header, UINT header_size, const NODE_SOURCE_CLAIM *claim, const UCHAR *packet, UINT size, bool ok) {
+// A packet of a peer in the VRF vrf_id, size bytes at packet, as the peer of the static key peer sent it, NULL for a peer
+// of no key, with the header of frame version 1 of its record, header_size bytes at header, 0 for a record of frame
+// version 0 and for a datagram of a link, whose trace option claim carries with its source group, and the verdict of the
+// node on it, ok: it goes to the host, or the node drops it. A traced packet in a VRF of which the pool of a Network that
+// traces holds its source or its destination is recorded with the group that it carried, when the trace names the peer as
+// its ingress node, by the first CONTROL_TRACE_INGRESS bytes of its static key: no hub, EVPN gateway or other node carries
+// the option of the packet of a peer on, so the node records nothing of a trace of another ingress node, and takes the
+// packet as it would without one (SDN-89-R1, #630). The caller is an online reader of the node's table snapshot, which
+// holds v.
+void NodeTraceInbound(NODE *n, NODE_VRF_TABLES *v, UINT vrf_id, const UCHAR *peer, const UCHAR *header, UINT header_size, const NODE_SOURCE_CLAIM *claim, const UCHAR *packet, UINT size, bool ok) {
 	NODE_TRACE_TABLE *t = (v != NULL ? v->Trace : NULL);
 	NODE_TRACES *g = (n != NULL ? n->Trace : NULL);
 	VXLAN_TRACE trace;
@@ -369,7 +393,10 @@ void NodeTraceInbound(NODE *n, NODE_VRF_TABLES *v, UINT vrf_id, const UCHAR *hea
 	else if (claim != NULL)
 		Copy(&trace, &claim->Trace, sizeof(trace));
 
-	if (trace.Traced == false || trace.Id == 0 || NodeTraceVrf(t, vrf_id) == t->NumVrfs || NodeTraceHolds(t, vrf_id, packet, size) == false)
+	// The ingress node of the trace is the peer that sent the packet
+	if (trace.Traced == false || trace.Id == 0 || peer == NULL || Cmp(trace.Ingress, peer, CONTROL_TRACE_INGRESS) != 0)
+		return;
+	if (NodeTraceVrf(t, vrf_id) == t->NumVrfs || NodeTraceHolds(t, vrf_id, packet, size) == false)
 		return;
 
 	NodeTraceRecord(g, &trace, vrf_id, (claim != NULL && claim->Carried) ? claim->Group : 0, ok);
@@ -379,9 +406,10 @@ void NodeTraceInbound(NODE *n, NODE_VRF_TABLES *v, UINT vrf_id, const UCHAR *hea
 // The overlay
 //
 
-// Start the trace of the overlay of a node (NodeOverlayStart), whose static key is key: the queue of its records, which it
-// returns for its control stream, NULL when it could not be made
-CONTROL_TRACES *NodeTraceStart(NODE *n, const UCHAR *key) {
+// Start the trace of the overlay of a node (NodeOverlayStart), whose static key is key, with the clock of its rate limit,
+// clock with clock_param, NULL for GetTickCount64 (SDN-89-R1, #630): the queue of its records, which it returns for its
+// control stream, NULL when it could not be made
+CONTROL_TRACES *NodeTraceStart(NODE *n, const UCHAR *key, NODE_CLOCK_PROC *clock, void *clock_param) {
 	if (n == NULL || key == NULL || n->Trace != NULL)
 		return NULL;
 
@@ -389,6 +417,8 @@ CONTROL_TRACES *NodeTraceStart(NODE *n, const UCHAR *key) {
 	Copy(g->Ingress, key, CONTROL_TRACE_INGRESS);
 	g->Next = (LONG)Rand32();
 	g->Report = ControlNewTraces();
+	g->Clock = clock;
+	g->ClockParam = clock_param;
 	n->Trace = g;
 
 	return g->Report;

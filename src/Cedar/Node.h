@@ -255,7 +255,8 @@ struct CONTROL_CAPS;
 typedef void(NODE_CONTROL_END_PROC)(void *param, const struct CONTROL_STATUS *st);
 // Takes an IP packet of the host's own stack from the ring of a Wintun adapter, on the I/O thread of its adapter queue
 typedef void(NODE_WINTUN_PROC)(NODE_WINTUN *w, void *param, const UCHAR *packet, UINT size);
-// Tells the time in ms of the flows of the policy of the overlay (NodeOverlayStart), on the thread of a packet
+// Tells the time in ms of the flows of the policy of the overlay and of the rate limit of its trace (NodeOverlayStart), on
+// the thread of a packet
 typedef UINT64(NODE_CLOCK_PROC)(NODE *n, void *param);
 // Tells whether the data transport dials the peer name, whose Peer object lists the num endpoints (SDN-93, #410), as the
 // overlay asks for each peer that has no session (NodeOverlayStart): under the lock of the overlay, so it takes no lock
@@ -560,7 +561,7 @@ struct NODE_OVERLAY_CONFIG {
 	NODE_ADAPTER_STOP_PROC *AdapterStop;     // Stops the packets of the host first thing in NodeOverlayStop, NULL when the caller stops them before
 	NODE_STATE_PROC *State;                  // Takes each state applied, once its forwarding tables are in, NULL for none
 	bool Dialler;                            // The node dials every peer, whatever the order of the keys, as a client does (CORE-S3-1)
-	NODE_CLOCK_PROC *Clock;                  // Tells the time of the flows of the policy (NodePolicy.c), NULL for GetTickCount64; with AdapterParam
+	NODE_CLOCK_PROC *Clock;                  // Tells the time of the flows of the policy (NodePolicy.c) and of the rate limit of the trace (NodeTrace.c), NULL for GetTickCount64; with AdapterParam
 
 	// Tells whether the data transport dials a peer, which has endpoints in its Peer object (SDN-93, #410); with AdapterParam.
 	// The overlay then dials a peer only when it does, and a node that has no endpoints itself dials every such peer, whatever
