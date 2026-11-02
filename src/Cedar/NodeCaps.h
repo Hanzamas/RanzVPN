@@ -62,7 +62,9 @@ void NodeCapsProc(void *param, CONTROL_CAPS *caps);
 // never peers, as NodePeering.c only tries to start it again every 5 s, so it must not say that it does: the controller refuses
 // to make a node that does not report it a member of a VRF whose peering is bgp (SDN-77-R2, #532), where it would lose the LAN
 // routes of the VRF without an error. caps is left as it is when it is NULL, and a NULL node reports none. The file is looked for
-// again for each Hello.
+// again for each Hello. BgpReflection follows it: the route reflectors of the peering are in the same release and run in the same
+// sidecar (SDN-79, #359), and the controller refuses to make a node that does not report them a member of a VRF whose Intent names
+// route reflectors.
 void NodeCapsPeering(NODE *n, CONTROL_CAPS *caps);
 
 // Write the Capabilities of the node to its node log, as the line "Capabilities: architecture x64, SeLow yes, XDP no,
