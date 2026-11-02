@@ -225,14 +225,14 @@ static void NodeMimicSettings(NODE *n, NODE_MIMIC_SIDECAR *sc, const char *text,
 	Lock(n->Lock);
 	{
 		old = sc->Settings;
-		sc->Settings = (text != NULL ? CopyStr((char *)text) : NULL);
+		sc->Settings = (text != NULL ? CopyStr(text) : NULL);
 	}
 	Unlock(n->Lock);
 
 	Lock(sc->Lock);
 	{
 		sc->St.Configured = configured;
-		StrCpy(sc->St.Error, sizeof(sc->St.Error), (char *)error);
+		StrCpy(sc->St.Error, sizeof(sc->St.Error), error);
 	}
 	Unlock(sc->Lock);
 
