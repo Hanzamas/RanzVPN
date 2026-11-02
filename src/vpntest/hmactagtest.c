@@ -21,14 +21,17 @@
 //   MAC that claims guest on a packet from 10.0.0.50 is judged by the map as admin and arrives: as if the option were missing.
 // - The link of red is vxlan in hmac, which the controller refuses, as the group policy extension of VXLAN has no room for the
 //   MAC: node-a sends no source group, and node-b judges a forged admin in the extension as unauthenticated.
-// - The key of red rotates while a flow is open: node-a stamps admin on the packets of its own address, which admin-in allows
-//   only by the group that they carry, as the map judges 10.0.0.1 as guest, and node-b answers each packet of the flow from its
-//   own host. The Generations of the two nodes go in one after the other, in the order that the controller allows: the new key
-//   2 at node-b, then at node-a, beside key 1, which both send with; then key 2 as the one to send with at node-a, then at
-//   node-b; then the next rotation, key 3 beside key 2 at node-a, then at node-b. At each step a packet of the flow from node-a
-//   arrives at node-b's host and node-b's answer at node-a's host, and each node counts the other's packet as carried with a
-//   valid MAC: no packet of the open flow is lost. Last, the order that the controller never allows: node-a sends with key 3
-//   alone while node-b does not hold it yet, and node-b counts its packet as unauthenticated.
+// - The key of red rotates while a flow is open between the phone, behind node-a, and node-b's host: node-a stamps admin, the
+//   group of the phone, on its packets, which admin-in allows, and node-b's host answers each of them. Node-b tracks them as
+//   one flow, as it judges the answer of its host by the map of address to group (NodePolicy.c), which gives the phone admin:
+//   an honest node stamps on a packet the group that the map gives its source. The Generations of the two nodes go in one
+//   after the other, in the order that the controller allows: the new key 2 at node-b, then at node-a, beside key 1, which
+//   both send with; then key 2 as the one to send with at node-a, then at node-b; then the next rotation, key 3 beside key 2
+//   at node-a, then at node-b. At each step a packet of the flow from the phone arrives at node-b's host and node-b's answer
+//   at node-a's host for the phone, and each node counts the other's packet as carried with a valid MAC: no packet of the open
+//   flow is lost. Last, the order that the controller never allows, with admin as node-a's own group, which the map of node-b
+//   does not give 10.0.0.1: node-a sends with a key that node-b does not hold, and node-b counts its packet as unauthenticated
+//   and drops it, as the map judges 10.0.0.1 as guest.
 // Print "HMACTAGS TEST OK" only when every check passes.
 
 #include "harness_int.h"
@@ -782,18 +785,18 @@ static bool HtTestStep(HTTEST_CTX *ctx, UINT i, const HTTEST_KEY *keys, UINT num
 	return HtTestCheck(ctx, applied, what, "the Generations %I64u and %I64u", ctx->Nodes[HTTEST_A].Generation, ctx->Nodes[HTTEST_B].Generation);
 }
 
-// One packet of the open flow each way: from node-a's host at 10.0.0.1, which stamps admin, to node-b's host, which admin-in
-// allows only by the group that the packet carries, and node-b's answer to node-a's host; each node counts the packet of the
-// other as carried with a valid MAC, and its host takes it
+// One packet of the open flow each way: from the phone at 10.0.0.50, on whose packets node-a stamps admin, to node-b's host,
+// which admin-in allows, and node-b's answer, which node-b's policy lets through as the answer of that flow, to node-a's host
+// for the phone; each node counts the packet of the other as carried with a valid MAC, and its host takes it
 static void HtTestFlow(HTTEST_CTX *ctx, char *step)
 {
 	char what[MAX_SIZE * 2];
 
-	Format(what, sizeof(what), "  %s: a packet of the open flow from node-a, admin with a valid MAC, arrives at node-b's host", step);
-	HtTestSend(ctx, HTTEST_A, HTTEST_B, httest_addrs[HTTEST_A][0], httest_addrs[HTTEST_B][0], HTTEST_FLOW_PORT, HTTEST_PORT, CONTROL_LINK_GENEVE, NULL,
+	Format(what, sizeof(what), "  %s: a packet of the open flow from the phone behind node-a, admin with a valid MAC, arrives at node-b's host", step);
+	HtTestSend(ctx, HTTEST_A, HTTEST_B, HTTEST_PHONE, httest_addrs[HTTEST_B][0], HTTEST_FLOW_PORT, HTTEST_PORT, CONTROL_LINK_GENEVE, NULL,
 		HTTEST_CARRIED, true, what);
-	Format(what, sizeof(what), "  %s: node-b's answer, server with a valid MAC, arrives at node-a's host", step);
-	HtTestSend(ctx, HTTEST_B, HTTEST_A, httest_addrs[HTTEST_B][0], httest_addrs[HTTEST_A][0], HTTEST_PORT, HTTEST_FLOW_PORT, CONTROL_LINK_GENEVE, NULL,
+	Format(what, sizeof(what), "  %s: node-b's answer, server with a valid MAC, arrives at node-a's host for the phone", step);
+	HtTestSend(ctx, HTTEST_B, HTTEST_A, httest_addrs[HTTEST_B][0], HTTEST_PHONE, HTTEST_PORT, HTTEST_FLOW_PORT, CONTROL_LINK_GENEVE, NULL,
 		HTTEST_CARRIED, true, what);
 }
 
@@ -806,7 +809,7 @@ static void HtTestRotation(HTTEST_CTX *ctx)
 	static const HTTEST_KEY k2_k3[] = {{2, 0x20, true}, {3, 0x30, false}};
 	static const HTTEST_KEY k3_alone[] = {{3, 0x30, true}};
 
-	Print("[the key of red rotates while a flow is open: node-a stamps admin on the packets of its own address]\n");
+	Print("[the key of red rotates while a flow between the phone behind node-a and node-b's host is open]\n");
 	if (HtTestSwitch(ctx, CONTROL_LINK_GENEVE, HTTEST_ADMIN, HTTEST_ADMIN_TAGS, k1, 1, k1, 1, "both nodes send with key 1, node-a stamps admin") == false)
 	{
 		return;
@@ -838,8 +841,8 @@ static void HtTestRotation(HTTEST_CTX *ctx)
 		HtTestFlow(ctx, "key 3 at both");
 	}
 
-	// The order that the controller never allows: node-a sends with key 3 alone, which node-b holds, so its packet is taken; and
-	// with key 3 while node-b holds only key 2
+	// The order that the controller never allows, on a packet of node-a's own address, whose group admin the map of node-b does
+	// not give it: node-b holds key 1 alone while node-a sends with key 2, then node-a sends with key 3 alone
 	if (HtTestStep(ctx, HTTEST_B, k1, 1, "the order that the controller never allows: node-b holds key 1 alone, while node-a sends with key 2"))
 	{
 		HtTestSend(ctx, HTTEST_A, HTTEST_B, httest_addrs[HTTEST_A][0], httest_addrs[HTTEST_B][0], ctx->NextPort++, HTTEST_PORT, CONTROL_LINK_GENEVE, NULL,
