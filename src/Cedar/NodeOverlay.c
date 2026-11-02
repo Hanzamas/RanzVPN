@@ -204,7 +204,8 @@ static NODE_VRF_TABLES *NodeOverlayTables(const CONTROL_STATE *st, NODE_OVERLAY_
 
 	for (UINT i = 0; i < st->NumPeers; i++)
 		for (UINT j = 0; j < st->Peers[i].NumAddresses; j++)
-			if (NodeOverlayRoute(&routes[num], &st->Peers[i].Addresses[j], i))
+			// ... but in a VRF whose nodes peer by EVPN, where the IP prefix routes of the peers lead to them (NodeEvpnPeering.c; SDN-78, #358)
+			if (NodeEvpnPeeringVrf(st, st->Peers[i].Addresses[j].VrfId) == false && NodeOverlayRoute(&routes[num], &st->Peers[i].Addresses[j], i))
 				num++;
 
 	num += NodeNatRoutes(st, routes + num);

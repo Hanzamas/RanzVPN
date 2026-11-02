@@ -11,7 +11,7 @@
 #define NODE_PEERING_RESTART  5000                    // ms before a sidecar that ended, or did not start, starts again
 #define NODE_PEERING_PING     5000                    // ms after the last answer of the sidecar before the node asks it again whether it runs
 #define NODE_PEERING_ANSWER   10000                   // ms within which the sidecar answers that question, or it hangs and the node ends it
-#define NODE_PEERING_PROTOCOL 7                       // The protocol of the pipe that the node needs from its sidecar, and ends one of an older protocol (SDN-77-R3, #570): 7 has the roles of the route reflectors (SDN-79, #359)
+#define NODE_PEERING_PROTOCOL 8                       // The protocol of the pipe that the node needs from its sidecar, and ends one of an older protocol (SDN-77-R3, #570): 7 has the roles of the route reflectors (SDN-79, #359), 8 the evpn of the peering and the moved of a type-2 route (SDN-78, #358)
 
 typedef struct NODE_PEERING NODE_PEERING;
 
@@ -62,6 +62,17 @@ struct CONTROL_PEERING_REPORT *NodePeeringGetReport(NODE *n);
 void NodePeeringFailNext(NODE *n, UINT copies, UINT rebuilds, UINT settles);
 void NodePeeringFeed(NODE *n, const char *line);
 void NodePeeringSay(NODE *n, const char *line);
+// ... and the EVPN of its VRFs that peer by EVPN (SDN-78, #358)
+struct NODE_EVPN_STATUS;
+struct NODE_EVPN_ROUTE;
+void NodePeeringSetFabricPort(NODE *n, UINT port);
+bool NodePeeringGetEvpnStatus(NODE *n, struct NODE_EVPN_STATUS *st);
+UINT NodePeeringGetEvpnRoutes(NODE *n, struct NODE_EVPN_ROUTE *list, UINT max);
+
+// NodeEvpnPeering.c: the EVPN peering of the standard mode (SDN-78, #358)
+struct cJSON;
+bool NodeEvpnPeeringVrf(const struct CONTROL_STATE *st, UINT vrf_id);
+struct cJSON *NodeEvpnPeeringObject(const struct CONTROL_STATE *st, const char *vtep, const char *router_id, UINT fabric_port);
 
 // NodeOverlay.c
 UINT NodeOverlayRebuild(NODE *n, const struct CONTROL_STATE *with);

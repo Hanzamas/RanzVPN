@@ -339,8 +339,10 @@ static void NodeBgpOnMessage(NODE_BGP *b, char *line) {
 		if (NodeEvpnRoute(b->Node, line) == false)
 			NodeBgpWithdrawn(b, NodeBgpJsonStr(m, "prefix"), NodeBgpJsonStr(m, "peer"));
 	} else if (StrCmp(type, "stretch") == 0) {
-		// The type-2 and type-3 routes of the fabric on the L2 VNIs of the stretches of a gateway (NodeStretch.c; SDN-64, #291)
-		NodeStretchMessage(b->Node, line);
+		// The type-2 and type-3 routes of the fabric on the L2 VNIs of the stretches of a gateway (NodeStretch.c; SDN-64, #291), while
+		// its EVPN runs: the stretch of the node is the EVPN peering's while that one runs the EVPN (SDN-78, #358)
+		if (b->Node->Evpn != NULL)
+			NodeStretchMessage(b->Node, line);
 	} else if (StrCmp(type, "error") == 0) {
 		Lock(b->Lock);
 		{
@@ -412,9 +414,10 @@ static DWORD WINAPI NodeBgpReaderThread(void *param) {
 		}
 
 		// The routes of the EVPN VRFs that the messages of this read changed go in together (NodeEvpn.c; SDN-25, #201), and so do
-		// the routes of the fabric of the stretches (NodeStretch.c; SDN-64, #291)
+		// the routes of the fabric of the stretches (NodeStretch.c; SDN-64, #291), of the EVPN of the gateway alone (SDN-78, #358)
 		NodeEvpnCommit(b->Node);
-		NodeStretchCommit(b->Node);
+		if (b->Node->Evpn != NULL)
+			NodeStretchCommit(b->Node);
 
 		if (too_long) {
 			NodeLog(b->Node, "BGP sidecar: a message longer than %u bytes, the node stops reading", (UINT)NODE_BGP_MAX_LINE);
@@ -432,8 +435,9 @@ static DWORD WINAPI NodeBgpReaderThread(void *param) {
 		}
 		Unlock(b->Lock);
 
-		// ... and so do the routes of the EVPN VRFs (NodeEvpn.c; SDN-25, #201) and of the stretches (NodeStretch.c; SDN-64, #291)
-		UINT num = NodeBgpDeleteAllRoutes(b) + NodeEvpnFlush(b->Node) + NodeStretchFlush(b->Node);
+		// ... and so do the routes of the EVPN VRFs (NodeEvpn.c; SDN-25, #201) and of the stretches (NodeStretch.c; SDN-64, #291), of
+		// the EVPN of the gateway alone (SDN-78, #358)
+		UINT num = NodeBgpDeleteAllRoutes(b) + NodeEvpnFlush(b->Node) + (b->Node->Evpn != NULL ? NodeStretchFlush(b->Node) : 0);
 		NodeLog(b->Node, "BGP sidecar closed the pipe: BGP stopped, %u learned routes removed", num);
 	}
 
@@ -752,8 +756,10 @@ void NodeBgpStop(NODE *n) {
 
 	n->Bgp = NULL;
 
-	// The thread of the stretch of a gateway sends on the pipe: it ends first (NodeStretch.c; SDN-64, #291)
-	NodeStretchHalt(n);
+	// The thread of the stretch of a gateway sends on the pipe: it ends first (NodeStretch.c; SDN-64, #291), and it runs only with the
+	// EVPN of the gateway, as the EVPN peering runs its own (SDN-78, #358)
+	if (n->Evpn != NULL)
+		NodeStretchHalt(n);
 
 	SetEvent(b->StopEvent);
 	WaitForSingleObject(b->Reader, INFINITE);

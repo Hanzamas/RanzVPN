@@ -38,8 +38,15 @@
 // with more, after which the sidecar withdraws what it announced before and the resync did not name. When the pipe closes the
 // routes of the fabric go, and the sidecar that starts next learns them again from the fabric: the full resync of the other way.
 //
-// MAC mobility, the MAC import limit, the stale timer and their events are SDN-65 (#292); the BUM rate limit and the drop of BPDUs
-// are SDN-66 (#293).
+// MAC mobility (RFC 7432 section 15; SDN-78, #358): the sidecar names a type-2 route of the fabric whose MAC address moved from the
+// gateway to the VTEP of the route with moved (ranz-bgp/internal/sidecar/mobility.go), and the next round takes that address and
+// its IP addresses off the port of the switch where the gateway had them, so that the route puts the address at the port of the
+// fabric: the frames to it go to its new VTEP and no longer to its old port, and the gateway withdraws its routes of it. The same
+// machinery runs the EVPN peering of the standard mode, whose fabric is the other nodes of a VRF (NodeEvpnPeering.c), with the
+// sidecar of the peering as the sidecar of the routes (NodeStretchRunWith).
+//
+// The flap hold of MAC mobility, the MAC import limit, the stale timer and their events are SDN-65 (#292); the BUM rate limit and
+// the drop of BPDUs are SDN-66 (#293).
 //
 // The locks. Config serialises what calls the switches: the attach and the detach of a switch, the start and the stop of a sidecar
 // (NodeStretchBind, NodeStretchUnbind) and the rounds of the thread; the data path never takes it. Lock, a slim reader/writer
@@ -102,12 +109,15 @@ typedef struct NODE_STRETCH_NET {
 	UINT NumKnown;                   // ... their number
 	VXLAN_ADDR *Flood;               // The flood list: the VTEPs of the type-3 routes of the VNI ...
 	UINT NumFlood;                   // ... their number
+	NODE_STRETCH_MAC *Moves;         // The MAC addresses of the gateway that moved to a VTEP of the fabric, which the next round takes off their ports ...
+	UINT NumMoves;                   // ... their number (MAC mobility; SDN-78, #358)
 } NODE_STRETCH_NET;
 
 // What the thread of the stretch keeps from the start of a sidecar to its stop
 typedef struct NODE_STRETCH_RUN {
 	NODE_STRETCH *Stretch;                             // The stretch of the node
-	NODE_BGP *Bgp;                                     // The sidecar that the routes of the gateway go to
+	NODE_STRETCH_SEND_PROC *Send;                      // Sends a message to the sidecar that the routes of the gateway go to ...
+	void *SendParam;                                   // ... of the Bgp setting, or of the EVPN peering (SDN-78, #358)
 	bool Resync;                                       // The next round is a full resync
 	bool Full;                                         // The switches gave more routes than NODE_STRETCH_MAX_LOCAL, which the node log said
 	SWITCH_MAC_ENTRY *Macs;                            // The MAC table of a switch, whole (NodeStretchGetMacs) ...
@@ -148,7 +158,12 @@ struct NODE_STRETCH {
 	volatile LONG64 Undelivered;
 	volatile LONG64 UnknownVtep;
 	volatile LONG64 Refused;
+	volatile LONG64 Moved;
 };
+
+// The most MAC addresses of a Network that moved to a VTEP of the fabric and wait for the next round (MAC mobility; SDN-78, #358):
+// a move beyond them is left to the age of the MAC table
+#define NODE_STRETCH_MAX_MOVES NODE_STRETCH_MAX_ROUTES
 
 //
 // The text of the sidecar and of the evpn object
@@ -228,6 +243,8 @@ static bool NodeStretchVtepOf(const char *str, UCHAR *vtep) {
 // One route of a stretch message of the sidecar into r: false for one that the node cannot take (NodeStretchParseRoutes)
 static bool NodeStretchRouteOf(const cJSON *o, NODE_STRETCH_ROUTE *r) {
 	const cJSON *withdraw = cJSON_GetObjectItemCaseSensitive(o, "withdraw");
+	// A type-2 route whose MAC address moved from the node to its VTEP (MAC mobility; SDN-78, #358)
+	const cJSON *moved = cJSON_GetObjectItemCaseSensitive(o, "moved");
 	const char *mac = NULL;
 	const char *ip = NULL;
 	const char *next_hop = NULL;
@@ -235,19 +252,20 @@ static bool NodeStretchRouteOf(const cJSON *o, NODE_STRETCH_ROUTE *r) {
 	Zero(r, sizeof(NODE_STRETCH_ROUTE));
 	if (cJSON_IsObject(o) == false || NodeStretchJsonVni(cJSON_GetObjectItemCaseSensitive(o, "vni"), &r->Vni) == false)
 		return false;
-	if ((withdraw != NULL && cJSON_IsBool(withdraw) == false) || NodeStretchJsonText(o, "mac", &mac) == false ||
+	if ((withdraw != NULL && cJSON_IsBool(withdraw) == false) || (moved != NULL && cJSON_IsBool(moved) == false) || NodeStretchJsonText(o, "mac", &mac) == false ||
 	    NodeStretchJsonText(o, "ip", &ip) == false || NodeStretchJsonText(o, "next_hop", &next_hop) == false)
 		return false;
 
 	// The VTEP of the fabric: the next hop of a type-2 route, and the VTEP of the flood list of a type-3 route
 	r->Withdraw = (cJSON_IsTrue(withdraw) != false);
+	r->Moved = (cJSON_IsTrue(moved) != false);
 	if (NodeStretchVtepOf(next_hop, r->Vtep) == false)
 		return false;
 
-	// A type-3 route has no MAC address, and so no IP address
+	// A type-3 route has no MAC address, and so no IP address, and never moves
 	if (mac == NULL) {
 		r->Imet = true;
-		return (ip == NULL);
+		return (ip == NULL && r->Moved == false);
 	}
 
 	if (NodeEvpnParseMac(mac, r->Mac) == false || NodeStretchHostMac(r->Mac) == false)
@@ -265,8 +283,8 @@ static bool NodeStretchRouteOf(const cJSON *o, NODE_STRETCH_ROUTE *r) {
 // routes, max of them at most, into list, and into *bad the number of the routes of the message that the node cannot take or
 // that are beyond max. A route has a VNI of 24 bits (vni) and the VTEP of the fabric as its next hop (next_hop): a type-2 route
 // has the MAC address of one host (mac) and, in the MAC plus IP form, an IP address (ip), a type-3 route neither; withdraw says
-// that it went. The number of the routes in list; NODE_STRETCH_NO_MESSAGE for any other message, and for one whose routes are
-// no array.
+// that it went, and moved, of a type-2 route, that its MAC address moved from the node to its VTEP (SDN-78, #358). The number of
+// the routes in list; NODE_STRETCH_NO_MESSAGE for any other message, and for one whose routes are no array.
 UINT NodeStretchParseRoutes(const char *line, NODE_STRETCH_ROUTE *list, UINT max, UINT *bad) {
 	UINT num = 0;
 	UINT refused = 0;
@@ -514,6 +532,7 @@ static void NodeStretchRelease(NODE_STRETCH *s) {
 		Free(net->Macs);
 		Free(net->Known);
 		Free(net->Flood);
+		Free(net->Moves);
 		Free(net);
 	}
 	ReleaseList(s->Nets);
@@ -784,6 +803,10 @@ void NodeStretchUnbind(NODE *n) {
 
 			net->Vni = 0;
 			NodeStretchBuild(s, net);
+			// ... and the moves that no round took (SDN-78, #358)
+			Free(net->Moves);
+			net->Moves = NULL;
+			net->NumMoves = 0;
 		}
 		s->Dirty = false;
 		ReleaseSRWLockExclusive(&s->Lock);
@@ -854,13 +877,17 @@ bool NodeStretchInput(NODE *n, UINT vni, const VXLAN_ADDR *from, const UCHAR *fr
 
 // A message of the sidecar on one line (NodeBgp.c): the routes of a stretch message go into the routes of the fabric, a learned
 // route in place of the route of its key that the gateway had, a route with withdraw out of them; NodeStretchCommit then builds
-// them into the tables of the Networks. A route of no stretch, and a route beyond NODE_STRETCH_MAX_REMOTE, is not taken.
+// them into the tables of the Networks. A route of no stretch, and a route beyond NODE_STRETCH_MAX_REMOTE, is not taken. A type-2
+// route with moved is of a MAC address of the gateway that moved to its VTEP: the next round of the thread of the stretch takes the
+// address off the port of the switch where it is, so that the route puts it at the port of the fabric (NodeStretchScan; SDN-78,
+// #358).
 void NodeStretchMessage(NODE *n, const char *line) {
 	NODE_STRETCH *s = NodeStretchOf(n);
 	NODE_STRETCH_ROUTE *list = ZeroMalloc(sizeof(NODE_STRETCH_ROUTE) * NODE_STRETCH_MAX_ROUTES);
 	UINT refused = 0;
 	UINT learned = 0;
 	UINT withdrawn = 0;
+	UINT moved = 0;
 	UINT num = NodeStretchParseRoutes(line, list, NODE_STRETCH_MAX_ROUTES, &refused);
 
 	if (num == NODE_STRETCH_NO_MESSAGE) {
@@ -879,10 +906,21 @@ void NodeStretchMessage(NODE *n, const char *line) {
 		for (UINT i = 0; i < num; i++) {
 			NODE_STRETCH_ROUTE *r = &list[i];
 			NODE_STRETCH_ROUTE *old = NULL;
+			NODE_STRETCH_NET *net = NodeStretchNetOf(s, r->Vni);
 
-			if (NodeStretchNetOf(s, r->Vni) == NULL) {
+			if (net == NULL) {
 				refused++;
 				continue;
+			}
+
+			// A MAC address of the gateway that moved to the VTEP of the route: the next round takes it off the port where the
+			// switch has it, and the route puts it at the port of the fabric (MAC mobility; SDN-78, #358)
+			if (r->Moved && r->Withdraw == false && r->Imet == false && net->NumMoves < NODE_STRETCH_MAX_MOVES) {
+				if (net->Moves == NULL)
+					net->Moves = ZeroMalloc(sizeof(NODE_STRETCH_MAC) * NODE_STRETCH_MAX_MOVES);
+				Copy(net->Moves[net->NumMoves].Mac, r->Mac, sizeof(r->Mac));
+				net->NumMoves++;
+				moved++;
 			}
 
 			old = Search(s->Remote, r);
@@ -913,9 +951,13 @@ void NodeStretchMessage(NODE *n, const char *line) {
 		ReleaseSRWLockExclusive(&s->Lock);
 	}
 
-	if (s != NULL)
+	if (s != NULL) {
 		InterlockedExchangeAdd64(&s->Refused, (LONG64)refused);
+		InterlockedExchangeAdd64(&s->Moved, (LONG64)moved);
+	}
 	NodeLog(n, "EVPN stretch: %u routes of the fabric learned, %u withdrawn, %u not taken", learned, withdrawn, refused);
+	if (moved != 0)
+		NodeLog(n, "EVPN stretch: %u MAC addresses of the node moved to a VTEP of the fabric (MAC mobility): they leave their ports, and the frames to them go to that VTEP", moved);
 
 	Free(list);
 }
@@ -1034,6 +1076,32 @@ static UINT NodeStretchGetIps(NODE_STRETCH_RUN *r, SWITCH *sw) {
 static void NodeStretchScan(NODE_STRETCH_RUN *r, NODE_STRETCH_NET *net, UINT64 now) {
 	NODE_STRETCH *s = r->Stretch;
 	UINT done = 0;
+	NODE_STRETCH_MAC *moves = NULL;
+	UINT num_moves = 0;
+
+	// The MAC addresses of the gateway that moved to a VTEP of the fabric leave the ports where the switch has them, once: the routes
+	// below put them at the port of the fabric, so that the frames to them go to that VTEP and no longer to their old ports (MAC
+	// mobility; SDN-78, #358)
+	AcquireSRWLockExclusive(&s->Lock);
+	moves = net->Moves;
+	num_moves = net->NumMoves;
+	net->Moves = NULL;
+	net->NumMoves = 0;
+	ReleaseSRWLockExclusive(&s->Lock);
+
+	for (UINT i = 0; i < num_moves; i++)
+		SwitchClearMac(net->Switch, moves[i].Mac);
+	// ... and their IP addresses, so that no round announces them in the MAC plus IP form again
+	UINT num_old = (num_moves != 0 ? NodeStretchGetIps(r, net->Switch) : 0);
+	for (UINT i = 0; i < num_old; i++) {
+		for (UINT j = 0; j < num_moves; j++) {
+			if (Cmp(r->Ips[i].Mac, moves[j].Mac, 6) == 0) {
+				SwitchClearIps(net->Switch, r->Ips[i].Address, r->Ips[i].AddressSize);
+				break;
+			}
+		}
+	}
+	Free(moves);
 
 	while (true) {
 		UINT num = 0;
@@ -1109,7 +1177,7 @@ static bool NodeStretchSendBatch(NODE_STRETCH_RUN *r, bool full, bool more) {
 	}
 	cJSON_AddItemToObject(m, "routes", routes);
 
-	bool ok = NodeBgpSend(r->Bgp, m);
+	bool ok = r->Send(r->SendParam, m);
 
 	cJSON_Delete(m);
 	r->NumBatch = 0;
@@ -1251,13 +1319,26 @@ static void NodeStretchFreeRun(NODE_STRETCH_RUN *r) {
 	Free(r);
 }
 
+// One stretch message to the sidecar of the Bgp setting (NODE_STRETCH_SEND_PROC)
+static bool NodeStretchBgpSend(void *param, cJSON *m) {
+	return NodeBgpSend((NODE_BGP *)param, m);
+}
+
 // Start the thread of the stretch with the sidecar b (NodeBgpStart), when the EVPN of the gateway runs with a stretch: its first
 // round is a full resync. The caller holds the node lock.
 void NodeStretchRun(NODE *n, NODE_BGP *b) {
+	// ... while its EVPN runs: the stretch of the node is the EVPN peering's while that one runs the EVPN (SDN-78, #358)
+	if (n != NULL && b != NULL && n->Evpn != NULL)
+		NodeStretchRunWith(n, NodeStretchBgpSend, b);
+}
+
+// ... with the sidecar that send reaches with param: the one of the Bgp setting (NodeStretchRun), or of the EVPN peering of the
+// standard mode (NodeEvpnPeering.c; SDN-78, #358), whose worker calls it and NodeStretchHalt as the node lock would
+void NodeStretchRunWith(NODE *n, NODE_STRETCH_SEND_PROC *send, void *param) {
 	NODE_STRETCH *s = NodeStretchOf(n);
 	UINT stretches = 0;
 
-	if (s == NULL || b == NULL || s->Thread != NULL)
+	if (s == NULL || send == NULL || s->Thread != NULL)
 		return;
 
 	AcquireSRWLockShared(&s->Lock);
@@ -1268,7 +1349,8 @@ void NodeStretchRun(NODE *n, NODE_BGP *b) {
 
 	NODE_STRETCH_RUN *r = ZeroMalloc(sizeof(NODE_STRETCH_RUN));
 	r->Stretch = s;
-	r->Bgp = b;
+	r->Send = send;
+	r->SendParam = param;
 	r->Resync = true;
 	r->MaxMacs = NODE_STRETCH_MAX_LOCAL;
 	r->Macs = ZeroMalloc(sizeof(SWITCH_MAC_ENTRY) * r->MaxMacs);
@@ -1349,6 +1431,7 @@ void NodeStretchGetStatus(NODE *n, NODE_STRETCH_STATUS *st) {
 	st->Undelivered = (UINT64)ReadAcquire64(&s->Undelivered);
 	st->UnknownVtep = (UINT64)ReadAcquire64(&s->UnknownVtep);
 	st->Refused = (UINT64)ReadAcquire64(&s->Refused);
+	st->Moved = (UINT64)ReadAcquire64(&s->Moved);
 }
 
 // The routes of the fabric that the gateway holds, at most max of them into list, in the order of their VNI, kind and address:
