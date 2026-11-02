@@ -1,0 +1,9 @@
+{
+  "resources": [
+    {"kind": "VRF", "name": "dc", "spec": {"id": 30, "ula": "fd12:3456:789c::/48", "link": "vxlan", "peering": {"protocol": "bgp", "holdTime": 9}}},
+    {"kind": "Network", "name": "dc-net", "spec": {"vrf": "dc", "ipv4Pool": "10.30.0.0/24"}},
+    {"kind": "Node", "name": "gw-1", "spec": {"publicKey": "B6N8vBQgk8i3VdwbEOhstCY3StFqqFPtC9/AsrhtHHw=", "vrfs": ["dc"], "vtep": {"address": "10.1.0.1"}, "addresses": {"dc-net": "10.30.0.1"}}},
+    {"kind": "Node", "name": "db", "spec": {"publicKey": "WGmv9FBUlzLLqu1eXfmzCm2jHLDldCutWtShp2jxpns=", "vrfs": ["dc"], "vtep": {"address": "10.1.0.2"}, "addresses": {"dc-net": "10.30.0.2"}, "lanSubnets": {"dc": ["192.168.20.0/24"]}}},
+    {"kind": "Node", "name": "files", "spec": {"publicKey": "JE/juWPomd0pW6/84kjTUw86mnR5ugYwAmgOv+etrUk=", "vrfs": ["dc"], "vtep": {"address": "10.1.0.3"}, "addresses": {"dc-net": "10.30.0.3"}, "lanSubnets": {"dc": ["192.168.30.0/24"]}}}
+  ]
+}

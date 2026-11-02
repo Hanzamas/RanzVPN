@@ -1,0 +1,5 @@
+{
+  "resources": [
+    {"kind": "VRF", "name": "dc", "spec": {"id": 30, "ula": "fd12:3456:789c::/48", "link": "vxlan", "peering": {"protocol": "bgp", "holdTime": 9, "reflectors": ["gw-1"]}}}
+  ]
+}
