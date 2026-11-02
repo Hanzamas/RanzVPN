@@ -95,13 +95,15 @@ function Get-Title([string] $text) {
 	return (($text -split "`r?`n") | Select-Object -First 1)
 }
 
-# Wait until ranz tray status shows the title and every line of $lines, while traytrace runs
-function Wait-Tray([string] $title, [string[]] $lines, [string] $what) {
+# Wait until ranz tray status shows the title, every line of $lines and a line that matches $pattern (when it is not empty),
+# while traytrace runs
+function Wait-Tray([string] $title, [string[]] $lines, [string] $what, [string] $pattern = '') {
 	$end = (Get-Date).AddSeconds($waitSeconds)
 	while ($true) {
 		$r = Invoke-Tray @('status')
 		$shown = $r.Code -eq 0 -and (Get-Title $r.Out) -eq $title
 		foreach ($line in $lines) { $shown = $shown -and (($r.Out -split "`r?`n") -contains $line) }
+		if ($pattern) { $shown = $shown -and (@(($r.Out -split "`r?`n") -match $pattern).Count -gt 0) }
 		if ($shown) { return $r }
 		if ($trace.HasExited) { throw "vpntest traytrace exited with code $($trace.ExitCode) before $what" }
 		if ((Get-Date) -ge $end) { throw "ranz tray status did not show $what within $waitSeconds s" }
@@ -173,10 +175,11 @@ try {
 	$device = $Matches[1]
 	Write-Host "the Node is the device $device of $user"
 
-	# The Node joins: the tray shows it connected under the name of its device, and the API the device of alice, connected at
-	# the Generation that it acknowledged
-	$r = Wait-Tray 'Connected' @("This PC: $device") 'the Node connected as the device of alice'
-	if ($r.Out -notmatch 'Address: \d+\.\d+\.\d+\.\d+') { throw 'ranz tray status shows no address of the Node' }
+	# The Node joins: the tray shows it connected under the name of its device and with its address, and the API the device of
+	# alice, connected at the Generation that it acknowledged. The Node takes its name from its first Generation before it
+	# builds the tables of that Generation, and its address once they are in (NodeOverlayApply), so a status between the two
+	# shows the name without the address: the tray waits for both.
+	Wait-Tray 'Connected' @("This PC: $device") 'the Node connected as the device of alice, with its address' '^Address: \d+\.\d+\.\d+\.\d+' | Out-Null
 	$users = @((Invoke-Ranz @('user', 'list')).users | Where-Object { $_.name -eq $user })
 	if ($users.Count -ne 1 -or @($users[0].devices | Where-Object { $_.name -eq $device }).Count -ne 1) { throw "the API lists no device $device of ${user}: $($users | ConvertTo-Json -Compress -Depth 5)" }
 	$end = (Get-Date).AddSeconds($waitSeconds)

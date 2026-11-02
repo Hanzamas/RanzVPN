@@ -727,8 +727,9 @@ bool NodeGatewayHub(NODE_VRF_TABLES *v, UINT vrf_id) {
 // peer agent (NodeOverlaySendRecord), and a Mirror of the VRF copies the packet there, as an inspection appliance at the hub
 // sees the traffic between two spokes. True when the packet went on; false when the node is no hub of the VRF, or the
 // packet goes nowhere: never back to the peer that sent it, nor along a leaked route, nor past the policy of the VRF.
-// The caller is an online reader of the node's table snapshot, which holds v.
-bool NodeGatewayTransit(NODE *n, NODE_VRF_TABLES *v, UINT vrf_id, UINT from, UINT to, const UCHAR *record, UINT size) {
+// source_group is the source group that the packet carried, which the node took (NodeSourceGroupTransit; SDN-87, #386), 0
+// for none; the record goes on without it. The caller is an online reader of the node's table snapshot, which holds v.
+bool NodeGatewayTransit(NODE *n, NODE_VRF_TABLES *v, UINT vrf_id, UINT from, UINT to, UINT source_group, const UCHAR *record, UINT size) {
 	NODE_GATEWAY *g = (n != NULL ? n->Gateway : NULL);
 	const NODE_GATEWAY_TABLE *t = (v != NULL ? v->Gateway : NULL);
 
@@ -744,9 +745,9 @@ bool NodeGatewayTransit(NODE *n, NODE_VRF_TABLES *v, UINT vrf_id, UINT from, UIN
 	// The session profiles of the two peers judge the packet as it passes the node (NodeProfile.c; SDN-40, #233)
 	if (NodeProfileTransit(n, v, vrf_id, from, to, packet, packet_size) == false)
 		return false;
-	// ... and then the policy of the VRF, by its two real ends: the peer that sent it and the peer of its next hop, which only
-	// the hub sees (NodePolicy.c; SDN-19-R2, #508)
-	if (NodePolicyTransit(n, v, vrf_id, from, to, packet, packet_size) == false || NodeOverlaySendRecord(n, v, to, record, size) == false)
+	// ... and then the policy of the VRF, by its two real ends: the peer that sent it, or the source group that it carried,
+	// and the peer of its next hop, which only the hub sees (NodePolicy.c; SDN-19-R2, #508; SDN-87, #386)
+	if (NodePolicyTransit(n, v, vrf_id, from, to, source_group, packet, packet_size) == false || NodeOverlaySendRecord(n, v, to, record, size) == false)
 		return false;
 
 	NodeMirrorCopy(v, vrf_id, packet, packet_size, false);
