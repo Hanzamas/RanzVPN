@@ -4607,7 +4607,11 @@ type Capabilities struct {
 	BgpPeering bool `protobuf:"varint,14,opt,name=bgp_peering,json=bgpPeering,proto3" json:"bgp_peering,omitempty"`
 	// The node can be the gateway of a Stretch (SDN-63 #290, ADR-0032 amendment of 2026-10-22): its host is a Windows Server and
 	// the VXLAN module of the node runs. 13 and 14 are the fields that SDN-87 (#386) and SDN-77-R2 (#532) take, so this is 15.
-	Evpn          bool `protobuf:"varint,15,opt,name=evpn,proto3" json:"evpn,omitempty"`
+	Evpn bool `protobuf:"varint,15,opt,name=evpn,proto3" json:"evpn,omitempty"`
+	// The node runs the TCP splitting of the L3 Networks (CORE-P2-3 #94): it splits the TCP connections of its host in a Network
+	// with tcp_split, and answers the split flows that its peers open to it. A node that does not report it is refused as a
+	// member of a VRF that has such a Network, since the split connections of its peers to it would time out.
+	TcpSplit      bool `protobuf:"varint,16,opt,name=tcp_split,json=tcpSplit,proto3" json:"tcp_split,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -4743,6 +4747,13 @@ func (x *Capabilities) GetBgpPeering() bool {
 func (x *Capabilities) GetEvpn() bool {
 	if x != nil {
 		return x.Evpn
+	}
+	return false
+}
+
+func (x *Capabilities) GetTcpSplit() bool {
+	if x != nil {
+		return x.TcpSplit
 	}
 	return false
 }
@@ -6950,7 +6961,7 @@ const file_ranz_control_v1_control_proto_rawDesc = "" +
 	"\bprefixes\x18\x02 \x03(\v2\x17.ranz.control.v1.PrefixR\bprefixes\"5\n" +
 	"\tPortRange\x12\x14\n" +
 	"\x05first\x18\x01 \x01(\rR\x05first\x12\x12\n" +
-	"\x04last\x18\x02 \x01(\rR\x04last\"\x85\x04\n" +
+	"\x04last\x18\x02 \x01(\rR\x04last\"\xa2\x04\n" +
 	"\fCapabilities\x12&\n" +
 	"\x03sku\x18\x01 \x01(\x0e2\x14.ranz.control.v1.SkuR\x03sku\x12A\n" +
 	"\farchitecture\x18\x02 \x01(\x0e2\x1d.ranz.control.v1.ArchitectureR\farchitecture\x12\x17\n" +
@@ -6972,7 +6983,8 @@ const file_ranz_control_v1_control_proto_rawDesc = "" +
 	"\x04tags\x18\r \x01(\bR\x04tags\x12\x1f\n" +
 	"\vbgp_peering\x18\x0e \x01(\bR\n" +
 	"bgpPeering\x12\x12\n" +
-	"\x04evpn\x18\x0f \x01(\bR\x04evpn\"k\n" +
+	"\x04evpn\x18\x0f \x01(\bR\x04evpn\x12\x1b\n" +
+	"\ttcp_split\x18\x10 \x01(\bR\btcpSplit\"k\n" +
 	"\aAddress\x12\x18\n" +
 	"\anetwork\x18\x01 \x01(\tR\anetwork\x12\x15\n" +
 	"\x06vrf_id\x18\x02 \x01(\rR\x05vrfId\x12/\n" +
