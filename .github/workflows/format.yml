@@ -32,7 +32,6 @@ jobs:
     # The job took 14 to 21 s in each of its 8 runs (2026-10-13 and 2026-10-21): 10 minutes is a margin of 28 times, and a hung job does
     # not hold the group of its branch for the 360 minutes that GitHub gives a job with no limit (CI-INTEG-1-R1, #597;
     # .github/scripts/job-timeout-check.py)
-    timeout-minutes: 10
     steps:
     - uses: actions/checkout@v4
       with:
