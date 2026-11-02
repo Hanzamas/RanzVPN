@@ -4672,9 +4672,10 @@ type Capabilities struct {
 	BgpReflection bool `protobuf:"varint,16,opt,name=bgp_reflection,json=bgpReflection,proto3" json:"bgp_reflection,omitempty"`
 	// The host of the node asks for the hybrid key exchange X25519MLKEM768 on the QUIC and TLS-443 paths (CORE-P2-5 #382):
 	// CNG has ML-KEM and the TLS group list in force on the host names the hybrid first. Two nodes that both report it
-	// negotiate it, so their sessions are quantum-resistant; a node that does not falls back to X25519. No feature needs it,
-	// and no apply is refused for the lack of it. 16 is bgp_reflection of SDN-79 (#359) and 17 the field that CORE-P2-3
-	// (#94) takes in its pull request, so this is 18.
+	// negotiate it, so their sessions are quantum-resistant; a session with a node that does not falls back to a classical
+	// group, the one that the server picks of those that the client offers, X25519 first. No feature needs it, and no apply
+	// is refused for the lack of it. 16 is bgp_reflection of SDN-79 (#359) and 17 the field that CORE-P2-3 (#94) takes in its
+	// pull request, so this is 18.
 	PqTls         bool `protobuf:"varint,18,opt,name=pq_tls,json=pqTls,proto3" json:"pq_tls,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
