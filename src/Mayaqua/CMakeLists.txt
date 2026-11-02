@@ -121,7 +121,6 @@ target_link_libraries(mayaqua
     "Secur32.Lib"
     "setupapi.lib"
     "shlwapi.lib"
-    "winhttp.lib"
     "winmm.lib"
     # WinVerifyTrust of the self-integrity check (Microsoft.c, SEC-3 #281)
     "wintrust.lib"
