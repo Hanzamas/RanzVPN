@@ -357,17 +357,21 @@ void PeerBind(PEER_AGENT *a, const UCHAR *relay_key, bool answer) {
 }
 
 // Bind to every relay that the node wants and has no fresh binding to: a first bind, a renewal after BindInterval,
-// or a retry after BindRetry when the last bind had no answer
-static void PeerBindWanted(PEER_AGENT *a) {
+// or a retry after BindRetry when the last bind had no answer. The clock is read once the lock is held, under which
+// PeerBind stamps every bind, so no bind is later than the clock, whatever the order of the threads; at, when not NULL,
+// is the clock in its place (PeerTickAt). No time is subtracted from the clock, as the difference would wrap for a later
+// time (CORE-S5-6-R4, #595).
+static void PeerBindWanted(PEER_AGENT *a, const UINT64 *at) {
 	UCHAR keys[PEER_MAX_RELAYS][PEER_KEY_SIZE];
 	UINT num = 0;
-	UINT64 now = PeerNow();
 
 	AcquireSRWLockShared(&a->Lock);
 	{
+		UINT64 now = (at != NULL ? *at : PeerNow());
+
 		for (UINT i = 0; i < a->NumRelays; i++) {
 			PEER_RELAY *r = &a->Relays[i];
-			bool due = (r->Binding == false) || (r->Bound && now - r->BindTick >= a->Config.BindInterval) || (r->Bound == false && now - r->BindTick >= a->Config.BindRetry);
+			bool due = (r->Binding == false) || (r->Bound && now >= r->BindTick + a->Config.BindInterval) || (r->Bound == false && now >= r->BindTick + a->Config.BindRetry);
 
 			if (r->Wanted && due)
 				CopyMemory(keys[num++], r->Info.Key, PEER_KEY_SIZE);
@@ -502,7 +506,7 @@ void PeerSetRelays(PEER_AGENT *a, PEER_RELAY_INFO *relays, UINT num) {
 	}
 	ReleaseSRWLockExclusive(&a->Lock);
 
-	PeerBindWanted(a);
+	PeerBindWanted(a, NULL);
 }
 
 // Set the host candidates of the node: the addresses of its own that its signals offer, the addresses of the socket of
@@ -1212,22 +1216,20 @@ static void PeerSessionTimers(PEER_AGENT *a, const UINT64 *at) {
 	}
 }
 
-// The timer of the peer layer, at least once a second: the relay role drops the bindings that were not renewed in
-// BindExpiry, the node renews or retries its own binds, and with ICE a session of its offer that had no answer in time
-// fails (PeerIceTick)
-void PeerTick(PEER_AGENT *a) {
-	if (a == NULL)
-		return;
-
+// The timers of the binds, from PeerTick: the relay role drops the bindings that were not renewed in BindExpiry, and the
+// node renews or retries its own binds (PeerBindWanted). The relay role reads the clock once the lock is held, under
+// which the bind handler stamps every binding that it takes or renews (PeerInputBind), so no binding is later than the
+// clock, whatever the order of the threads; at, when not NULL, is the clock in its place (PeerTickAt). No time is
+// subtracted from the clock, as the difference would wrap for a later time (CORE-S5-6-R4, #595).
+static void PeerBindTimers(PEER_AGENT *a, const UINT64 *at) {
 	if (a->Config.Relay) {
-		UINT64 now = PeerNow();
-
 		AcquireSRWLockExclusive(&a->Lock);
 		{
+			UINT64 now = (at != NULL ? *at : PeerNow());
 			UINT n = 0;
 
 			for (UINT i = 0; i < a->NumBindings; i++) {
-				if (now - a->Bindings[i].Tick >= a->Config.BindExpiry)
+				if (now >= a->Bindings[i].Tick + a->Config.BindExpiry)
 					continue;
 				if (n != i)
 					a->Bindings[n] = a->Bindings[i];
@@ -1239,11 +1241,32 @@ void PeerTick(PEER_AGENT *a) {
 		ReleaseSRWLockExclusive(&a->Lock);
 	}
 
-	PeerBindWanted(a);
+	PeerBindWanted(a, at);
+}
+
+// The timer of the peer layer, at least once a second: the relay role drops the bindings that were not renewed in
+// BindExpiry, the node renews or retries its own binds, and with ICE a session of its offer that had no answer in time
+// fails (PeerIceTick)
+void PeerTick(PEER_AGENT *a) {
+	if (a == NULL)
+		return;
+
+	PeerBindTimers(a, NULL);
 	PeerPunchTick(a);
 	PeerSessionTimers(a, NULL);
 	if (a->Config.Ice)
 		PeerIceTick(a);
+}
+
+// The timers of the binds at the clock now (ms, the clock of PeerNow) in place of the one that they read: a test gives it
+// a clock that is older than a bind that the node sent or the relay role took, as a tick that read its clock before
+// another thread sent or took the bind would see it (CORE-S5-6-R4, #595). The sessions have PeerSessionTickAt and ICE has
+// PeerIceTickAt; the punches need none, as PeerPunchTick reads its clock under both of their locks.
+void PeerTickAt(PEER_AGENT *a, UINT64 now) {
+	if (a == NULL)
+		return;
+
+	PeerBindTimers(a, &now);
 }
 
 // The timers of the peer sessions at the clock now (ms, the clock of PeerNow) in place of the one that each session
