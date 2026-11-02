@@ -88,7 +88,7 @@ func decide(h host) quantumState {
 		s.fix = []string{"Install the latest cumulative update of Windows 11 24H2, Windows Server 2025 or a later release (Settings, Windows Update), which brings ML-KEM to CNG, then run ranz doctor again."}
 		return s
 	case hasGroup(s.list, hybridGroup):
-		s.why = fmt.Sprintf("%s names %s, but not first: Schannel sends the key share of the first group, and a server picks the first of its own list that the client offers", s.from, hybridGroup)
+		s.why = fmt.Sprintf("%s names %s, but not first: a Node asks for it first, so that a server that follows the order of the client picks it", s.from, hybridGroup)
 	case h.policy:
 		s.why = fmt.Sprintf("%s does not name %s, and a policy wins over the list that the Node sets", s.from, hybridGroup)
 	default:

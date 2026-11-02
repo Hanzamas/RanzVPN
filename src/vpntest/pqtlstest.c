@@ -10,21 +10,22 @@
 // Noise session, which the overlay of node-s takes as the session of its peer. node-c reads the group of each session from
 // its stream, node-s from its overlay (NodeOverlayGetSessions), and the ServerHello on the wire of TLS-443 must carry it too.
 // node-c's ClientHello shows what the host asks for: the test reads it on a TCP listener of its own, which closes the
-// connection once it has it. The two ends hold the one list of this host, so each session negotiates the first group that
-// node-c's ClientHello offers. The steps:
+// connection once it has it. The steps:
 // - the names of the groups, and which of them are quantum-resistant (TransportGroupName, TransportGroupPostQuantum);
 // - the host: the Windows build, whether CNG has ML-KEM, and the TLS group list in force (TransportTlsHybrid);
 // - switched on: no ECC Curve Order policy, and the machine's list with x25519_mlkem768 first, as the TLS transport of a Node
 //   writes it (TransportTlsSetGroups). The host asks for the hybrid where CNG has ML-KEM, a Node reports the Capability
 //   pq_tls (NodeCapsProc), node-c's ClientHello offers X25519MLKEM768 first with its key share, and the QUIC and the TLS-443
-//   session negotiate it, read on both ends; where CNG has no ML-KEM, a classical group;
+//   session negotiate it, read on both ends; where CNG has no ML-KEM, as switched off below;
 // - switched off: an ECC Curve Order policy whose list names the classical groups only, which wins over the list that a
 //   Node sets, so the TLS transports of node-s and node-c leave both lists as they are, and the machine's list without the
 //   hybrid. Schannel takes a change of the machine's list at once, and a change of a policy only when Windows starts, which
 //   a runner cannot do within its job: the two lists together are what Schannel holds on a host with that policy once
 //   Windows started. The host does not ask for the hybrid, a Node does not report pq_tls, node-c's ClientHello offers no
-//   group with ML-KEM, and the same sessions come up with the classical group that it offers first, not quantum-resistant:
-//   X25519 where the list that Schannel holds puts it first.
+//   group with ML-KEM and X25519 first with its key share, and the same sessions come up with one classical group of those
+//   that node-c offers, not quantum-resistant: the one that the server of the host picks, which is not always the first
+//   that the client offers (secp384r1 on the x64 runner, whose image set an ECC Curve Order policy of NistP384 and NistP256
+//   when Windows started).
 // The listeners of node-s start again in each step, so that their credentials take the list of the step. The test puts the
 // two lists back as it found them, also when its watchdog ends it.
 //
@@ -625,11 +626,15 @@ static void PqTlsTestSession(PQTLSTEST_CTX *ctx, TRANSPORT *t, UINT port, bool t
 	Free(n);
 }
 
-// The checks of one session over the path what: it comes up, and both ends report want, the first group that node-c's
-// ClientHello offers
-static void PqTlsTestSessionChecks(PQTLSTEST_CTX *ctx, char *what, PQTLSTEST_SESSION *r, UINT want, bool tls)
+// The checks of one session over the path what: it comes up, and both ends report one group. Where the host asks for the
+// hybrid, X25519MLKEM768, which node-c offers first. Where it does not, a classical group of those that node-c's ClientHello
+// offers, hello, the one that the server picks: node-c offers X25519 first with its key share, but the server of a host may
+// prefer another of the groups that both have, as the runner image whose ECC Curve Order policy named NistP384 first when
+// Windows started does
+static void PqTlsTestSessionChecks(PQTLSTEST_CTX *ctx, char *what, PQTLSTEST_SESSION *r, bool asks, PQTLSTEST_HELLO *hello, bool tls)
 {
 	char tmp[MAX_SIZE];
+	bool offered = (hello->Read == false);
 
 	Print("  [GROUP] %s: node-c %s (0x%04X), node-s %s (0x%04X)", what, TransportGroupName(r->Client), r->Client, TransportGroupName(r->Server), r->Server);
 	if (tls)
@@ -640,13 +645,26 @@ static void PqTlsTestSessionChecks(PQTLSTEST_CTX *ctx, char *what, PQTLSTEST_SES
 
 	Format(tmp, sizeof(tmp), "  %s: node-c's Noise session comes up, and the overlay of node-s takes it as the session of its peer", what);
 	PqTlsTestCheck(ctx, r->Up, tmp, "it did not");
-	Format(tmp, sizeof(tmp), "  %s: the stacks of node-c and node-s report %s (0x%04X), the first group that node-c offers, %s", what, TransportGroupName(want), want,
-		TransportGroupPostQuantum(want) ? "quantum-resistant" : "not quantum-resistant");
-	PqTlsTestCheck(ctx, r->Client == want && r->Server == want, tmp, "node-c 0x%04X, node-s 0x%04X", r->Client, r->Server);
+	if (asks)
+	{
+		Format(tmp, sizeof(tmp), "  %s: the stacks of node-c and node-s report X25519MLKEM768 (0x11EC), quantum-resistant", what);
+		PqTlsTestCheck(ctx, r->Client == CRYPTO_GROUP_X25519MLKEM768 && r->Server == CRYPTO_GROUP_X25519MLKEM768, tmp, "node-c 0x%04X, node-s 0x%04X", r->Client, r->Server);
+	}
+	else
+	{
+		for (UINT i = 0;i < hello->NumGroups;i++)
+		{
+			offered = offered || hello->Groups[i] == r->Client;
+		}
+		Format(tmp, sizeof(tmp), "  %s: the stacks of node-c and node-s report one classical group that node-c offers, not quantum-resistant", what);
+		PqTlsTestCheck(ctx, r->Client != 0 && r->Client == r->Server && offered && TransportGroupPostQuantum(r->Client) == false, tmp, "node-c 0x%04X, node-s 0x%04X",
+			r->Client, r->Server);
+	}
 	if (tls)
 	{
 		Format(tmp, sizeof(tmp), "  %s: the ServerHello on the wire carries the group that Schannel reports", what);
-		PqTlsTestCheck(ctx, r->Tls.Group == want && r->Tls.StackGroup == want, tmp, "the ServerHello 0x%04X, Schannel 0x%04X", r->Tls.Group, r->Tls.StackGroup);
+		PqTlsTestCheck(ctx, r->Client != 0 && r->Tls.Group == r->Client && r->Tls.StackGroup == r->Client, tmp, "the ServerHello 0x%04X, Schannel 0x%04X, node-c 0x%04X",
+			r->Tls.Group, r->Tls.StackGroup, r->Client);
 	}
 }
 
@@ -724,13 +742,18 @@ static void PqTlsTestStep(PQTLSTEST_CTX *ctx, char *thumbprint, bool on)
 		}
 		else
 		{
+			// The fallback that the Node asks for: X25519, first in its list and in the list of the step
+			bool x25519 = false;
+			for (UINT i = 0;i < hello.NumShares;i++)
+			{
+				x25519 = x25519 || hello.Shares[i] == CRYPTO_GROUP_X25519;
+			}
 			PqTlsTestCheck(ctx, PqTlsTestAnyPostQuantum(hello.Groups, hello.NumGroups) == false && PqTlsTestAnyPostQuantum(hello.Shares, hello.NumShares) == false,
 				"  node-c's ClientHello offers no group with ML-KEM", "it offers %s, with the key shares of %s", offered, shares);
+			PqTlsTestCheck(ctx, hello.Groups[0] == CRYPTO_GROUP_X25519 && x25519, "  node-c's ClientHello offers X25519 first, with its key share",
+				"it offers %s, with the key shares of %s", offered, shares);
 		}
 	}
-
-	// The group of the step: the first that node-c offers, which the server, under the one list of this host, picks
-	UINT want = (hello.Read ? hello.Groups[0] : (h.Asks ? CRYPTO_GROUP_X25519MLKEM768 : CRYPTO_GROUP_X25519));
 
 	// The Listener of node-s, whose front door and QUIC start now, under the lists of the step
 	Zero(&l, sizeof(l));
@@ -748,7 +771,7 @@ static void PqTlsTestStep(PQTLSTEST_CTX *ctx, char *thumbprint, bool on)
 		{
 			PqTlsTestSession(ctx, tls, st.Port, true, &r);
 		}
-		PqTlsTestSessionChecks(ctx, "TLS-443", &r, want, true);
+		PqTlsTestSessionChecks(ctx, "TLS-443", &r, h.Asks, &hello, true);
 
 		// QUIC, where msquic.dll is next to vpntest
 		if (TransportQuicAvailable() && st.QuicPort != 0)
@@ -760,7 +783,7 @@ static void PqTlsTestStep(PQTLSTEST_CTX *ctx, char *thumbprint, bool on)
 			{
 				PqTlsTestSession(ctx, quic, st.QuicPort, false, &r);
 			}
-			PqTlsTestSessionChecks(ctx, "QUIC", &r, want, false);
+			PqTlsTestSessionChecks(ctx, "QUIC", &r, h.Asks, &hello, false);
 			TransportQuicFree(quic);
 		}
 		else
@@ -966,7 +989,7 @@ static void PqTlsTestProbe(PQTLSTEST_CTX *ctx)
 	}
 }
 
-RANZ_TEST_TAGS("pqtls", pqtls_test, "core", "The post-quantum key exchange of QUIC and TLS-443 (CORE-P2-5): with the hybrid switched on, a Node offers X25519MLKEM768 first and reports pq_tls, and the sessions of two Nodes negotiate it as both stacks report it where CNG has ML-KEM; switched off, the first classical group that the Node offers, and no pq_tls; \"pqtls probe\" prints the groups under the list in force (administrator rights).");
+RANZ_TEST_TAGS("pqtls", pqtls_test, "core", "The post-quantum key exchange of QUIC and TLS-443 (CORE-P2-5): with the hybrid switched on, a Node offers X25519MLKEM768 first and reports pq_tls, and the sessions of two Nodes negotiate it as both stacks report it where CNG has ML-KEM; switched off, a Node offers X25519 first, the sessions come up with a classical group, and no pq_tls; \"pqtls probe\" prints the groups under the list in force (administrator rights).");
 void pqtls_test(UINT num, char **arg)
 {
 	PQTLSTEST_CTX *ctx = ZeroMalloc(sizeof(PQTLSTEST_CTX));

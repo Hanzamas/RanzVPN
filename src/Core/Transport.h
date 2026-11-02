@@ -668,11 +668,13 @@ bool TransportTlsParseHello(const UCHAR *data, UINT size, TRANSPORT_TLS_INFO *in
 // which wins, else the list of the machine, the one that TransportTlsSetGroups writes, else the default of Windows, which
 // does not name the hybrid. It takes a change of the machine's list at once, and a change of a policy when Windows starts.
 // msquic takes its TLS from Schannel, so the one list governs both paths. A host asks for the hybrid when CNG has ML-KEM
-// and its list in force names X25519MLKEM768 first: Schannel sends the key share of the first group, and a server picks
-// the first group of its list that the client offers. Two nodes that both ask for it negotiate it, and a node that asks
-// for it falls back to a classical group with a peer that does not, without failing (the classical groups stay in every
-// list): X25519 where the lists put it first, as the one that TransportTlsSetGroups writes does. Whether the host asks for
-// it is the Capability pq_tls of a node (NodeCaps.c), and what ranz doctor tells (controller/internal/doctor).
+// and its list in force names X25519MLKEM768 first: Schannel offers the groups of the list in its order, with the key
+// shares of the first ones, and a server picks one of the groups that the client offers. Two nodes that both ask for it
+// negotiate it, and a node that asks for it falls back to a classical group with a peer that does not, without failing
+// (the classical groups stay in every list): the client offers X25519 first, as the list that TransportTlsSetGroups writes
+// puts it, and the server picks one of the classical groups, not always X25519 (secp384r1 on a host whose ECC Curve Order
+// policy named NistP384 first when Windows started). Whether the host asks for the hybrid is the Capability pq_tls of a
+// node (NodeCaps.c), and what ranz doctor tells (controller/internal/doctor).
 
 // The name of a TLS NamedGroup: "X25519MLKEM768", "X25519", "secp256r1" and the other groups of the IANA registry that
 // Windows has; "none" for 0, "unknown" for another

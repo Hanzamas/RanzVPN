@@ -142,7 +142,8 @@ void TransportTlsHybrid(TRANSPORT_TLS_HYBRID *h) {
 		i += len + 1;
 	}
 
-	// Schannel sends the key share of the first group of the list, and the hybrid only where CNG has ML-KEM
+	// Schannel offers the groups of the list in its order, the hybrid only where CNG has ML-KEM: a host asks for the hybrid
+	// when it is first
 	h->Asks = (h->MlKem && h->First);
 
 	HeapFree(GetProcessHeap(), 0, list);

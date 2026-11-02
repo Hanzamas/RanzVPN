@@ -11,17 +11,17 @@ import (
 // its records once: the Noise session only authenticates, bound to its outer session (ADR-0023). So a session that is
 // recorded now is safe against a future quantum computer when the key exchange of its outer session is, which is the case
 // for the hybrid X25519MLKEM768. A Node asks for it where its host has it (src/Core/TransportGroup.c) and reports that as
-// the Capability pqTls. Each end offers the groups of its host: the client sends the key share of its first group, and the
-// server picks the first group of its own list that the client offers. So the session of two Nodes that both report pqTls
-// negotiates X25519MLKEM768, and every other session falls back to a classical group without failing: X25519 where the
-// lists of the two hosts put it first, as the list that a Node writes does, else the classical group that their lists put
-// first, such as NistP384 under an ECC Curve Order policy that names it first. Explain says at each link of kind noise
-// which of the two it negotiates and whether it is quantum-resistant, from the Capabilities that the two Nodes reported
-// last; a Node that reported none counts as one without pqTls. A link of kind vxlan or geneve encrypts nothing, so it has
-// no key exchange.
+// the Capability pqTls. Each end offers the groups of its host: the client offers its list in its order, with the key
+// shares of the first groups, and the server picks one of the groups that the client offers. So the session of two Nodes
+// that both report pqTls negotiates X25519MLKEM768, and every other session falls back to a classical group without
+// failing: the client offers X25519 first, as the list that a Node writes puts it, and the server picks one of the
+// classical groups, not always X25519 (secp384r1 on a host whose ECC Curve Order policy named NistP384 first when Windows
+// started). Explain says at each link of kind noise which of the two it negotiates and whether it is quantum-resistant,
+// from the Capabilities that the two Nodes reported last; a Node that reported none counts as one without pqTls. A link
+// of kind vxlan or geneve encrypts nothing, so it has no key exchange.
 
 // The key exchange of the outer session of a link of kind noise: the hybrid by its name in the TLS registry of IANA, or a
-// classical group, one without ML-KEM, which the lists of the two hosts choose.
+// classical group, one without ML-KEM, which the server of the session picks.
 const (
 	KeyExchangeHybrid    = "X25519MLKEM768"
 	KeyExchangeClassical = "classical"
