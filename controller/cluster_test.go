@@ -46,6 +46,7 @@ import (
 	"github.com/Hanzamas/RanzVPN/controller/internal/licence"
 	"github.com/Hanzamas/RanzVPN/controller/internal/nodesim"
 	"github.com/Hanzamas/RanzVPN/controller/internal/payload"
+	"github.com/Hanzamas/RanzVPN/controller/internal/rqlitetest"
 )
 
 // clusterLease is the lease duration of the members: short, so that a take-over does not take
@@ -1037,19 +1038,13 @@ func dumpWire(t *testing.T, n *node) {
 	}
 }
 
-// freeAddrs returns n TCP addresses on 127.0.0.1 that were free a moment ago, all different.
+// freeAddrs returns n TCP addresses on 127.0.0.1 for the ports of a Controller, or of an rqlited, that the test starts and
+// starts again on the same addresses. Nothing else in the run holds them until t ends, and none of them is a port that the
+// system hands out as the source port of a connection (rqlitetest.Addrs), so the bind of the second start finds them free
+// (CI-FLAKE-4, #581).
 func freeAddrs(t *testing.T, n int) []string {
 	t.Helper()
-	var addrs []string
-	for range n {
-		l, err := net.Listen("tcp", "127.0.0.1:0")
-		if err != nil {
-			t.Fatal(err)
-		}
-		defer l.Close()
-		addrs = append(addrs, l.Addr().String())
-	}
-	return addrs
+	return rqlitetest.Addrs(t, n)
 }
 
 // fixedKey returns the static key whose private key is the 32 bytes first, first+1, ...
