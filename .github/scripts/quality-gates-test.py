@@ -594,6 +594,84 @@ def test_one_binary():
           {'.github/scripts/one-binary-check.py': 'ranz-bgp.exe\n'})
 
 
+def test_job_timeouts():
+    # job-timeout-check.py (CI-INTEG-1-R1, #597): every job of every workflow has timeout-minutes, or calls a reusable workflow, which
+    # takes none. Since CI-INTEG-1 (#585) a push waits for the run of the push before it, so a job with no timeout-minutes can hold its
+    # group for the 360 minutes that GitHub gives it. Each fixture is a throwaway tree of workflows: a planted job with no timeout, in
+    # whatever form of the file, must fail with its file, its line and its name, and the jobs that a timeout bounds, or that call a
+    # workflow, must pass. The first job of a workflow made by wf() is on line 6.
+    def wf(jobs):
+        return {'ci.yml': 'name: ci\n\non: push\n\njobs:\n' + jobs}
+
+    def check(name, code, texts, files, absent=()):
+        with tempfile.TemporaryDirectory() as root:
+            for path, text in files.items():
+                write(root, '.github/workflows/' + path, text)
+            expect('job-timeout-check: ' + name, run('job-timeout-check.py', '--root', root), code, *texts, absent=absent)
+
+    unbounded = ('  lint:\n    runs-on: ubuntu-latest\n    steps:\n    - run: make lint\n')
+    bounded = '  lint:\n    runs-on: ubuntu-latest\n    timeout-minutes: %s\n    steps:\n    - run: make lint\n'
+    plan = '  plan:\n    uses: ./.github/workflows/plan.yml\n    permissions:\n      contents: read\n'
+    check('a job with a timeout and a job that calls a workflow', 0,
+          ['Every job of the 1 workflow in .github/workflows has a timeout: 1 with timeout-minutes, 1 that call a reusable workflow'],
+          wf(plan + '\n' + bounded % '10'))
+    # The planted job
+    nothing = ['.github/workflows/ci.yml:6: the job lint has no timeout-minutes', '1 problem']
+    check('a job with no timeout-minutes', 1, nothing, wf(unbounded), absent=['Every job of'])
+    check('a job with a timeout-minutes in a step only', 1, nothing,
+          wf('  lint:\n    runs-on: ubuntu-latest\n    steps:\n    - name: Lint\n      timeout-minutes: 15\n      run: make lint\n'))
+    check('a job whose script prints a timeout-minutes', 1, nothing,
+          wf('  lint:\n    runs-on: ubuntu-latest\n    steps:\n    - run: |\n        echo "timeout-minutes: 5"\n        echo "uses: x/y@v1"\n'))
+    check('a job with a uses in a step only', 1, nothing,
+          wf('  lint:\n    runs-on: ubuntu-latest\n    steps:\n    - uses: actions/checkout@v4\n'))
+    check('a job with a uses with no value', 1, nothing, wf('  lint:\n    uses:\n    runs-on: ubuntu-latest\n    steps:\n    - run: make\n'))
+    check('the second job of two with no timeout', 1, ['.github/workflows/ci.yml:12: the job docs has no timeout-minutes'],
+          wf(bounded % '10' + '\n  docs:\n    runs-on: ubuntu-latest\n    steps:\n    - run: make docs\n'), absent=['the job lint'])
+    check('the first job of two with no timeout', 1, nothing,
+          wf(unbounded + '\n  docs:\n    runs-on: ubuntu-latest\n    timeout-minutes: 10\n    steps:\n    - run: make docs\n'),
+          absent=['the job docs'])
+    check('a planted job in the second of three workflows', 1, ['.github/workflows/b.yml:6: the job lint has no timeout-minutes'],
+          {'a.yml': wf(bounded % '10')['ci.yml'], 'b.yml': wf(unbounded)['ci.yml'], 'c.yml': wf(bounded % '10')['ci.yml']},
+          absent=['a.yml', 'c.yml'])
+    check('a planted job in a .yaml workflow', 1, ['.github/workflows/x.yaml:6: the job lint has no timeout-minutes'],
+          {'x.yaml': wf(unbounded)['ci.yml']})
+    check('a planted job in a workflow that a key follows the jobs of', 1, nothing,
+          wf(unbounded + '\nconcurrency:\n  group: ci\n'))
+    # The values that bound no job
+    for value, why in (('0', 'has timeout-minutes: 0, which is no time at all'),
+                       ('360', 'has timeout-minutes: 360, which is not below the 360 minutes that GitHub gives a job with no timeout-minutes'),
+                       ('1440', 'has timeout-minutes: 1440, which is not below the 360 minutes'),
+                       ('soon', 'has timeout-minutes: soon, which is no number of minutes'),
+                       ('-5', 'has timeout-minutes: -5, which is no number of minutes'),
+                       ('', 'has timeout-minutes with no value')):
+        check('a timeout-minutes of %r' % value, 1, ['.github/workflows/ci.yml:8: the job lint ' + why], wf(bounded % value),
+              absent=['Every job of'])
+    check('a timeout-minutes of 359', 0, ['1 with timeout-minutes'], wf(bounded % '359'))
+    check('a timeout-minutes of 0.5', 0, ['1 with timeout-minutes'], wf(bounded % '0.5'))
+    check('a timeout-minutes with a comment', 0, ['1 with timeout-minutes'], wf(bounded % '10  # the margin'))
+    check('a timeout-minutes in quotes', 0, ['1 with timeout-minutes'], wf(bounded % "'10'"))
+    check('a timeout-minutes that an expression gives', 0, ['1 with timeout-minutes'],
+          wf(bounded % '${{ fromJSON(needs.plan.outputs.timeout) }}'))
+    # The forms of the file
+    check('keys in any order, with comments and blank lines between them', 0, ['1 with timeout-minutes'],
+          wf('  lint:\n    # why\n\n    steps:\n    - run: make lint\n\n    # and why not\n    runs-on: ubuntu-latest\n    timeout-minutes: 7\n'))
+    check('a list of needs at the indentation of the keys', 0, ['1 with timeout-minutes'],
+          wf('  lint:\n    needs:\n    - plan\n    - build\n    runs-on: ubuntu-latest\n    timeout-minutes: 5\n    steps:\n    - run: make\n'))
+    check('a condition that spans lines', 0, ['1 with timeout-minutes'],
+          wf('  lint:\n    if: >-\n      github.actor != \'bot\' &&\n      true\n    runs-on: ubuntu-latest\n    timeout-minutes: 5\n    steps:\n    - run: make\n'))
+    four = ('name: ci\n\non: push\n\njobs:\n    lint:\n        runs-on: ubuntu-latest\n%s        steps:\n            - run: make\n')
+    check('jobs indented by four spaces', 0, ['1 with timeout-minutes'], {'ci.yml': four % '        timeout-minutes: 5\n'})
+    check('a planted job indented by four spaces', 1, nothing, {'ci.yml': four % ''})
+    # What the check cannot read fails
+    check('a job written as a flow mapping', 1, ["ci.yml:6: the check cannot read it: '"],
+          wf('  lint: {runs-on: ubuntu-latest, timeout-minutes: 5}\n'), absent=['Every job of'])
+    check('a workflow with no jobs', 1, ['ci.yml:1: the check cannot read it: has no line "jobs:"'], {'ci.yml': 'name: ci\n\non: push\n'})
+    check('a line "jobs:" with no job under it', 1, ['has no job under "jobs:"'], {'ci.yml': 'name: ci\n\non: push\n\njobs:\n'})
+    check('a tree with a folder of workflows that holds none', 1, ['holds no workflow'], {'README.md': 'x\n'})
+    with tempfile.TemporaryDirectory() as root:
+        expect('job-timeout-check: a tree with no folder of workflows', run('job-timeout-check.py', '--root', root), 1, 'holds no workflow')
+
+
 def test_service_eventlog():
     # service-eventlog.ps1 (CORE-S8-1-R1, #575) guards the start of ranz-node, as firewall-rule.ps1 guarded that of vpnserver:
     # no VBScript firewall path in the sources (ticket #47, criterion 5), and, in windows.yml, no firewall rule changed by a
@@ -697,6 +775,7 @@ if __name__ == '__main__':
     test_static_findings()
     test_govulncheck_gate()
     test_one_binary()
+    test_job_timeouts()
     test_service_eventlog()
     test_msi_install()
     if failures:
