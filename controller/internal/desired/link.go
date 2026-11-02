@@ -47,10 +47,12 @@ func ownVtep(in intent.Intent, n intent.Node) *controlpb.Vtep {
 
 // peerVtep returns the tunnel endpoint of the Node o for the Peer object of a Node that shares the VRFs
 // shared with it: nil when none of them has a link of kind vxlan or geneve, or o has no tunnel endpoint.
+// A VRF whose Nodes peer by EVPN is none of them: its flood lists and the VTEPs that a Node takes its
+// frames from come from the routes of the peers (evpnpeering.go; SDN-78).
 func peerVtep(in intent.Intent, o intent.Node, shared map[string]bool) *controlpb.Vtep {
 	plain := false
 	for v := range shared {
-		plain = plain || intent.Plain(in.VRFs[v].Link)
+		plain = plain || (intent.Plain(in.VRFs[v].Link) && in.VRFs[v].Peering.Protocol != intent.PeeringEVPN)
 	}
 	a, err := intent.ParseVTEPAddress(o.VTEP.Address)
 	if !plain || err != nil {

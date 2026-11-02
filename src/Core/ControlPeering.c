@@ -145,17 +145,31 @@ static CONTROL_PEER_PEERING *ControlPeerPeering(const ranz_control_v1_PeerPeerin
 }
 
 // The BGP peering of the Vrf objects, of the NodeConfig and of the Peer objects among num objects into the state, which holds
-// the VRFs and the peers that the client took from them already. A peering that cannot be read whole is none.
+// the VRFs and the peers that the client took from them already. A peering that cannot be read whole is none. A VRF whose nodes
+// peer by EVPN peers with the sidecar of the BGP peering too, and the L2 VNI of each L2 Network that has one goes into the state
+// (SDN-78, #358): one of 0 or of more than 24 bits is none.
 void ControlCopyPeerings(CONTROL_STATE *st, const ranz_control_v1_Object *objects, UINT num) {
 	st->Peering = NULL;
+	st->NumL2Vnis = 0;
 
 	for (UINT i = 0; i < num; i++) {
 		const ranz_control_v1_Object *o = &objects[i];
 
 		if (o->which_kind == ranz_control_v1_Object_vrf_tag) {
-			for (UINT j = 0; j < st->NumVrfs; j++)
-				if (strcmp(st->Vrfs[j].Name, o->kind.vrf.name) == 0)
-					st->Vrfs[j].Peering = (o->kind.vrf.peering == ranz_control_v1_Peering_PEERING_BGP);
+			for (UINT j = 0; j < st->NumVrfs; j++) {
+				if (strcmp(st->Vrfs[j].Name, o->kind.vrf.name) == 0) {
+					st->Vrfs[j].Peering = (o->kind.vrf.peering == ranz_control_v1_Peering_PEERING_BGP || o->kind.vrf.peering == ranz_control_v1_Peering_PEERING_EVPN);
+					st->Vrfs[j].PeeringEvpn = (o->kind.vrf.peering == ranz_control_v1_Peering_PEERING_EVPN);
+				}
+			}
+		} else if (o->which_kind == ranz_control_v1_Object_network_tag && o->kind.network.mode == ranz_control_v1_NetworkMode_NETWORK_MODE_L2 && o->kind.network.vni != 0 &&
+		           o->kind.network.vni <= 0xFFFFFF && st->NumL2Vnis < CONTROL_MAX_L2VNIS) {
+			CONTROL_L2VNI *l = &st->L2Vnis[st->NumL2Vnis++];
+
+			ZeroMemory(l, sizeof(CONTROL_L2VNI));
+			strncpy_s(l->Network, sizeof(l->Network), o->kind.network.name, _TRUNCATE);
+			l->VrfId = o->kind.network.vrf_id;
+			l->Vni = o->kind.network.vni;
 		} else if (o->which_kind == ranz_control_v1_Object_node_tag && o->kind.node.has_peering && st->Peering == NULL) {
 			st->Peering = ControlNodePeering(&o->kind.node.peering);
 		} else if (o->which_kind == ranz_control_v1_Object_peer_tag && o->kind.peer.has_peering) {

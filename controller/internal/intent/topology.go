@@ -87,8 +87,9 @@ func (in Intent) GatewayRoutes(node, peer string) []Route {
 		if !slices.Contains(other.VRFs, vrf) || in.Spokes(vrf, node, peer) {
 			continue
 		}
-		// The LAN subnets of a VRF that peers by BGP go by BGP (peering.go; SDN-77)
-		if in.VRFs[vrf].Peering.Protocol == PeeringBGP {
+		// The LAN subnets of a VRF that peers by BGP go by BGP (peering.go; SDN-77), and of one that peers by EVPN by EVPN
+		// (evpnpeering.go; SDN-78)
+		if in.VRFs[vrf].Peering.Peers() {
 			continue
 		}
 		var prefixes []netip.Prefix

@@ -171,6 +171,10 @@ type Network struct {
 	// KeyLifetimeDays is how many days the key of a Node of the Network lives from its last authentication, from 1 to
 	// MaxKeyLifetimeDays (SDN-56, keylife.go). Left out, it is DefaultKeyLifetimeDays.
 	KeyLifetimeDays uint32 `json:"keyLifetimeDays,omitempty"`
+	// VNI is the L2 VNI of an L2 Network of a VRF whose Nodes peer by EVPN (SDN-78, evpnpeering.go): the VNI of its MAC/IP
+	// advertisement and inclusive multicast routes and of its frames between the Nodes, from 1 to MaxVNI. Such a Network needs
+	// one, and no other Network has one.
+	VNI uint32 `json:"vni,omitempty"`
 }
 
 // Node is a node of the overlay, identified by its Noise static key.

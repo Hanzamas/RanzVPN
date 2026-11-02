@@ -14,8 +14,8 @@ import (
 // so a VRF whose Nodes peer by BGP needs a licence that has it, as the BGP and EVPN peers of a gateway
 // do (enterpriseKinds).
 
-// peeringFeatures returns a problem for each VRF of doc whose Nodes peer by BGP while the licence in
-// force st lacks the feature.
+// peeringFeatures returns a problem for each VRF of doc whose Nodes peer by BGP, or by EVPN (SDN-78),
+// while the licence in force st lacks the feature.
 func peeringFeatures(doc intent.Document, st licence.Status) []error {
 	if st.Allows(licence.FeatureEVPN) {
 		return nil
@@ -23,10 +23,15 @@ func peeringFeatures(doc intent.Document, st licence.Status) []error {
 	var problems []error
 	for _, r := range doc.Resources {
 		var v intent.VRF
-		if r.Kind != intent.KindVRF || json.Unmarshal(r.Spec, &v) != nil || !strings.EqualFold(v.Peering.Protocol, intent.PeeringBGP) {
+		if r.Kind != intent.KindVRF || json.Unmarshal(r.Spec, &v) != nil {
 			continue
 		}
-		problems = append(problems, fmt.Errorf("VRF %q: the BGP peering of its Nodes is part of %s, an Enterprise feature, and the licence in force is %s", r.Name, licence.FeatureEVPN.Name(), st.Tier))
+		switch {
+		case strings.EqualFold(v.Peering.Protocol, intent.PeeringBGP):
+			problems = append(problems, fmt.Errorf("VRF %q: the BGP peering of its Nodes is part of %s, an Enterprise feature, and the licence in force is %s", r.Name, licence.FeatureEVPN.Name(), st.Tier))
+		case strings.EqualFold(v.Peering.Protocol, intent.PeeringEVPN):
+			problems = append(problems, fmt.Errorf("VRF %q: the EVPN peering of its Nodes is part of %s, an Enterprise feature, and the licence in force is %s", r.Name, licence.FeatureEVPN.Name(), st.Tier))
+		}
 	}
 	return problems
 }

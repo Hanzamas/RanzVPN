@@ -41,8 +41,9 @@ const (
 
 // Peering is how the Nodes of a VRF exchange their routes (VRF.Peering).
 type Peering struct {
-	// Protocol is bgp: the Nodes of the VRF peer by BGP in a full mesh. Left out, the Controller gives
-	// each Node the routes of its peers.
+	// Protocol is bgp: the Nodes of the VRF peer by BGP in a full mesh; or evpn: they peer by EVPN in a
+	// full mesh, with the MAC addresses of its L2 Networks too (evpnpeering.go; SDN-78). Left out, the
+	// Controller gives each Node the routes of its peers.
 	Protocol string `json:"protocol,omitempty"`
 	// HoldTime is the BGP hold time of the sessions in seconds, from MinHoldTime to MaxHoldTime: a Node
 	// that stops answering loses its routes at its peers after it. Left out, it is DefaultHoldTime.
@@ -61,11 +62,12 @@ func (p Peering) Hold() uint32 {
 	return cmp.Or(p.HoldTime, DefaultHoldTime)
 }
 
-// PeeringVRFs returns the VRFs of the Node n whose Nodes peer by BGP.
+// PeeringVRFs returns the VRFs of the Node n whose Nodes peer by BGP, or by EVPN (evpnpeering.go; SDN-78), with the
+// sidecar of the peering.
 func (in Intent) PeeringVRFs(n Node) []string {
 	var out []string
 	for _, v := range n.VRFs {
-		if in.VRFs[v].Peering.Protocol == PeeringBGP {
+		if in.VRFs[v].Peering.Peers() {
 			out = append(out, v)
 		}
 	}
@@ -86,7 +88,8 @@ func (in Intent) peeringRoutes(node, peer string) []Route {
 	}
 	other := in.Nodes[peer]
 	for _, vrf := range in.PeeringVRFs(in.Nodes[node]) {
-		if !slices.Contains(other.VRFs, vrf) {
+		// A Node holds what it learns by EVPN apart from the routes of its peers (evpnpeering.go; SDN-78)
+		if !slices.Contains(other.VRFs, vrf) || in.VRFs[vrf].Peering.Protocol != PeeringBGP {
 			continue
 		}
 		for _, s := range other.LANSubnets[vrf] {
@@ -138,27 +141,30 @@ func (in Intent) validatePeering() []error {
 		switch {
 		case p.Protocol == "":
 			if p.HoldTime != 0 {
-				problems = append(problems, fmt.Errorf("VRF %q: the peering holdTime %d needs the peering protocol %s", name, p.HoldTime, PeeringBGP))
+				problems = append(problems, fmt.Errorf("VRF %q: the peering holdTime %d needs the peering protocol %s or %s", name, p.HoldTime, PeeringBGP, PeeringEVPN))
 			}
-		case p.Protocol != PeeringBGP:
-			problems = append(problems, fmt.Errorf("VRF %q: the peering protocol must be %s, not %q", name, PeeringBGP, p.Protocol))
+		case !p.Peers():
+			problems = append(problems, fmt.Errorf("VRF %q: the peering protocol must be %s or %s, not %q", name, PeeringBGP, PeeringEVPN, p.Protocol))
+		// EVPN carries the frames of a VRF in VXLAN (RFC 8365; evpnpeering.go, SDN-78)
+		case p.Protocol == PeeringEVPN && v.Link != LinkVXLAN:
+			problems = append(problems, fmt.Errorf("VRF %q: EVPN peering needs a link of kind %s, and the link is %s: EVPN carries the frames of the VRF in VXLAN", name, LinkVXLAN, cmp.Or(v.Link, LinkNoise)))
 		case !Plain(v.Link):
 			problems = append(problems, fmt.Errorf("VRF %q: BGP peering needs a link of kind %s or %s, and the link is %s: the sessions run on the network that the operator trusts", name, LinkVXLAN, LinkGeneve, cmp.Or(v.Link, LinkNoise)))
 		case v.HubAndSpoke():
-			problems = append(problems, fmt.Errorf("VRF %q: BGP peering is a full mesh, and the topology is %s: a spoke would learn no route of another, since the hub passes on nothing that it learned", name, TopologyHubAndSpoke))
+			problems = append(problems, fmt.Errorf("VRF %q: %s peering is a full mesh, and the topology is %s: a spoke would learn no route of another, since the hub passes on nothing that it learned", name, peeringBy(p), TopologyHubAndSpoke))
 		case p.HoldTime != 0 && (p.HoldTime < MinHoldTime || p.HoldTime > MaxHoldTime):
 			problems = append(problems, fmt.Errorf("VRF %q: the peering holdTime %d is not from %d to %d", name, p.HoldTime, MinHoldTime, MaxHoldTime))
 		}
 		// ecmp is the Controller's: it gives each Node the routes of all the gateways of a LAN subnet and the Node
 		// spreads its flows over them, and with the peering the Nodes learn one best path for each prefix
-		if p.Protocol == PeeringBGP && v.ECMP {
-			problems = append(problems, fmt.Errorf("VRF %q: ecmp spreads the flows to a LAN subnet over the gateways that advertise it, and with the peering %s each Node learns one best path for each prefix, so the flows would never spread: leave out ecmp or the peering", name, PeeringBGP))
+		if p.Peers() && v.ECMP {
+			problems = append(problems, fmt.Errorf("VRF %q: ecmp spreads the flows to a LAN subnet over the gateways that advertise it, and with the peering %s each Node learns one best path for each prefix, so the flows would never spread: leave out ecmp or the peering", name, p.Protocol))
 		}
 	}
 
-	// One family of tunnel endpoints in each VRF that peers by BGP
+	// One family of tunnel endpoints in each VRF that peers by BGP or by EVPN
 	for _, vrf := range sortedNames(in.VRFs) {
-		if in.VRFs[vrf].Peering.Protocol != PeeringBGP {
+		if !in.VRFs[vrf].Peering.Peers() {
 			continue
 		}
 		first := ""
@@ -172,7 +178,7 @@ func (in Intent) validatePeering() []error {
 			if first == "" {
 				first, first4 = name, a.Is4()
 			} else if a.Is4() != first4 {
-				problems = append(problems, fmt.Errorf("Node %q: VRF %q peers by BGP, and the vtep address %s is not of the family of the one of Node %q", name, vrf, a, first))
+				problems = append(problems, fmt.Errorf("Node %q: VRF %q peers by %s, and the vtep address %s is not of the family of the one of Node %q", name, vrf, peeringBy(in.VRFs[vrf].Peering), a, first))
 			}
 		}
 	}
@@ -192,6 +198,8 @@ func (in Intent) validatePeering() []error {
 			ids[id] = name
 		}
 	}
+	// The EVPN peering of the VRFs (evpnpeering.go; SDN-78)
+	problems = append(problems, in.validateEVPNPeering()...)
 	// The route reflectors of the VRFs (reflector.go; SDN-79)
 	return append(problems, in.validateReflectors()...)
 }

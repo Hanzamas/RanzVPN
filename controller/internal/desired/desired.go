@@ -101,6 +101,8 @@ func Compile(in intent.Intent) (map[string]State, error) {
 		nw.Security = security(in, name)
 		// The trace of its packets, for every node of its VRF (SDN-89)
 		nw.Trace = n.Trace
+		// The L2 VNI of an L2 Network of a VRF that peers by EVPN, for every node of its VRF (evpnpeering.go; SDN-78)
+		nw.Vni = n.VNI
 		networks[n.VRF] = append(networks[n.VRF], nw)
 	}
 	keys := map[string][]byte{}

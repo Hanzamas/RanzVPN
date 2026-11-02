@@ -314,6 +314,17 @@ typedef struct CONTROL_PEERING_PEER {
 // The report of the BGP peering of a node that a client sends to the controller (CONTROL_CONFIG.Peering), ControlPeering.c
 typedef struct CONTROL_PEERING_REPORT CONTROL_PEERING_REPORT;
 
+// The EVPN peering of the standard mode (SDN-78, #358): an L2 Network of a VRF whose nodes peer by EVPN and its L2 VNI
+// (Network.vni of the control protocol), the VNI of its MAC/IP advertisement and inclusive multicast routes and of its frames
+// between the nodes
+#define CONTROL_MAX_L2VNIS 16 // The L2 Networks with an L2 VNI that a state holds at most (NODE_STRETCH_MAX of Cedar/NodeEvpn.h)
+
+typedef struct CONTROL_L2VNI {
+	char Network[CONTROL_NAME_SIZE]; // The L2 Network
+	UINT VrfId;                      // ... its VRF
+	UINT Vni;                        // ... and its L2 VNI, 1 to 16777215
+} CONTROL_L2VNI;
+
 // The session profile of a device (SessionProfile of the control protocol; SDN-40, #233): the limits of the sessions of the
 // devices of a User, the effective SessionProfile of the User that owns the node. A node enforces the profile of a peer on
 // its session with the peer, and the flags of its own profile on itself (Cedar/NodeProfile.c). A limit of 0 is none.
@@ -413,7 +424,8 @@ typedef struct CONTROL_VRF {
 	char Hub[CONTROL_NAME_SIZE];  // The hub node of a VRF of topology hub-and-spoke (SDN-19, #195), "" for a full mesh
 	bool Ecmp;                    // The flows to a prefix of several gateways spread over the healthy ones (SDN-19, #195)
 	UINT TagMode;                 // How the node trusts the source group that such a link carries (CONTROL_TAG_MODE_OFF or _TRUSTED; SDN-87, #386)
-	bool Peering;                 // Its nodes exchange their routes by BGP (SDN-77, #357)
+	bool Peering;                 // Its nodes exchange their routes by BGP (SDN-77, #357) ...
+	bool PeeringEvpn;             // ... by EVPN, with Peering set too: the VNI of its link is its L3 VNI (SDN-78, #358)
 } CONTROL_VRF;
 
 // A reservation of the pool of a DHCP responder: an IPv4 prefix (Prefix of Dhcp.reserved)
@@ -675,6 +687,11 @@ typedef struct CONTROL_STATE {
 	// The pools of the Networks of its VRFs whose trace is on (SDN-89, #388): none while no Network traces
 	UINT NumTraced;
 	CONTROL_TRACED Traced[CONTROL_MAX_TRACED];
+
+	// The L2 VNI of each L2 Network of its VRFs that has one, of a VRF whose nodes peer by EVPN (SDN-78, #358), in the order of the
+	// objects: none while no VRF of the node peers by EVPN
+	UINT NumL2Vnis;
+	CONTROL_L2VNI L2Vnis[CONTROL_MAX_L2VNIS];
 } CONTROL_STATE;
 
 // A copy of a state that holds its own memory, for an owner that applies the state again later (the BGP peering of the node,
@@ -737,6 +754,9 @@ typedef struct CONTROL_CAPS {
 	// The node runs the route reflectors of the BGP peering of the standard mode, as a reflector and as a client: its release
 	// has them, and ranz.exe, which holds its sidecar, is next to it (SDN-79, #359)
 	bool BgpReflection;
+	// The node runs the EVPN peering of the standard mode: its release has it, and ranz.exe, which holds its sidecar, is next to
+	// it (SDN-78, #358)
+	bool EvpnPeering;
 } CONTROL_CAPS;
 
 // Fills caps, which is zeroed, with the Capabilities of the node. The client calls it for each Hello, so a node

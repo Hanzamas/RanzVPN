@@ -205,6 +205,16 @@
 // (PeerPeering.reflector_vrf_ids, client_vrf_ids and reflected_vrf_ids). A node of an older release
 // skips those fields and would peer in a full mesh that its peers refuse, so it reports no Capability
 // bgp_reflection, and the controller refuses to make it a member of such a VRF.
+//
+// EVPN peering of the standard mode (SDN-78, #358): the nodes of a VRF whose links are of kind vxlan and
+// whose peering is evpn exchange their MAC addresses, IP addresses and prefixes by EVPN, as two leaves
+// of a fabric do, with the sidecar of the BGP peering: IP prefix routes with the VNI of the VRF as its
+// L3 VNI, and the MAC/IP advertisement and inclusive multicast routes of each L2 Network of the VRF on
+// its L2 VNI (Network.vni), which the state of every node of the VRF names. The settings of the sidecars
+// are those of the BGP peering (NodeConfig.peering, Peer.peering), and the controller writes nothing
+// else: no route of a peer and no tunnel endpoint of a peer for such a VRF, whose flood lists the
+// inclusive multicast routes fill. A node of an older release skips PEERING_EVPN and Network.vni, so
+// it reports no Capability evpn_peering, and the controller refuses to make it a member of such a VRF.
 syntax = "proto3";
 
 package ranz.control.v1;
@@ -421,6 +431,10 @@ message NodeConfig {
 enum Peering {
   PEERING_UNSPECIFIED = 0;  // the controller gives them, with the addresses and the routes of each Peer
   PEERING_BGP = 1;          // the nodes peer by BGP in a full mesh, on the links of kind vxlan or geneve
+  // The nodes peer by EVPN in a full mesh, on the links of kind vxlan (SDN-78 #358), as two leaves of a fabric do: IP prefix
+  // routes with the VNI of the VRF as its L3 VNI, and the MAC/IP advertisement and inclusive multicast routes of each L2
+  // Network of the VRF on its L2 VNI (Network.vni). The controller gives no route of a peer and no tunnel endpoint for it.
+  PEERING_EVPN = 2;
 }
 
 // The BGP peering of a node (SDN-77 #357): the settings of its sidecar ranz bgp. The sidecar listens on
@@ -700,6 +714,10 @@ message Network {
   // the host whose source or destination is in a pool of the Network as its ingress node, and records each traced packet
   // that it handles in the VRF. Off by default.
   bool trace = 9;
+  // The L2 VNI of an L2 Network of a VRF whose nodes peer by EVPN (SDN-78 #358): the VNI of its MAC/IP advertisement and
+  // inclusive multicast routes and of its frames between the nodes, in the state of every node of its VRF; 0 for any other
+  // Network. A node of an older release skips the field it does not know.
+  uint32 vni = 10;
 }
 
 // The security of an L2 Network (SDN-41 #234, ADR-0019 decision 1): the protections of the fork
@@ -925,6 +943,9 @@ message Capabilities {
   // release has them, and ranz.exe is next to it. A node that does not report it is refused as a member of a VRF whose Intent
   // names reflectors.
   bool bgp_reflection = 16;
+  // The node runs the EVPN peering of the standard mode (SDN-78 #358): its release has it, and ranz.exe is next to it. A node
+  // that does not report it is refused as a member of a VRF whose peering is evpn.
+  bool evpn_peering = 17;
 }
 
 // The Windows edition of a node's host.
