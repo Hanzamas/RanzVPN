@@ -4,7 +4,7 @@
 # Every other test that "vpntest list" prints runs there: a new test is a new file with a RANZ_TEST line
 # (src/vpntest/testlist.h) and needs no line here. A line names a test that vpntest lists, or the script fails.
 bench        has time budgets that AddressSanitizer would exceed; build_and_test runs it
-nodesvc     installs ranz-node as a service, which would run outside the instrumented process; build_and_test runs it
+nodesvc      installs ranz-node as a service, which would run outside the instrumented process; build_and_test runs it
 quic         needs msquic.dll, which this job does not fetch (noisehub runs its loopback part here)
 quicbind     needs msquic.dll, which this job does not fetch, and measures throughput and CPU, which AddressSanitizer distorts
 qtip         needs msquic.dll, which this job does not fetch, and the LocalMachine\My store; build_and_test and the XDP job run it
