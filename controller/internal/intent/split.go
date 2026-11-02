@@ -2,7 +2,7 @@ package intent
 
 import "fmt"
 
-// TCP splitting of an L3 Network (CORE-P2-3 #94, the ADR-0022 amendment of 2026-11-01). It is off
+// TCP splitting of an L3 Network (CORE-P2-3 #94, the ADR-0022 amendment of 2026-10-21). It is off
 // by default and set per Network (Network.TCPSplit). While it is on, a Node of the VRF of the Network
 // terminates each TCP connection that its host opens from its address in the Network on the Windows
 // TCP stack, and carries only the byte stream of the connection over its Noise session to the peer

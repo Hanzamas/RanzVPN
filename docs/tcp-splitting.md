@@ -1,6 +1,6 @@
 # TCP splitting
 
-TCP splitting is an opt-in mode of an L3 Network (CORE-P2-3, ADR-0022 amendment of 2026-11-01). It removes the TCP-over-TCP meltdown on the TLS-443 fallback: when UDP is blocked, a node reaches its peer over TCP 443, and an application's TCP connection inside that tunnel retransmits into a stalled outer TCP whenever the network loses a segment. With splitting, the tunnel carries no inner TCP segment, only the byte stream of the connection.
+TCP splitting is an opt-in mode of an L3 Network (CORE-P2-3, ADR-0022 amendments of 2026-10-15 and 2026-10-21). It removes the TCP-over-TCP meltdown on the TLS-443 fallback: when UDP is blocked, a node reaches its peer over TCP 443, and an application's TCP connection inside that tunnel retransmits into a stalled outer TCP whenever the network loses a segment. With splitting, the tunnel carries no inner TCP segment, only the byte stream of the connection.
 
 ## What changes for an application
 

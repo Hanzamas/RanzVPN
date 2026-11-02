@@ -29,7 +29,8 @@
 // the outer receiver hands over to the real destination at once and grants its bytes again a one-way delay later. Its goodput
 // is the bytes of the stream that the destination got. Splitting must beat both the plain run (FIFO) and the run with the
 // active queue alone (CoDel) by LOSSYLINK_SPLIT_GAIN percent at least, and keep LOSSYLINK_FLOOR percent of what the link
-// carries.
+// carries. The run is a model of the split flow with the constants of NodeSplit.h, on the same simulated link and outer TCP
+// as the other runs; it does not run NodeSplit.c, whose flows the test tcpsplit checks on a real Wintun adapter.
 // Print "LOSSYLINK TEST OK" only when every check passes.
 
 #include "testlist.h"

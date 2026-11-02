@@ -1,6 +1,6 @@
 // NodeSplit.c
-// TCP splitting of the L3 Networks in the overlay of a node (CORE-P2-3, #94; the ADR-0022 amendment of 2026-11-01 on the
-// TCP-over-TCP meltdown). It is off by default and set per L3 Network: the Network objects of a Generation that carry
+// TCP splitting of the L3 Networks in the overlay of a node (CORE-P2-3, #94; the ADR-0022 amendments of 2026-10-15 on the
+// TCP-over-TCP meltdown and of 2026-10-21). It is off by default and set per L3 Network: the Network objects of a Generation that carry
 // tcp_split (CONTROL_STATE.Splits) name the Networks that split TCP. The tunnel then carries no inner TCP segment of a split
 // connection, only its byte stream, so an inner TCP flow over the TLS-443 fallback no longer retransmits into a stalled outer
 // TCP. An ACK that an application of the host gets means that its node has the data; the far end sees the connection come

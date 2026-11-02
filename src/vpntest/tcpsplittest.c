@@ -1,7 +1,7 @@
 // tcpsplittest.c
 // TCP splitting test of vpntest ("tcpsplit" command, CORE-P2-3 #94)
 //
-// TCP splitting of an L3 Network (Cedar/NodeSplit.c; the ADR-0022 amendment of 2026-11-01) between two nodes of VRF corp (401)
+// TCP splitting of an L3 Network (Cedar/NodeSplit.c; the ADR-0022 amendment of 2026-10-21) between two nodes of VRF corp (401)
 // on the in-process loopback transport. node-c, the client, has a Wintun adapter of the runner for corp (Cedar/NodeVrfAdapter.c),
 // so the TCP connections of the runner's own stack from its address in corp are the inner TCP connections, and the runner's
 // TCP stack terminates them on the listener of node-c. node-s, the server, has a fake host, which counts the packets that the
