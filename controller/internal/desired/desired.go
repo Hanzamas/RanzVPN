@@ -217,6 +217,10 @@ func Compile(in intent.Intent) (map[string]State, error) {
 		}
 		out[name] = s
 	}
+	// A Node holds MaxTracedPools pools of the Networks whose trace is on at most (trace.go; SDN-89-R1)
+	if err := checkTraced(out); err != nil {
+		return nil, err
+	}
 	return out, nil
 }
 

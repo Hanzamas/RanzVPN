@@ -64,7 +64,8 @@ func TestExplainTracePrintsThePath(t *testing.T) {
 	want := "trace 42 (0x0000002a) of branch-1, reported 2026-11-02T08:00:00Z: 2 Nodes\n" +
 		"  branch-1  ingress  VRF corp  group 3 (web)  allowed\n" +
 		"  db" + strings.Repeat(" ", 17) + "VRF corp  group 3 (web)  denied\n"
-	for _, id := range []string{"42", "0x2a"} {
+	// The ID as the usage says: decimal, also with a leading 0, or 0x and hex (SDN-89-R1, #630)
+	for _, id := range []string{"42", "042", "0x2a"} {
 		if code := run(&out, &errOut, "-trace", id); code != 0 {
 			t.Fatalf("ranz explain -trace %s: exit code %d: %s", id, code, errOut.String())
 		}
@@ -94,7 +95,8 @@ func TestExplainTracePrintsThePath(t *testing.T) {
 	if code := run(&out, &errOut, "-trace", "9"); code != 1 || !strings.Contains(errOut.String(), "no trace of the trace ID 9 (404 Not Found)") {
 		t.Errorf("ranz explain -trace 9: exit code %d, %q", code, errOut.String())
 	}
-	for _, args := range [][]string{{"-trace", "zero"}, {"-trace", "0"}, {"-trace", "4294967296"}} {
+	// ... and not binary, octal or with underscores, which the base 0 of strconv would read (SDN-89-R1, #630)
+	for _, args := range [][]string{{"-trace", "zero"}, {"-trace", "0"}, {"-trace", "4294967296"}, {"-trace", "0b1"}, {"-trace", "1_0"}, {"-trace", "0o52"}} {
 		if code := run(&out, &errOut, args...); code != 2 || !strings.Contains(errOut.String(), "-trace takes a trace ID") {
 			t.Errorf("ranz explain %v: exit code %d, %q, want the refusal of the trace ID", args, code, errOut.String())
 		}
@@ -102,6 +104,25 @@ func TestExplainTracePrintsThePath(t *testing.T) {
 	for _, args := range [][]string{{"-trace", "42", "branch-1", "db"}, {"-trace", "42", "-port", "80"}, {"-trace", "42", "-listener", "front"}} {
 		if code := run(&out, &errOut, args...); code != 2 {
 			t.Errorf("ranz explain %v: exit code %d, want the usage", args, code)
+		}
+	}
+}
+
+// The trace ID of -trace is read as the usage says (SDN-89-R1, #630): hex after 0x, else decimal, from 1 to 4294967295.
+// A leading 0 is decimal, not octal, so 042 is the trace 42; the binary, the octal and the underscores that the base 0 of
+// strconv reads are no trace ID, nor is a sign, a space, or 0x without digits.
+func TestParseTraceIDReadsTheUsage(t *testing.T) {
+	for _, c := range []struct {
+		in   string
+		want uint32
+	}{{"42", 42}, {"042", 42}, {"0x2a", 42}, {"0X2A", 42}, {"0x002a", 42}, {"1", 1}, {"4294967295", 4294967295}, {"0xffffffff", 4294967295}} {
+		if got, ok := parseTraceID(c.in); !ok || got != c.want {
+			t.Errorf("parseTraceID(%q) = %d, %v, want %d", c.in, got, ok, c.want)
+		}
+	}
+	for _, in := range []string{"", "0", "00", "0x0", "0x", "0b1", "0B1", "0o52", "1_0", "0x_2a", "0x2_a", "+42", "-1", " 42", "42 ", "4294967296", "0x100000000", "2a", "x2a"} {
+		if got, ok := parseTraceID(in); ok {
+			t.Errorf("parseTraceID(%q) = %d, want no trace ID", in, got)
 		}
 	}
 }
