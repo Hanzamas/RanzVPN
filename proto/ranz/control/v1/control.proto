@@ -144,6 +144,19 @@
 // VRF holds its key. No schema version changes with them: a node of an older release takes the tag mode
 // that it does not know for off.
 //
+// Trace (SDN-89, #388): an operator follows one packet through the nodes. A Network whose trace is
+// on (Network.trace, off by default) has its packets traced: the node where such a packet enters the
+// overlay, its ingress node, gives it a trace ID of 32 bits, at most one packet of a VRF in each
+// 100 ms, and the trace option carries the trace ID and the first 8 bytes of the static key of the
+// ingress node, in a record of frame version 1 of a Noise session and in a Geneve option, both with
+// the critical bit clear; a VXLAN header has no room for it. Each node that handles a traced packet,
+// in a VRF of which a Network traces, records the trace ID, the ingress node, the group that the
+// packet carried and the verdict of its policy, and reports the records in its Telemetry (TraceRecord),
+// which ranz explain shows as the path of the packet. The option carries nothing else of the packet,
+// and no timestamp, which waits for synchronised clocks. No schema version changes with them: a node
+// of an older release skips the option and the field that it does not know, and a controller of an
+// older release skips the records.
+//
 // Live operations (SDN-50, #243): an operator reads or clears the MAC table or the IP table of an L2
 // Network on a node. The controller sends the node an Operation on its stream, with an id of its own;
 // the node does it at once and answers with an OperationResult of the same id. Only a node that reports
@@ -719,6 +732,10 @@ message Network {
   // delivers it, which it does while the licence in force has EVPN and BGP (ADR-0036). A node of an older release skips the
   // field it does not know.
   Stretch stretch = 8;
+  // The trace of the Network is on (SDN-89 #388): in the state of every node of its VRF, each of which traces a packet of
+  // the host whose source or destination is in a pool of the Network as its ingress node, and records each traced packet
+  // that it handles in the VRF. Off by default.
+  bool trace = 9;
 }
 
 // The security of an L2 Network (SDN-41 #234, ADR-0019 decision 1): the protections of the fork
@@ -1045,6 +1062,9 @@ message Telemetry {
   // node lists them in a summary of their own as it lists its Paths: after each Hello, whenever
   // they change, and again every 15 s while they stay the same.
   EvpnCounters evpn = 10;
+  // The records of the traced packets that the node handled (SDN-89, TraceRecord at the end of this
+  // file): not cumulative, each sent once, in a summary of their own as soon as they wait, oldest first
+  repeated TraceRecord traces = 11;
 }
 
 // The packets of the peers that a node judged in one tag mode (SDN-87 #386): the records of its Noise
@@ -1312,4 +1332,20 @@ message SessionProfile {
   bool no_routing = 12;         // the device sends from and takes at its own addresses only, IPv4 and IPv6
   bool no_server = 13;          // no TCP connection to the device, IPv4 and IPv6: no SYN to it, no SYN-ACK from it
   bool privacy_filter = 14;     // no packet between two devices whose profiles both have it
+}
+
+// What a node recorded of one traced packet that it handled (SDN-89 #388, Telemetry.traces): the
+// trace ID that the ingress node gave the packet, never 0, the ingress node as the first 8 bytes of
+// its static key, the VRF of the packet at the node, the group ID that the packet carried, 0 for
+// none, and the verdict of the node. allowed: the node let the packet through, to the peer of its
+// route at the ingress node and to its host at the node that delivers it; else it dropped it, by its
+// policy, the session profile of the peer or a claim of a group that the peer may not assert. The
+// node is the ingress node when its static key begins with ingress. Nothing else of the packet is in
+// it.
+message TraceRecord {
+  uint32 trace = 1;
+  bytes ingress = 2;
+  uint32 vrf_id = 3;
+  uint32 group = 4;
+  bool allowed = 5;
 }

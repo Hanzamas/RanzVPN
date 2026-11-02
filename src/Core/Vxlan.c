@@ -320,10 +320,10 @@ static UINT VxlanReadHeader(const UCHAR *data, UINT size, UINT *vni, UINT *heade
 // its VNI, *header its size with the options and *group the source group of its option of the source group (SDN-87,
 // #386; VxlanGroup.c), or why the module drops the datagram. A header that VxlanParseGeneve does not take, or one of a
 // payload that is no Ethernet frame, is VXLAN_DROP_MALFORMED. A control message is VXLAN_DROP_CONTROL: the module has
-// none, and a tunnel endpoint does not forward the payload of one (RFC 8926 section 3.4). The one option that the module
-// reads is the option of the source group, whose critical bit is clear (the trace option of SDN-89 will be the next), so
-// a critical option is one that it does not know, which drops the datagram as VXLAN_DROP_CRITICAL (section 3.5.1),
-// whether the C bit of the header says so or not; any other option is skipped, and the frame goes on without it.
+// none, and a tunnel endpoint does not forward the payload of one (RFC 8926 section 3.4). The options that the module
+// reads are the option of the source group and the trace option (SDN-89, #388; VxlanTrace.c), whose critical bits are
+// clear, so a critical option is one that it does not know, which drops the datagram as VXLAN_DROP_CRITICAL (section
+// 3.5.1), whether the C bit of the header says so or not; any other option is skipped, and the frame goes on without it.
 static UINT VxlanReadGeneve(const UCHAR *data, UINT size, UINT *vni, UINT *header, VXLAN_GROUP *group) {
 	GENEVE_HEADER h;
 
@@ -340,6 +340,9 @@ static UINT VxlanReadGeneve(const UCHAR *data, UINT size, UINT *vni, UINT *heade
 	// The first option of the source group, when there are several
 	for (UINT i = 0; i < h.NumOptions && group->Carried == false; i++)
 		VxlanParseGroupOption(&h.Options[i], group);
+	// ... and the first trace option (VxlanTrace.c; SDN-89, #388)
+	for (UINT i = 0; i < h.NumOptions && group->Trace.Traced == false; i++)
+		VxlanParseTraceOption(&h.Options[i], &group->Trace);
 
 	*vni = h.Vni;
 	*header = h.Size;
@@ -435,6 +438,32 @@ void VxlanSetGroupReceiver(VXLAN *v, VXLAN_RECV_GROUP_PROC *recv) {
 		v->RecvGroup = recv;
 }
 
+// Send frame, size bytes, on the VNI vni to the one VTEP vtep with the trace option of trace alone (SDN-89, #388;
+// VxlanTrace.c): the frame of a packet that its ingress node traces and whose datagram carries no source group, behind a
+// Geneve header with that one option. A VTEP of VXLAN, whose header has no room for the option, and a frame that does not
+// fit a datagram with it get the datagram of VxlanSendTo, without it. False as VxlanSendToGroup.
+static bool VxlanSendTrace(VXLAN *v, UINT vni, const VXLAN_ADDR *vtep, const VXLAN_TRACE *trace, const void *frame, UINT size) {
+	UCHAR buf[VXLAN_MAX_DATAGRAM];
+
+	if (v == NULL || vtep == NULL || frame == NULL || vni > VXLAN_MAX_VNI || size < VXLAN_MIN_FRAME)
+		return false;
+
+	// The Geneve header without options, which the trace option follows
+	VxlanWriteGeneve(buf, vni);
+	UINT header = GENEVE_HEADER_SIZE + VxlanAddTraceOption(buf, GENEVE_HEADER_SIZE, vtep, trace, size);
+	if (header == GENEVE_HEADER_SIZE)
+		return VxlanSendTo(v, vni, vtep, frame, size);
+	CopyMemory(buf + header, frame, size);
+
+	if (v->Send(v->SendParam, vtep, buf, header + size)) {
+		InterlockedIncrement64(&v->Sent);
+		return true;
+	}
+
+	VxlanDrop(v, VXLAN_DROP_SEND);
+	return false;
+}
+
 // Send frame, size bytes, on the VNI vni to the one VTEP vtep with the source group group (SDN-87, #386), as VxlanSendTo
 // sends it without one: in the group policy extension of the VXLAN header, the group ID alone, or behind the Geneve
 // header in the option of the source group, the group ID, the tag set and the group generation (VxlanGroup.c), or in the
@@ -449,6 +478,10 @@ bool VxlanSendToGroup(VXLAN *v, UINT vni, const VXLAN_ADDR *vtep, const VXLAN_GR
 	// The option of the authenticated source group when the group has its MAC (SDN-88, #387)
 	UINT option = (group != NULL && group->HasMac ? GENEVE_GROUP_MAC_OPTION : GENEVE_GROUP_OPTION);
 
+	// The frame of a packet that its ingress node traces and that carries no source group goes with the trace option alone
+	// (SDN-89, #388)
+	if (group != NULL && group->Carried == false && group->Trace.Traced)
+		return VxlanSendTrace(v, vni, vtep, &group->Trace, frame, size);
 	if (group == NULL || group->Carried == false)
 		return VxlanSendTo(v, vni, vtep, frame, size);
 	if (v == NULL || vtep == NULL || frame == NULL || vni > VXLAN_MAX_VNI || size < VXLAN_MIN_FRAME)
@@ -471,6 +504,9 @@ bool VxlanSendToGroup(VXLAN *v, UINT vni, const VXLAN_ADDR *vtep, const VXLAN_GR
 		VxlanWriteHeader(buf, vni);
 		VxlanWriteGroup(buf, group->Group);
 	}
+	// The trace option of a traced packet after the options of a Geneve header, when the frame fits a datagram with it; the
+	// VXLAN header has no room for it (VxlanTrace.c; SDN-89, #388)
+	header += VxlanAddTraceOption(buf, header, vtep, &group->Trace, size);
 	CopyMemory(buf + header, frame, size);
 
 	if (v->Send(v->SendParam, vtep, buf, header + size)) {

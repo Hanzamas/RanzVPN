@@ -406,6 +406,8 @@ static void ControlDeliver(CONTROL_CLIENT *c, UINT64 gen) {
 	ControlCopyLinks(&st, c->Objects, c->NumObjects);
 	// The source groups of the node, its peers and the Devices, and the tag modes of the VRFs (ControlSourceGroup.c; SDN-87, #386)
 	ControlCopySourceGroups(&st, c->Objects, c->NumObjects);
+	// The pools of the Networks whose trace is on (ControlTrace.c; SDN-89, #388)
+	ControlCopyTraced(&st, c->Objects, c->NumObjects);
 	// The security of the L2 Networks (ControlSecurity.c; SDN-41, #234)
 	ControlCopySecurities(&st, c->Objects, c->NumObjects);
 	// The relays that the node may use, its home relay first (ControlSignal.c; CORE-S5-5, #411)
@@ -644,6 +646,8 @@ static void ControlRun(CONTROL_CLIENT *c) {
 		ok = ok && ControlWriteEvpn(c->Config.Evpn, s);
 		// The counters of the source groups when they are due (ControlSourceGroup.c; SDN-87, #386)
 		ok = ok && ControlWriteSourceGroups(c->Config.SourceGroups, s);
+		// The records of the traced packets that wait (ControlTrace.c; SDN-89, #388)
+		ok = ok && ControlWriteTraces(c->Config.Traces, s);
 		if (ok == false)
 			break;
 

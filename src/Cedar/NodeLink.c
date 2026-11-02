@@ -239,6 +239,9 @@ static void NodeLinkReceive(VXLAN *x, void *param, UINT vni, const VXLAN_ADDR *f
 			WRITE_UINT(th->Record, lv->VrfId);
 			Copy(th->Record + NODE_OVERLAY_VRF_TAG, frame + NODE_LINK_ETHER, size - NODE_LINK_ETHER);
 			InterlockedIncrement64(&l->Delivered);
+			// ... and its trace option (NodeTrace.c; SDN-89, #388)
+			if (group != NULL)
+				Copy(&claim.Trace, &group->Trace, sizeof(VXLAN_TRACE));
 			NodeOverlayLinkDeliver(l->Node, v->Hops[peer], th->Record, NODE_OVERLAY_VRF_TAG + size - NODE_LINK_ETHER, th->Nat, &claim);
 		}
 	}
@@ -482,10 +485,11 @@ UINT NodeLinkKind(NODE_VRF_TABLES *v, UINT hop, UINT vrf_id) {
 // of kind vxlan or geneve of the VRF: the packet behind an Ethernet header on the VNI of the VRF, to the tunnel endpoint
 // of the peer in the encapsulation of the link. A packet of the host when host is set, which carries its source group in
 // the tag mode trusted-underlay of the VRF; else the packet of a spoke that the node, the hub of the VRF, sends on to
-// another, which carries none (NodeSourceGroup.c; SDN-87, #386). False when the peer has no tunnel endpoint, the frame is
-// larger than the module takes, or the datagram could not be sent. The caller reads v as a reader of the table snapshot of
-// the node.
-bool NodeLinkSend(NODE_VRF_TABLES *v, UINT hop, const UCHAR *record, UINT size, bool host) {
+// another, which carries none (NodeSourceGroup.c; SDN-87, #386). trace is the trace option of a packet that the node
+// traces, which a link of kind geneve carries, NULL for none (NodeTrace.c; SDN-89, #388). False when the peer has no
+// tunnel endpoint, the frame is larger than the module takes, or the datagram could not be sent. The caller reads v as a
+// reader of the table snapshot of the node.
+bool NodeLinkSend(NODE_VRF_TABLES *v, UINT hop, const UCHAR *record, UINT size, bool host, const VXLAN_TRACE *trace) {
 	NODE_LINK_TABLE *t = (v != NULL ? v->Link : NULL);
 	UCHAR frame[VXLAN_MAX_FRAME];
 
@@ -512,6 +516,9 @@ bool NodeLinkSend(NODE_VRF_TABLES *v, UINT hop, const UCHAR *record, UINT size, 
 	Zero(&group, sizeof(group));
 	if (host)
 		NodeSourceGroupStamp(v, lv->VrfId, packet, size, &group);
+	// ... and the trace option of a traced packet, which a Geneve header carries after it (NodeTrace.c; SDN-89, #388)
+	if (trace != NULL && trace->Traced)
+		Copy(&group.Trace, trace, sizeof(VXLAN_TRACE));
 	bool ok = VxlanSendToGroup(t->Link->Vxlan, lv->Vni, lv->Kind == CONTROL_LINK_GENEVE ? &p->Geneve : &p->Vxlan, &group, frame, NODE_LINK_ETHER + size);
 	InterlockedIncrement64(ok ? &t->Link->Sent : &t->Link->Failed);
 

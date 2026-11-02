@@ -46,6 +46,9 @@ void ControlCopySourceGroups(CONTROL_STATE *st, const ranz_control_v1_Object *ob
 void ControlSourceGroupsResend(CONTROL_SOURCE_GROUPS *g);
 void ControlFreeTagKeys(CONTROL_STATE *st);
 
+// ControlTrace.c
+void ControlCopyTraced(CONTROL_STATE *st, const ranz_control_v1_Object *objects, UINT num);
+
 // ControlSecurity.c
 void ControlCopySecurities(CONTROL_STATE *st, const ranz_control_v1_Object *objects, UINT num);
 void ControlFreeSecurities(CONTROL_STATE *st);

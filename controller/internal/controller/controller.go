@@ -270,6 +270,9 @@ type Controller struct {
 	// The keys of the tag mode hmac of the VRFs (tagkeys.go; SDN-88)
 	tkeys tagKeys
 
+	// The traced packets that the Nodes reported (trace.go; SDN-89)
+	traces traceState
+
 	// The delegations of the Networks, which the roles held for one Network are bound by (scope.go; SDN-38)
 	scopes scopeState
 }
