@@ -9,6 +9,11 @@
 //   options; a record that it drops has no header and no claim;
 // - a record whose VRF tag is not 0 is taken with no header and no claim;
 // - a claim comes from the session, with its tag set and the group generation of its sender, and its group ID has 16 bits.
+// The trace option of the header (Cedar/NodeTrace.c, SDN-89 #388), which a node reads from the header of a record that it
+// took (NodeTraceParse), is read from the whole record and from its header alone, and must hold:
+// - a record that the node drops, or one of frame version 0, has no trace;
+// - a trace has a trace ID that is not 0, lies in a header that holds at least the trace option, and is the same when the
+//   node reads the header alone.
 //
 // fuzz-max-len: 2048
 
@@ -17,6 +22,7 @@
 #include "Cedar/CedarType.h"
 #include "Cedar/Node.h"
 #include "Cedar/NodeSourceGroup.h"
+#include "Cedar/NodeTrace.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -68,6 +74,24 @@ static void FuzzFrame(const uint8_t *data, size_t size)
 	}
 
 	if (claim.Carrier != NODE_CARRIER_SESSION || (claim.Carried && (claim.HasTags == false || claim.HasGeneration == false || claim.Group > 0xFFFF)))
+	{
+		abort();
+	}
+
+	// The trace option, as the node reads it from the record and from the header of a record that it took
+	VXLAN_TRACE trace, again;
+	memset(&again, 0, sizeof(again));
+	bool traced = NodeTraceParse(copy, (UINT)size, &trace);
+
+	if (traced != trace.Traced || (traced && (taken == false || header < NODE_FRAME_HEADER + NODE_FRAME_TRACE_OPTION || trace.Id == 0)))
+	{
+		abort();
+	}
+	if (taken && NodeTraceParse(header != 0 ? copy : NULL, header, &again) != traced)
+	{
+		abort();
+	}
+	if (traced && (again.Id != trace.Id || memcmp(again.Ingress, trace.Ingress, VXLAN_TRACE_INGRESS) != 0))
 	{
 		abort();
 	}
