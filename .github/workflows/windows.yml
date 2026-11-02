@@ -639,20 +639,23 @@ jobs:
   # AddressSanitizer + libFuzzer (x64 only: Microsoft documents ASan on Windows for x86 and x64).
   # Builds with -DRANZ_ASAN=ON -DRANZ_FUZZ=ON (cmake/RanzSanitizers.cmake), runs the vpntest
   # smoke test script on that build, replays the seed corpora (deterministic), then runs every
-  # fuzz target of src/fuzz for a fixed time. Any of the three failing fails the job.
+  # fuzz target of src/fuzz for a fixed time, three at a time. Any of the three failing fails the job.
   #
-  # The job takes 44 to 45 minutes on integration (2026-11-01): the setup and the build 4, the smoke test 8, coretest 3 and
-  # the fuzz of 29 targets for 60 s each 30. A timeout of 45 minutes left no room for a start that takes a little longer: on
-  # PR 588 (CORE-P2-4, #95) the Go cache of its go.sum is 516 MB, whose restore takes 40 s more than the 15 MB of the cache of
-  # integration, and two runs of its head were cancelled at exactly 45 minutes, after "All fuzz targets passed". The 10
-  # minutes above that are for such a start. The 30th target (fuzz_frame, SDN-87 #386) needs more than the 30 minutes that the
-  # fuzz step had, which has 45 now (below), so the job has 60: the 15 minutes of the steps before it, and that step.
+  # One target after the other (before CI-FLAKE-7, #605) the job took 44 to 45 minutes on integration (2026-11-01): the setup
+  # and the build 4, the smoke test 8, coretest 3 and the fuzz of 29 targets for 60 s each 30. The limits of 45 minutes for the
+  # job and 30 for the fuzz step left no room, and two pull requests raised them: PR 588 (CORE-P2-4, #95) the one of the job to
+  # 55 minutes, because its Go cache of its go.sum is 516 MB, which takes 40 s more to restore than the 15 MB of the cache of
+  # integration, so that two runs of its head were cancelled at exactly 45 minutes, after "All fuzz targets passed"; and PR 484
+  # (SDN-87, #386) the one of the job to 60 minutes and the one of the step to 45, because its target fuzz_frame was the 30th
+  # and ran out of the 30 minutes of the step. Three at a time the fuzz takes about 10 minutes and the job about 25, and a
+  # target adds 20 s, so the limits are 45 minutes for the job and 30 for the fuzz step again: a longer limit hides the next
+  # target, a short run is the margin that does not move.
   fuzz-asan:
     needs: plan
     if: needs.plan.outputs.full == 'true'
     runs-on: windows-latest
     name: fuzz-asan
-    timeout-minutes: 60
+    timeout-minutes: 45
     steps:
     - uses: actions/checkout@v4
       with:
@@ -778,14 +781,16 @@ jobs:
       timeout-minutes: 10
       run: |
         ./src/fuzz/run_fuzzers.ps1 -BuildDir build -Seconds 0
-    # The targets run one after the other, about 61 s each: the 29 targets of integration 065246a1
-    # took 29.6 minutes, and the 30th (fuzz_frame, SDN-87 #386) ran out of the 30 minutes that this
-    # step had. 45 minutes leave room for the targets to come.
     - name: Fuzz (60 s per target)
       shell: pwsh
-      timeout-minutes: 45
+      timeout-minutes: 30
       run: |
-        ./src/fuzz/run_fuzzers.ps1 -BuildDir build -Seconds 60 -Seed 1
+        # Every target runs 60 s with the seed 1, three at a time: the runner has 4 cores and a libFuzzer process uses one.
+        # One after the other the 29 targets of integration 065246a1 took 29.6 minutes of the 30 of this step, and the 30th
+        # (fuzz_frame, SDN-87 #386) ran out of them (CI-FLAKE-7, #605); three at a time the 30 targets take about 10 minutes and
+        # a target adds 20 s. The limit of the step is 30 minutes and that of the job 45: a longer limit hides the next target,
+        # a shorter run is the margin.
+        ./src/fuzz/run_fuzzers.ps1 -BuildDir build -Seconds 60 -Seed 1 -Parallel 3
     - uses: actions/upload-artifact@v4
       if: always()
       with:
