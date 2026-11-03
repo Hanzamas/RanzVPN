@@ -80,6 +80,7 @@ on:
     - '!.github/scripts/fuzz-fault.c'
     - '!.github/scripts/fuzz-fault_test.go'
     - '!.github/scripts/one-binary-check.py'
+    - '!.github/scripts/job-timeout-check.py'
     - '!.github/scripts/ci-plan-test.py'
     - '!tests/formal/**'
     - '!.github/workflows/formal.yml'
@@ -412,7 +413,12 @@ jobs:
       run: |
         go build -o ..\build\ ./cmd/ranz
         if ($LASTEXITCODE -ne 0) { throw "go build exited with code $LASTEXITCODE" }
+    # The step "Controller behind the front door" below starts ranz controller with this rqlited, and it runs after a test that
+    # failed too. Skipped, this step leaves RQLITED empty, and the front door step fails with "ranz controller exited with code 2
+    # before it served", which hides the failed test (CI-INTEG-1-R1, #597), as the missing ranz.exe did before the build step above
+    # had this condition (FIX-12, #601)
     - name: Install rqlited for the default VRF tracer
+      if: ${{ !cancelled() }}
       shell: pwsh
       run: |
         $zip = Join-Path $env:RUNNER_TEMP 'rqlite.zip'
