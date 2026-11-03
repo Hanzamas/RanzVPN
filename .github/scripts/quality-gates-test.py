@@ -795,6 +795,7 @@ def test_msi_install():
                         ('a message that names msiexec', "\nWrite-Host 'msiexec is not started here'\n"),
                         ('a failure that names msiexec', "\nif ($false) { throw 'msiexec exited with code 1' }\n"),
                         ('a command that prints msiexec', "\nWrite-Host msiexec\n"),
+                        ('a command that prints the variable of the program', "\nWrite-Host $msiexecFile\n"),
                         ('a program that is not msiexec', "\nStart-Process -FilePath 'notepad.exe' -Wait\n"),
                         ('a splat of a command that starts nothing', "\n$arguments = @{ Path = 'x.msi' }\nGet-Item @arguments\n"),
                         ('a read of the Windows Installer object', "\n$installer = New-Object -ComObject WindowsInstaller.Installer\n$null = $installer.RelatedProducts('{00000000-0000-0000-0000-000000000000}')\n")):
@@ -812,7 +813,8 @@ def test_msi_install():
             ('a Process started by the framework', "\n[void][System.Diagnostics.Process]::Start('msiexec.exe', '/x x.msi')\n",
              "[System.Diagnostics.Process]::Start('msiexec.exe', '/x x.msi')"),
             # The forms that CI-FLAKE-6-R2 (#624) forbids too: the program is in a hashtable that is splatted, a helper is given the
-            # program as an argument, and the Windows Installer object installs with no msiexec.exe and no bound
+            # program as an argument (by name, by path, or as the variable of the program, alone or in an array), and the Windows
+            # Installer object installs with no msiexec.exe and no bound
             ('a Start-Process with a splat', "\n$splat = @{ FilePath = 'msiexec.exe'; ArgumentList = '/x', 'x.msi'; Wait = $true }\nStart-Process @splat\n",
              'Start-Process @splat'),
             ('a Start-ProcessWithHandle with a splat', "\n$splat = @('msiexec.exe')\nStart-ProcessWithHandle @splat\n", 'Start-ProcessWithHandle @splat'),
@@ -823,6 +825,10 @@ def test_msi_install():
              'Start-Other msiexec /x'),
             ('a helper that is given the path of the program', "\nfunction Start-Other($program) { & $program /x }\nStart-Other 'C:\\Windows\\System32\\msiexec.exe' /x\n",
              "Start-Other 'C:\\Windows\\System32\\msiexec.exe' /x"),
+            ('a helper that is given the variable of the program', "\nfunction Start-Other($program) { & $program /x }\nStart-Other $msiexecFile /x\n",
+             'Start-Other $msiexecFile /x'),
+            ('a helper that is given the variable of the program in an array', "\nfunction Start-Other($program) { & $program /x }\nStart-Other @($msiexecFile, '/x')\n",
+             "Start-Other @($msiexecFile, '/x')"),
             ('an install through the Windows Installer object', "\n$installer = New-Object -ComObject WindowsInstaller.Installer\n[void]$installer.InstallProduct('x.msi', 'ACTION=INSTALL')\n",
              "$installer.InstallProduct('x.msi', 'ACTION=INSTALL')"),
             ('a configure through the Windows Installer object', "\n$installer = New-Object -ComObject WindowsInstaller.Installer\n$installer.ConfigureProduct('{00000000-0000-0000-0000-000000000000}', 0, 3)\n",

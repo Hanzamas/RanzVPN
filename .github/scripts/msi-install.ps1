@@ -719,8 +719,9 @@ function Invoke-Flow([scriptblock] $steps, [scriptblock] $cleanUp) {
 # Invoke-Expression) or a Process (its Start) and names msiexec in its text, which holds the variables $msiexecFile and $msiexecPrefix
 # too. Three more forms are forbidden (CI-FLAKE-6-R2, #624): a program started with a splat (Start-Process @splat), whose program is in
 # a hashtable that this check does not read; a command that is given msiexec as an argument, which is how a helper that takes the program
-# starts it (a command that prints, as Write-Host, only names it); and a call of a method of the Windows Installer object that installs
-# (InstallProduct, ConfigureProduct, ReinstallProduct, ConfigureFeature, ReinstallFeature, ApplyPatch): an install that has no
+# starts it (as the name, as a path, or as the variable $msiexecFile or $msiexecPrefix in any form, as the argument itself or inside an
+# array or a string; a command that prints, as Write-Host, only names it); and a call of a method of the Windows Installer object that
+# installs (InstallProduct, ConfigureProduct, ReinstallProduct, ConfigureFeature, ReinstallFeature, ApplyPatch): an install that has no
 # msiexec.exe and no bound.
 # Not seen, and left to the review of the diff: a program named by another variable or built from pieces of text, a ProcessStartInfo
 # whose FileName is assigned, and a call of msi.dll through Add-Type.
@@ -745,13 +746,15 @@ function Get-MsiexecLaunches([string] $path) {
 			$operator = $node.InvocationOperator -ne [System.Management.Automation.Language.TokenKind]::Unknown
 			$splatted = @($node.CommandElements | Where-Object { $_ -is [System.Management.Automation.Language.VariableExpressionAst] -and $_.Splatted }).Count -gt 0
 			$given = @($node.CommandElements | Select-Object -Skip 1 | Where-Object { $_ -is [System.Management.Automation.Language.StringConstantExpressionAst] -and $_.Value -match '^(.*[\\/])?msiexec(\.exe)?$' }).Count -gt 0
+			# The variables that hold the program and its arguments, given in any form: by themselves, inside an array or inside a string
+			$givenVariable = $text -match '\$(\w+:)?msiexec(File|Prefix)\b'
 			if ($name -and $name -match '(^|[\\/])msiexec(\.exe)?$') {
 				$starts = $true
 			} elseif ($text -match 'msiexec' -and ($operator -or $starters -contains $lowerName)) {
 				$starts = $true
 			} elseif ($splatted -and $starters -contains $lowerName) {
 				$starts = $true
-			} elseif ($given -and $printers -notcontains $lowerName) {
+			} elseif (($given -or $givenVariable) -and $printers -notcontains $lowerName) {
 				$starts = $true
 			}
 		} elseif ($installs -contains $node.Member.Extent.Text) {
