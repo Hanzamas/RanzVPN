@@ -65,6 +65,15 @@
 //   bytes 8-15  the tag set, big-endian
 //   bytes 16-19 the group generation of the sender in the VRF, its 32 low bits, big-endian: the Generation of the state of
 //               the sender from which on it may assert what it asserts there (Core/Control.h, CONTROL_SOURCE_GROUP)
+//
+// The option of the authenticated source group (SDN-88, #387), GENEVE_GROUP_MAC_OPTION bytes, the same class and type
+// with a longer data, which a node of a VRF in the tag mode hmac sends (Cedar/NodeTagMac.c): its bytes 0-19 as above,
+// but byte 3 holds the length of the longer data, GENEVE_GROUP_MAC_DATA / 4, and bytes 6-7 the 16 low bits of the ID of
+// the key of the MAC, big-endian; then
+//   bytes 20-23 the timestamp of the sender: seconds since 1970-01-01 UTC, its 32 low bits, big-endian
+//   bytes 24-31 the MAC: the first 8 bytes of HMAC-SHA256 under the key, over the VNI, the fields of the option before
+//               the MAC and the inner IP and L4 headers of the frame
+// A tunnel endpoint of an earlier release finds no option of the source group of its length, and skips it.
 
 #ifndef CORE_VXLAN_H
 #define CORE_VXLAN_H
@@ -95,6 +104,11 @@
 #define GENEVE_TYPE_GROUP   0x01                    // The type of the option of the source group, whose critical bit is clear
 #define GENEVE_GROUP_DATA   16                      // The data of the option: the group ID, two reserved bytes, the tag set and the group generation
 #define GENEVE_GROUP_OPTION (4 + GENEVE_GROUP_DATA) // The option with its header
+
+// The option of the authenticated source group (SDN-88, #387)
+#define GENEVE_GROUP_MAC_SIZE   8                                               // The MAC: HMAC-SHA256 truncated to 64 bits
+#define GENEVE_GROUP_MAC_DATA   (GENEVE_GROUP_DATA + 4 + GENEVE_GROUP_MAC_SIZE) // Its data: that of the option above, the timestamp and the MAC
+#define GENEVE_GROUP_MAC_OPTION (4 + GENEVE_GROUP_MAC_DATA)                     // The option with its header
 
 // The encapsulation of a VTEP (VXLAN_ADDR)
 #define VXLAN_ENCAP_VXLAN  0 // VXLAN (RFC 7348), on VXLAN_PORT
@@ -189,6 +203,12 @@ typedef struct VXLAN_GROUP {
 	USHORT Group;       // The group ID
 	UINT64 Tags;        // The tag set
 	UINT Generation;    // The group generation, its 32 low bits
+	// The option of the authenticated source group (SDN-88, #387): the ID of the key, the timestamp and the MAC, which only
+	// Geneve carries
+	bool HasMac;
+	USHORT KeyId;                     // The 16 low bits of the ID of the key
+	UINT Time;                        // Seconds since 1970-01-01 UTC, the 32 low bits
+	UCHAR Mac[GENEVE_GROUP_MAC_SIZE]; // The MAC
 } VXLAN_GROUP;
 
 // Takes one frame as VXLAN_RECV_PROC does, with the source group that its datagram carried, in place of the receiver of
@@ -215,6 +235,7 @@ bool VxlanParseGeneve(const UCHAR *data, UINT size, GENEVE_HEADER *h);
 // VxlanGroup.c
 void VxlanWriteGroup(UCHAR *header, USHORT group);
 void VxlanWriteGroupOption(UCHAR *option, USHORT group, UINT64 tags, UINT generation);
+void VxlanWriteGroupMacOption(UCHAR *option, const VXLAN_GROUP *g);
 bool VxlanParseGroup(const UCHAR *data, UINT size, VXLAN_GROUP *g);
 bool VxlanParseGroupOption(const GENEVE_OPTION *o, VXLAN_GROUP *g);
 

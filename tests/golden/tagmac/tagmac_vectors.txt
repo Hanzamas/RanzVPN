@@ -1,0 +1,45 @@
+# SDN-88: the MAC of the source group in the tag mode hmac, HMAC-SHA256 truncated to 64 bits under the key of the VRF
+# fields: the VNI, the group ID, the ID of the key, the tag set, the group generation, the timestamp
+# option: the version and the length of the options, the flags O and C, the protocol, the VNI, reserved | the class, the type, the length, the group, the ID of the key, the tag set, the group generation, the timestamp, the MAC
+[udp4] an IPv4 packet of UDP
+  key 000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f
+  fields 000013ed 0001 0001 0000000000000001 00000001 65000000
+  the MAC covers the first 28 of the 100 bytes of the packet
+  mac 2a7427c6859d19c0
+  geneve 08 00 6558 0013ed 00 | fff0 01 07 0001 0001 0000000000000001 00000001 65000000 2a7427c6859d19c0
+  read: group 1, key 1, tag set 0x0000000000000001, group generation 1, timestamp 0x65000000, mac 2a7427c6859d19c0; the frame of 114 bytes as it was sent
+[tcp4] an IPv4 packet of TCP with 12 bytes of options
+  key 202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f
+  fields 000013ed 0003 0002 0000000000000004 00000007 65000001
+  the MAC covers the first 52 of the 80 bytes of the packet
+  mac 5915f454402285cd
+  geneve 08 00 6558 0013ed 00 | fff0 01 07 0003 0002 0000000000000004 00000007 65000001 5915f454402285cd
+  read: group 3, key 2, tag set 0x0000000000000004, group generation 7, timestamp 0x65000001, mac 5915f454402285cd; the frame of 94 bytes as it was sent
+[icmp4] an IPv4 packet with 4 bytes of options, of an ICMP echo
+  key 404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f
+  fields 000013ed 0102 0007 0102030405060708 01020304 6500001e
+  the MAC covers the first 32 of the 40 bytes of the packet
+  mac 5ee7e5ec492bdf7f
+  geneve 08 00 6558 0013ed 00 | fff0 01 07 0102 0007 0102030405060708 01020304 6500001e 5ee7e5ec492bdf7f
+  read: group 258, key 7, tag set 0x0102030405060708, group generation 16909060, timestamp 0x6500001e, mac 5ee7e5ec492bdf7f; the frame of 54 bytes as it was sent
+[udp6] an IPv6 packet with a hop-by-hop options header, of UDP
+  key 606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f
+  fields 000013ed 0002 0001 0000000000000002 00000001 65000000
+  the MAC covers the first 56 of the 80 bytes of the packet
+  mac c08b79efd96d6b4d
+  geneve 08 00 6558 0013ed 00 | fff0 01 07 0002 0001 0000000000000002 00000001 65000000 c08b79efd96d6b4d
+  read: group 2, key 1, tag set 0x0000000000000002, group generation 1, timestamp 0x65000000, mac c08b79efd96d6b4d; the frame of 94 bytes as it was sent
+[fragment] a later fragment of an IPv4 packet, which has no L4 header
+  key 808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9f
+  fields 000013ed ffff ffff ffffffffffffffff ffffffff ffffffff
+  the MAC covers the first 20 of the 60 bytes of the packet
+  mac fe8a322c0373f2a6
+  geneve 08 00 6558 0013ed 00 | fff0 01 07 ffff ffff ffffffffffffffff ffffffff ffffffff fe8a322c0373f2a6
+  read: group 65535, key 65535, tag set 0xffffffffffffffff, group generation 4294967295, timestamp 0xffffffff, mac fe8a322c0373f2a6; the frame of 74 bytes as it was sent
+[short] an IPv4 packet of TCP that ends inside its TCP header
+  key a0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebf
+  fields 000013ed 0005 0003 0000000000000009 00000004 00000001
+  the MAC covers the first 24 of the 24 bytes of the packet
+  mac b03a9f342b76dd3b
+  geneve 08 00 6558 0013ed 00 | fff0 01 07 0005 0003 0000000000000009 00000004 00000001 b03a9f342b76dd3b
+  read: group 5, key 3, tag set 0x0000000000000009, group generation 4, timestamp 0x00000001, mac b03a9f342b76dd3b; the frame of 38 bytes as it was sent

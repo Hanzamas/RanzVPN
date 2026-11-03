@@ -85,8 +85,15 @@ bool CryptoSha256Begin(CRYPTO_SHA256 *s);
 bool CryptoSha256Update(CRYPTO_SHA256 *s, const void *src, UINT size);
 bool CryptoSha256End(CRYPTO_SHA256 *s, UCHAR *dst);
 
-// HMAC-SHA256 (RFC 2104)
+// HMAC-SHA256 (RFC 2104), in one call or over several parts: CryptoHmacSha256Begin keys a hash that
+// CryptoSha256Update and CryptoSha256End take as they take SHA-256, and CryptoSha256End must follow
+// every successful CryptoHmacSha256Begin
 bool CryptoHmacSha256(UCHAR *dst, const void *key, UINT key_size, const void *src, UINT size);
+bool CryptoHmacSha256Begin(CRYPTO_SHA256 *s, const void *key, UINT key_size);
+
+// Whether the size bytes at a and at b are the same, in a time that depends on size alone and not on
+// the bytes: the comparison of a MAC with the one that a peer sent (SDN-88, #387). false for NULL
+bool CryptoEqual(const void *a, const void *b, UINT size);
 
 // HKDF-SHA256 (RFC 5869). Extract writes the 32-byte PRK; Expand writes okm_size bytes, at most
 // CRYPTO_HKDF_MAX_SIZE; CryptoHkdf is both. An empty salt is the salt of 32 zero bytes

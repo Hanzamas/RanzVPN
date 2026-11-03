@@ -48,12 +48,13 @@ var (
 )
 
 // secretNames are the parts of a name that make its value a secret, as a regular expression.
-const secretNames = `password|passwd|passphrase|secret|token|credential|authorization|cookie|signature|api[-_]?key|private[-_]?key|psk|pre[-_]?shared[-_]?key|signing[-_]?key|master[-_]?key|session[-_]?key|access[-_]?key|auth[-_]?key|hash|salt`
+// tag[-_]?key is the key of a VRF in the tag mode hmac (SDN-88), which only the Generations of the Nodes carry.
+const secretNames = `password|passwd|passphrase|secret|token|credential|authorization|cookie|signature|api[-_]?key|private[-_]?key|psk|pre[-_]?shared[-_]?key|signing[-_]?key|master[-_]?key|session[-_]?key|access[-_]?key|auth[-_]?key|tag[-_]?key|hash|salt`
 
 // secretWords are the same parts of a name for the name of a field of a JSON document, which is
 // compared in lower case and without hyphens, underscores, dots and spaces.
 var secretWords = []string{"password", "passwd", "passphrase", "secret", "token", "credential", "authorization", "cookie", "signature",
-	"apikey", "privatekey", "privkey", "presharedkey", "psk", "signingkey", "masterkey", "sessionkey", "accesskey", "authkey", "hash", "salt"}
+	"apikey", "privatekey", "privkey", "presharedkey", "psk", "signingkey", "masterkey", "sessionkey", "accesskey", "authkey", "tagkey", "hash", "salt"}
 
 // secretName reports whether a field of this name holds a secret.
 func secretName(name string) bool {

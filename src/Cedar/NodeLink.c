@@ -232,8 +232,10 @@ static void NodeLinkReceive(VXLAN *x, void *param, UINT vni, const VXLAN_ADDR *f
 		} else {
 			NODE_SOURCE_CLAIM claim;
 
-			// The source group of the datagram, which the tag mode of the VRF decides on (NodeSourceGroup.c; SDN-87, #386)
+			// The source group of the datagram, which the tag mode of the VRF decides on (NodeSourceGroup.c; SDN-87, #386), and
+			// in the tag mode hmac whether its MAC is authentic (NodeTagMac.c; SDN-88, #387)
 			NodeSourceGroupClaim(&claim, kind == CONTROL_LINK_GENEVE ? NODE_CARRIER_GENEVE : NODE_CARRIER_VXLAN, group);
+			NodeSourceGroupCheck(v, lv->VrfId, frame + NODE_LINK_ETHER, size - NODE_LINK_ETHER, &claim);
 			WRITE_UINT(th->Record, lv->VrfId);
 			Copy(th->Record + NODE_OVERLAY_VRF_TAG, frame + NODE_LINK_ETHER, size - NODE_LINK_ETHER);
 			InterlockedIncrement64(&l->Delivered);
@@ -508,7 +510,8 @@ bool NodeLinkSend(NODE_VRF_TABLES *v, UINT hop, const UCHAR *record, UINT size, 
 	WRITE_USHORT(frame + 12, (packet[0] >> 4) == 6 ? MAC_PROTO_IPV6 : MAC_PROTO_IPV4);
 	Copy(frame + NODE_LINK_ETHER, packet, size);
 
-	// The source group of a packet of the host, in the tag mode trusted-underlay of the VRF (NodeSourceGroup.c; SDN-87, #386)
+	// The source group of a packet of the host, in the tag mode trusted-underlay of the VRF (NodeSourceGroup.c; SDN-87, #386),
+	// or in hmac with its MAC (NodeTagMac.c; SDN-88, #387)
 	VXLAN_GROUP group;
 	Zero(&group, sizeof(group));
 	if (host)

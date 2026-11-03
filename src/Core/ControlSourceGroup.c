@@ -65,9 +65,40 @@ static void ControlCopyGroups(CONTROL_SOURCE_GROUP *dst, UINT *num, const ranz_c
 	}
 }
 
-// The tag mode of a Vrf object as the state holds it: trusted-underlay, or off for any other
+// The tag mode of a Vrf object as the state holds it: trusted-underlay, hmac, or off for any other
 static UINT ControlTagMode(ranz_control_v1_TagMode mode) {
+	if (mode == ranz_control_v1_TagMode_TAG_MODE_HMAC)
+		return CONTROL_TAG_MODE_HMAC;
+
 	return (mode == ranz_control_v1_TagMode_TAG_MODE_TRUSTED_UNDERLAY ? CONTROL_TAG_MODE_TRUSTED : CONTROL_TAG_MODE_OFF);
+}
+
+// The keys of the tag mode hmac of a Vrf object into the VRF v (SDN-88, #387), CONTROL_TAG_KEYS at most: a key that is
+// not of CONTROL_TAG_KEY_SIZE bytes, or of the ID 0, is left out, and so is every key of a VRF in another tag mode
+static void ControlCopyTagKeys(CONTROL_VRF *v, const ranz_control_v1_Vrf *src) {
+	SecureZeroMemory(v->TagKeys, sizeof(v->TagKeys));
+	v->NumTagKeys = 0;
+
+	for (pb_size_t i = 0; v->TagMode == CONTROL_TAG_MODE_HMAC && i < src->tag_keys_count && i < CONTROL_TAG_KEYS; i++) {
+		const ranz_control_v1_TagKey *k = &src->tag_keys[i];
+
+		if (k->id == 0 || k->key.size != CONTROL_TAG_KEY_SIZE)
+			continue;
+
+		CONTROL_TAG_KEY *t = &v->TagKeys[v->NumTagKeys++];
+		t->Id = k->id;
+		CopyMemory(t->Key, k->key.bytes, CONTROL_TAG_KEY_SIZE);
+		t->Send = k->send;
+	}
+}
+
+// Zero the keys of the tag mode hmac of the VRFs of a state that the owner took (SDN-88, #387): ControlDeliver keeps the
+// state on its stack, and the keys stay only in the objects of the client and in what the owner made of them
+void ControlFreeTagKeys(CONTROL_STATE *st) {
+	for (UINT i = 0; st != NULL && i < CONTROL_MAX_VRFS; i++) {
+		SecureZeroMemory(st->Vrfs[i].TagKeys, sizeof(st->Vrfs[i].TagKeys));
+		st->Vrfs[i].NumTagKeys = 0;
+	}
 }
 
 // The source groups of the NodeConfig, the Peer objects and the Device objects, and the tag modes of the Vrf objects, among
@@ -81,9 +112,13 @@ void ControlCopySourceGroups(CONTROL_STATE *st, const ranz_control_v1_Object *ob
 		if (o->which_kind == ranz_control_v1_Object_node_tag) {
 			ControlCopyGroups(st->Groups, &st->NumGroups, o->kind.node.groups, o->kind.node.groups_count);
 		} else if (o->which_kind == ranz_control_v1_Object_vrf_tag) {
-			for (UINT j = 0; j < st->NumVrfs; j++)
-				if (strcmp(st->Vrfs[j].Name, o->kind.vrf.name) == 0)
-					st->Vrfs[j].TagMode = ControlTagMode(o->kind.vrf.tag_mode);
+			for (UINT j = 0; j < st->NumVrfs; j++) {
+				if (strcmp(st->Vrfs[j].Name, o->kind.vrf.name) != 0)
+					continue;
+				st->Vrfs[j].TagMode = ControlTagMode(o->kind.vrf.tag_mode);
+				// The keys of the tag mode hmac (SDN-88, #387)
+				ControlCopyTagKeys(&st->Vrfs[j], &o->kind.vrf);
+			}
 		} else if (o->which_kind == ranz_control_v1_Object_peer_tag) {
 			for (UINT j = 0; j < st->NumPeers; j++) {
 				CONTROL_PEER *p = &st->Peers[j];
@@ -153,6 +188,8 @@ static ranz_control_v1_TagMode ControlCountersMode(UINT mode) {
 		return ranz_control_v1_TagMode_TAG_MODE_SESSION;
 	if (mode == CONTROL_TAG_MODE_TRUSTED)
 		return ranz_control_v1_TagMode_TAG_MODE_TRUSTED_UNDERLAY;
+	if (mode == CONTROL_TAG_MODE_HMAC)
+		return ranz_control_v1_TagMode_TAG_MODE_HMAC;
 
 	return ranz_control_v1_TagMode_TAG_MODE_OFF;
 }
@@ -199,7 +236,7 @@ bool ControlWriteSourceGroups(CONTROL_SOURCE_GROUPS *g, TRANSPORT_STREAM *s) {
 	ZeroMemory(now, sizeof(now));
 	g->Proc(g->Param, now);
 	for (UINT i = 0; i < CONTROL_TAG_MODES; i++)
-		any = any || now[i].Carried != 0 || now[i].Missing != 0 || now[i].Ignored != 0 || now[i].Refused != 0;
+		any = any || now[i].Carried != 0 || now[i].Missing != 0 || now[i].Ignored != 0 || now[i].Refused != 0 || now[i].Unauthenticated != 0;
 
 	if (any == false || (g->Sent != 0 && memcmp(now, g->Last, sizeof(now)) == 0 && tick - g->Sent < CONTROL_GROUP_REFRESH))
 		return true;
@@ -214,6 +251,7 @@ bool ControlWriteSourceGroups(CONTROL_SOURCE_GROUPS *g, TRANSPORT_STREAM *s) {
 		c->missing = now[i].Missing;
 		c->ignored = now[i].Ignored;
 		c->refused = now[i].Refused;
+		c->unauthenticated = now[i].Unauthenticated;
 	}
 
 	if (ControlSourceGroupsSend(m, s) == false)

@@ -36,6 +36,20 @@ void VxlanWriteGroupOption(UCHAR *option, USHORT group, UINT64 tags, UINT genera
 		option[16 + i] = (UCHAR)(generation >> (24 - 8 * i));
 }
 
+// Write the option of the authenticated source group of g (SDN-88, #387), GENEVE_GROUP_MAC_OPTION bytes at option: the
+// option of the source group with the length of the longer data and the ID of the key in its reserved bytes, then the
+// timestamp and the MAC of g, which the caller computed (Cedar/NodeTagMac.c)
+void VxlanWriteGroupMacOption(UCHAR *option, const VXLAN_GROUP *g) {
+	ZeroMemory(option, GENEVE_GROUP_MAC_OPTION);
+	VxlanWriteGroupOption(option, g->Group, g->Tags, g->Generation);
+	option[3] = GENEVE_GROUP_MAC_DATA / 4;
+	option[6] = (UCHAR)(g->KeyId >> 8);
+	option[7] = (UCHAR)g->KeyId;
+	for (UINT i = 0; i < 4; i++)
+		option[20 + i] = (UCHAR)(g->Time >> (24 - 8 * i));
+	CopyMemory(option + 24, g->Mac, GENEVE_GROUP_MAC_SIZE);
+}
+
 // Read the group policy extension of the VXLAN header at the start of the datagram data, size bytes, into *g: true when
 // its G flag is set, with the group ID; false, with *g empty, when it is clear or the header is not whole. The flags D
 // and A are not looked at.
@@ -54,10 +68,24 @@ bool VxlanParseGroup(const UCHAR *data, UINT size, VXLAN_GROUP *g) {
 }
 
 // Read the option o of a Geneve header (VxlanParseGeneve) into *g when it is the option of the source group: its class
-// and type, the critical bit clear, and data of GENEVE_GROUP_DATA bytes. False, with *g as it was, for any other option.
+// and type, the critical bit clear, and data of GENEVE_GROUP_DATA bytes, or of GENEVE_GROUP_MAC_DATA bytes for the option
+// of the authenticated source group (SDN-88, #387), whose ID of the key, timestamp and MAC go into *g too. False, with *g
+// as it was, for any other option.
 bool VxlanParseGroupOption(const GENEVE_OPTION *o, VXLAN_GROUP *g) {
-	if (o == NULL || g == NULL || o->Data == NULL || o->Class != GENEVE_CLASS_RANZ || o->Type != GENEVE_TYPE_GROUP || o->Length != GENEVE_GROUP_DATA)
+	if (o == NULL || g == NULL || o->Data == NULL || o->Class != GENEVE_CLASS_RANZ || o->Type != GENEVE_TYPE_GROUP ||
+	    (o->Length != GENEVE_GROUP_DATA && o->Length != GENEVE_GROUP_MAC_DATA))
 		return false;
+
+	if (o->Length == GENEVE_GROUP_MAC_DATA) {
+		UINT time = 0;
+		for (UINT i = 0; i < 4; i++)
+			time = (time << 8) | o->Data[16 + i];
+
+		g->HasMac = true;
+		g->KeyId = (USHORT)(((UINT)o->Data[2] << 8) | o->Data[3]);
+		g->Time = time;
+		CopyMemory(g->Mac, o->Data + 20, GENEVE_GROUP_MAC_SIZE);
+	}
 
 	UINT64 tags = 0;
 	for (UINT i = 0; i < 8; i++)

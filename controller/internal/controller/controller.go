@@ -267,6 +267,9 @@ type Controller struct {
 	// The numbers of the source groups that the store holds (sourcegroup.go; SDN-87)
 	groups groupState
 
+	// The keys of the tag mode hmac of the VRFs (tagkeys.go; SDN-88)
+	tkeys tagKeys
+
 	// The traced packets that the Nodes reported (trace.go; SDN-89)
 	traces traceState
 
@@ -393,6 +396,10 @@ func New(ctx context.Context, cfg Config) (*Controller, error) {
 	if err := c.loadGroupNumbers(ctx); err != nil {
 		return nil, err
 	}
+	// The keys of the tag mode hmac, which the first compile below puts into the states (tagkeys.go; SDN-88)
+	if err := c.loadTagKeys(ctx, in); err != nil {
+		return nil, err
+	}
 	// The bans of users, which the first compile below honours (bans.go; SDN-50)
 	if err := c.startLiveOperations(ctx, cfg); err != nil {
 		return nil, err
@@ -427,6 +434,8 @@ func New(ctx context.Context, cfg Config) (*Controller, error) {
 	if _, err := c.commit(ctx, in, cp, store.Changes{}); err != nil {
 		return nil, err
 	}
+	// A rotation of a key of the tag mode hmac whose acknowledgements were all in before the start (tagkeys.go; SDN-88)
+	c.advanceTagKeys()
 	last, ok, err := c.store.LastRevision(ctx)
 	if err != nil {
 		return nil, err
@@ -735,6 +744,9 @@ type compiled struct {
 	// groups are the numbers of the source groups that the compilation gave and the store does not hold yet, which commit
 	// stores before the states (sourcegroup.go; SDN-87)
 	groups desired.GroupNumbers
+	// tagKeys are the VRFs in the tag mode hmac that need a first key, with its ID, which commit makes and stores before
+	// the states (tagkeys.go; SDN-88)
+	tagKeys map[uint32]uint32
 }
 
 // compile compiles next under lic, the licence key installed (nil for none).
@@ -762,7 +774,9 @@ func (c *Controller) compile(next intent.Intent, lic *licence.Licence) (compiled
 	c.withHealth(states)
 	// The source groups of the Nodes that report the Capability tags (sourcegroup.go; SDN-87)
 	groups := c.withSourceGroups(next.Capped(force.Nodes), states)
-	return compiled{lic: lic, force: force, states: states, holds: holds, groups: groups}, nil
+	// The IDs of the keys of the VRFs in the tag mode hmac, in the states of the same Nodes (tagkeys.go; SDN-88)
+	tagKeys := c.withTagKeys(next.Capped(force.Nodes), states)
+	return compiled{lic: lic, force: force, states: states, holds: holds, groups: groups, tagKeys: tagKeys}, nil
 }
 
 // commit makes next the intent and cp.lic the licence, with cp what next compiles to under it:
@@ -817,6 +831,10 @@ func (c *Controller) commit(ctx context.Context, next intent.Intent, cp compiled
 	if err := c.saveGroupNumbers(sctx, cp.groups); err != nil {
 		return nil, err
 	}
+	// The first keys of the VRFs in the tag mode hmac go into the store before the states that name them (tagkeys.go; SDN-88)
+	if err := c.saveTagKeys(sctx, cp.tagKeys); err != nil {
+		return nil, err
+	}
 	if err := c.store.Commit(sctx, ch); err != nil {
 		return nil, err
 	}
@@ -829,6 +847,8 @@ func (c *Controller) commit(ctx context.Context, next intent.Intent, cp compiled
 	c.dropScopes(sctx, next)
 	// The PresharedKeys of the Devices that the change removed (devicekeys.go)
 	c.dropDeviceKeys(sctx, next)
+	// The keys of the VRFs that left the tag mode hmac (tagkeys.go; SDN-88)
+	c.dropTagKeys(sctx, next)
 
 	c.intent, c.lic, c.force = next, cp.lic, force
 	if m := members(next); !proto.Equal(m, c.members) {
@@ -1329,6 +1349,8 @@ func (c *Controller) saveAck(name string, n *node, gen uint64, state desired.Sta
 	}
 	// The source groups that a Node held until this node runs a state that lets it assert them (sourcegroup.go; SDN-87)
 	c.releaseGroups(name)
+	// The new keys of the tag mode hmac that this node was the last to acknowledge (tagkeys.go; SDN-88)
+	c.advanceTagKeys()
 }
 
 // writeLoop sends the node of s the Signals of other nodes for it, and the updates it lacks, one
@@ -1417,7 +1439,8 @@ func (c *Controller) nextUpdate(s *stream) *controlpb.Update {
 	// The states hold the PresharedKeys of the Devices sealed: the gateway gets them opened, and holds the
 	// Devices whose keys do not open without them (devicekeys.go)
 	u, s.sent, s.dkeys.sent = c.openDeviceKeys(u, n.state)
-	return u
+	// The states hold the IDs of the keys of the tag mode hmac: the node gets the keys (tagkeys.go; SDN-88)
+	return c.openTagKeys(u)
 }
 
 // nextMembers returns the Controllers message the node of s lacks: none for a node of schema

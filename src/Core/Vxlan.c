@@ -466,7 +466,8 @@ static bool VxlanSendTrace(VXLAN *v, UINT vni, const VXLAN_ADDR *vtep, const VXL
 
 // Send frame, size bytes, on the VNI vni to the one VTEP vtep with the source group group (SDN-87, #386), as VxlanSendTo
 // sends it without one: in the group policy extension of the VXLAN header, the group ID alone, or behind the Geneve
-// header in the option of the source group, the group ID, the tag set and the group generation (VxlanGroup.c). A group
+// header in the option of the source group, the group ID, the tag set and the group generation (VxlanGroup.c), or in the
+// option of the authenticated source group for a group with its MAC (SDN-88, #387). A group
 // that carries nothing, or none, sends the frame as VxlanSendTo does, and so does a frame that does not fit a datagram
 // with the option, which the frames up to VXLAN_MAX_FRAME bytes fit without it: the frame goes without its source group,
 // as a frame that the module sent before the source groups. False when vni has more than 24 bits, the frame is shorter
@@ -474,6 +475,8 @@ static bool VxlanSendTrace(VXLAN *v, UINT vni, const VXLAN_ADDR *vtep, const VXL
 bool VxlanSendToGroup(VXLAN *v, UINT vni, const VXLAN_ADDR *vtep, const VXLAN_GROUP *group, const void *frame, UINT size) {
 	UCHAR buf[VXLAN_MAX_DATAGRAM];
 	UINT header = VXLAN_HEADER_SIZE;
+	// The option of the authenticated source group when the group has its MAC (SDN-88, #387)
+	UINT option = (group != NULL && group->HasMac ? GENEVE_GROUP_MAC_OPTION : GENEVE_GROUP_OPTION);
 
 	// The frame of a packet that its ingress node traces and that carries no source group goes with the trace option alone
 	// (SDN-89, #388)
@@ -485,15 +488,18 @@ bool VxlanSendToGroup(VXLAN *v, UINT vni, const VXLAN_ADDR *vtep, const VXLAN_GR
 		return false;
 
 	if (vtep->Encap == VXLAN_ENCAP_GENEVE)
-		header = GENEVE_HEADER_SIZE + GENEVE_GROUP_OPTION;
+		header = GENEVE_HEADER_SIZE + option;
 	if (size > VXLAN_MAX_DATAGRAM - header)
 		return VxlanSendTo(v, vni, vtep, frame, size);
 
 	if (vtep->Encap == VXLAN_ENCAP_GENEVE) {
 		// The Geneve header with the length of its one option, in 4-byte words, and the option
 		VxlanWriteGeneve(buf, vni);
-		buf[0] |= (UCHAR)(GENEVE_GROUP_OPTION / 4);
-		VxlanWriteGroupOption(buf + GENEVE_HEADER_SIZE, group->Group, group->Tags, group->Generation);
+		buf[0] |= (UCHAR)(option / 4);
+		if (group->HasMac)
+			VxlanWriteGroupMacOption(buf + GENEVE_HEADER_SIZE, group);
+		else
+			VxlanWriteGroupOption(buf + GENEVE_HEADER_SIZE, group->Group, group->Tags, group->Generation);
 	} else {
 		VxlanWriteHeader(buf, vni);
 		VxlanWriteGroup(buf, group->Group);

@@ -142,10 +142,10 @@ type Link struct {
 	Endpoints       []Endpoint `json:"endpoints,omitempty"`
 	SourceEndpoints []Endpoint `json:"sourceEndpoints,omitempty"`
 	// TagMode is the tag mode of the VRF of a link of kind vxlan or geneve, as the sending Node has it (SDN-87): off, in
-	// which the Nodes send no source group on the link and ignore the one of a datagram, or trusted-underlay, in which
-	// they send it and take it without authenticating it. Tags is then the mark "tags not authenticated" of the Networks
-	// of the VRF, which Networks names. All three are empty for a link of kind noise, whose Noise session authenticates
-	// the source group (sourcegroup.go).
+	// which the Nodes send no source group on the link and ignore the one of a datagram, trusted-underlay, in which
+	// they send it and take it without authenticating it, or hmac, in which they send and take it with a MAC (SDN-88).
+	// Tags is the mark "tags not authenticated" of the Networks of a VRF in trusted-underlay, which Networks names. All
+	// three are empty for a link of kind noise, whose Noise session authenticates the source group (sourcegroup.go).
 	TagMode  string   `json:"tagMode,omitempty"`
 	Tags     string   `json:"tags,omitempty"`
 	Networks []string `json:"networks,omitempty"`

@@ -131,6 +131,39 @@ bool CryptoHmacSha256(UCHAR *dst, const void *key, UINT key_size, const void *sr
 	return true;
 }
 
+// The hash of the HMAC pseudo-handle, keyed with key, which CNG copies into the hash object: the parts and the end are
+// those of SHA-256, as the output has its size
+bool CryptoHmacSha256Begin(CRYPTO_SHA256 *s, const void *key, UINT key_size) {
+	BCRYPT_HASH_HANDLE h = NULL;
+
+	if (s == NULL)
+		return false;
+
+	s->Hash = NULL;
+	if (key == NULL && key_size != 0)
+		return false;
+	if (CNG_SUCCESS(BCryptCreateHash(BCRYPT_HMAC_SHA256_ALG_HANDLE, &h, NULL, 0, (PUCHAR)key, key_size, 0)) == false)
+		return false;
+
+	s->Hash = h;
+	return true;
+}
+
+// Every byte is read, and the differences are gathered without a branch on them
+bool CryptoEqual(const void *a, const void *b, UINT size) {
+	const UCHAR *x = (const UCHAR *)a;
+	const UCHAR *y = (const UCHAR *)b;
+	UCHAR diff = 0;
+
+	if (a == NULL || b == NULL)
+		return false;
+
+	for (UINT i = 0; i < size; i++)
+		diff |= (UCHAR)(x[i] ^ y[i]);
+
+	return diff == 0;
+}
+
 // HKDF-Extract is HMAC(salt, IKM) (RFC 5869 section 2.2). It runs on the HMAC provider, not the
 // HKDF one, because CNG refuses an HKDF key made from an empty IKM, which Noise uses (Split()).
 // An empty salt is HashLen zero bytes, and the HMAC of an empty key pads it to those zeros.

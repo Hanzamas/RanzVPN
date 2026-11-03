@@ -98,6 +98,31 @@ void hmac_test() {
 
 	CryptoHmacSha256(d, key, 131, tc7_data, sizeof(tc7_data) - 1);
 	coretest_check_hex(d, sizeof(d), "9b09ffa71b942fcb27635fbcd5b0e944bfdc63644f0713938a7f51535c3a35e2", "RFC 4231 test case 7 (key and data longer than a block)");
+
+	// The same over parts (SDN-88, #387): test case 7 in three parts of 20, 0 and the rest, then test case 2 in two
+	CRYPTO_SHA256 s;
+	bool ok = CryptoHmacSha256Begin(&s, key, 131) && CryptoSha256Update(&s, tc7_data, 20) && CryptoSha256Update(&s, NULL, 0) &&
+	          CryptoSha256Update(&s, tc7_data + 20, sizeof(tc7_data) - 1 - 20);
+	ok = CryptoSha256End(&s, d) && ok;
+	coretest_check(ok && s.Hash == NULL, "RFC 4231 test case 7 over three parts, the hash released");
+	coretest_check_hex(d, sizeof(d), "9b09ffa71b942fcb27635fbcd5b0e944bfdc63644f0713938a7f51535c3a35e2", "RFC 4231 test case 7 over three parts");
+	ok = CryptoHmacSha256Begin(&s, "Jefe", 4) && CryptoSha256Update(&s, "what do ya want ", 16) && CryptoSha256Update(&s, "for nothing?", 12);
+	ok = CryptoSha256End(&s, d) && ok;
+	coretest_check(ok, "RFC 4231 test case 2 over two parts");
+	coretest_check_hex(d, sizeof(d), "5bdcc146bf60754e6a042426089575c75a003f089d2739839dec58b964ec3843", "RFC 4231 test case 2 over two parts");
+	coretest_check(CryptoHmacSha256Begin(NULL, key, 20) == false && CryptoHmacSha256Begin(&s, NULL, 20) == false && s.Hash == NULL,
+	               "a NULL hash or a NULL key of a size is refused");
+
+	// The comparison of two MACs takes every byte: equal, a difference in the first or the last byte, and none for 0 bytes
+	UCHAR mac[8] = {1, 2, 3, 4, 5, 6, 7, 8};
+	UCHAR other[8] = {1, 2, 3, 4, 5, 6, 7, 8};
+	coretest_check(CryptoEqual(mac, other, sizeof(mac)) && CryptoEqual(mac, other, 0), "CryptoEqual: the same 8 bytes, and 0 bytes");
+	other[0] ^= 0x80;
+	bool first = CryptoEqual(mac, other, sizeof(mac));
+	other[0] ^= 0x80;
+	other[7] ^= 0x01;
+	coretest_check(first == false && CryptoEqual(mac, other, sizeof(mac)) == false && CryptoEqual(NULL, other, 8) == false,
+	               "CryptoEqual: a difference in the first or the last byte, and NULL, are not equal");
 }
 
 // RFC 5869 appendix A.1 to A.3 (the SHA-256 cases), Expand from the PRK alone (TLS 1.3 and Noise

@@ -435,6 +435,8 @@ static void ControlDeliver(CONTROL_CLIENT *c, UINT64 gen) {
 	ControlRelease(st.Peers, sizeof(CONTROL_PEER) * (num_peers != 0 ? num_peers : 1));
 	ControlFreePolicy(&st);
 	ControlFreeStateDevices(&st);
+	// The keys of the tag mode hmac of the VRFs (ControlSourceGroup.c; SDN-88, #387)
+	ControlFreeTagKeys(&st);
 }
 
 //

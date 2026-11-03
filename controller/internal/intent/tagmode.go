@@ -13,14 +13,22 @@ import (
 // datagram and sends none, and judges each packet by the map of address to group that the Controller
 // sends. In trusted-underlay it sends and takes it, as the operator vouches for the underlay: whoever
 // can send on the underlay as a Node can claim any group that the Node may assert, which is the limit
-// of the mode, and `ranz explain` marks the Network "tags not authenticated" (TagsNote). The mode hmac,
-// which authenticates the source group, comes with SDN-88 (#387). The links of a VRF carry the packets
-// of all of its Networks, so the Networks of one VRF have one mode.
+// of the mode, and `ranz explain` marks the Network "tags not authenticated" (TagsNote). In hmac
+// (SDN-88 #387) a Node sends and takes the source group of a link only with a MAC, HMAC-SHA256
+// truncated to 64 bits under a key of the VRF that the Controller makes and rotates
+// (internal/controller, tagkeys.go), over the VNI, the group, the tag set, the inner IP and L4 headers
+// and a timestamp that may be 30 s from the clock of the Node that takes it; a datagram whose MAC does
+// not verify is judged as one without the option. Its limits: a datagram can be replayed inside the
+// window, the payload is not encrypted, and the key is shared by the VRF, so every Node of the VRF can
+// claim any group of the VRF. Only Geneve has room for the MAC, so a VRF in hmac has links of kind
+// geneve or noise. The links of a VRF carry the packets of all of its Networks, so the Networks of
+// one VRF have one mode.
 
 // The tag modes of a Network.
 const (
 	TagModeOff             = "off"
 	TagModeTrustedUnderlay = "trusted-underlay"
+	TagModeHMAC            = "hmac"
 )
 
 // TagsNotAuthenticated is the mark of a Network whose Nodes take the source group of a plain link
@@ -44,17 +52,21 @@ func tagMode(n Network) string {
 	return n.TagMode
 }
 
-// validateTagModes checks the tag modes of a completed intent: each is off or trusted-underlay, and the
-// Networks of one VRF have the same one. A problem names the Network and what is wrong.
+// validateTagModes checks the tag modes of a completed intent: each is off, trusted-underlay or hmac,
+// hmac only in a VRF whose links are not of kind vxlan, and the Networks of one VRF have the same one.
+// A problem names the Network and what is wrong.
 func (in Intent) validateTagModes() []error {
 	var problems []error
 	first := map[string]string{} // the first Network of each VRF, in name order
 	for _, name := range sortedNames(in.Networks) {
 		n := in.Networks[name]
 		mode := tagMode(n)
-		if mode != TagModeOff && mode != TagModeTrustedUnderlay {
-			problems = append(problems, fmt.Errorf("Network %q: the tagMode must be %s or %s, not %q", name, TagModeOff, TagModeTrustedUnderlay, n.TagMode))
+		if mode != TagModeOff && mode != TagModeTrustedUnderlay && mode != TagModeHMAC {
+			problems = append(problems, fmt.Errorf("Network %q: the tagMode must be %s, %s or %s, not %q", name, TagModeOff, TagModeTrustedUnderlay, TagModeHMAC, n.TagMode))
 			continue
+		}
+		if mode == TagModeHMAC && in.VRFs[n.VRF].Link == LinkVXLAN {
+			problems = append(problems, fmt.Errorf("Network %q: the tagMode %s needs the link geneve or noise in VRF %q, which has the link %s: the group policy extension of VXLAN has no room for the MAC", name, TagModeHMAC, n.VRF, LinkVXLAN))
 		}
 		other, ok := first[n.VRF]
 		if !ok {
@@ -76,6 +88,23 @@ func (in Intent) VRFTagMode(vrf string) string {
 		}
 	}
 	return TagModeOff
+}
+
+// VRFTagModes returns the tag mode of each VRF of in by its name, as VRFTagMode gives it, in one pass over
+// the Networks: a compilation that asks for the mode of every VRF would sort the Networks once for each.
+func (in Intent) VRFTagModes() map[string]string {
+	out := make(map[string]string, len(in.VRFs))
+	for _, name := range sortedNames(in.Networks) {
+		if n := in.Networks[name]; out[n.VRF] == "" {
+			out[n.VRF] = tagMode(n)
+		}
+	}
+	for name := range in.VRFs {
+		if out[name] == "" {
+			out[name] = TagModeOff
+		}
+	}
+	return out
 }
 
 // TagsNote returns what `ranz explain` says of the source groups of the Network network: that its tags

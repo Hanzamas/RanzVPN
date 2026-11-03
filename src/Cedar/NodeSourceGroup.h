@@ -40,6 +40,14 @@ typedef struct NODE_SOURCE_CLAIM {
 	UINT Group;         // The group ID
 	UINT64 Tags;        // The tag set
 	UINT Generation;    // The group generation, its 32 low bits: the Generation of the state of the peer that the claim was made on
+
+	// The option of the authenticated source group of Geneve (SDN-88, #387): the 16 low bits of the ID of the key, the
+	// timestamp and the MAC, and whether the node verified them in the tag mode hmac of the VRF (NodeTagMac.c)
+	bool HasMac;
+	UINT KeyId;
+	UINT Time;
+	UCHAR Mac[GENEVE_GROUP_MAC_SIZE];
+	bool Authentic;
 } NODE_SOURCE_CLAIM;
 
 // What NodeSourceGroupGetStatus reports: the packets of the peers of a node by the tag mode in which it judged them
@@ -63,6 +71,7 @@ void NodeSourceGroupAttach(NODE *n, NODE_VRF_TABLES *v, const CONTROL_STATE *st)
 void NodeFreeSourceGroupTable(NODE_SOURCE_GROUP_TABLE *t);
 const UCHAR *NodeSourceGroupWrap(NODE_VRF_TABLES *v, UINT hop, UINT vrf_id, UCHAR *record, UINT *size, UINT max);
 bool NodeSourceGroupStamp(NODE_VRF_TABLES *v, UINT vrf_id, const UCHAR *packet, UINT size, VXLAN_GROUP *group);
+void NodeSourceGroupCheck(NODE_VRF_TABLES *v, UINT vrf_id, const UCHAR *packet, UINT size, NODE_SOURCE_CLAIM *claim);
 bool NodeSourceGroupInbound(NODE *n, NODE_VRF_TABLES *v, UINT vrf_id, UINT hop, const NODE_SOURCE_CLAIM *claim, const UCHAR *packet, UINT size);
 bool NodeSourceGroupTransit(NODE *n, NODE_VRF_TABLES *v, UINT vrf_id, UINT hop, const NODE_SOURCE_CLAIM *claim, UINT *group);
 void NodeSourceGroupGetStatus(NODE *n, NODE_SOURCE_GROUP_STATUS *st);
