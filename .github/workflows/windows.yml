@@ -558,7 +558,9 @@ jobs:
     # then vpntest stretch, the L2 stretch of a gateway (SDN-64 #291): an L2 Network stretched to two
     # leaves with EVPN type-2 and type-3 routes between the sidecars of three nodes, VXLAN both ways between
     # the switch of the Network and a harness VTEP of each leaf, ingress replication to the flood list, and a
-    # full resync once the pipe of the gateway to ranz bgp reconnects
+    # full resync once the pipe of the gateway to ranz bgp reconnects; then vpntest irb, the symmetric IRB of a
+    # stretch (SDN-67 #294): two stretched Networks with irb in two VRFs on the same addresses and one without,
+    # against a leaf with symmetric IRB, with an overlay node of another Network of each VRF behind the gateway
     - name: BGP sidecar spike
       timeout-minutes: 25
       shell: pwsh

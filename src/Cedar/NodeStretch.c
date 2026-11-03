@@ -38,6 +38,16 @@
 // with more, after which the sidecar withdraws what it announced before and the resync did not name. When the pipe closes the
 // routes of the fabric go, and the sidecar that starts next learns them again from the fabric: the full resync of the other way.
 //
+// The IRB of a stretch (SDN-67, #294; ADR-0032 amendment of 2026-10-22; RFC 9135 section 5): a stretch with irb names the EVPN VRF
+// of its Network (vrf) and the gateway IPs of the Network with the prefix length of their subnet (gateway_ips), one IPv4 and one
+// IPv6 at most, and the sidecar gives its type-2 routes of the MAC plus IP form the L3 VNI of the VRF and the router MAC of the
+// gateway (ranz-bgp/internal/sidecar/irb.go), so that a leaf with symmetric IRB routes a packet of another subnet of the VRF to a
+// host of the overlay on the Network through the L3 VNI. The gateway routes such a packet into the Network (NodeStretchRoute): a
+// packet of the L3 VNI of the VRF (NodeEvpn.c) to an address of a gateway IP prefix that a member of the overlay on the switch sends
+// from (its IP table) enters the switch at the port of the fabric, as a frame from the router MAC of the gateway to the MAC address
+// of that member. The hosts of the fabric on the Network are host routes of the VRF that the sidecar gives as IP prefix routes, so a
+// packet of the VRF reaches them through the L3 VNI as it reaches a prefix of the fabric. A stretch without irb routes nothing.
+//
 // MAC mobility, the MAC import limit, the stale timer and their events are SDN-65 (#292); the BUM rate limit and the drop of BPDUs
 // are SDN-66 (#293).
 //
@@ -53,6 +63,7 @@
 #include "Mayaqua/Memory.h"
 #include "Mayaqua/Object.h"
 #include "Mayaqua/Str.h"
+#include "Mayaqua/TcpIp.h"
 
 #include "Core/Switch.h"
 
@@ -102,6 +113,9 @@ typedef struct NODE_STRETCH_NET {
 	UINT NumKnown;                   // ... their number
 	VXLAN_ADDR *Flood;               // The flood list: the VTEPs of the type-3 routes of the VNI ...
 	UINT NumFlood;                   // ... their number
+	UINT IrbVrf;                     // The EVPN VRF that the IRB of the Network routes in while a sidecar with irb on its stretch runs, 0 otherwise ...
+	UINT NumGateways;                // ... and its gateway IPs (SDN-67, #294)
+	NODE_STRETCH_GATEWAY Gateways[NODE_STRETCH_GATEWAYS];
 } NODE_STRETCH_NET;
 
 // What the thread of the stretch keeps from the start of a sidecar to its stop
@@ -148,6 +162,8 @@ struct NODE_STRETCH {
 	volatile LONG64 Undelivered;
 	volatile LONG64 UnknownVtep;
 	volatile LONG64 Refused;
+	volatile LONG64 Routed;
+	volatile LONG64 Unrouted;
 };
 
 //
@@ -300,11 +316,81 @@ UINT NodeStretchParseRoutes(const char *line, NODE_STRETCH_ROUTE *list, UINT max
 	return num;
 }
 
+// A gateway IP of a stretch with irb, text in the form 10.50.0.1/24, into g: an address and the prefix length of its subnet, /1 to
+// /31 for IPv4 and /1 to /127 for IPv6. The sidecar checks it more closely (parseGatewayIP of ranz-bgp/internal/sidecar/irb.go).
+// False for any other text.
+static bool NodeStretchGatewayOf(const char *text, NODE_STRETCH_GATEWAY *g) {
+	char addr[NODE_EVPN_TEXT];
+	UINT len = 0;
+	UINT slash = (text != NULL ? SearchStrEx(text, "/", 0, true) : INFINITE);
+
+	Zero(g, sizeof(NODE_STRETCH_GATEWAY));
+	if (slash == INFINITE || slash == 0 || slash >= sizeof(addr) || text[slash + 1] == 0 || StrLen(text + slash + 1) > 3)
+		return false;
+
+	for (const char *c = text + slash + 1; *c != 0; c++) {
+		if (*c < '0' || *c > '9')
+			return false;
+		len = len * 10 + (UINT)(*c - '0');
+	}
+
+	Copy(addr, text, slash);
+	addr[slash] = 0;
+	g->AddressSize = NodeEvpnParseAddr(addr, NET_STRING_IP_ADDRESS_NO_SCOPE, g->Address, NULL);
+	g->Length = len;
+
+	return (g->AddressSize != 0 && len >= 1 && len < g->AddressSize * 8);
+}
+
+// The IRB of the stretch o of an evpn object into s (SDN-67, #294): with irb true, the EVPN VRF of its Network (vrf), one of the
+// num_vrfs VRFs of vrf_ids, and its gateway IPs (gateway_ips), one IPv4 and one IPv6 at most; without irb neither of them, as the
+// sidecar takes them (parseIRB of ranz-bgp/internal/sidecar/irb.go). False for any other.
+static bool NodeStretchIrbOf(const cJSON *o, const UINT *vrf_ids, UINT num_vrfs, NODE_STRETCH_SETTING *s) {
+	const cJSON *irb = cJSON_GetObjectItemCaseSensitive(o, "irb");
+	const cJSON *vrf = cJSON_GetObjectItemCaseSensitive(o, "vrf");
+	const cJSON *gateways = cJSON_GetObjectItemCaseSensitive(o, "gateway_ips");
+	bool known = false;
+
+	s->IrbVrf = 0;
+	s->NumGateways = 0;
+	if (irb != NULL && cJSON_IsBool(irb) == false)
+		return false;
+	if (vrf != NULL && (cJSON_IsNumber(vrf) == false || vrf->valuedouble < 0 || vrf->valuedouble > 4294967295.0 || vrf->valuedouble != (double)(UINT)vrf->valuedouble))
+		return false;
+	if (gateways != NULL && (cJSON_IsArray(gateways) == false || cJSON_GetArraySize(gateways) > NODE_STRETCH_GATEWAYS))
+		return false;
+
+	UINT id = (vrf != NULL ? (UINT)vrf->valuedouble : 0);
+	if (cJSON_IsTrue(irb) == false)
+		return (id == 0 && cJSON_GetArraySize(gateways) == 0);
+
+	for (UINT i = 0; vrf_ids != NULL && i < num_vrfs; i++)
+		known = (known || vrf_ids[i] == id);
+	if (id == 0 || known == false || cJSON_GetArraySize(gateways) == 0)
+		return false;
+
+	for (const cJSON *g = gateways->child; g != NULL; g = g->next) {
+		NODE_STRETCH_GATEWAY *gw = &s->Gateways[s->NumGateways];
+
+		if (NodeStretchGatewayOf(cJSON_GetStringValue(g), gw) == false)
+			return false;
+		// One of each family
+		for (UINT i = 0; i < s->NumGateways; i++)
+			if (s->Gateways[i].AddressSize == gw->AddressSize)
+				return false;
+		s->NumGateways++;
+	}
+
+	s->IrbVrf = id;
+	return true;
+}
+
 // The stretches of the array stretches of an evpn object into list, NODE_STRETCH_MAX at most, each with its L2 Network (network)
-// and its L2 VNI (vni), which is none of the num_l3 L3 VNIs of l3_vnis: their number. 0 with why into error for more than
-// NODE_STRETCH_MAX, for a stretch without a Network or without a VNI of 24 bits, for a Network or a VNI that comes twice and for
-// the L3 VNI of a VRF; 0 with error left as it was for no stretches.
-UINT NodeStretchSettings(cJSON *stretches, const UINT *l3_vnis, UINT num_l3, NODE_STRETCH_SETTING *list, char *error, UINT error_size) {
+// and its L2 VNI (vni), which is none of the L3 VNIs of the num_vrfs VRFs of the object (vrf_ids, l3_vnis), and with irb the VRF of
+// the Network (vrf), one of those, and its gateway IPs (gateway_ips; SDN-67, #294): their number. 0 with why into error for more
+// than NODE_STRETCH_MAX, for a stretch without a Network or without a VNI of 24 bits, for a Network or a VNI that comes twice, for
+// the L3 VNI of a VRF and for an IRB that NodeStretchIrbOf does not take; 0 with error left as it was for no stretches.
+UINT NodeStretchSettings(cJSON *stretches, const UINT *vrf_ids, const UINT *l3_vnis, UINT num_vrfs, NODE_STRETCH_SETTING *list, char *error, UINT error_size) {
 	UINT num = 0;
 
 	if (stretches == NULL || list == NULL || error == NULL)
@@ -328,7 +414,7 @@ UINT NodeStretchSettings(cJSON *stretches, const UINT *l3_vnis, UINT num_l3, NOD
 				return 0;
 			}
 		}
-		for (UINT i = 0; l3_vnis != NULL && i < num_l3; i++) {
+		for (UINT i = 0; l3_vnis != NULL && i < num_vrfs; i++) {
 			if (l3_vnis[i] == vni) {
 				Format(error, error_size, "the VNI %u of the stretch of the L2 Network %s is the L3 VNI of a VRF", vni, network);
 				return 0;
@@ -337,6 +423,11 @@ UINT NodeStretchSettings(cJSON *stretches, const UINT *l3_vnis, UINT num_l3, NOD
 
 		StrCpy(list[num].Network, sizeof(list[num].Network), network);
 		list[num].Vni = vni;
+		// ... and its IRB (SDN-67, #294)
+		if (NodeStretchIrbOf(o, vrf_ids, num_vrfs, &list[num]) == false) {
+			Format(error, error_size, "the stretch of the L2 Network %s has irb without an EVPN VRF of vrfs (vrf) or without one IPv4 and one IPv6 gateway IP at most with the prefix length of its subnet (gateway_ips), or vrf or gateway_ips without irb", network);
+			return 0;
+		}
 		num++;
 	}
 
@@ -743,7 +834,14 @@ void NodeStretchBind(NODE *n, VXLAN *vxlan, USHORT fabric_port, const NODE_STRET
 
 			AcquireSRWLockExclusive(&s->Lock);
 			net->Vni = list[i].Vni;
+			// ... and its IRB (SDN-67, #294)
+			net->IrbVrf = list[i].IrbVrf;
+			net->NumGateways = MIN(list[i].NumGateways, (UINT)NODE_STRETCH_GATEWAYS);
+			Copy(net->Gateways, list[i].Gateways, sizeof(net->Gateways));
 			ReleaseSRWLockExclusive(&s->Lock);
+
+			if (list[i].IrbVrf != 0)
+				NodeLog(n, "EVPN stretch: the IRB of the L2 Network %s routes in VRF %u, with %u gateway IPs", list[i].Network, list[i].IrbVrf, net->NumGateways);
 		}
 
 		AcquireSRWLockExclusive(&s->Lock);
@@ -783,6 +881,8 @@ void NodeStretchUnbind(NODE *n) {
 			NODE_STRETCH_NET *net = LIST_DATA(s->Nets, i);
 
 			net->Vni = 0;
+			net->IrbVrf = 0;
+			net->NumGateways = 0;
 			NodeStretchBuild(s, net);
 		}
 		s->Dirty = false;
@@ -846,6 +946,107 @@ bool NodeStretchInput(NODE *n, UINT vni, const VXLAN_ADDR *from, const UCHAR *fr
 	}
 
 	return true;
+}
+
+//
+// The IRB of a stretch (SDN-67, #294)
+//
+
+// Whether the address dst of addr_size bytes lies in a gateway IP prefix of net; the caller holds Lock
+static bool NodeStretchHolds(const NODE_STRETCH_NET *net, const UCHAR *dst, UINT addr_size) {
+	for (UINT i = 0; i < net->NumGateways; i++) {
+		const NODE_STRETCH_GATEWAY *g = &net->Gateways[i];
+		UINT bytes = g->Length / 8;
+		UINT bits = g->Length % 8;
+
+		if (g->AddressSize != addr_size || Cmp(g->Address, dst, bytes) != 0)
+			continue;
+		if (bits == 0 || ((g->Address[bytes] ^ dst[bytes]) & (UCHAR)(0xFF << (8 - bits))) == 0)
+			return true;
+	}
+
+	return false;
+}
+
+// The Network of the stretch with irb in the EVPN VRF vrf_id that a gateway IP prefix of which holds the address dst of addr_size
+// bytes, NULL for none; the caller holds Lock
+static NODE_STRETCH_NET *NodeStretchIrbNet(NODE_STRETCH *s, UINT vrf_id, const UCHAR *dst, UINT addr_size) {
+	for (UINT i = 0; vrf_id != 0 && i < LIST_NUM(s->Nets); i++) {
+		NODE_STRETCH_NET *net = LIST_DATA(s->Nets, i);
+
+		if (net->IrbVrf == vrf_id && net->Vni != 0 && NodeStretchHolds(net, dst, addr_size))
+			return net;
+	}
+
+	return NULL;
+}
+
+// Whether a packet of the EVPN VRF vrf_id to the address dst of addr_size bytes is the IRB's: dst lies in a gateway IP prefix of a
+// stretch with irb in that VRF. The receive thread of the EVPN asks it as an online reader of the tables of the node, and once it is
+// offline routes such a packet with NodeStretchRoute (NodeEvpn.c).
+bool NodeStretchOnLink(NODE *n, UINT vrf_id, const UCHAR *dst, UINT addr_size) {
+	NODE_STRETCH *s = NodeStretchOf(n);
+	bool ret = false;
+
+	if (s == NULL || dst == NULL || (addr_size != 4 && addr_size != 16))
+		return false;
+
+	AcquireSRWLockShared(&s->Lock);
+	ret = (NodeStretchIrbNet(s, vrf_id, dst, addr_size) != NULL);
+	ReleaseSRWLockShared(&s->Lock);
+
+	return ret;
+}
+
+// The IRB of a stretch routes the IP packet of size bytes of the EVPN VRF vrf_id that came from the fabric on the L3 VNI of the VRF,
+// to the address dst of addr_size bytes, into the stretched Network that holds dst (RFC 9135 section 5): the egress half of
+// symmetric IRB, as a leaf routes a packet of its L3 VNI into the bridge of the subnet. When a member of the overlay on the switch of
+// the Network sends from dst (its IP table, SwitchFindIp), the packet enters the switch at the port of the fabric, as a frame of the
+// fabric enters it (NodeStretchInput), in a frame from the router MAC of the gateway, router_mac, to the MAC address of that member,
+// untagged, with the EtherType of its IP version. True when the switch delivered it; false, and counted, when no member of the
+// overlay sends from dst, as for the gateway IP itself or a host of the fabric, which the fabric reaches without the gateway, and
+// when the switch delivered it to no port. The caller is no online reader of the tables of the node, as for a frame of the fabric.
+bool NodeStretchRoute(NODE *n, UINT vrf_id, const UCHAR *router_mac, const UCHAR *packet, UINT size, const UCHAR *dst, UINT addr_size) {
+	NODE_STRETCH *s = NodeStretchOf(n);
+	NODE_STRETCH_NET *net = NULL;
+	SWITCH *sw = NULL;
+	UINT vlan = 0;
+	UINT port = SWITCH_PORT_NONE;
+	SWITCH_IP_ENTRY host;
+	UCHAR frame[VXLAN_MAX_FRAME];
+	bool routed = false;
+
+	if (s == NULL || router_mac == NULL || packet == NULL || dst == NULL || size == 0 || size > VXLAN_MAX_FRAME - NODE_EVPN_ETHER || (addr_size != 4 && addr_size != 16))
+		return false;
+
+	AcquireSRWLockShared(&s->Lock);
+	net = NodeStretchIrbNet(s, vrf_id, dst, addr_size);
+	if (net != NULL && net->Switch != NULL && net->Port != SWITCH_PORT_NONE) {
+		sw = net->Switch;
+		vlan = net->Vlan;
+		port = net->Port;
+		InterlockedIncrement(&net->Inputs);
+	}
+	ReleaseSRWLockShared(&s->Lock);
+
+	if (net == NULL)
+		return false;
+
+	// A member of the overlay sends from dst: the addresses at the port of the fabric are the fabric's
+	Zero(&host, sizeof(host));
+	if (sw != NULL && SwitchFindIp(sw, vlan, dst, addr_size, &host) && host.Port != port && NodeStretchHostMac(host.Mac)) {
+		Copy(frame, host.Mac, 6);
+		Copy(frame + 6, router_mac, 6);
+		WRITE_USHORT(frame + 12, addr_size == 16 ? MAC_PROTO_IPV6 : MAC_PROTO_IPV4);
+		Copy(frame + NODE_EVPN_ETHER, packet, size);
+		routed = (SwitchInput(sw, GetTickCount64(), port, frame, NODE_EVPN_ETHER + size) != 0);
+	}
+	if (sw != NULL)
+		InterlockedDecrement(&net->Inputs);
+
+	InterlockedIncrement64(routed ? &s->Routed : &s->Unrouted);
+
+	return routed;
 }
 
 //
@@ -1349,6 +1550,8 @@ void NodeStretchGetStatus(NODE *n, NODE_STRETCH_STATUS *st) {
 	st->Undelivered = (UINT64)ReadAcquire64(&s->Undelivered);
 	st->UnknownVtep = (UINT64)ReadAcquire64(&s->UnknownVtep);
 	st->Refused = (UINT64)ReadAcquire64(&s->Refused);
+	st->Routed = (UINT64)ReadAcquire64(&s->Routed);
+	st->Unrouted = (UINT64)ReadAcquire64(&s->Unrouted);
 }
 
 // The routes of the fabric that the gateway holds, at most max of them into list, in the order of their VNI, kind and address:

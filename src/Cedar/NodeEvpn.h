@@ -95,14 +95,26 @@ typedef struct NODE_EVPN_STATUS {
 #define NODE_STRETCH_MAX_REMOTE 65536      // The routes of the fabric that a gateway holds at most
 #define NODE_STRETCH_MAX_LOCAL  16384      // The routes of its own that a gateway announces at most: entries of the MAC and IP tables
 #define NODE_STRETCH_NO_MESSAGE 0xFFFFFFFF // What NodeStretchParseRoutes returns for a message that is no stretch message
+#define NODE_STRETCH_GATEWAYS   2          // The gateway IPs of a stretch with irb at most: one IPv4 and one IPv6 (maxGatewayIPs of the sidecar)
 
 typedef struct NODE_STRETCH NODE_STRETCH;
 
-// One stretch of the evpn object of the Bgp setting: the L2 Network and its L2 VNI. The sidecar reads the same object, with the
-// route distinguisher and the route targets of each.
+// A gateway IP of a stretch with irb (SDN-67, #294): the address of the IRB of the gateway on the Network, with the prefix length of
+// its subnet, which holds the hosts of the Network that the IRB routes to
+typedef struct NODE_STRETCH_GATEWAY {
+	UCHAR Address[16]; // The address: 4 bytes for IPv4, 16 for IPv6, in network byte order ...
+	UINT AddressSize;  // ... their number
+	UINT Length;       // The prefix length of its subnet
+} NODE_STRETCH_GATEWAY;
+
+// One stretch of the evpn object of the Bgp setting: the L2 Network and its L2 VNI, and with irb the EVPN VRF of the Network and its
+// gateway IPs (SDN-67, #294). The sidecar reads the same object, with the route distinguisher and the route targets of each.
 typedef struct NODE_STRETCH_SETTING {
-	char Network[NODE_STRETCH_NAME]; // The L2 Network
-	UINT Vni;                        // Its L2 VNI
+	char Network[NODE_STRETCH_NAME];                      // The L2 Network
+	UINT Vni;                                             // Its L2 VNI
+	UINT IrbVrf;                                          // The EVPN VRF that the IRB of the Network routes in, 0 without irb ...
+	UINT NumGateways;                                     // ... the number of its gateway IPs ...
+	NODE_STRETCH_GATEWAY Gateways[NODE_STRETCH_GATEWAYS]; // ... and the gateway IPs, one IPv4 and one IPv6 at most
 } NODE_STRETCH_SETTING;
 
 // A route of the fabric on the L2 VNI of a stretch, as a stretch message of the sidecar names it (NodeStretchParseRoutes) and as
@@ -133,6 +145,8 @@ typedef struct NODE_STRETCH_STATUS {
 	UINT64 Undelivered; // ... that it delivered to none, or that came while the fabric was on no switch
 	UINT64 UnknownVtep; // Frames of an L2 VNI from an address that is the VTEP of no route of the VNI (NodeStretchInput): dropped, whatever they hold
 	UINT64 Refused;     // Routes of the fabric that the gateway did not take: none that it can take, of no stretch, or one too many
+	UINT64 Routed;      // Packets of an L3 VNI that the IRB of a stretch put into the switch of their Network (NodeStretchRoute; SDN-67, #294)
+	UINT64 Unrouted;    // ... to a host of a gateway IP prefix that no member of the overlay on the switch sends from: dropped
 } NODE_STRETCH_STATUS;
 
 // NodeEvpn.c
@@ -160,10 +174,12 @@ UINT NodeEvpnGetRoutes(NODE *n, NODE_EVPN_ROUTE *list, UINT max);
 // NodeStretch.c (SDN-64, #291)
 struct SWITCH;
 UINT NodeStretchParseRoutes(const char *line, NODE_STRETCH_ROUTE *list, UINT max, UINT *bad);
-UINT NodeStretchSettings(struct cJSON *stretches, const UINT *l3_vnis, UINT num_l3, NODE_STRETCH_SETTING *list, char *error, UINT error_size);
+UINT NodeStretchSettings(struct cJSON *stretches, const UINT *vrf_ids, const UINT *l3_vnis, UINT num_vrfs, NODE_STRETCH_SETTING *list, char *error, UINT error_size);
 void NodeStretchBind(NODE *n, VXLAN *vxlan, USHORT fabric_port, const NODE_STRETCH_SETTING *list, UINT num);
 void NodeStretchUnbind(NODE *n);
 bool NodeStretchInput(NODE *n, UINT vni, const VXLAN_ADDR *from, const UCHAR *frame, UINT size);
+bool NodeStretchOnLink(NODE *n, UINT vrf_id, const UCHAR *dst, UINT addr_size);
+bool NodeStretchRoute(NODE *n, UINT vrf_id, const UCHAR *router_mac, const UCHAR *packet, UINT size, const UCHAR *dst, UINT addr_size);
 void NodeStretchMessage(NODE *n, const char *line);
 void NodeStretchCommit(NODE *n);
 UINT NodeStretchFlush(NODE *n);

@@ -31,6 +31,12 @@ func FuzzRead(f *testing.F) {
 		`{"type":"stretch","full":true,"more":true,"routes":[{"vni":5010,"mac":"02:52:5a:64:00:01"},{"vni":5010,"mac":"02:52:5a:64:00:01","ip":"10.50.0.1"}]}` + "\n" +
 		`{"type":"stretch","full":false,"routes":[{"vni":100010,"mac":"02:52:5a:64:00:02","ip":"fd50::2"}]}` + "\n" +
 		`{"type":"stretch","routes":[{"vni":5010,"mac":"02:52:5a:64:00:01","withdraw":true},{"vni":5010,"mac":"01:00:5e:00:00:01"}]}` + "\n"))
+	// The symmetric IRB of a stretch (SDN-67 #294): a stretch with irb in a VRF with two gateway IPs, one without, and a stretch
+	// message of the MAC plus IP form on each
+	f.Add([]byte(`{"type":"start","asn":65001,"router_id":"192.0.2.1","listen_port":-1,"peers":[{"address":"192.0.2.2","asn":65010}],` +
+		`"evpn":{"vtep":"192.0.2.1","vrfs":[{"vrf":101,"vni":10101,"import":["65000:10101"],"export":["65000:10101"]}],` +
+		`"stretches":[{"vni":5010,"route_targets":["65000:5010"],"irb":true,"vrf":101,"gateway_ips":["10.50.0.1/24","fd50::1/64"]},{"vni":5030,"route_targets":["65000:5030"]}]}}` + "\n" +
+		`{"type":"stretch","full":true,"routes":[{"vni":5010,"mac":"02:52:5a:64:00:01","ip":"10.50.0.5"},{"vni":5030,"mac":"02:52:5a:64:00:02","ip":"10.53.0.5"}]}` + "\n"))
 
 	f.Fuzz(func(t *testing.T, b []byte) {
 		var evpn *evpnState
@@ -98,6 +104,22 @@ func checkEVPN(t *testing.T, e *EVPN, routerID netip.Addr) *evpnState {
 		vnis[v.vni] = true
 		if _, err := st.imetPath(v); err != nil {
 			t.Fatalf("no type-3 route of vni %d: %v", v.vni, err)
+		}
+		// The IRB of a stretch (SDN-67 #294): a VRF of the evpn object, and one IPv4 and one IPv6 gateway IP at most, each
+		// with a type-2 route of a default gateway
+		if v.irb == nil {
+			continue
+		}
+		if st.byID[v.irb.vrf.id] != v.irb.vrf || len(v.irb.gateways) == 0 || len(v.irb.gateways) > maxGatewayIPs {
+			t.Fatalf("the irb of a stretch that parseEVPN took: %+v", v.irb)
+		}
+		for i, g := range v.irb.gateways {
+			if !g.IsValid() || g.Bits() >= g.Addr().BitLen() || (i > 0 && v.irb.gateways[0].Addr().Is4() == g.Addr().Is4()) {
+				t.Fatalf("a gateway IP of a stretch that parseEVPN took: %s", g)
+			}
+			if _, err := st.gatewayPath(v, g); err != nil {
+				t.Fatalf("no type-2 route of the gateway IP %s: %v", g, err)
+			}
 		}
 	}
 	return st

@@ -120,6 +120,9 @@ type evpnState struct {
 	offers   map[evpnKey]map[string]evpnRoute
 	vteps    map[evpnKey][]netip.Addr
 	reported map[evpnKey]evpnRoute
+	// ... and the host route of a VRF that the type-2 route of a peer on a stretch with irb offers, by its NLRI (irb.go; SDN-67
+	// #294)
+	irbNames map[string]evpnKey
 
 	// The L2 Networks that the gateway stretches (stretch.go; SDN-64 #291), nil for none
 	stretch *stretchState
@@ -153,6 +156,7 @@ func parseEVPN(e *EVPN, routerID netip.Addr) (*evpnState, error) {
 		offers:    make(map[evpnKey]map[string]evpnRoute),
 		vteps:     make(map[evpnKey][]netip.Addr),
 		reported:  make(map[evpnKey]evpnRoute),
+		irbNames:  make(map[string]evpnKey),
 	}
 	vnis := make(map[uint32]uint32)
 	for _, v := range e.VRFs {
@@ -170,8 +174,9 @@ func parseEVPN(e *EVPN, routerID netip.Addr) (*evpnState, error) {
 		st.byID[pv.id] = pv
 		st.vrfs = append(st.vrfs, pv)
 	}
-	// ... and its stretches (stretch.go; SDN-64 #291), whose L2 VNIs are no L3 VNIs of its VRFs
-	stretch, err := parseStretches(e.Stretches, routerID, vnis)
+	// ... and its stretches (stretch.go; SDN-64 #291), whose L2 VNIs are no L3 VNIs of its VRFs, and which may route in one of
+	// them (irb.go; SDN-67 #294)
+	stretch, err := parseStretches(e.Stretches, routerID, vnis, st.byID)
 	if err != nil {
 		return nil, err
 	}
@@ -476,8 +481,9 @@ func evpnRouteOf(p *apiutil.Path, r *bgp.EVPNIPPrefixRoute) (evpnRoute, string) 
 }
 
 // onEVPNPaths sorts the IP prefix routes of the peers whose best path changed into the EVPN VRFs: a route goes to each
-// VRF whose import route targets it carries and whose accept list covers its prefix, and leaves the others. The
-// gateway's own routes are no routes of a peer.
+// VRF whose import route targets it carries and whose accept list covers its prefix, and leaves the others. A type-2
+// route of a stretch with irb is a host route of the VRF of the stretch (irbOffer). The gateway's own routes are no
+// routes of a peer.
 func (s *session) onEVPNPaths(paths []*apiutil.Path, _ time.Time) {
 	e := s.evpn
 	touched := make(map[evpnKey]bool)
@@ -485,6 +491,16 @@ func (s *session) onEVPNPaths(paths []*apiutil.Path, _ time.Time) {
 	for _, p := range paths {
 		n, ok := p.Nlri.(*bgp.EVPNNLRI)
 		if !ok || p.Family != bgp.RF_EVPN || !p.PeerAddress.IsValid() {
+			continue
+		}
+		// The host routes of the stretches with irb (irb.go; SDN-67 #294)
+		if m, ok := n.RouteTypeData.(*bgp.EVPNMacIPAdvertisementRoute); ok {
+			for _, key := range e.irbOffer(p, n, m, s.log) {
+				if !touched[key] {
+					touched[key] = true
+					order = append(order, key)
+				}
+			}
 			continue
 		}
 		r, ok := n.RouteTypeData.(*bgp.EVPNIPPrefixRoute)
