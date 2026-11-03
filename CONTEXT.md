@@ -917,6 +917,18 @@ The least time between two changes of the keys of one Node that the Controller a
 **Held report**:
 A `Pins` report that differs from the keys in force and comes within the **PinsInterval** of its Node. The Controller keeps the last one of them, drops it when the Node reports the keys in force again, and applies it at the first look at the keys after the interval ends.
 
+**Mimic server**:
+A Node whose Listener has a `mimic` section. The server role of its **Mimicry sidecar** listens at the address of the section, with the **Key of the mimic server** (`NodeMimicState.c`, CORE-P2-7).
+
+**Mimic part (of a state)**:
+The settings of the **Mimic server** of a Node, with the **Short id** that the Controller made and no key, and the **Mimic links** of the Node. It is `NodeConfig.mimic` of the control protocol and `CONTROL_MIMIC` in the core (`ControlMimic.c`). A state without it takes the settings out of the Configuration store and stops the sidecar of each role.
+
+**Key of the mimic server**:
+The X25519 key pair that a Node makes the first time that a state asks it for a mimic server. The private key is in the `private_key` of its `MimicServer` setting only, and the public key goes to the Controller in `Pins` (`CONTROL_KEYS`), after each Hello and whenever it changes. The Node keeps the key until a state without the server role, and after a restart it reports the same key.
+
+**Mimic tracer**:
+The step `Mimic tracer` of `build_and_test` (`vpntest mimictrace` with `.github/scripts/mimic-tracer.ps1`), on x64 and arm64: a real `ranz controller` with its rqlited, a server Node and a client Node, and the Noise session of the client over the mimic transport.
+
 **Switch**:
 The forwarding plane of one L2 Network (`SWITCH`, the Switch module), in place of the forwarding of the Hub. It is not a name for the Hub, whose entry avoids "virtual switch".
 
