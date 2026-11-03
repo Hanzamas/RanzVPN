@@ -96,6 +96,7 @@ def test_paths():
                  '.github/signing/signing-proof.wxs', '.github/scripts/install.ps1', '.github/msi/ranz.wxs',
                  '.github/msi/standin-ranz.go', '.github/scripts/msi-build.ps1', '.github/scripts/msi-install.ps1',
                  'docs/first-test.md', '.github/scripts/first-test.ps1', 'tests/formal/session-lib.pvl',
+                 '.github/scripts/read-shared.ps1',
                  'tests/formal/session/tls443.pv', '.github/scripts/formal.py', '.github/workflows/formal.yml',
                  'compat/CMakeLists.txt']:
         values = expect_set('a pull request that changes ' + path, True, 'pull_request', files=['docs/ports.md', path])
@@ -103,6 +104,7 @@ def test_paths():
     for path in ['src/Core/Peer.c', 'src/Core/Transport.c', 'src/Core/CMakeLists.txt', 'src/Cedar/Node.c',
                  'controller/cmd/ranz/install.go', '.github/scripts/fetch-wintun.ps1', '.github/scripts/not-install.ps1',
                  '.github/scripts/not-msi-build.ps1', '.github/scripts/msix.ps1',
+                 '.github/scripts/not-read-shared.ps1',
                  '.github/workflows/windows.yml', 'docs/src/Core/Crypto.md', 'src/vpntest/cryptotest.c']:
         expect_set('a pull request that changes only ' + path, False, 'pull_request', files=[path])
     expect_set('the old path of a rename', True, 'pull_request', files=['src/Core/Peer.c\tsrc/Core/Crypto.c'])
