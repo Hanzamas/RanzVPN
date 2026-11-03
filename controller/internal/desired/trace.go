@@ -11,7 +11,9 @@ import (
 // The trace of a packet (SDN-89 #388): a Network whose trace is on reaches the state of every Node of its VRF with its
 // pools, and the Node traces the packets of the IPv4 and the IPv6 pool of each such Network of its VRFs. A Node holds
 // MaxTracedPools of those pools at most and would leave the others out, so Compile refuses an intent that gives a Node
-// more (SDN-89-R1 #630), and the operator sees it when the intent is applied, not as a trace that never comes.
+// more (SDN-89-R1 #630), and the operator sees it when the intent is applied, not as a trace that never comes. A Node holds
+// an address in each pool of the L3 Networks of its VRFs, intent.MaxAddresses of them at most, so it is the pools of the L2
+// Networks, which give it no address, that pass the limit.
 
 // MaxTracedPools is the most pools of the Networks whose trace is on that the state of a Node holds: CONTROL_MAX_TRACED of
 // the C node (src/Core/Control.h), the IPv4 and the IPv6 pool of 8 Networks in its VRFs.

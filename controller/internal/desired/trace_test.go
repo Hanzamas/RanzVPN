@@ -9,12 +9,15 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/Hanzamas/RanzVPN/controller/internal/controlpb"
 	"github.com/Hanzamas/RanzVPN/controller/internal/intent"
 )
 
-// tracedResources returns an intent of the VRFs corp and lab, the Node a in both and b in lab alone, a dual-stack Network
-// of corp whose trace is off, corp dual-stack Networks of corp and lab of lab whose trace is on, and, with v4, one more
-// Network of lab whose trace is on, with an IPv4 pool alone.
+// tracedResources returns an intent of the VRFs corp and lab, the Node a in both and b in lab alone, a dual-stack L3
+// Network of corp whose trace is off, corp dual-stack L3 Networks of corp and lab dual-stack L2 Networks of lab whose trace
+// is on, and, with v4, one more L2 Network of lab whose trace is on, with an IPv4 pool alone. The Networks of lab are L2, as
+// a Node holds an address in each pool of the L3 Networks of its VRFs and intent.MaxAddresses of them at most, so the pools
+// of L3 Networks alone never pass MaxTracedPools; the pools of an L2 Network give a Node no address.
 func tracedResources(corp, lab int, v4 bool) []intent.Resource {
 	rs := []intent.Resource{
 		res(intent.KindVRF, "corp", `{"id": 10, "ula": "fd12:3456:789a::/48"}`),
@@ -29,19 +32,20 @@ func tracedResources(corp, lab int, v4 bool) []intent.Resource {
 	}
 	for i := range lab {
 		rs = append(rs, res(intent.KindNetwork, fmt.Sprintf("lab-%d", i),
-			fmt.Sprintf(`{"vrf": "lab", "ipv4Pool": "10.20.%d.0/24", "ipv6Pool": "fd12:3456:789b:%d::/64", "trace": true}`, i, i+1)))
+			fmt.Sprintf(`{"vrf": "lab", "mode": "L2", "ipv4Pool": "10.20.%d.0/24", "ipv6Pool": "fd12:3456:789b:%d::/64", "trace": true}`, i, i+1)))
 	}
 	if v4 {
-		rs = append(rs, res(intent.KindNetwork, "lab-v4", `{"vrf": "lab", "ipv4Pool": "10.20.99.0/24", "trace": true}`))
+		rs = append(rs, res(intent.KindNetwork, "lab-v4", `{"vrf": "lab", "mode": "L2", "ipv4Pool": "10.20.99.0/24", "trace": true}`))
 	}
 	return rs
 }
 
 // A Node holds MaxTracedPools pools of the Networks whose trace is on at most (SDN-89-R1, #630). Compile counts the IPv4
-// and the IPv6 pool of each Network whose trace is on in the VRFs of a Node, and nothing of a Network whose trace is off:
-// a gets the 10 of corp and the 6 of lab, 16, which a Node takes, and b the 6 of lab. One more pool in lab gives a 17, and
-// Compile refuses the intent with an error that wraps intent.ErrInvalid and names a, its pools and the limit, as the Node
-// would leave a pool out; b, with 7, is not what it refuses.
+// and the IPv6 pool of each Network whose trace is on in the VRFs of a Node, L3 or L2, and nothing of a Network whose
+// trace is off: a gets the 10 of the L3 Networks of corp and the 6 of the L2 Networks of lab, 16, which a Node takes, with
+// 12 addresses, and b the 6 of lab. One more pool in lab gives a 17, and Compile refuses the intent with an error that
+// wraps intent.ErrInvalid and names a, its pools and the limit, as the Node would leave a pool out; b, with 7, is not what
+// it refuses.
 func TestCompileRefusesMoreTracedPoolsThanANodeTakes(t *testing.T) {
 	states := compile(t, tracedResources(5, 3, false)...)
 	if got := tracedPools(states["a"]); got != MaxTracedPools {
@@ -49,6 +53,9 @@ func TestCompileRefusesMoreTracedPoolsThanANodeTakes(t *testing.T) {
 	}
 	if got := tracedPools(states["b"]); got != 6 {
 		t.Errorf("the state of b holds %d pools of Networks whose trace is on, want 6", got)
+	}
+	if self := states["a"][Key{controlpb.Kind_KIND_NODE, "a"}].GetNode(); len(self.GetAddresses()) != 12 {
+		t.Errorf("a holds the addresses %q, want the 12 of the L3 Networks of corp", addressText(self.GetAddresses()))
 	}
 
 	_, err := Compile(mustApply(t, tracedResources(5, 3, true)))
