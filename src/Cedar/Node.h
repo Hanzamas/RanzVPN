@@ -294,6 +294,11 @@ struct NODE_MIMIC_STATUS {
 	char Version[MAX_SIZE]; // What the sidecar named in ready: ranz mimic and its libraries
 	char PipeAcl[MAX_SIZE]; // The DACL of the control pipe as the system holds it, in SDDL
 	char Error[MAX_SIZE];   // Why the transport of the role is not available, "" while it is or the role has no settings
+
+	// The channel binding of the last stream of the role, which the Noise session over it is bound to: the last stream that
+	// the server role accepted, the last that the client role dialled; none before the first (CORE-P2-7, #424)
+	UINT BindingSize;
+	UCHAR Binding[NODE_MIMIC_BINDING];
 };
 
 // One message of a mimicry sidecar on its control pipe, as NodeMimicParseMessage reads it: the fields of the protocol of
@@ -339,7 +344,7 @@ struct NODE_TABLE {
 struct NODE_TABLES {
 	UINT64 Generation;     // Set by NodeSwapTables and NodeSwapVrfs: one more than the snapshot it replaced
 	NODE_TABLE *Mac;       // The VLAN-aware MAC table: key NodeMacKey, value the port
-	NODE_TABLE *Route;     // The route table; its compiled form comes with the routed networks (CORE-S6-1, #80)
+	NODE_TABLE *Route;     // The route table; the routed networks need none, as the kernel routes them (CORE-S6-1, #80)
 	NODE_TABLE *Policy;    // The policy table; its compiled form comes with the policy engine (CORE-S4-2, #75)
 	NODE_VRF_TABLES *Vrfs; // The forwarding tables of the VRFs (NodeVrf.c; SDN-4, #180), NULL for none
 	// The IP prefix routes of the fabric of an EVPN gateway (NodeEvpn.c; SDN-25, #201), NULL for none: NodeSwapEvpn replaces
@@ -458,6 +463,9 @@ struct NODE {
 	// The client role (NodeClient.c; CORE-S3-1, #71), under Lock: NULL while the role holds nothing
 	NODE_CLIENT *Client;
 
+	// The routed networks of the server role (NodeRouted.c; CORE-S6-1, #80), under Lock: NULL while none is up
+	struct NODE_ROUTED_SET *Routed;
+
 	// The Controller of the node and its admin pipe (NodeController.c; SDN-90, #395), under Lock: NULL while the node
 	// does not run. The admin pipe is NODE_ADMIN_PIPE unless a test names another before NodeStart.
 	NODE_CONTROLLER *Controller;
@@ -482,6 +490,9 @@ struct NODE {
 	wchar_t MimicSidecar[MAX_PATH]; // The executable that holds the sidecar: NODE_BGP_EXE_NAME next to the executable
 	NODE_MIMIC_TEST MimicTest;      // What a test changes in the way the node starts a sidecar
 	NODE_MIMIC *Mimic;              // The sidecars and the transport, NULL while the node does not run
+	// The keys that the control stream reports about the node: the public key of its mimic server, which it made for the mimic
+	// part of its state (NodeMimicState.c; CORE-P2-7, #424), from NewNode to FreeNode
+	struct CONTROL_KEYS *MimicKeys;
 
 	// The overlay (NodeOverlay.c; SDN-3, #179), NULL while it does not run
 	NODE_OVERLAY *Overlay;

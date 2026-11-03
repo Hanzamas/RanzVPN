@@ -1,6 +1,7 @@
 // NodeMimicInternal.h
-// The declarations that the two files of the mimicry sidecar share (NodeMimic.c, the sidecars; NodeMimicTransport.c, the
-// mimic transport over them; CORE-P2-6, #406). Only those two files include this header.
+// The declarations that the files of the mimicry sidecar share (NodeMimic.c, the sidecars; NodeMimicTransport.c, the mimic
+// transport over them; CORE-P2-6, #406; NodeMimicState.c, the mimic part of the state of the node, CORE-P2-7, #424). Only
+// those files include this header.
 
 #ifndef NODE_MIMIC_INTERNAL_H
 #define NODE_MIMIC_INTERNAL_H
@@ -35,6 +36,11 @@ struct NODE_MIMIC {
 	NODE_MIMIC_SIDECAR Sidecars[NODE_MIMIC_NUM_ROLES]; // The sidecar of each role
 	void *Listener;                                    // The listener of the server role (NodeMimicTransport.c), NULL for none
 	LOCK *ListenerLock;                                // Listener
+
+	// The mimic part of the states that the node applies (NodeMimicState.c; CORE-P2-7, #424), on the thread that applies them
+	SRWLOCK ServeLock;                      // Served: NodeMimicAcceptServed holds it shared, a change of it exclusive
+	TRANSPORT_LISTENER *Served;             // The listener that the node opened for the server role of its state, NULL for none
+	bool Unavailable[NODE_MIMIC_NUM_ROLES]; // The text of a role in force could not run, so the node waits for another
 };
 
 // NodeMimic.c: start the sidecar of a role, which runs until StopSidecar, and wait until it sent ready or refused its
@@ -56,5 +62,15 @@ void NodeMimicPipeName(wchar_t *name, UINT size, const wchar_t *what);
 
 // NodeMimicTransport.c: fill in the transport of the sidecars
 void NodeMimicTransportInit(NODE_MIMIC *m);
+
+// NodeMimic.c: the sidecars of a node and their transport, with no settings yet, which NodeMimicStart and the mimic part of a
+// state fill in; the caller frees them with the node (NodeMimicStop)
+NODE_MIMIC *NodeMimicNew(NODE *n);
+
+// NodeMimicState.c: report the public key of the mimic server whose text of the server role holds its private key, as the
+// node reads the text from its store at its start (none for a text without one); and close the listener that the node opened
+// for the server role of its state, which stops the sidecar of the role, before the sidecars stop
+void NodeMimicReportKey(NODE *n, const char *text);
+void NodeMimicUnserve(NODE_MIMIC *m);
 
 #endif // NODE_MIMIC_INTERNAL_H

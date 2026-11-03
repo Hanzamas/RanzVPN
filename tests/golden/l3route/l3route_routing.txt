@@ -1,0 +1,8 @@
+# lab-a (198.18.81.0/24, fd81:a::/64) and lab-b (198.18.82.0/24, fd81:b::/64): routed networks of the server role, each on a KM-TEST adapter of its own
+lab-a > lab-b ipv4 udp 198.18.81.10:40001 > 198.18.82.10:40002: delivered to lab-b, ttl 64 > 63, header checksum anew, the rest as it was
+lab-b > lab-a ipv4 udp 198.18.82.10:40002 > 198.18.81.10:40001: delivered to lab-a, ttl 64 > 63, header checksum anew, the rest as it was
+lab-a > lab-b ipv4 icmp echo request 198.18.81.10 > 198.18.82.10: delivered to lab-b, ttl 64 > 63, header checksum anew, the rest as it was
+lab-a > lab-b ipv6 udp [fd81:a::10]:40003 > [fd81:b::10]:40004: delivered to lab-b, hop limit 64 > 63, the rest as it was
+lab-a ipv4 udp from an address of lab-b 198.18.82.10:40005 > 198.18.82.11:40006: refused by the port
+forwarding of lab-a off: lab-a > lab-b ipv4 udp 198.18.81.10:40007 > 198.18.82.10:40008: delivered nowhere
+forwarding of lab-a on again: lab-a > lab-b ipv4 udp 198.18.81.10:40009 > 198.18.82.10:40010: delivered to lab-b, ttl 64 > 63, header checksum anew, the rest as it was

@@ -124,6 +124,10 @@ src/Core  ControlCopyPeerings  fuzz_control  via ControlInput
 # does it, and the seeds operation-*.bin of fuzz_control hold Operations of every kind after a state with L2 and L3 Networks;
 # no parser word in the name, listed as the reader of the controller's bytes that it is
 src/Core  ControlTakeOperation  fuzz_control  via ControlInput
+# The mimic part of a state (CORE-P2-7 #424): ControlInput hands the NodeConfig of an Update to ControlCopyMimic, which copies
+# the settings of the mimic server of the node and its links, and the owner of fuzz_control checks what it took; no parser word
+# in the name, listed as the reader of the controller's bytes that it is
+src/Core  ControlCopyMimic  fuzz_control  via ControlInput
 
 # The Node and the configuration store of Cedar (CORE-F5)
 src/Cedar  NodeParseRoles       exempt  the role names of the node's own configuration, split by ParseToken and looked up in a fixed table
@@ -219,6 +223,15 @@ src/Cedar  NodeEvpnParseAddr       fuzz_evpn  via NodeEvpnParseRoute
 # fabric on the L2 VNI of a stretch, and the frames that the VTEPs of the fabric send on that VNI
 src/Cedar  NodeStretchParseRoutes  fuzz_evpn
 src/Cedar  NodeStretchInput        exempt  a frame that VxlanInput (fuzz_vxlan) took on the L2 VNI of a stretch, from a VTEP that the gateway knows for the VNI by the routes that NodeStretchParseRoutes (fuzz_evpn) read; it reads no byte of the frame and hands it to SwitchInput (fuzz_switch), the ingress of the switch of the Network
+# The routed networks of the server role (CORE-S6-1 #80): the frames that the host sends out of the KM-TEST adapter of a routed
+# network, which may carry what the kernel routed from a member of another network; the answers of its port to the ARP requests
+# and the Neighbor Solicitations among them; the IP packets of its members, which NodeRoutedFrame takes into a frame for the
+# host; and the Routed setting of the configuration store. NodeRoutedFrame and NodeRoutedAnswer have no parser word in their
+# names, listed as the reader and the writer of a member's and the host's bytes that they are.
+src/Cedar  NodeRoutedParseFrame    fuzz_routed
+src/Cedar  NodeRoutedParseSetting  fuzz_routed
+src/Cedar  NodeRoutedFrame         fuzz_routed
+src/Cedar  NodeRoutedAnswer        fuzz_routed
 
 # The control stream and the envelopes of the controller (SDN-2 #178, control.proto)
 controller/internal/control  Open                  FuzzOpen
