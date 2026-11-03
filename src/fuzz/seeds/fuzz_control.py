@@ -12,8 +12,8 @@
 # The seeds of src/fuzz/corpus/fuzz_control are the frames of the tests of 2026-10-27 (AUD1-DT-12 #460), written with
 #   RANZ_CONTROL_WIRE=<dir> RQLITED=<rqlited of the pinned rqlite> go test -count=1 ./controller/internal/controller ./controller
 #   RANZ_CONTROL_WIRE=<dir> python -I src/fuzz/make_seeds.py
-# Without RANZ_CONTROL_WIRE this file writes the security, the operation and the peering seeds alone, and the other seeds
-# stay as they are.
+# Without RANZ_CONTROL_WIRE this file writes the security, the operation, the peering and the mimic seeds alone, and the other
+# seeds stay as they are.
 #
 # The security seeds (SDN-41 #234) hold the L2Security of the L2 Networks of a state, which no frame of those tests holds,
 # so that inputs reach ControlCopySecurities: an Update of an L2 Network with one, an L3 Network with one that the node
@@ -34,6 +34,15 @@
 # peering of a peer without a VRF, prefixes without an address, of 3 bytes or longer than their address, and lab without
 # the peering), a delta that takes the peering of the node and the peer lab-1 away, and one that brings them back, as a
 # stream (peering-stream.bin).
+#
+# The mimic seeds (CORE-P2-7 #424) hold the mimic part of the NodeConfig (SDN-94 #423), which the frames of those tests of
+# 2026-10-27 do not, so that inputs reach ControlCopyMimic: a state whose node srv-1 is a mimic server, with an own decoy
+# whose certificate comes from ACME, and the client of its peers edge-2, at two addresses, and lab-1 (mimic-state.bin); and
+# that state followed by a delta with a borrowed decoy, an empty server name, a short id of 4 bytes and the links that the
+# node leaves out (one without an address, one whose public key is not 32 bytes) or keeps without a short id, a delta with a
+# server alone whose decoy has PEM files, a delta whose server has no server name and whose one link has no address, which
+# leaves the node no mimic part, a delta with the eight links of a client alone, a delta without the mimic part and one that
+# brings it back, as a stream (mimic-stream.bin).
 #
 # make_seeds.py runs make_seeds(h), h being make_seeds.py itself with write_seed.
 
@@ -170,11 +179,13 @@ def node_peering(router_id, address, announce):
     return p
 
 
-def node(name, peering=None):
-    # An Object of the NodeConfig of the node name, with the NodePeering peering
+def node(name, peering=None, mimic=None):
+    # An Object of the NodeConfig of the node name, with the NodePeering peering and the Mimic mimic
     n = message(1, name.encode('ascii'))
     if peering is not None:
         n += message(14, peering)
+    if mimic is not None:
+        n += message(20, mimic)
     return message(1, n)
 
 
@@ -225,10 +236,82 @@ def make_peering_seeds(h):
     h.write_seed('fuzz_control', 'peering-stream.bin', b''.join(struct.pack('>I', len(m)) + m for m in (state, cannot, takes, back)))
 
 
+def mimic_server(listen, names, short_id, decoy, max_time_diff_ms=0):
+    # A MimicServer whose sidecar listens at listen, with the server names names, the short id of the bytes short_id, the
+    # MimicDecoy decoy and the clock tolerance max_time_diff_ms in ms (0 for none)
+    s = message(1, listen.encode('ascii'))
+    for name in names:
+        s += message(2, name.encode('ascii'))
+    if max_time_diff_ms:
+        s += field(3, max_time_diff_ms)
+    return s + message(4, decoy) + message(5, short_id)
+
+
+def mimic_link(peer_name, address, server_name, key, short_id):
+    # A MimicLink to the mimic server peer_name at address, whose first server name is server_name, with the public key of the
+    # bytes key and the short id of the bytes short_id
+    return (message(1, peer_name.encode('ascii')) + message(2, address.encode('ascii')) + message(3, server_name.encode('ascii')) +
+            message(4, key) + message(5, short_id))
+
+
+def mimic_part(server, links):
+    # A Mimic with the MimicServer server, None for none, and the MimicLinks links
+    m = message(1, server) if server is not None else b''
+    for link in links:
+        m += message(2, link)
+    return m
+
+
+def make_mimic_seeds(h):
+    edge_key = bytes([0x04] * 32)
+    lab_key = bytes([0x05] * 32)
+    edge_mimic = bytes([0x06] * 32)
+    lab_mimic = bytes([0x07] * 32)
+    short_id = bytes([0x5A, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07])
+    edge_id = bytes([0x11] * 8)
+    lab_id = bytes([0x12] * 8)
+    # An own decoy (mode 1) whose certificate comes from ACME, a borrowed decoy (mode 2), an own decoy with PEM files and a
+    # self-signed one without a mode
+    account = (message(1, b'https://acme.example.com/directory') + message(2, b'ops@example.com') +
+               message(3, b'C:\\ProgramData\\Ranz VPN\\acme') + message(4, b'C:\\ProgramData\\Ranz VPN\\acme-ca.pem'))
+    acme = field(1, 1) + message(3, account)
+    borrow = field(1, 2) + message(2, b'www.example.org:443')
+    pem = field(1, 1) + message(4, b'C:\\certs\\site.pem') + message(5, b'C:\\certs\\site.key')
+    self_signed = field(6, 1)
+    server = mimic_server('0.0.0.0:8443', ['www.example.com', 'cdn.example.com'], short_id, acme, 120000)
+    links = [mimic_link('edge-2', '192.0.2.2:8443', 'www.example.org', edge_mimic, edge_id),
+             mimic_link('edge-2', '[2001:db8::2]:8443', 'www.example.org', edge_mimic, edge_id),
+             mimic_link('lab-1', 'lab-1.example.net:443', 'cdn.example.net', lab_mimic, lab_id)]
+    objects = [node('srv-1', mimic=mimic_part(server, links)), vrf('dc', 30, False), peer('edge-2', edge_key, [30]),
+               peer('lab-1', lab_key, [30])]
+    state = update(1, 0, objects)
+    # What the node leaves out of its mimic part or cuts: an empty server name, a link without an address and one whose
+    # public key has 31 bytes; it keeps a short id of 4 bytes and a link without a server name and without a short id
+    borrowed = mimic_server('[::]:443', ['', 'www.example.com'], short_id[:4], borrow)
+    odd = [mimic_link('edge-2', '', 'www.example.org', edge_mimic, edge_id),
+           mimic_link('edge-2', '192.0.2.2:8443', 'www.example.org', edge_mimic[:31], edge_id),
+           mimic_link('lab-1', 'lab-1.example.net:443', '', lab_mimic, b'')]
+    leaves = update(2, 1, [node('srv-1', mimic=mimic_part(borrowed, odd))])
+    files = mimic_server('192.0.2.1:8443', ['www.example.com'], short_id, pem)
+    alone = update(3, 2, [node('srv-1', mimic=mimic_part(files, []))])
+    # A server without a server name is none, and a link without an address is left out: the node has no mimic part
+    nameless = mimic_server('0.0.0.0:8443', ['', ''], short_id, self_signed)
+    nowhere = mimic_link('lab-1', '', 'cdn.example.net', lab_mimic, lab_id)
+    nothing = update(4, 3, [node('srv-1', mimic=mimic_part(nameless, [nowhere]))])
+    eight = [mimic_link('lab-1', 'lab-1.example.net:%d' % (8440 + i), 'cdn.example.net', lab_mimic, lab_id) for i in range(8)]
+    client = update(5, 4, [node('srv-1', mimic=mimic_part(None, eight))])
+    takes = update(6, 5, [node('srv-1')])
+    back = update(7, 6, objects)
+    h.write_seed('fuzz_control', 'mimic-state.bin', state)
+    h.write_seed('fuzz_control', 'mimic-stream.bin',
+                 b''.join(struct.pack('>I', len(m)) + m for m in (state, leaves, alone, nothing, client, takes, back)))
+
+
 def make_seeds(h):
     make_security_seeds(h)
     make_operation_seeds(h)
     make_peering_seeds(h)
+    make_mimic_seeds(h)
 
     directory = os.environ.get('RANZ_CONTROL_WIRE')
     if not directory or not os.path.isdir(directory):

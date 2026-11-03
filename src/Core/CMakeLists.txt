@@ -175,6 +175,8 @@ add_library(corecontrol STATIC
   ControlListener.c
   # The TLS fingerprints of the certificate of the Controller in a desired state (SDN-92, #397)
   ControlPins.c
+  # The mimic part of a desired state and the keys that a node reports about itself (CORE-P2-7, #424)
+  ControlMimic.c
   "${_ranz_controlpb}/ranz/control/v1/control.pb.c"
   "${_ranz_controlpb}/ranz/control/v1/control.pb.h"
   # The policy of the VRFs in a desired state (SDN-8, #184)
