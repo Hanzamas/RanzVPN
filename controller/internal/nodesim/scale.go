@@ -42,8 +42,12 @@ const (
 var (
 	// FullScale is the scale target of ADR-0026 decision 7: 10,000 nodes, 1,000 VRFs and 100,000 routes. Its VRFs are
 	// declared and changed in 5 applies each, so that the commit of one apply into the store stays within what the
-	// store takes in one transaction, and the change of every VRF runs once.
-	FullScale = Scale{Nodes: 10000, VRFs: 1000, Routes: 100000, Runs: 1, Batches: 5}
+	// store takes in one transaction, and the change of every VRF runs once. It enrols three times, as ReducedScale does, each
+	// enrolment after the first on a controller of its own: the enrolment of one run was one sample, and the shared runners of
+	// CI took 27 s to 61 s for it and 0.2 s to 22 s for its median Ack (54 runs, CI-FLAKE-9-R1, #633), so one sample could fail
+	// a push on integration with no change of code behind it. Each enrolment after the first adds the declaring of the VRFs
+	// and the enrolment itself to the run.
+	FullScale = Scale{Nodes: 10000, VRFs: 1000, Routes: 100000, Runs: 1, Batches: 5, Enrolments: 3}
 	// ReducedScale is a tenth of the scale target, the same scenario for the checks of a pull request: the change of every
 	// VRF runs three times, and so does the enrolment, for the performance gate to judge the best of each. The enrolment is
 	// the phase that a runner makes slow now and then: the controller writes to its store for every Hello and every Ack of it,

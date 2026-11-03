@@ -73,7 +73,8 @@
 # them with the medians recorded in .github/quality/scale-pr.txt and scale-full.txt, the job summary shows the table, and the
 # artifact ranz-scale-<size> keeps the report of each run, so a regression is visible. At a tenth of the target a run changes
 # every VRF three times and enrols the nodes three times, each enrolment on a controller of its own, and the gate judges the
-# best of three of each (CI-FLAKE-9, #616).
+# best of three of each (CI-FLAKE-9, #616). At the target a run changes every VRF once and enrols the nodes three times in the
+# same way, and the gate judges the best of three enrolments (CI-FLAKE-9-R1, #633).
 #
 # No job here touches the C build, so they run beside windows.yml and add nothing to its time.
 #
@@ -528,8 +529,10 @@ jobs:
   # the enrolment three times, each on a controller of its own with its own rqlited: the store writes of an enrolment make it the
   # phase that the disk of a runner slows now and then, and one enrolment of a run could not be told from a slowdown, CI-FLAKE-9,
   # #616); the full set measures the target as well (full: 10,000 nodes, 1,000 VRFs, 100,000 routes, the VRFs declared and
-  # changed in 5 applies each, and enrolled once), after the tenth, so that the runs that record the medians of the target record
-  # those of the tenth too. The test writes scale.json, scale-summary.md and the BENCH lines to RANZ_SCALE_OUT, a directory for
+  # changed in 5 applies each, the change of every VRF once, and the enrolment three times, each after the first on a controller
+  # of its own with its own rqlited, as at the tenth: the enrolment of one run was one sample, and the push on integration that
+  # merged PR 618 failed on it, CI-FLAKE-9-R1, #633), after the tenth, so that the runs that record the medians of the target
+  # record those of the tenth too. The test writes scale.json, scale-summary.md and the BENCH lines to RANZ_SCALE_OUT, a directory for
   # each size; the gate compares them with the recorded medians of the size, the summary goes to the job summary, and the artifact
   # ranz-scale-<size> holds all of it for 90 days. The time of a run is the time of the applies, which compile the whole intent,
   # and of the enrolments: 30 seconds at the tenth, 9 to 12 minutes at the target.
@@ -593,12 +596,19 @@ jobs:
         RANZ_SCALE: full
         RANZ_SCALE_OUT: ${{ github.workspace }}/scale-out/full
       run: go test -count=1 -v -timeout 70m -run '^TestScale$' ./controller/internal/controller
+    # The same gate at the target (CI-FLAKE-9-R1, #633; it judged one enrolment before): the run holds three files, one for each
+    # enrolment, and the step judges the best of the three enrolments, prints how many it judged and fails when a file lacks one.
+    # The change of every VRF and the change of a route run once at the target, so each is one sample, with the margin that the
+    # recorded runs set
     - name: Performance regression gate at the target
       if: ${{ !cancelled() && steps.scale-full.outcome == 'success' }}
       timeout-minutes: 5
       env:
         RANZ_SCALE_OUT: ${{ github.workspace }}/scale-out/full
-      run: python .github/scripts/bench-gate.py compare --medians .github/quality/scale-full.txt "${RANZ_SCALE_OUT}/scale-bench*.txt"
+      run: |
+        python .github/scripts/bench-gate.py compare --medians .github/quality/scale-full.txt --runs 3 \
+          --min-samples 'scale_enrol_*' 3 enrolments --min-samples scale_setup_apply 3 enrolments \
+          "${RANZ_SCALE_OUT}/scale-bench*.txt"
     - name: Summary
       if: ${{ !cancelled() }}
       timeout-minutes: 2
