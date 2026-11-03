@@ -738,12 +738,12 @@ static NODE_EVPN_TABLE *NodeEvpnBuild(NODE_EVPN *e) {
 // NodeEvpnCommit puts into the table snapshot. True for such a message, which never reaches the Windows routing table, also
 // when the node cannot take it; false for any other message.
 bool NodeEvpnRoute(NODE *n, const char *line) {
-	return NodeEvpnRouteOf(n, (n != NULL ? n->Evpn : NULL), line);
+	return NodeEvpnRouteInto(n, (n != NULL ? n->Evpn : NULL), line);
 }
 
 // ... into the EVPN e of the node n, NULL for none: the EVPN of the Bgp setting (NodeEvpnRoute), or of the EVPN peering of the
 // standard mode (NodeEvpnPeering.c; SDN-78, #358)
-bool NodeEvpnRouteOf(NODE *n, NODE_EVPN *e, const char *line) {
+bool NodeEvpnRouteInto(NODE *n, NODE_EVPN *e, const char *line) {
 	NODE_EVPN_ROUTE r;
 	char mac[NODE_EVPN_TEXT];
 	UINT what = NodeEvpnParseRoute(line, &r);

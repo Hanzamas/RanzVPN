@@ -159,7 +159,7 @@ UINT NodeEvpnFlush(NODE *n);
 // ... of an EVPN that its owner keeps: the EVPN peering of the standard mode (NodeEvpnPeering.c; SDN-78, #358)
 NODE_EVPN *NodeEvpnOpen(NODE *n, struct cJSON *cfg);
 void NodeEvpnClose(NODE *n, NODE_EVPN *e);
-bool NodeEvpnRouteOf(NODE *n, NODE_EVPN *e, const char *line);
+bool NodeEvpnRouteInto(NODE *n, NODE_EVPN *e, const char *line);
 void NodeEvpnCommitOf(NODE *n, NODE_EVPN *e);
 UINT NodeEvpnFlushOf(NODE *n, NODE_EVPN *e);
 void NodeEvpnStatusOf(NODE_EVPN *e, NODE_EVPN_STATUS *st);

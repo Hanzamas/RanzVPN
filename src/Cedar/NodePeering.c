@@ -603,7 +603,7 @@ static void NodePeeringOnMessage(NODE_PEERING *p, const char *line) {
 	bool has_peer = NodePeeringParse(peer_text, NET_STRING_IP_ADDRESS_NO_SCOPE, peer, &peer_size, NULL);
 	// An IP prefix route of a VRF that peers by EVPN goes to the EVPN of the node, never among the routes of a peer, also while the
 	// node runs none (NodeEvpnPeering.c; SDN-78, #358)
-	bool evpn = (cJSON_IsObject(m) && (StrCmp(type, "learned") == 0 || StrCmp(type, "withdrawn") == 0) && NodeEvpnRouteOf(p->Node, p->Evpn, line));
+	bool evpn = (cJSON_IsObject(m) && (StrCmp(type, "learned") == 0 || StrCmp(type, "withdrawn") == 0) && NodeEvpnRouteInto(p->Node, p->Evpn, line));
 
 	if (cJSON_IsObject(m) == false) {
 		NodeLog(p->Node, "BGP peering: a message of the sidecar that is not a JSON object");
