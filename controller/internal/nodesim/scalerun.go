@@ -9,6 +9,11 @@ package nodesim
 //  4. One gateway advertises one more route, which the other nodes of its VRF learn, and no other node hears of it.
 //  5. The controller reports every node connected at the generation that it acknowledged, every node acknowledged exactly
 //     the updates that the scenario called for, and the state of every node is what the intent compiles to.
+//
+// A scale that asks for more than one enrolment (Scale.Enrolments) runs phases 1 and 2 again for each of the others, once the
+// phases above ended, on a controller of its own with no intent and no node (ScaleTarget.Fresh): the enrolment happens once in
+// a run, so a single sample of it says as much of the runner as of the controller, and the performance gate judges the best of
+// them as it judges the best of the changes.
 
 import (
 	"cmp"
@@ -53,6 +58,10 @@ type ScaleTarget struct {
 	Rate int
 	// Wait bounds each wait of the run, Scale.Wait when it is 0.
 	Wait time.Duration
+	// Fresh returns another controller of the same kind, with no intent and no node, for each enrolment after the first that
+	// the scale asks for: RunScale calls it once for each, after the controller before it ended (its Quiesce ran). A scale with
+	// more than one enrolment needs it.
+	Fresh func(ctx context.Context) (ScaleTarget, error)
 }
 
 // scaleRun is one run of the scenario.
@@ -66,19 +75,49 @@ type scaleRun struct {
 	rep   *ScaleReport
 }
 
-// RunScale runs the scale scenario s against the controller t and returns what it measured. On an error it returns the
-// report of the phases that ran before it. The nodes stop when it returns.
+// RunScale runs the scale scenario s against the controller t and returns what it measured: all of it on t, and then, for each
+// enrolment that s asks for after the first, the declaring of the VRFs and the enrolment alone on a controller that t.Fresh
+// returns. On an error it returns the report of the phases that ran before it. The nodes stop when it returns.
 func RunScale(ctx context.Context, t ScaleTarget, s Scale) (*ScaleReport, error) {
 	if err := s.Validate(); err != nil {
 		return nil, err
 	}
-	r := &scaleRun{t: t, s: s, wait: cmp.Or(t.Wait, s.Wait()), rate: cmp.Or(t.Rate, DefaultStartRate), logf: t.Log, rep: &ScaleReport{Scale: s, Env: scaleEnvironment()}}
+	if s.enrolments() > 1 && t.Fresh == nil {
+		return nil, fmt.Errorf("nodesim: %d enrolments need a controller for each of the %d after the first (ScaleTarget.Fresh)", s.enrolments(), s.enrolments()-1)
+	}
+	rep := &ScaleReport{Scale: s, Env: scaleEnvironment()}
+	begin := time.Now()
+	defer func() { rep.TotalMs = scaleMs(time.Since(begin)) }()
+	if err := playScale(ctx, t, s, rep, true, 1); err != nil {
+		return rep, err
+	}
+	for round := 2; round <= s.enrolments(); round++ {
+		next, err := t.Fresh(ctx)
+		if err != nil {
+			return rep, fmt.Errorf("nodesim: a controller for enrolment %d of %d: %w", round, s.enrolments(), err)
+		}
+		more := &ScaleReport{}
+		if err := playScale(ctx, next, s, more, false, round); err != nil {
+			return rep, err
+		}
+		rep.MoreEnrols = append(rep.MoreEnrols, ScaleRound{SetupApplyMs: more.SetupApplyMs, Enrol: more.Enrol})
+	}
+	return rep, nil
+}
+
+// playScale runs the scenario s against the controller t into rep: all of it when full is set, and otherwise the declaring of
+// the VRFs and the enrolment alone. round is the number of the enrolment that it makes (from 1). The nodes stop, and the
+// controller is quiesced, when it returns.
+func playScale(ctx context.Context, t ScaleTarget, s Scale, rep *ScaleReport, full bool, round int) error {
+	r := &scaleRun{t: t, s: s, wait: cmp.Or(t.Wait, s.Wait()), rate: cmp.Or(t.Rate, DefaultStartRate), logf: t.Log, rep: rep}
 	if r.logf == nil {
 		r.logf = func(string, ...any) {}
 	}
-	begin := time.Now()
+	if round > 1 {
+		logf, prefix := r.logf, fmt.Sprintf("enrolment %d of %d: ", round, s.enrolments())
+		r.logf = func(format string, args ...any) { logf(prefix+format, args...) }
+	}
 	defer func() {
-		r.rep.TotalMs = scaleMs(time.Since(begin))
 		if t.Quiesce != nil {
 			t.Quiesce()
 		}
@@ -86,11 +125,10 @@ func RunScale(ctx context.Context, t ScaleTarget, s Scale) (*ScaleReport, error)
 			r.fleet.Stop()
 		}
 	}()
-	err := r.run(ctx)
-	return r.rep, err
+	return r.run(ctx, full)
 }
 
-func (r *scaleRun) run(ctx context.Context) error {
+func (r *scaleRun) run(ctx context.Context, full bool) error {
 	docs, err := r.s.Setup()
 	if err != nil {
 		return err
@@ -106,6 +144,9 @@ func (r *scaleRun) run(ctx context.Context) error {
 	}
 	if err := r.enrol(ctx); err != nil {
 		return err
+	}
+	if !full {
+		return nil
 	}
 	for run := range r.s.runs() {
 		ch := ScaleChange{Name: fmt.Sprintf("change-%d", run+1)}
