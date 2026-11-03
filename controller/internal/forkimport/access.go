@@ -18,7 +18,8 @@ import (
 // allows is denied (ADR-0029). So the entries become Policies in the order of the fork, each priority that the order
 // needs a step of its own, and a last Policy allows what no entry matches. The reading of an entry is the one of the
 // import into the configuration store of a Node (ConfigStoreImport.c, CORE-S4-3 #76): what a Policy has no match for
-// never lets through a frame that the fork dropped.
+// never lets through the first packet of a flow that the fork dropped. The replies of a flow that a Policy allowed pass
+// on the conntrack table (ADR-0029), where the fork judged every frame by itself.
 
 const (
 	// maxEntries is the most entries of an access list that the fork loads of a Virtual Hub (MAX_ACCESSLISTS).
@@ -246,8 +247,8 @@ func boolInt(b bool) int {
 }
 
 // accessList makes the Policies of the access list folder list of the hub: one for each rule of each entry, named
-// <vrf>-acl-<n>, or <vrf>-acl-<n>-<k> when the entry takes several (ports without a protocol, and the TCP state, take TCP
-// and UDP), where n is the place of the entry in the order of the fork, which is its Id in vpncmd; and <vrf>-default-allow,
+// <vrf>-acl-<n>, or <vrf>-acl-<n>-<k> when the entry takes several (ports without a protocol take TCP and UDP, and the
+// TCP state takes TCP alone), where n is the place of the entry in the order of the fork, which is its Id in vpncmd; and <vrf>-default-allow,
 // which lets through what no entry matches. The priority of a Policy is a step of priorityStep for each priority and
 // action of an entry that comes before it. It returns the entries that the fork loads and the Policies made.
 func (h *hubImport) accessList(list *Folder) (entries, policies int) {
