@@ -65,7 +65,10 @@
 # batches of its stretch messages and its full resync after the pipe reconnects (TestStretch,
 # TestStretchResync); then the symmetric IRB of a stretch (SDN-67 #294) against a leaf of FRR with
 # two VRFs on the same Network addresses: a host of the fabric reaches an overlay node of another
-# Network of its VRF through the L3 VNI, and the VRFs stay apart (TestFRRIRB).
+# Network of its VRF through the L3 VNI, and the VRFs stay apart (TestFRRIRB), and by name the irb of
+# a start message, the gateway IPs and host routes of an IRB beside a stretch without irb, and two
+# stretches with irb on the same Network addresses in two VRFs (TestParseIRB, TestIRB,
+# TestIRBOverlap).
 #
 # scale: the scale test of SDN-18 (#194, ADR-0026 decision 7, ADR-0040 item 5). One controller serves simulated nodes
 # (internal/nodesim) in VRFs that advertise routes, and the run measures how long each node takes to acknowledge a change, from
@@ -945,6 +948,17 @@ jobs:
       run: |
         go test -count=1 -v -run '^TestFRRIRB$' ./ranz-bgp/internal/sidecar 2>&1 | tee "$RUNNER_TEMP/frr-irb.out"
         grep -q -- '--- PASS: TestFRRIRB' "$RUNNER_TEMP/frr-irb.out"
+    # The rest of the symmetric IRB of a stretch (SDN-67 #294) against a fabric router of GoBGP in the test: the irb of a start
+    # message, the gateway IPs and the host routes of an IRB both ways beside a stretch without irb, and two stretches with irb on
+    # the same Network addresses in two VRFs. The Test step of the jobs ranz (Linux) and ranz (Windows) runs them with the
+    # package; here they run by name, so that the job log shows each pass beside TestFRRIRB
+    - name: The IRB of the gateway, a stretch without irb and overlapping VRFs
+      shell: bash
+      run: |
+        go test -count=1 -v -run '^(TestParseIRB|TestIRB|TestIRBOverlap)$' ./ranz-bgp/internal/sidecar 2>&1 | tee "$RUNNER_TEMP/irb.out"
+        for name in TestParseIRB TestIRB TestIRBOverlap; do
+          grep -q -- "--- PASS: $name " "$RUNNER_TEMP/irb.out"
+        done
     - name: The log of FRR
       if: ${{ !cancelled() }}
       run: |

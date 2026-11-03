@@ -219,6 +219,10 @@ src/Cedar  NodeEvpnParseAddr       fuzz_evpn  via NodeEvpnParseRoute
 # fabric on the L2 VNI of a stretch, and the frames that the VTEPs of the fabric send on that VNI
 src/Cedar  NodeStretchParseRoutes  fuzz_evpn
 src/Cedar  NodeStretchInput        exempt  a frame that VxlanInput (fuzz_vxlan) took on the L2 VNI of a stretch, from a VTEP that the gateway knows for the VNI by the routes that NodeStretchParseRoutes (fuzz_evpn) read; it reads no byte of the frame and hands it to SwitchInput (fuzz_switch), the ingress of the switch of the Network
+# The symmetric IRB of a stretch (SDN-67): a packet of the fabric on the L3 VNI of a VRF to a host of a stretched Network with irb.
+# No parser word in their names, listed as the readers of packets of the fabric that they are
+src/Cedar  NodeStretchOnLink       exempt  compares the destination of a packet that NodeEvpnParseFrame (fuzz_evpn) took on the L3 VNI of a VRF, which NodeEvpnEnds read, with the gateway IP prefixes of the stretches with irb in that VRF; it reads no byte of the packet
+src/Cedar  NodeStretchRoute        exempt  a packet that NodeEvpnParseFrame (fuzz_evpn) took on the L3 VNI of a VRF, whose destination NodeEvpnEnds read: it finds the member of the switch that sends from that address (SwitchFindIp) and hands the packet, behind an Ethernet header of its own, to SwitchInput (fuzz_switch); it reads no byte of the packet
 
 # The control stream and the envelopes of the controller (SDN-2 #178, control.proto)
 controller/internal/control  Open                  FuzzOpen
