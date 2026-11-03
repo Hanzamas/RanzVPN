@@ -614,6 +614,18 @@ An interface of the host of an Exit, other than the loopback, that holds an IPv4
 **Fallback to the proxy**:
 An Exit whose NAT of Windows cannot serve its VRFs uses the proxy, tier 3, for the rest of the run. The causes are a VRF seen through 4via6, a supernet wider than /8, a NAT network of another program, and three failed reconciles in a row. Its status says from which tier it fell back.
 
+**Routed network**:
+An L3 Network of the configuration store of a node with the server role that the **Routed setting** gives gateway addresses (CORE-S6-1). A KM-TEST adapter of its own is its access port and carries its **Gateway addresses**, the IPv4 and IPv6 interfaces of the adapter forward, and the Windows IP stack routes between the routed networks (`NODE_ROUTED`, `NodeRouted.c`). WinNAT gives them NAT only where the **NAT network of the Node** can be made, and the node log says why when it cannot.
+
+**Routed setting**:
+`Routed` in the configuration store: one JSON object with the gateway addresses of each routed network and whether the routed networks go through NAT (`NODE_SETTING_ROUTED`, `NodeRoutedParseSetting`).
+
+**Gateway address (of a routed network)**:
+An address of the host in the routed network, with the prefix length of the network, on the interface of its KM-TEST adapter.
+
+**Member side (of the port of a routed network)**:
+The MAC address behind the port at which the host sees every member of the routed network. The port answers the ARP requests and the Neighbor Solicitations for the addresses of the members with it, and its owner takes the packets that the kernel routes to the members.
+
 **Capability**:
 A fact that a Node reports about its host (SKU, architecture, Hyper-V, LBFO, SeLow, XDP, Egress tier, the fallback to 5555), against which the Controller checks the Intent before an apply. Only a gateway or edge feature, or one a platform cannot carry (an L2 Network on arm64), needs one.
 _Avoid_: `CAPS` (the slim fork's server capability list), feature flag
