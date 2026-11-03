@@ -36,3 +36,9 @@ Maintainer decision (Hilmi: "tinggal cek kode yg udh pernah dibuat lah dan best 
   - arm64: every pull request builds arm64; tests run on the `windows-11-arm` runner where the plan provides it, otherwise the x64 tests cover the architecture-neutral code.
 - Where CI cannot reach (real NIC drivers, Hyper-V switches, absolute 10 and 100 Gbit/s numbers), the code follows an established open-source reference implementation and its documented practice (for example xdp-for-windows and its samples, msquic, Wintun, Npcap, Tailscale's NAT traversal, libjuice, libplum), and the pull request names the reference. Throughput is measured on CI runners as a regression number; the absolute targets stay estimates.
 - This replaces the by-hand Windows 11 XDP spike and the two-VM QTIP spike (ADR-0018, ADR-0022), the "measure on real hardware" step of the ADR-0022 amendment of 2026-10-19, and the two-VM spikes of seam 3 of #45.
+
+## Amendment 2026-11-03: vpncmd is retired
+
+The CI line of the context (`vpncmd /TOOLS /CMD Check`) and the harness of decision 3 (in-process server plus client plus vpncmd) describe the state of 2026-10-11. vpncmd was retired by CORE-S8-1 step 1 (#84, PR 556, merged 2026-10-31):
+- **The Self-check step is gone.** `ranz doctor` runs the six checks in `ranz.yml` (SDN-53, #246).
+- **The harness has no vpncmd.** Its goldens are the Pack goldens and the packet log golden (ADR-0021, amendment of 2026-11-03).

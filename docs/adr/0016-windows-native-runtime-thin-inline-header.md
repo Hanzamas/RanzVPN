@@ -39,7 +39,7 @@ Facts that shape the migration, read from the tree at 46550173:
 
    Mayaqua keeps what Windows has no equivalent for: `LIST`/`QUEUE`/`FIFO`/`BUF` containers, the `Str` subset in use, `Pack` (RPC wire format), `Cfg` (config file format), `Table` (string tables), `TcpIp` packet parsing, and a tidied `Microsoft.c` (registry, services, drivers, firewall, which are already native).
 6. **Order.** `Tick64` → `LOCK`/`COUNTER`/`REF` → `EVENT` → `THREAD` → memory tracker → `FileIO`/`OS` collapse → DNS → `Encrypt` to CNG → `HTTP` to WinHTTP → TLS to Schannel last, with the new core. Each step is its own ticket with its own CI run. Amended 2026-10-13: the memory tracker step and the `Encrypt` step leave this order, and the migration ends with WinHTTP; see the amendment at the end.
-7. **Prerequisite.** None of this starts before the test harness of ADR-0002 exists: an in-process server plus cascade plus vpncmd run with golden outputs, plus a stress case that exercises lock re-entry, event waits and thread teardown. The safe cleanup sweep (spec #24) runs first because it removes code the migration would otherwise have to port.
+7. **Prerequisite.** None of this starts before the test harness of ADR-0002 exists: an in-process server plus cascade plus vpncmd run with golden outputs, plus a stress case that exercises lock re-entry, event waits and thread teardown. The safe cleanup sweep (spec #24) runs first because it removes code the migration would otherwise have to port. *(vpncmd is retired: ADR-0021, amendment of 2026-11-03.)*
 
 ## Consequences
 

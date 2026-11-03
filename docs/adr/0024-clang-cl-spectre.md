@@ -16,7 +16,7 @@ clang has a Spectre variant 1 mitigation of its own, speculative load hardening 
 
 ## Open question
 
-Does the server threat model need a compiler Spectre variant 1 mitigation? A Spectre attack usually needs attacker-controlled code on the same machine, and a dedicated VPN server runs none. If the maintainer wants the mitigation anyway, the next step is to build vpnserver with `/clang:-mspeculative-load-hardening`, measure the throughput cost with vpntest, and record the number here.
+Does the server threat model need a compiler Spectre variant 1 mitigation? A Spectre attack usually needs attacker-controlled code on the same machine, and a dedicated VPN server runs none. If the maintainer wants the mitigation anyway, the next step is to build vpnserver with `/clang:-mspeculative-load-hardening`, measure the throughput cost with vpntest, and record the number here. *(Amended 2026-11-03: `vpnserver` is retired (CORE-S8-1, #84, PR 556), so the program to build and measure is `ranz-node`.)*
 
 ## Consequences
 

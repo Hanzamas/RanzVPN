@@ -20,7 +20,7 @@ The ticket is blocked by #13 (SecureNAT) and #16 (cloud), because `Client.c` tou
 
 ## Consequences
 
-- The slim fork becomes server plus cascade plus Local Bridge plus vpncmd server mode; about 20k lines fewer, hamcore without Neo6 packages.
+- The slim fork becomes server plus cascade plus Local Bridge plus vpncmd server mode; about 20k lines fewer, hamcore without Neo6 packages. *(vpncmd and `vpnserver` are retired: ADR-0021 and ADR-0022, amendments of 2026-11-03.)*
 - Endpoint users rely on the official SoftEther client until the new node binary exists (ADR-0011, ADR-0014). *(Superseded 2026-10-19: the stock client is not used at all; see ADR-0011.)*
 - `vpntest` and the CI smoke script lose the client mode; the server mode and the named tests remain the verification seam.
 
