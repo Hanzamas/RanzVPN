@@ -18,6 +18,12 @@ void NodeBgpStop(NODE *n);
 void NodeMimicInit(NODE *n);
 void NodeMimicStart(NODE *n);
 void NodeMimicStop(NODE *n);
+// The mimic part of a state that the overlay applied, and the streams that the mimic server of the node took for the overlay
+// (NodeMimicState.c; CORE-P2-7, #424)
+void NodeMimicApplied(NODE *n, const struct CONTROL_STATE *st);
+TRANSPORT_STREAM *NodeMimicAcceptServed(NODE *n);
+// ... and the text dump of the Configuration store without the private key of a mimic server (NodeWriteConfigDump of Node.c)
+void NodeMimicBlankDump(BUF *b);
 void NodeLogMitigations(NODE *n);
 void NodeShapeStart(NODE *n, const NODE_OVERLAY_CONFIG *cfg);
 void NodeShapeStop(NODE *n);
