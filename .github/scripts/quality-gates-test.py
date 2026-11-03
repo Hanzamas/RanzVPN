@@ -3,7 +3,8 @@
 # coverage-floor.py, bench-gate.py, static-findings.py and govulncheck-gate.py; for the guards of the start of
 # ranz-node in service-eventlog.ps1 (the source scan of the VBScript firewall path and the checks of the firewall
 # rules and of the script hosts, with PowerShell 7); and for the bounds of the waits of msi-install.ps1, the
-# evidence that a hang prints and the one place where it starts msiexec (planted hangs and planted launches, with
+# evidence that a hang prints, the end of the service msiserver, the main flow on a hang and the places where it
+# starts msiexec (planted hangs, planted services, planted launches and a copy with a planted fault, with
 # PowerShell 7).
 #
 # Each gate runs on a throwaway tree or input made here and must pass what it should pass and fail
@@ -804,8 +805,12 @@ def test_msi_install():
     # with no bound returns after the 120 s that a stand-in sleeps, and the fixture fails on that. The evidence is checked part by
     # part, and the check is run on evidence that lacks each part. The same self-test runs on Windows, on x64 and arm64, in the msi
     # jobs of windows.yml, with the real msiexec.exe, the real event log and the real service. -CheckLaunches reads the script with
-    # the parser of PowerShell and fails when msiexec is started anywhere but in Invoke-Msiexec; it runs here on the script and on
-    # copies with a planted launch. PowerShell 7 runs the script here, on Linux.
+    # the parser of PowerShell and fails when msiexec, or an install that has no msiexec, is started anywhere but in Invoke-Msiexec; it
+    # runs here on the script and on copies with a planted launch. -CheckFlow runs the main flow on a planted hang and checks what
+    # it prints; it runs here on the script and on a copy whose summary drops the list of the failed steps (CI-FLAKE-6-R2, #624).
+    # The same -SelfTest also plants what that ticket found: a process that ends at once and keeps its exit code, an evidence process
+    # that cannot be started, a service whose id was reused, a CIM query and a query of the events that stall. PowerShell 7 runs the
+    # script here, on Linux.
     pwsh = shutil.which('pwsh')
     if pwsh is None:
         failures.append('msi-install: no pwsh on the PATH, which the self-test of msi-install.ps1 needs')
@@ -823,7 +828,10 @@ def test_msi_install():
 
     expect('msi-install: planted hangs fail within their bounds, with the evidence, and what they say was ended is gone',
            run_script('-SelfTest', timeout=420), 0,
+           'ok: the real service msiserver may be ended on Windows in GitHub Actions only: not on a workstation, and not on Linux, which has none',
            'ok: a call that ends gives its exit code, and leaves no evidence of a hang',
+           'ok: a CIM query that never answers fails at its time limit (2 s, after ',
+           'ok: a stall in the query of the events of the diagnostics is ended at its bound (5 s, after ',
            'ok: a msiexec that never ends fails within its bound (15 s, after ',
            'and the failure names the verb and the package',
            'ok: the process tree of the call and the process of the service msiserver (with its child) are ended, and the failure lists exactly what was ended',
@@ -842,9 +850,16 @@ def test_msi_install():
            'ok: no other call starts after a call that did not end',
            'ok: a stall in the evidence still ends the call and its processes and fails the step within its bound (15 s and the 10 s of the evidence, after ',
            'and the failure names the bound',
+           'ok: an evidence process that cannot be started is a failure that says so, and names no bound',
+           'ok: an evidence process that ends at once keeps its exit code, and the failure names no bound',
+           'ok: a process whose id was the service msiserver and is another process now is not ended, and the failure says so',
+           'ok: a process that the Service Control Manager no longer gives for the service msiserver is not ended, and the failure says so',
+           'ok: the service msiserver is ended when CIM does not answer and sc.exe queryex gives its process, and the failure says so',
            'ok: a Node that does not stop fails the wait within its bound (3 s, after ',
            'ok: a Node that does not start fails the wait within its bound (3 s, after ',
            'ok: a Node that stops and starts is left alone, and its store is hashed while it is stopped',
+           'ok: a process that ends at once keeps its exit code, which is read after it ended',
+           'ok: a ranz.exe version that ends at once keeps its exit code 42, and prints no line',
            'ok: a ranz.exe version that never ends fails within its bound (3 s, after ',
            'ok: the main flow on a planted hang exits with the code 1, with the call in its message, after its clean-up, and runs no step after the call')
 
@@ -864,7 +879,12 @@ def test_msi_install():
     for name, extra in (('a comment that names a launch', "\n# Start-Process -FilePath 'msiexec.exe' -ArgumentList '/x' -Wait\n"),
                         ('a string that names a launch', "\n$example = 'Start-Process msiexec.exe -Wait'\n"),
                         ('a message that names msiexec', "\nWrite-Host 'msiexec is not started here'\n"),
-                        ('a failure that names msiexec', "\nif ($false) { throw 'msiexec exited with code 1' }\n")):
+                        ('a failure that names msiexec', "\nif ($false) { throw 'msiexec exited with code 1' }\n"),
+                        ('a command that prints msiexec', "\nWrite-Host msiexec\n"),
+                        ('a command that prints the variable of the program', "\nWrite-Host $msiexecFile\n"),
+                        ('a program that is not msiexec', "\nStart-Process -FilePath 'notepad.exe' -Wait\n"),
+                        ('a splat of a command that starts nothing', "\n$arguments = @{ Path = 'x.msi' }\nGet-Item @arguments\n"),
+                        ('a read of the Windows Installer object', "\n$installer = New-Object -ComObject WindowsInstaller.Installer\n$null = $installer.RelatedProducts('{00000000-0000-0000-0000-000000000000}')\n")):
         launches(name + ' is no launch', 0, ['starts msiexec in Invoke-Msiexec and nowhere else'], extra)
     for name, extra, line in (
             ('a Start-Process of msiexec.exe', "\nStart-Process -FilePath 'msiexec.exe' -ArgumentList '/x', 'x.msi' -Wait\n",
@@ -877,10 +897,69 @@ def test_msi_install():
             ('msiexec by its path', "\n& 'C:\\Windows\\System32\\msiexec.exe' /x x.msi\n", "& 'C:\\Windows\\System32\\msiexec.exe' /x x.msi"),
             ('msiexec through cmd', "\ncmd /c msiexec /x x.msi\n", 'cmd /c msiexec /x x.msi'),
             ('a Process started by the framework', "\n[void][System.Diagnostics.Process]::Start('msiexec.exe', '/x x.msi')\n",
-             "[System.Diagnostics.Process]::Start('msiexec.exe', '/x x.msi')")):
+             "[System.Diagnostics.Process]::Start('msiexec.exe', '/x x.msi')"),
+            # The forms that CI-FLAKE-6-R2 (#624) forbids too: the program is in a hashtable that is splatted, a helper is given the
+            # program as an argument (by name, by path, or as the variable of the program, alone or in an array), and the Windows
+            # Installer object installs with no msiexec.exe and no bound
+            ('a Start-Process with a splat', "\n$splat = @{ FilePath = 'msiexec.exe'; ArgumentList = '/x', 'x.msi'; Wait = $true }\nStart-Process @splat\n",
+             'Start-Process @splat'),
+            ('a Start-ProcessWithHandle with a splat', "\n$splat = @('msiexec.exe')\nStart-ProcessWithHandle @splat\n", 'Start-ProcessWithHandle @splat'),
+            ('a Start-ProcessWithHandle of msiexec.exe', "\n$null = Start-ProcessWithHandle 'msiexec.exe' @('/x', 'x.msi')\n", "Start-ProcessWithHandle 'msiexec.exe' @('/x', 'x.msi')"),
+            ('a helper that is given the program as a string', "\nfunction Start-Other($program) { Start-Process -FilePath $program -Wait }\nStart-Other 'msiexec.exe' /x\n",
+             "Start-Other 'msiexec.exe' /x"),
+            ('a helper that is given the program as a bare word', "\nfunction Start-Other($program) { & $program /x }\nStart-Other msiexec /x\n",
+             'Start-Other msiexec /x'),
+            ('a helper that is given the path of the program', "\nfunction Start-Other($program) { & $program /x }\nStart-Other 'C:\\Windows\\System32\\msiexec.exe' /x\n",
+             "Start-Other 'C:\\Windows\\System32\\msiexec.exe' /x"),
+            ('a helper that is given the variable of the program', "\nfunction Start-Other($program) { & $program /x }\nStart-Other $msiexecFile /x\n",
+             'Start-Other $msiexecFile /x'),
+            ('a helper that is given the variable of the program in an array', "\nfunction Start-Other($program) { & $program /x }\nStart-Other @($msiexecFile, '/x')\n",
+             "Start-Other @($msiexecFile, '/x')"),
+            ('an install through the Windows Installer object', "\n$installer = New-Object -ComObject WindowsInstaller.Installer\n[void]$installer.InstallProduct('x.msi', 'ACTION=INSTALL')\n",
+             "$installer.InstallProduct('x.msi', 'ACTION=INSTALL')"),
+            ('a configure through the Windows Installer object', "\n$installer = New-Object -ComObject WindowsInstaller.Installer\n$installer.ConfigureProduct('{00000000-0000-0000-0000-000000000000}', 0, 3)\n",
+             "$installer.ConfigureProduct('{00000000-0000-0000-0000-000000000000}', 0, 3)"),
+            ('a reinstall through the Windows Installer object', "\n$installer = New-Object -ComObject WindowsInstaller.Installer\n$installer.ReinstallProduct('{00000000-0000-0000-0000-000000000000}', 0)\n",
+             "$installer.ReinstallProduct('{00000000-0000-0000-0000-000000000000}', 0)"),
+            ('a configure of a feature through the Windows Installer object', "\n$installer = New-Object -ComObject WindowsInstaller.Installer\n$installer.ConfigureFeature('{00000000-0000-0000-0000-000000000000}', 'Main', 3, 3)\n",
+             "$installer.ConfigureFeature('{00000000-0000-0000-0000-000000000000}', 'Main', 3, 3)"),
+            ('a reinstall of a feature through the Windows Installer object', "\n$installer = New-Object -ComObject WindowsInstaller.Installer\n$installer.ReinstallFeature('{00000000-0000-0000-0000-000000000000}', 'Main', 0)\n",
+             "$installer.ReinstallFeature('{00000000-0000-0000-0000-000000000000}', 'Main', 0)"),
+            ('a patch through the Windows Installer object', "\n$installer = New-Object -ComObject WindowsInstaller.Installer\n$installer.ApplyPatch('x.msp', '{00000000-0000-0000-0000-000000000000}', 0, '')\n",
+             "$installer.ApplyPatch('x.msp', '{00000000-0000-0000-0000-000000000000}', 0, '')")):
         launches(name, 1, ['msi-install.ps1:', line, 'start msiexec outside Invoke-Msiexec'], extra)
     launches('a script without Invoke-Msiexec', 1, ['has no function Invoke-Msiexec'], text=real.replace('function Invoke-Msiexec', 'function Invoke-Other'))
     launches('a script that does not parse', 1, ['does not parse'], extra='\nif ($true) {\n')
+
+    # The flow fixture (CI-FLAKE-6-R2, #624). The line of Invoke-Msiexec that names the call, "msiexec /i hang.msi did not end within
+    # 10 s", is printed before anything fails, so the fixture that looked for it stayed green when the summary kept "1 steps failed:" and
+    # dropped the list of the failed steps. It looks for the failed step in the summary now, under its own name. The copy below has the
+    # regression planted: its summary has no list, its output still holds the line that the old needle found, and the fixture fails.
+    expect('msi-install flow: the main flow on a planted hang passes on the script as it is', run_script('-CheckFlow', script), 0,
+           'ok: the main flow on a planted hang exits with the code 1, with the call in its message, after its clean-up, and runs no step after the call')
+    summary = 'throw "$($failures.Count) steps failed:`n$($failures -join "`n")"'
+    if summary not in real:
+        failures.append('msi-install flow: the summary of the main flow is not the line that the fixture drops: it was changed, and this fixture with it')
+        print('FAIL', 'msi-install flow: no summary line to drop')
+    else:
+        with tempfile.TemporaryDirectory() as root:
+            path = os.path.join(root, 'msi-install.ps1')
+            with open(path, 'w', encoding='utf-8', newline='\n') as f:
+                f.write(real.replace(summary, 'throw "$($failures.Count) steps failed:"'))
+            expect('msi-install flow: a summary that drops the list of the failed steps fails the fixture', run_script('-CheckFlow', path), 1,
+                   'does not list the failed step', 'did not end within 10 s (step flow-hang, process ')
+
+    # The diagnostics of a failed step ask CIM through Get-ServiceDetails, which has a time limit, and the event log through
+    # Show-ServiceControlEvents, a process of its own with a bound: a query of their own, with no limit, would hold the job (CI-FLAKE-6-R2,
+    # #624). The limits themselves are tested by -SelfTest above, on a CIM query and a query of the events that stall.
+    start = real.find('\nfunction Show-Diagnostics {\n')
+    end = real.find('\n}\n', start)
+    if start < 0 or end < 0:
+        failures.append('msi-install diagnostics: no function Show-Diagnostics in the script')
+        print('FAIL', 'msi-install diagnostics: no Show-Diagnostics')
+    else:
+        expect('msi-install diagnostics: Show-Diagnostics holds no query of CIM or of the event log of its own', (0, real[start:end]), 0,
+               'Get-ServiceDetails', 'Show-ServiceControlEvents', absent=('Get-CimInstance', 'Get-WinEvent'))
 
 
 if __name__ == '__main__':
