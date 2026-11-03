@@ -1,0 +1,1 @@
+{"networks": [{"name": "lab", "gateways": ["198.18.81.1/24", "fd81:a::1/64"], "nat": true}]}
