@@ -8,15 +8,19 @@ package controller_test
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/Hanzamas/RanzVPN/controller/internal/api"
 	"github.com/Hanzamas/RanzVPN/controller/internal/controller"
 	"github.com/Hanzamas/RanzVPN/controller/internal/controlpb"
+	"github.com/Hanzamas/RanzVPN/controller/internal/intent"
 )
 
 // TestTraceIsSwitchedOnPerNetwork is the setting of SDN-89: the Network corp-lan of trace.json traces and lab-lan does
@@ -52,6 +56,34 @@ func TestTraceIsSwitchedOnPerNetwork(t *testing.T) {
 	if nw := stateObject(b1, controlpb.Kind_KIND_NETWORK, "corp-lan").GetNetwork(); nw == nil || nw.GetTrace() {
 		t.Errorf("branch-1: the Network corp-lan after the trace went off is %v, want it without the trace", nw)
 	}
+	h.checkState(b1)
+}
+
+// TestTraceRefusesMorePoolsThanANodeTakes is the limit of SDN-89-R1 (#630): a Node traces the packets of
+// desired.MaxTracedPools pools of the Networks whose trace is on at most, so an apply that gives the Nodes of corp the pool
+// of corp-lan and 8 more dual-stack Networks that trace, 17 pools, is refused with 400 and a message that names the first
+// such Node and the limit, which the operator sees at apply time; the Nodes keep the Generation that they run. The 8 are
+// L2 Networks: a Node holds an address in each pool of an L3 Network of its VRFs, so 8 more L3 Networks would give it 17
+// addresses, which the controller refuses before (intent.MaxAddresses).
+func TestTraceRefusesMorePoolsThanANodeTakes(t *testing.T) {
+	h := newHarness(t)
+	h.apply("trace.json")
+	b1 := h.sim("branch-1", keyBranch1)
+	b1.update(t)
+	h.waitNode("branch-1", 1, true)
+
+	doc := h.document("trace.json")
+	for i := range 8 {
+		doc.Resources = append(doc.Resources, intent.Resource{Kind: intent.KindNetwork, Name: fmt.Sprintf("corp-traced-%d", i),
+			Spec: json.RawMessage(fmt.Sprintf(`{"vrf": "corp", "mode": "L2", "ipv4Pool": "10.11.%d.0/24", "ipv6Pool": "fd12:3456:789a:%d::/64", "trace": true}`, i, i+1))})
+	}
+	_, err := h.api.Apply(context.Background(), doc)
+	var refused *api.Error
+	want := `Node "branch-1" gets 17 pools of the Networks whose trace is on in its VRFs, and a Node traces the packets of 16 pools at most`
+	if !errors.As(err, &refused) || refused.Status != http.StatusBadRequest || !strings.Contains(refused.Message, want) {
+		t.Errorf("applying 8 more dual-stack L2 Networks of corp whose trace is on gave %v, want 400 with %q", err, want)
+	}
+	h.waitNode("branch-1", 1, true)
 	h.checkState(b1)
 }
 

@@ -716,9 +716,9 @@ static void NodeOverlayDeliver(NODE_OVERLAY *ov, NODE_OVERLAY_PEER *p, const UCH
 		ok = ok && NodeSourceGroupInbound(ov->Node, v, vrf_id, from, claim, packet, packet_size);
 	}
 
-	// A traced packet of a Network whose trace is on: the node records the group that it carried and its verdict on it
-	// (NodeTrace.c; SDN-89, #388)
-	NodeTraceInbound(ov->Node, v, vrf_id, record - header, header, claim, packet, packet_size, ok);
+	// A traced packet of a Network whose trace is on: the node records the group that it carried and its verdict on it, when
+	// the peer that sent it is its ingress node (NodeTrace.c; SDN-89, #388; SDN-89-R1, #630)
+	NodeTraceInbound(ov->Node, v, vrf_id, p != NULL ? p->Key : NULL, record - header, header, claim, packet, packet_size, ok);
 
 	// A Mirror copies the packet as the peer sent it, before a 1:1 NAT rule translates it (NodeMirror.c)
 	if (ok)
@@ -971,8 +971,9 @@ bool NodeOverlayStart(NODE *n, NODE_OVERLAY_CONFIG *cfg) {
 	cc.Events = ov->Events;
 	// The counters of the source groups, which go on the stream too (NodeSourceGroup.c; SDN-87, #386)
 	cc.SourceGroups = NodeSourceGroupStart(n);
-	// ... and the records of the traced packets, the node named by its static key as the ingress node (NodeTrace.c; SDN-89, #388)
-	cc.Traces = NodeTraceStart(n, cfg->Key->Public);
+	// ... and the records of the traced packets, the node named by its static key as the ingress node, whose rate limit takes
+	// the clock of the configuration (NodeTrace.c; SDN-89, #388; SDN-89-R1, #630)
+	cc.Traces = NodeTraceStart(n, cfg->Key->Public, cfg->Clock, cfg->AdapterParam);
 	// The peer agent, the datagram path to the peers that the node reaches on no stream session: its Signals go on the control
 	// stream, both ways (NodeAgent.c; CORE-S5-5, #411)
 	cc.Signals = NodeAgentStart(n, cfg);

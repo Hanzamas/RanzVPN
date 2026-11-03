@@ -29,12 +29,12 @@ func explainTrace(ctx context.Context, c *api.Client, which, format string, stdo
 	if which == "all" {
 		traces, err = c.Traces(ctx)
 	} else {
-		id, perr := strconv.ParseUint(which, 0, 32)
-		if perr != nil || id == 0 {
+		id, ok := parseTraceID(which)
+		if !ok {
 			fmt.Fprintf(stderr, "ranz: -trace takes a trace ID, a number from 1 to 4294967295 (decimal, or 0x and hex), or all, not %q\n", which)
 			return 2
 		}
-		traces, err = c.TraceOf(ctx, uint32(id))
+		traces, err = c.TraceOf(ctx, id)
 	}
 	if err != nil {
 		var refused *api.Error
@@ -55,6 +55,21 @@ func explainTrace(ctx context.Context, c *api.Client, which, format string, stdo
 		return 1
 	}
 	return 0
+}
+
+// parseTraceID reads the trace ID of -trace as the usage says (SDN-89-R1, #630): hex after 0x, else decimal, from 1 to
+// 4294967295. The base 0 of strconv would read octal, binary and underscores too, so that -trace 042 asked for the trace
+// 34; here 042 is 42, and 0b1, 0o52 and 1_0 are no trace ID.
+func parseTraceID(which string) (uint32, bool) {
+	digits, base := which, 10
+	if len(which) > 1 && which[0] == '0' && (which[1] == 'x' || which[1] == 'X') {
+		digits, base = which[2:], 16
+	}
+	id, err := strconv.ParseUint(digits, base, 32)
+	if err != nil || id == 0 {
+		return 0, false
+	}
+	return uint32(id), true
 }
 
 // printTraces prints the traces: for each a line with its trace ID, its ingress Node, when it was reported and how many
