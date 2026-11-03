@@ -46,3 +46,8 @@ parse_packet_tls 1.78245e+06 ops/s 25
 parse_packet_tls_nolog 5.74431e+06 ops/s 25
 queue_burst_4096 7377 ops/s 25
 queue_cycle 2.49672e+07 ops/s 25
+# The cost of the MAC of the tag mode hmac per packet (vpntest tagmac; SDN-88, #387): recorded by bench-gate.py record --per-run
+# from the arm64 jobs of the windows.yml runs 41537899307 and 41570164407, whose best runs are within 0.3 % of each other. The
+# x64 runners of the same runs differ by 25 %, so the x64 medians wait for the runs that a margin needs.
+tag_mac_check_100 1.79533e+06 ops/s 25
+tag_mac_sign_100 1.93389e+06 ops/s 25
