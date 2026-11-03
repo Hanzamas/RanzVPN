@@ -54,6 +54,10 @@ func TestScaleValidate(t *testing.T) {
 	if ReducedScale.Runs < 3 || ReducedScale.Enrolments < 3 {
 		t.Errorf("ReducedScale changes the VRFs %d times and enrols %d times, and the gate judges the best of at least 3 of each", ReducedScale.Runs, ReducedScale.Enrolments)
 	}
+	// So does the gate at the target, on the enrolments: they are the cases that a slow runner fails (CI-FLAKE-9-R1, #633)
+	if FullScale.Enrolments < 3 {
+		t.Errorf("FullScale enrols %d times, and the gate judges the best of at least 3 enrolments", FullScale.Enrolments)
+	}
 }
 
 // TestRunScaleNeedsAControllerForEachEnrolment checks that a scale of more than one enrolment is refused, before anything runs,
