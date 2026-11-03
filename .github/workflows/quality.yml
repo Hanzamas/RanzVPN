@@ -13,6 +13,12 @@
 # row, every name of the models has a row, and the paths of formal.yml cover every file of the table
 # (.github/scripts/formal.py).
 #
+# job timeouts: every job of every workflow in .github/workflows has timeout-minutes, or calls a reusable workflow, which takes none
+# (CI-INTEG-1-R1, #597, .github/scripts/job-timeout-check.py). A push to integration or master waits for the run of the push before it
+# (CI-INTEG-1, #585), so a job that hangs holds the group of its workflow until it ends, and a job with no timeout-minutes can hold it
+# for the 360 minutes that GitHub gives it. The fixtures of the script, with a planted job that has no timeout, run in the job
+# fuzz_targets with the other gate scripts.
+#
 # The gates themselves run where their code is built: the fuzzers, the coverage floors, the static
 # analysis, Application Verifier and the performance gate of the C build in windows.yml; go test
 # -fuzz, -race, the coverage floors, staticcheck and govulncheck of the Go module, which holds
@@ -73,6 +79,20 @@ jobs:
         python-version: '3.12'
     - name: CI, WiX packages and docs name no executable that ranz replaces
       run: python .github/scripts/one-binary-check.py
+
+  # CI-INTEG-1-R1 (#597): every job of every workflow has timeout-minutes, or calls a reusable workflow; the fixtures of the script
+  # (a planted job with no timeout must fail) run with the other gate scripts, in fuzz_targets above.
+  job_timeouts:
+    name: every job has a timeout
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+    - uses: actions/checkout@v4
+    - uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'
+    - name: Every job of every workflow has timeout-minutes or calls a reusable workflow
+      run: python -I .github/scripts/job-timeout-check.py
 
   # The plan of windows.yml and ranz.yml (ci-plan.yml): the fixtures of .github/scripts/ci-plan.py. It
   # takes a few seconds, so a pull request runs it whatever it changes.
