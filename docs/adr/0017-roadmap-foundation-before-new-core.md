@@ -12,9 +12,9 @@ The existing code base is cleaned and given a test harness before any new-core w
 
 1. Merge the slim-down, PR #22 (tickets #2 to #23).
 2. Scope cuts that remove remaining unneeded features: the Layer 3 switch, and the WaterMark array moved from C source into hamcore.
-3. The test harness in vpntest: in-process server driven through the admin RPC, vpncmd output against golden files, a cascade from the server to itself with frames passing between sessions, golden pack dumps per RPC structure, and lock/event/thread stress tests (ADR-0002 point 3).
+3. The test harness in vpntest: in-process server driven through the admin RPC, vpncmd output against golden files, a cascade from the server to itself with frames passing between sessions, golden pack dumps per RPC structure, and lock/event/thread stress tests (ADR-0002 point 3). *(vpncmd is retired and its goldens went with it: ADR-0021, amendment of 2026-11-03.)*
 4. The safe cleanup sweep, spec #24, with the one-time reformat as its last pass (ADR-0003 item 14). It runs with the harness goldens as its safety net in addition to the compiler (order swapped on 2026-10-13, Hilmi: "ya", because the harness was finished and green before the sweep started).
-5. Table-driven admin RPC and vpncmd marshalling (ADR-0002 as amended on 2026-10-12).
+5. Table-driven admin RPC and vpncmd marshalling (ADR-0002 as amended on 2026-10-12). *(vpncmd is retired: ADR-0021, amendment of 2026-11-03.)*
 6. Structural refactor (god-file splits as pure moves, per-module API headers, ADR-0003 items 3 and 4) and the Windows-native runtime migration of Mayaqua (ADR-0016); these two may run in parallel because they touch different layers.
 7. The new core, after its design has been stress-tested with a grilling session; it replaces the data path module by module (strangler), reusing Hub, Account, Sam, Logging and configuration.
 

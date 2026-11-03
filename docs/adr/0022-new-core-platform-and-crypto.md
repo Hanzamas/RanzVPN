@@ -78,7 +78,7 @@ Each step is interop-tested against the oracle (ADR-0017).
 5. Control plane, `relay` role, ICE (libjuice) and port mapping (libplum).
 6. L3 routed networks (IP Helper routes, WinNAT). *(Without WinNAT since the amendment of 2026-10-20 below: NAT in the data plane and three egress tiers.)*
 7. GoBGP sidecar, QTIP, the tier-3 mimicry sidecar (ADR-0023) and the CDN / WebSocket path.
-8. Retire the legacy listener, vpncmd and OpenSSL, together with the slim fork. *(They still leave the node; the frozen slim-fork Cedar lives on after v1 only as `ranz-compat`, amendment of 2026-10-20 below.)*
+8. Retire the legacy listener, vpncmd and OpenSSL, together with the slim fork. *(They still leave the node; the frozen slim-fork Cedar lives on after v1 only as `ranz-compat`, amendment of 2026-10-20 below.)* *(Done in parts: vpncmd and `vpnserver` are retired, amendment of 2026-11-03 below.)*
 
 **Before step 1**, do the perf work that the surviving hub needs: ticket #31 Q2 (IP table expiry) and the D2 back-pressure move. Skip D1 (flooding), because the new switch at step 4 replaces it.
 
@@ -207,4 +207,11 @@ CORE-H5 (#408), from finding F1 of the formal model (AUD-5, `docs/formal-model.m
 - **Data encryption stays single.** The other way that the ticket offered, an unbound QUIC session with its records under the Noise keys, was not needed. Cost of the exporter against the certificate binding on the vpntest harness (`quicbind`, 10000 records of 1400 bytes, best of 3, one CI run): x64 385.4 against 373.3 MB/s and 4.46 against 4.46 ms of CPU per MB, handshake 4.9 against 5.1 ms; arm64 215.0 against 101.2 MB/s and 8.93 against 11.16 ms of CPU per MB, handshake 7.5 against 7.1 ms. The records are the same, so the difference is the noise of a shared runner.
 - **A node of the build before CORE-H5 is refused cleanly over QUIC,** both ways: the binding type in the prologue differs, so the handshake fails at message 1, with no session. Over TLS-443 the two still interoperate.
 - **Follow-up CORE-H5-R (#443).** A client whose handshake fails on the stream that a race gave takes that transport out of the races of the server for `TRANSPORT_FALLBACK_HOLD` (5 min), so in a rolling upgrade the new node reaches the old one over TLS-443 at its next dial, and QUIC is tried again after the hold (`TransportFallback.c`); no version flag is needed. The exporter is read only from the pinned msquic minor (2.6, any patch), since the preview part of the API table may change with a minor; another minor is refused with a line of the node log, as is any side that has no exporter.
+
+## Amendment 2026-11-03: vpncmd and vpnserver are retired, step 8 goes on in tickets
+
+Recorded from CORE-S8-1 (#84). Its steps 1 and 2 (PR 556, merged 2026-10-31) retired vpncmd and `vpnserver`: `src/vpncmd`, `src/vpnserver` and the Command and Console modules of Cedar are gone, and no program of the build but `vpntest` starts the SE-VPN listener. The Node (`ranz-node`) is the one server program. The rest of step 8 is three tickets:
+- **CORE-S8-2 (#576, PR 587, merged 2026-11-01), done.** The code that the Node keeps no longer calls the SE-VPN code of the slim fork. A step of `windows.yml` reads the linker map of `ranz-node.exe` and fails when it names an object of that code; the Local Bridge parts of `Bridge.c` and `BridgeWin32.c` it only reports. The frozen Cedar of the amendment of 2026-10-20 is kept on the branch `frozen/cedar-se-vpn` (a branch, no tag), and `ranz-compat` builds from it by the sha in `compat/CMakeLists.txt`.
+- **CORE-S8-3 (#577), open.** The in-process oracle of `vpntest` and the SE-VPN code in Cedar that only it runs go. Until it merges, that code stays in Cedar.
+- **CORE-S8-4 (#578), open.** OpenSSL, liboqs and oqs-provider go. It follows #577 and needs a native certificate Login for the Node first.
 

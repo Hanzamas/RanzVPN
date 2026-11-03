@@ -16,7 +16,7 @@ SoftEther ships `vpnserver`, `vpnclient` and `vpnbridge` as separate executables
 
 - Hub-to-hub, hub-to-user and P2P are one mechanism: nodes try a direct connection (STUN and hole punching) and fall back to a relay node, the model used by Tailscale and similar systems.
 - During the transition, endpoint users connect with the stock SoftEther client to the legacy SE-VPN listener of the slim fork; once the new node binary exists, the client is the same binary in the client role. *(Superseded by the amendment of 2026-10-19 below.)*
-- The admin surface becomes the API that the planned web UI uses; vpncmd's 25k lines of CLI are not carried over.
+- The admin surface becomes the API that the planned web UI uses; vpncmd's 25k lines of CLI are not carried over. *(vpncmd is retired: ADR-0021, amendment of 2026-11-03.)*
 
 ## Amendment 2026-10-19: no stock SoftEther client, not even during the transition
 

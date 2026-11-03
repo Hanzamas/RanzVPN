@@ -1,6 +1,6 @@
 # ADR-0020: Release packaging and listener defaults for the current server
 
-**Status:** Accepted (2026-10-13). Hilmi decided each point in the release grilling of 2026-10-13; his answer is quoted under each decision. Since the same day the repository is private and the product is proprietary (Hanzcodes), for personal use and as a portfolio piece (Hilmi: "buat ini portofolio pribadi dan penggunaan pribadi gw"). Amended 2026-10-22: releases are Authenticode code-signed (Hilmi: "Ya"); amended again 2026-10-22: the new product ships as one `ranz.exe` with a thin MSI.
+**Status:** Accepted (2026-10-13). Hilmi decided each point in the release grilling of 2026-10-13; his answer is quoted under each decision. Since the same day the repository is private and the product is proprietary (Hanzcodes), for personal use and as a portfolio piece (Hilmi: "buat ini portofolio pribadi dan penggunaan pribadi gw"). Amended 2026-10-22: releases are Authenticode code-signed (Hilmi: "Ya"); amended again 2026-10-22: the new product ships as one `ranz.exe` with a thin MSI; amended 2026-11-03: `vpnserver` is retired.
 
 ## Context
 
@@ -59,3 +59,10 @@ Maintainer decision (ADR-0011 amendment of the same date). This ADR still covers
 - **Tag-driven releases** (decision 5) will publish the signed `ranz.exe` and the MSI per architecture instead of the three assets named there, and the zip falls away. No release is made before the product is complete.
 - **Updates replace the one file** (SDN-59, #252), not an MSI.
 - **Service names:** `ranzvpnserver` (decision 4) stays the name of the Node service; the Controller keeps its own service name.
+
+## Amendment 2026-11-03: vpnserver is retired
+
+`vpnserver`, the program that decisions 1 to 8 were made for, is gone from the build (CORE-S8-1 step 2, #84, PR 556, merged 2026-10-31), so the amendment of 2026-10-22 above has no program left to keep them for. What it carried to the new product stays: the data directory is kept on uninstall (decision 3), the service name `ranzvpnserver` (decision 4) is the service of the Node, and releases come from tags (decision 5).
+- **The firewall rule "Ranz VPN Server"** of the consequences has no program left: `ranz-node /install` adds none.
+- **The open item** "the spike's MSI does not include vpncmd" is moot: vpncmd is retired too (ADR-0021, amendment of 2026-11-03).
+- **A machine that was set up by hand** still has the service `sevpnserverdev` and the rule, and nothing removes them: `ranz install` does not do what decision 4 gave the MSI (`docs/upgrade-notes.md`, CORE-S8-1-R1, #575).

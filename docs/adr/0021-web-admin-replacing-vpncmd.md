@@ -28,7 +28,7 @@ Ticket #28 adds runtime field tables for the admin RPCs (about 108 RPCs over 63 
 
 9. **Backup and restore** of configuration run through the web admin (`ConfigGet`/`ConfigSet`).
 
-10. **When vpncmd dies.** vpncmd is frozen now (no new commands) and deleted only when the UI covers hubs, users, sessions, cascades, Local Bridge, listeners, certificates and logs; the generic API already covers every RPC; and the harness goldens have moved from vpncmd output to API/Pack goldens (`vpncmd /TOOLS Check` moves into vpntest). The #28 vpncmd command table and its driver are then dropped. In practice this lands with the new core (ADR-0011).
+10. **When vpncmd dies.** vpncmd is frozen now (no new commands) and deleted only when the UI covers hubs, users, sessions, cascades, Local Bridge, listeners, certificates and logs; the generic API already covers every RPC; and the harness goldens have moved from vpncmd output to API/Pack goldens (`vpncmd /TOOLS Check` moves into vpntest). The #28 vpncmd command table and its driver are then dropped. In practice this lands with the new core (ADR-0011). *(Carried out: amendment of 2026-11-03 below.)*
 
 ## Consequences
 
@@ -43,4 +43,10 @@ Ticket #28 adds runtime field tables for the admin RPCs (about 108 RPCs over 63 
 Maintainer decision (Hilmi: "ya ya ya semua"). The admin surface of Ranz is the declarative intent API (ADR-0031) and the native web UI (ADR-0038), both served by the Go service `ranz-controller` (ADR-0026). This ADR is superseded as a whole.
 - **The slim fork gets no web admin and no RPC-style HTTP API.** The unified-management spec #224 already records the slim fork's web admin (#44) as superseded by the controller web UI (SDN-28, #204; ADR-0031).
 - **The new core does not move this API to http.sys** (the third consequence above). The http.sys row of ADR-0008 is superseded by the same decision (ADR-0008 amendment of 2026-10-21).
-- **vpncmd stays the slim fork's admin tool** until strangler step 8 retires it (ADR-0022).
+- **vpncmd stays the slim fork's admin tool** until strangler step 8 retires it (ADR-0022). *(Retired: amendment of 2026-11-03 below.)*
+
+## Amendment 2026-11-03: vpncmd is retired
+
+Decision 10 and the last line of the amendment above are carried out: vpncmd was deleted with the Command and Console modules of Cedar (CORE-S8-1 step 1, #84, PR 556, merged 2026-10-31). Two of its conditions were met in another form:
+- **The harness goldens** moved from vpncmd output to Pack goldens (golden family `pack`).
+- **`vpncmd /TOOLS Check`** became `ranz doctor` (SDN-53, #246), not a vpntest test.
