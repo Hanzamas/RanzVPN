@@ -1863,9 +1863,10 @@ void charset_test(UINT num, char **arg)
 #define	RT_FILEIO_CREATE_TIME	(RT_TIME_2024 - 86400000ULL)	// Creation date written on close: one day before RT_TIME_2024
 #define	RT_FILEIO_DATE_SLACK	600000ULL					// Slack between the update date read on open and SystemTime64 (ms)
 
-// Size and SHA-256 of the watermark, shared with watermark_test (vpntest.c)
-extern UINT watermark_expect_size;
-extern char *watermark_expect_sha256;
+// Size and SHA-256 of the hamcore file lang.config, the template of the language setting (LANG_CONFIG_TEMPLETE), which
+// the fileio test reads through "|"
+static UINT hamcore_expect_size = 698;
+static char *hamcore_expect_sha256 = "7C63E18D1EA125CA28E87143644F27D4470285DC8668709A4226D5FF66AC804E";
 
 // Create a file through a prefixed name ("@" or "$"), write the test bytes, and check that
 // the file is at the expected path
@@ -2213,19 +2214,19 @@ void fileio_test(UINT num, char **arg)
 		FileClose(io);
 	}
 
-	// "|" reads a hamcore file into memory: the watermark, which cannot seek
-	io = FileOpen("|watermark.bin", false);
-	if (RtCheck(&ctx, io != NULL, "FileOpen of |watermark.bin", "returned NULL"))
+	// "|" reads a hamcore file into memory, which cannot seek
+	io = FileOpen("|lang.config", false);
+	if (RtCheck(&ctx, io != NULL, "FileOpen of |lang.config", "returned NULL"))
 	{
 		size = FileSize(io);
-		RtCheck(&ctx, size == watermark_expect_size, "FileSize of |watermark.bin is the watermark size",
-			"%u bytes, expected %u", size, watermark_expect_size);
+		RtCheck(&ctx, size == hamcore_expect_size, "FileSize of |lang.config is the size of the file",
+			"%u bytes, expected %u", size, hamcore_expect_size);
 
 		ham = ZeroMalloc(size + 1);
 		ok = FileRead(io, ham, size);
 		Sha2_256(hash, ham, size);
 		BinToStr(hash_str, sizeof(hash_str), hash, sizeof(hash));
-		RtCheck(&ctx, ok && StrCmpi(hash_str, watermark_expect_sha256) == 0, "FileRead of |watermark.bin returns the watermark bytes (SHA-256)",
+		RtCheck(&ctx, ok && StrCmpi(hash_str, hamcore_expect_sha256) == 0, "FileRead of |lang.config returns the bytes of the file (SHA-256)",
 			"read %s, SHA-256 = %s", ok ? "ok" : "failed", hash_str);
 		Free(ham);
 
@@ -2482,8 +2483,8 @@ void resources_test(UINT num, char **arg)
 	FreeBuf(b);
 
 	// A leading "/" is skipped, and each read returns its own buffer at offset 0
-	b = ReadHamcore("watermark.bin");
-	BUF *b2 = ReadHamcore("/watermark.bin");
+	b = ReadHamcore("lang.config");
+	BUF *b2 = ReadHamcore("/lang.config");
 	if (RtCheck(&ctx, b != NULL && b2 != NULL && b->Size != 0 && b2->Size == b->Size && Cmp(b2->Buf, b->Buf, b->Size) == 0,
 		"ReadHamcore skips a leading \"/\"", "%s", b2 == NULL ? "returned NULL" : "the bytes differ"))
 	{
@@ -2491,7 +2492,7 @@ void resources_test(UINT num, char **arg)
 
 		((UCHAR *)b->Buf)[0] ^= 0xFF;
 		FreeBuf(b2);
-		b2 = ReadHamcore("watermark.bin");
+		b2 = ReadHamcore("lang.config");
 		RtCheck(&ctx, b2 != NULL && b2->Size == b->Size && ((UCHAR *)b2->Buf)[0] == (((UCHAR *)b->Buf)[0] ^ 0xFF),
 			"Each read returns its own copy", "%s", b2 == NULL ? "returned NULL" : "a change to an earlier read shows");
 	}
@@ -2506,7 +2507,7 @@ void resources_test(UINT num, char **arg)
 	io = FileOpen("|" RT_RES_MISSING_NAME, false);
 	RtCheck(&ctx, io == NULL, "FileOpen of a missing \"|\" name returns NULL", "returned a file");
 	FileClose(io);
-	RtCheck(&ctx, IsFile("|watermark.bin"), "IsFile of a \"|\" name", "returned false");
+	RtCheck(&ctx, IsFile("|lang.config"), "IsFile of a \"|\" name", "returned false");
 	RtCheck(&ctx, IsFile("|" RT_RES_MISSING_NAME) == false, "IsFile of a missing \"|\" name", "returned true");
 
 	// A file in a "hamcore" folder next to the executable wins over the built-in one, until it is deleted

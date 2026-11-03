@@ -2,7 +2,7 @@
 // Named StorePacket test of vpntest ("storepacket" command, SEC-5 #96)
 //
 // Runs frames through the hub packet adapter of two in-process sessions on a hub of its own (no
-// server, no transport, no SessionMain thread), as the flood bench of harness.c does: the sender
+// server, no transport, no SessionMain thread), as the flood bench of hubtest.c does: the sender
 // stores frames into the hub, the receiver takes what the hub floods to it.
 // - Broadcast storm list: the sender sends broadcast frames to STOREPACKET_TEST_FLOOD distinct
 //   destination addresses. Its storm list (HUB_PA.StormList, one entry per source MAC, source IP and
@@ -40,7 +40,6 @@
 #include "Cedar/Hub.h"
 #include "Cedar/LogWriter.h"
 #include "Cedar/PacketLog.h"
-#include "Cedar/Server.h"
 #include "Cedar/Session.h"
 #include "Cedar/Tunables.h"
 
@@ -186,7 +185,7 @@ static void StorePacketTestIdleThread(THREAD *thread, void *param)
 }
 
 // In-process server session on the test hub with the hub packet adapter and the default policy
-// (the broadcast storm guard is on), made like the flood bench sessions of harness.c
+// (the broadcast storm guard is on), made like the flood bench sessions of hubtest.c
 static SESSION *StorePacketTestNewSession(STOREPACKET_TEST *t, char *username)
 {
 	POLICY *policy = ClonePolicy(GetDefaultPolicy());

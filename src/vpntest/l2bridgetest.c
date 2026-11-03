@@ -31,7 +31,6 @@
 // - arm64 is L3 only: no bridge either, whatever the backend.
 // Prints "L2BRIDGE TEST OK" only when every check passes.
 
-#include "harness_int.h"
 #include "testlist.h"
 
 #include "Cedar/ConfigStore.h"

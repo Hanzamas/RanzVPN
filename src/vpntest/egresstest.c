@@ -49,7 +49,6 @@
 // egressrras needs a Windows Server whose Routing and Remote Access runs as a LAN router (the egress-rras job of windows.yml
 // installs it, .github/scripts/egress-nat.ps1 -Rras) and checks RRAS NAT there.
 
-#include "harness_int.h"
 #include "testlist.h"
 
 #include "Cedar/ConfigStore.h"

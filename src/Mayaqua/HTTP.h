@@ -45,11 +45,5 @@ bool SendHttpHeader(SOCK *s, HTTP_HEADER *header);
 char *HttpBufLineSource(void *param, UINT max_size);
 HTTP_HEADER *HttpParseHeaderLines(HTTP_LINE_SOURCE *source, void *param);
 HTTP_HEADER *RecvHttpHeader(SOCK *s);
-bool HttpClientSend(SOCK *s, PACK *p);
-PACK *HttpClientRecv(SOCK *s);
-PACK *HttpClientRecvEx(SOCK *s, UINT max_data_size);
-bool HttpServerSend(SOCK *s, PACK *p);
-PACK *HttpServerRecv(SOCK *s);
-bool HttpSendDecoyPage(SOCK *s, UINT code, HTTP_HEADER *request);
 
 #endif

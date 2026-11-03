@@ -3,13 +3,8 @@
 
 #include "Hub.h"
 
-#include "Admin.h"
-#include "Bridge.h"
 #include "Connection.h"
-#include "Link.h"
 #include "PacketLog.h"
-#include "Protocol.h"
-#include "Server.h"
 
 #include "Mayaqua/Cfg.h"
 #include "Mayaqua/FileIO.h"

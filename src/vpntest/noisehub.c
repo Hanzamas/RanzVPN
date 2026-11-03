@@ -3,24 +3,22 @@
 //
 // The L2 frames of a Noise session of the new core enter a Hub of the node's server role as a Session whose Connection
 // is of the new type CONNECTION_NOISE (NodeAcceptSession, Cedar/NodeSession.c and ConnectionTunnel.c), and the Hub
-// forwards them as it forwards the frames of a SE-VPN session, the oracle (ADR-0017):
-// - The node runs two Hubs with the same user, options and access list. On NOISEHUB_N the sender is the Session that
-//   a client's Noise session logged in to; on NOISEHUB_O it is an in-process session with the hub packet adapter, as
-//   the server session of a SE-VPN login runs it, with the user, group and policy of that Session. Each Hub has a
-//   receiver of the oracle's kind. The same frames go through both Hubs: what each side got, byte for byte, the MAC
-//   table and the results of the access list make one report per Hub, and both reports must be the golden file
-//   noisehub/noisehub_frames.txt, the Hub output of the oracle (golden family "noisehub"). The Hub fills in the IPv4
-//   header checksum 0 of one frame, so a golden frame is the oracle's output, not its input.
+// forwards them as it forwarded the frames of a SE-VPN session, the oracle that CORE-S8-3 (#577) retired:
+// - On the Hub NOISEHUB_N of the node the sender is the Session that a client's Noise session logged in to, and the
+//   receiver is an in-process session with the hub packet adapter. What each side got, byte for byte, the MAC table and
+//   the results of the access list make the report of the Hub, which must be the golden file
+//   noisehub/noisehub_frames.txt (golden family "noisehub"): the Hub output of the oracle, an in-process session of the
+//   SE-VPN kind, at the last run against it. The Hub fills in the IPv4 header checksum 0 of one frame, so a golden
+//   frame is the Hub's output, not its input.
 // - The Noise path runs over the bound loopback transport, over the QUIC transport (CORE-S1-1, #67) where msquic.dll is
 //   present, and over the TLS transport on Schannel (TLS-443, CORE-S2-1 #69) on a test port of the loopback interface.
 // - A Tunnel of four connections carries many inner flows both ways: the frames of each flow arrive complete, in order
 //   and over one connection, and the flows spread over all four (ADR-0022, multi-connection tunnels).
 // - A wrong password and a join Login of a Tunnel that no Session carries are refused, and the Session of a Tunnel
 //   ends once the client closed every connection.
-// The wire of the oracle is not touched: its own sessions keep their tests and goldens (harness). Print
-// "NOISEHUB TEST OK" only when every check passes.
+// Print "NOISEHUB TEST OK" only when every check passes.
 
-#include "harness_int.h"
+#include "golden.h"
 #include "testlist.h"
 
 #include "Cedar/Account.h"
@@ -47,8 +45,7 @@
 #include <stdio.h>
 
 #define	NOISEHUB_HUB_N			"NOISEHUB_N"		// The Hub whose sender is the Session of a Noise session
-#define	NOISEHUB_HUB_O			"NOISEHUB_O"		// The Hub whose sender is an in-process session: the oracle
-#define	NOISEHUB_USER			"nhuser"			// The password user of both Hubs
+#define	NOISEHUB_USER			"nhuser"			// The password user of the Hub
 #define	NOISEHUB_PASSWORD		"NoiseHub-Pass-1"	// Its password
 #define	NOISEHUB_WRONG			"NoiseHub-Wrong-1"	// No user's password
 #define	NOISEHUB_RECEIVER		"receiver"			// The user name of the receivers
@@ -87,13 +84,11 @@ typedef struct NOISEHUB_CTX
 	UINT NumFailed;
 	NODE *Node;							// The node of the server role
 	HUB *HubN;							// Its Hub NOISEHUB_N, referenced
-	HUB *HubO;							// ... and NOISEHUB_O
 	THREAD *IdleThread;					// The thread of the connections of the in-process sessions; it has nothing to run
 	UCHAR ServerKey[NOISE_KEY_SIZE];	// The node's Noise static key ...
 	UCHAR ServerPub[NOISE_KEY_SIZE];	// ... and its public half, which the client knows in advance
 	UCHAR ClientKey[NOISE_KEY_SIZE];	// The client node's static key, which its first Login pins
 	UCHAR ClientPub[NOISE_KEY_SIZE];
-	char *Oracle;						// The report of the oracle, NULL before it ran
 	char OutDir[MAX_SIZE];				// The output and golden directories of the golden family "noisehub"
 	char GoldenDir[MAX_SIZE];
 	bool Update;						// Update mode: the golden file is written, not compared
@@ -108,13 +103,13 @@ typedef struct NOISEHUB_SERVER
 	volatile bool Halt;					// Ends the accept thread; through FlagRead and FlagWrite
 } NOISEHUB_SERVER;
 
-// The two sides of the cases in one Hub. The sender is the client's Noise session (the Noise path) or an in-process
-// session (the oracle); the receiver is an in-process session on both paths.
+// The two sides of the cases in the Hub. The sender is the client's Noise session; the receiver is an in-process
+// session.
 typedef struct NOISEHUB_PATH
 {
 	HUB *Hub;
-	TRANSPORT_NOISE *Client;			// The Noise path: the client's Noise session; NULL on the oracle's
-	SESSION *Sender;					// The sender's Session in the Hub: the Tunnel's, or the in-process one
+	TRANSPORT_NOISE *Client;			// The client's Noise session
+	SESSION *Sender;					// The sender's Session in the Hub: the Tunnel's
 	SESSION *Receiver;					// The in-process receiver
 } NOISEHUB_PATH;
 
@@ -277,7 +272,7 @@ static bool NoiseHubIsMarker(UCHAR *frame, UINT size, UINT seq)
 // Frame seq of inner flow f: a UDP datagram over IPv4 from the sender's address, port 20000 + f, to the receiver's port
 // 30000, or back the other way; its size. The flows differ by their port alone, as the flows of one client do: the
 // Session of a client node asks for no routing, so the Hub learns IP_MIN_LIMIT_COUNT IPv4 addresses of it at most and
-// drops a frame from another (IpTableSessionAtLimit), as it does for the oracle.
+// drops a frame from another (IpTableSessionAtLimit), as it did for the oracle.
 static UINT NoiseHubFlowFrame(UCHAR *buf, UINT f, UINT seq, bool back)
 {
 	UINT tag = (f << 16) | seq;
@@ -481,12 +476,13 @@ static bool NoiseHubWaitNoTunnel(HUB *h)
 // The node and its listener
 //
 
-// A new empty data directory with the configuration store of the server role: one worker, the two Hubs as online L2
-// networks, and the password user in each, so that a Login pins the client's key
+// A new empty data directory with the configuration store of the server role: one worker, the Hub as an online L2
+// network, and the password user in it, so that a Login pins the client's key
 static void NoiseHubNewDir(wchar_t *dir, UINT size)
 {
 	wchar_t tmp[MAX_PATH];
 	wchar_t path[MAX_PATH];
+	CS_USER u;
 
 	UniFormat(tmp, sizeof(tmp), L"noisehub_test_%u", Rand32());
 	ConbinePathW(dir, size, MsGetMyTempDirW(), tmp);
@@ -502,20 +498,13 @@ static void NoiseHubNewDir(wchar_t *dir, UINT size)
 
 	CsSetSetting(s, NODE_SETTING_ROLES, "server");
 	CsSetSetting(s, NODE_SETTING_WORKERS, "1");
+	CsAddNetwork(s, NOISEHUB_HUB_N, CS_MODE_L2, true);
 
-	for (UINT i = 0; i < 2; i++)
-	{
-		char *hub = (i == 0 ? NOISEHUB_HUB_N : NOISEHUB_HUB_O);
-		CS_USER u;
-
-		CsAddNetwork(s, hub, CS_MODE_L2, true);
-
-		Zero(&u, sizeof(u));
-		StrCpy(u.Network, sizeof(u.Network), hub);
-		StrCpy(u.Name, sizeof(u.Name), NOISEHUB_USER);
-		u.AuthType = AUTHTYPE_PASSWORD;
-		CsAddUser(s, &u);
-	}
+	Zero(&u, sizeof(u));
+	StrCpy(u.Network, sizeof(u.Network), NOISEHUB_HUB_N);
+	StrCpy(u.Name, sizeof(u.Name), NOISEHUB_USER);
+	u.AuthType = AUTHTYPE_PASSWORD;
+	CsAddUser(s, &u);
 
 	CsClose(s);
 }
@@ -562,8 +551,8 @@ static void NoiseHubAddAccess(HUB *h, UINT priority, UINT port, char *username)
 	AddAccessListEx(h, &a, false, false);
 }
 
-// A Hub of the node as both Hubs of the test are, referenced: the password user, no ARP or neighbor polling of the
-// watchdog (it would send probes into the sessions), no log files, and the access list of the cases
+// The Hub of the node as the test needs it, referenced: the password user, no ARP or neighbor polling of the watchdog
+// (it would send probes into the sessions), no log files, and the access list of the cases
 static HUB *NoiseHubPrepare(NOISEHUB_CTX *ctx, char *name)
 {
 	HUB *h = NodeGetHub(ctx->Node, name);
@@ -741,17 +730,17 @@ static bool NoiseHubWaitClose(TRANSPORT_NOISE *n)
 // The cases of the golden file
 //
 
-// Send one frame into the Hub from a side of the path: the sender's over the client's Noise session (the Noise path) or
+// Send one frame into the Hub from a side of the path: the sender's over the client's Noise session, the receiver's
 // through the hub packet adapter of its in-process session, as SessionMain hands it over
 static void NoiseHubSend(NOISEHUB_PATH *p, bool sender, UCHAR *frame, UINT size)
 {
-	if (sender && p->Client != NULL)
+	if (sender)
 	{
 		TransportNoiseSend(p->Client, NOISE_RECORD_DATA, frame, size);
 		return;
 	}
 
-	NoiseHubStore(sender ? p->Sender : p->Receiver, frame, size, true);
+	NoiseHubStore(p->Receiver, frame, size, true);
 }
 
 // The next frame that a side of the path got within timeout, into buf (NOISE_MAX_PAYLOAD bytes); its size, 0 for none
@@ -761,7 +750,7 @@ static UINT NoiseHubTake(NOISEHUB_PATH *p, bool sender, UCHAR *buf, UINT timeout
 
 	while (true)
 	{
-		if (sender && p->Client != NULL)
+		if (sender)
 		{
 			UINT size = 0;
 			UINT ret = TransportNoiseReceive(p->Client, buf, NOISE_MAX_PAYLOAD, &size, NOISEHUB_POLL);
@@ -777,7 +766,7 @@ static UINT NoiseHubTake(NOISEHUB_PATH *p, bool sender, UCHAR *buf, UINT timeout
 		}
 		else
 		{
-			SESSION *s = (sender ? p->Sender : p->Receiver);
+			SESSION *s = p->Receiver;
 			void *data = NULL;
 			UINT size = s->PacketAdapter->GetNextPacket(s, &data);
 
@@ -975,30 +964,9 @@ static void NoiseHubGolden(NOISEHUB_CTX *ctx, char *report, char *what)
 	NoiseHubCheck(ctx, h.NumFail == 0, what, "it differs from the golden file %s (the diff is above)", NOISEHUB_GOLDEN);
 }
 
-// The oracle: on NOISEHUB_O an in-process sender with the user, group and policy of the Session s of a Login, and a
-// receiver; its report is the one that every path must give
-static void NoiseHubOracle(NOISEHUB_CTX *ctx, SESSION *s)
-{
-	NOISEHUB_PATH p;
-	bool complete = false;
-
-	Print("[the oracle: an in-process session of the SE-VPN kind on %s]\n", NOISEHUB_HUB_O);
-
-	Zero(&p, sizeof(p));
-	p.Hub = ctx->HubO;
-	p.Sender = NoiseHubNewSession(ctx, ctx->HubO, s->Username, s->UserNameReal, s->GroupName, s->Policy);
-	p.Receiver = NoiseHubNewSession(ctx, ctx->HubO, NOISEHUB_RECEIVER, NOISEHUB_RECEIVER, "", GetDefaultPolicy());
-
-	ctx->Oracle = NoiseHubReport(&p, &complete);
-	NoiseHubCheck(ctx, complete, "oracle: every case ends with its marker", "a marker did not come within %u ms", NOISEHUB_TIMEOUT);
-	NoiseHubGolden(ctx, ctx->Oracle, "oracle: the Hub output matches the golden file " NOISEHUB_GOLDEN);
-
-	NoiseHubFreeSession(p.Receiver);
-	NoiseHubFreeSession(p.Sender);
-}
-
 // The cases on the Noise path over one transport: a client logs in to NOISEHUB_N, its frames go through the Session of
-// its Tunnel, and the report must be the oracle's and the golden file. The Session ends once the client closes.
+// its Tunnel, and the report must be the golden file, the Hub output of the oracle at the last run against it. The
+// Session ends once the client closes.
 static void NoiseHubFrames(NOISEHUB_CTX *ctx, TRANSPORT *client, char *address, char *what)
 {
 	char tmp[MAX_SIZE];
@@ -1012,11 +980,6 @@ static void NoiseHubFrames(NOISEHUB_CTX *ctx, TRANSPORT *client, char *address, 
 	{
 		NOISEHUB_PATH p;
 
-		if (ctx->Oracle == NULL)
-		{
-			NoiseHubOracle(ctx, s);
-		}
-
 		Zero(&p, sizeof(p));
 		p.Hub = ctx->HubN;
 		p.Client = n;
@@ -1028,13 +991,7 @@ static void NoiseHubFrames(NOISEHUB_CTX *ctx, TRANSPORT *client, char *address, 
 		Format(tmp, sizeof(tmp), "%s: every case ends with its marker", what);
 		NoiseHubCheck(ctx, complete, tmp, "a marker did not come within %u ms", NOISEHUB_TIMEOUT);
 
-		Format(tmp, sizeof(tmp), "%s: the Hub output of the Noise path is the oracle's, byte for byte: forwarding, MAC learning, access list", what);
-		if (NoiseHubCheck(ctx, ctx->Oracle != NULL && StrCmp(report, ctx->Oracle) == 0, tmp, "the reports differ") == false)
-		{
-			Print("--- the oracle's report:\n%s--- the report of the Noise path:\n%s", ctx->Oracle != NULL ? ctx->Oracle : "", report);
-		}
-
-		Format(tmp, sizeof(tmp), "%s: the Hub output of the Noise path matches the golden file %s", what, NOISEHUB_GOLDEN);
+		Format(tmp, sizeof(tmp), "%s: the Hub output of the Noise path matches the golden file %s, byte for byte: forwarding, MAC learning, access list", what, NOISEHUB_GOLDEN);
 		NoiseHubGolden(ctx, report, tmp);
 
 		Free(report);
@@ -1396,7 +1353,7 @@ static void NoiseHubTls(NOISEHUB_CTX *ctx)
 	}
 }
 
-RANZ_TEST("noisehub", noisehub_test, "Noise to Hub: the L2 frames of a Noise session enter a Hub as a Session of type CONNECTION_NOISE and come out as the oracle's (golden family noisehub); a Tunnel of four connections keeps each flow in order and spreads the flows over all four.");
+RANZ_TEST("noisehub", noisehub_test, "Noise to Hub: the L2 frames of a Noise session enter a Hub as a Session of type CONNECTION_NOISE and come out as the golden file of the Hub output (golden family noisehub); a Tunnel of four connections keeps each flow in order and spreads the flows over all four.");
 void noisehub_test(UINT num, char **arg)
 {
 	NOISEHUB_CTX *ctx = ZeroMalloc(sizeof(NOISEHUB_CTX));
@@ -1404,7 +1361,7 @@ void noisehub_test(UINT num, char **arg)
 	HANDLE done = CreateEventW(NULL, TRUE, FALSE, NULL);
 	HANDLE watchdog = (done != NULL ? CreateThread(NULL, 0, NoiseHubWatchdog, done, 0, NULL) : NULL);
 
-	Print("Noise-to-Hub test: the L2 frames of a Noise session of the new core in the existing Hub, against the oracle\n");
+	Print("Noise-to-Hub test: the L2 frames of a Noise session of the new core in the existing Hub, against the golden file\n");
 
 	HarnessGetFamilyDirs("noisehub", ctx->OutDir, sizeof(ctx->OutDir), ctx->GoldenDir, sizeof(ctx->GoldenDir), &ctx->Update);
 	MakeDirEx(ctx->OutDir);
@@ -1421,9 +1378,8 @@ void noisehub_test(UINT num, char **arg)
 		NodeStart(ctx->Node);
 		ctx->IdleThread = NewThread(NoiseHubIdleThread, NULL);
 		ctx->HubN = NoiseHubPrepare(ctx, NOISEHUB_HUB_N);
-		ctx->HubO = NoiseHubPrepare(ctx, NOISEHUB_HUB_O);
 
-		if (NoiseHubCheck(ctx, ctx->HubN != NULL && ctx->HubO != NULL, "the server role of the node runs both Hubs", "NodeGetHub failed"))
+		if (NoiseHubCheck(ctx, ctx->HubN != NULL, "the server role of the node runs the Hub", "NodeGetHub failed"))
 		{
 			// The bound loopback transport: each stream has a binding of its own, as an outer TLS or QUIC session gives
 			TRANSPORT *loopback = TransportLoopbackNew("loopback", 0, true);
@@ -1434,7 +1390,6 @@ void noisehub_test(UINT num, char **arg)
 			NoiseHubTls(ctx);
 		}
 
-		ReleaseHub(ctx->HubO);
 		ReleaseHub(ctx->HubN);
 		NodeStop(ctx->Node);
 		FreeNode(ctx->Node);
@@ -1444,7 +1399,6 @@ void noisehub_test(UINT num, char **arg)
 
 	Zero(ctx->ServerKey, sizeof(ctx->ServerKey));
 	Zero(ctx->ClientKey, sizeof(ctx->ClientKey));
-	Free(ctx->Oracle);
 
 	if (watchdog != NULL)
 	{

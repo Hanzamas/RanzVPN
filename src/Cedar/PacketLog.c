@@ -3,9 +3,8 @@
 
 #include "PacketLog.h"
 
-#include "Admin.h"
+#include "Hub.h"
 #include "LogWriter.h"
-#include "Server.h"
 
 #include "Mayaqua/DNS.h"
 #include "Mayaqua/Internat.h"
@@ -23,8 +22,6 @@ bool PacketLog(HUB *hub, SESSION *src_session, SESSION *dest_session, PKT *packe
 	HUB_OPTION *opt = NULL;
 	if (hub == NULL || src_session == NULL || packet == NULL)
 		return true;
-
-	SERVER *s = hub->Cedar->Server;
 
 	if (hub->LogSetting.SavePacketLog == false)
 		return true;
@@ -49,8 +46,6 @@ bool PacketLog(HUB *hub, SESSION *src_session, SESSION *dest_session, PKT *packe
 		if (CheckMaxLoggedPacketsPerMinute(src_session, opt->MaxLoggedPacketsPerMinute, now) == false)
 			return false;
 	}
-
-	UINT syslog_setting = SiGetSysLogSaveStatus(s);
 
 	PKT *p = ClonePacket(packet, level == PACKET_LOG_ALL ? true : false);
 
@@ -89,40 +84,7 @@ bool PacketLog(HUB *hub, SESSION *src_session, SESSION *dest_session, PKT *packe
 
 	Inc(src_session->LoggingRecordCount);
 
-	if (syslog_setting == SYSLOG_SERVER_AND_HUB_ALL_LOG) {
-		RECORD rec;
-		wchar_t tmp[1024];
-		bool self_syslog_packet = false;
-
-		if (packet->TypeL3 == L3_IPV4 && packet->TypeL4 == L4_UDP) {
-			if (s->Syslog != NULL) {
-				Lock(s->Syslog->lock);
-				{
-					if (IsZeroIP(&s->Syslog->DestIp) == false && s->Syslog->DestPort != 0) {
-						if (IPToUINT(&s->Syslog->DestIp) == packet->L3.IPv4Header->DstIP) {
-							// DstPort is a 16-bit field in network order, DestPort a port in host order
-							if (Endian16(packet->L4.UDPHeader->DstPort) == (USHORT)s->Syslog->DestPort)
-								self_syslog_packet = true;
-						}
-					}
-				}
-				Unlock(s->Syslog->lock);
-			}
-		}
-
-		Zero(&rec, sizeof(rec));
-		rec.Data = pl;
-
-		char *buf = PacketLogParseProc(&rec);
-		StrToUni(tmp, sizeof(tmp), buf);
-
-		if (self_syslog_packet == false)
-			SiWriteSysLog(s, "PACKET_LOG", hub->Name, tmp);
-
-		Free(buf);
-	} else {
-		InsertRecord(hub->PacketLogger, pl, PacketLogParseProc, PacketLogFreeProc, true);
-	}
+	InsertRecord(hub->PacketLogger, pl, PacketLogParseProc, PacketLogFreeProc, true);
 
 	return true;
 }

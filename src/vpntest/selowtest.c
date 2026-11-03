@@ -1,23 +1,21 @@
 // selowtest.c
 // Named SeLow test of vpntest ("selow" command, FIX-2 #98)
 //
-// Pins the SeLow user-mode side of the Local Bridge (SeLowUser.c, BridgeWin32.c):
-// - Asking whether SeLow is supported (SuInitEx, Win32EthIsSuSupported, IsBridgeSupported) never
-//   reaches the driver install step, leaves the SeLow service as it was, and does not use up the one
-//   install attempt of the process.
-// - No Local Bridge support is claimed where no SeLow driver package exists (any architecture but
-//   x64, such as arm64): SuIsSupportedOs and IsBridgeSupported are false there, elevated or not.
-// - Creating a Local Bridge (OpenEth, and Win32EthInstallSu of the AddLocalBridge RPC) and listing
-//   the devices for one (GetEthList, the EnumEthernet RPC) still reach the install step when the
-//   SeLow device is missing, at most once per process.
+// Pins the user-mode side of SeLow (SeLowUser.c):
+// - Asking whether SeLow is usable (SuInitEx) never reaches the driver install step, leaves the
+//   SeLow service as it was, and does not use up the one install attempt of the process.
+// - SeLow is not usable where no SeLow driver package exists (any architecture but x64, such as
+//   arm64): SuIsSupportedOs is false there, elevated or not.
+// - The install path of SeLow (SuInitInstall) still reaches the install step when the SeLow device
+//   is missing, at most once per process.
 // - The adapter-list read (SuReadAdapterInfoList) accepts a list with SL_SIGNATURE and refuses a
 //   wrong signature or a failed read. SuGetAdapterList frees its list on a failed read and leaves
 //   the device handle open (SuFree closes it).
-// - The Local Bridge lists an interface by its type data (MsIsBridgeableIf), not by title words: a
-//   wired NIC is listed whatever it is called, a tunnel, PPP, Wi-Fi or RAS WAN Miniport interface
-//   is hidden whatever its localized title says.
-// - The net-class table of the Local Bridge (MsNetClassEnum, one SetupAPI pass) agrees with the
-//   Class and Enum registry keys for every present network adapter, and has at least one.
+// - An interface is bridgeable by its type data (MsIsBridgeableIf), not by title words: a wired NIC
+//   is whatever it is called, a tunnel, PPP, Wi-Fi or RAS WAN Miniport interface is not whatever
+//   its localized title says.
+// - The net-class table (MsNetClassEnum, one SetupAPI pass) agrees with the Class and Enum registry
+//   keys for every present network adapter, and has at least one.
 // The install step is replaced by a counting stub (SuSetInstallProc), so the test never installs a
 // driver. The install checks run only on a machine without SeLow, such as the CI runners; elsewhere
 // they are skipped. Prints "SELOW TEST OK" only when every check passes, and frees everything it
@@ -25,7 +23,6 @@
 
 #include "testlist.h"
 
-#include "Cedar/BridgeWin32.h"
 #include "Cedar/SeLowUser.h"
 
 #include "Mayaqua/FileIO.h"
@@ -39,7 +36,6 @@
 #define	SELOWTEST_FILE_NAME			L"selowtest_list.tmp"			// Adapter list file next to vpntest.exe
 #define	SELOWTEST_VERSION			0x1234							// SeLowVersion written to the file
 #define	SELOWTEST_BAD_SIGNATURE		0xDEADBEEE						// A signature that is not SL_SIGNATURE
-#define	SELOWTEST_DEVICE			"selowtest(ID=0000000001)"		// Local Bridge device name that does not exist
 
 // Run state of the test
 typedef struct SELOWTEST_CTX
@@ -199,15 +195,16 @@ static void SelowTestRead(SELOWTEST_CTX *ctx, wchar_t *path)
 	Free(list);
 }
 
-// Asking whether SeLow is supported: never reaches the install step and leaves the SeLow service
-// as it was. Returns whether SeLow is usable on this machine
+// Asking whether SeLow is usable (SuInitEx opens the device and reads its adapter list): never
+// reaches the install step and leaves the SeLow service as it was. Returns whether SeLow is usable
+// on this machine
 static bool SelowTestQuery(SELOWTEST_CTX *ctx)
 {
 	bool running_before = MsIsServiceRunning(SL_PROTOCOL_NAME);
 
-	bool supported = Win32EthIsSuSupported();
-	Win32EthIsSuSupported();
-	IsBridgeSupported();
+	SU *su = SuInitEx(0);
+	bool supported = (su != NULL);
+	SuFree(su);
 	SuFree(SuInitEx(0));
 
 	bool running_after = MsIsServiceRunning(SL_PROTOCOL_NAME);
@@ -218,27 +215,24 @@ static bool SelowTestQuery(SELOWTEST_CTX *ctx)
 		"running %u before, %u after", running_before, running_after);
 
 #if defined(_M_ARM64)
-	// No SeLow driver package for this architecture (arm64): no support claim, even when elevated
+	// No SeLow driver package for this architecture (arm64): SeLow is not usable, even when elevated
 	{
 		bool os = SuIsSupportedOs();
-		bool bridge = IsBridgeSupported();
 
-		SelowTestCheck(ctx, os == false && bridge == false && supported == false,
-			"No Local Bridge support is claimed where no SeLow driver package exists",
-			"SuIsSupportedOs %u, IsBridgeSupported %u, Win32EthIsSuSupported %u", os, bridge, supported);
+		SelowTestCheck(ctx, os == false && supported == false,
+			"SeLow is not usable where no SeLow driver package exists",
+			"SuIsSupportedOs %u, SuInitEx %u", os, supported);
 	}
 #endif	// defined(_M_ARM64)
 
 	return supported;
 }
 
-// Creating a Local Bridge, and listing the devices for one, reach the install step when the
-// SeLow device is missing
+// The install path of SeLow (SuInitInstall) reaches the install step when the SeLow device is
+// missing, at most once per process
 static void SelowTestInstall(SELOWTEST_CTX *ctx, bool supported)
 {
-	ETH *e;
-	TOKEN_LIST *t;
-	bool ok;
+	SU *su;
 
 	if (supported)
 	{
@@ -249,11 +243,12 @@ static void SelowTestInstall(SELOWTEST_CTX *ctx, bool supported)
 	if (SuIsSupportedOs() == false)
 	{
 #if defined(_M_ARM64)
-		// No SeLow package exists for arm64: even adding a Local Bridge never reaches the install step
+		// No SeLow package exists for arm64: even the install path never reaches the install step
 		selowtest_num_install = 0;
-		ok = Win32EthInstallSu();
-		SelowTestCheck(ctx, ok == false && selowtest_num_install == 0, "On arm64, adding a Local Bridge never reaches the driver install",
-			"returned %u, install step ran %u times", ok, selowtest_num_install);
+		su = SuInitInstall();
+		SelowTestCheck(ctx, su == NULL && selowtest_num_install == 0, "On arm64, the install path of SeLow never reaches the driver install",
+			"SuInitInstall returned %s, install step ran %u times", su == NULL ? "NULL" : "an SU", selowtest_num_install);
+		SuFree(su);
 #endif	// defined(_M_ARM64)
 		Print("  [SKIP] Install step: SeLow is not supported (arm64, or the DisableSeLow registry value)\n");
 		return;
@@ -267,34 +262,19 @@ static void SelowTestInstall(SELOWTEST_CTX *ctx, bool supported)
 
 	// The queries before did not use up the one install attempt of the process
 	selowtest_num_install = 0;
-	e = OpenEth(SELOWTEST_DEVICE);
-	SelowTestCheck(ctx, e == NULL && selowtest_num_install == 1, "Creating a Local Bridge without SeLow reaches the driver install",
-		"OpenEth returned %s, install step ran %u times", e == NULL ? "NULL" : "an ETH", selowtest_num_install);
-	CloseEth(e);
+	su = SuInitInstall();
+	SelowTestCheck(ctx, su == NULL && selowtest_num_install == 1, "The install path of SeLow without its device reaches the driver install",
+		"SuInitInstall returned %s, install step ran %u times", su == NULL ? "NULL" : "an SU", selowtest_num_install);
+	SuFree(su);
 
 	// As before, the install step runs at most once per process
-	e = OpenEth(SELOWTEST_DEVICE);
-	SelowTestCheck(ctx, e == NULL && selowtest_num_install == 1, "The driver install runs at most once per process",
-		"OpenEth returned %s, install step ran %u times", e == NULL ? "NULL" : "an ETH", selowtest_num_install);
-	CloseEth(e);
-
-	// Listing the devices for a Local Bridge (EnumEthernet) is the first step of creating one
-	SuSetInstallProc(SelowTestInstallProc);
-	selowtest_num_install = 0;
-	t = GetEthList();
-	SelowTestCheck(ctx, t == NULL && selowtest_num_install == 1, "Listing the devices for a Local Bridge without SeLow reaches the driver install",
-		"GetEthList returned %s, install step ran %u times", t == NULL ? "NULL" : "a list", selowtest_num_install);
-	FreeToken(t);
-
-	// The AddLocalBridge RPC checks SeLow through Win32EthInstallSu
-	SuSetInstallProc(SelowTestInstallProc);
-	selowtest_num_install = 0;
-	ok = Win32EthInstallSu();
-	SelowTestCheck(ctx, ok == false && selowtest_num_install == 1, "Adding a Local Bridge without SeLow (Win32EthInstallSu) reaches the driver install",
-		"returned %u, install step ran %u times", ok, selowtest_num_install);
+	su = SuInitInstall();
+	SelowTestCheck(ctx, su == NULL && selowtest_num_install == 1, "The driver install runs at most once per process",
+		"SuInitInstall returned %s, install step ran %u times", su == NULL ? "NULL" : "an SU", selowtest_num_install);
+	SuFree(su);
 }
 
-// Which interfaces the Local Bridge lists unless it shows every interface (FND-182)
+// Which interfaces are bridgeable (FND-182)
 static void SelowTestClass(SELOWTEST_CTX *ctx)
 {
 	SelowTestCheck(ctx, MsIsBridgeableIf(IF_TYPE_ETHERNET_CSMACD, NdisMedium802_3, NdisPhysicalMedium802_3, true),
@@ -311,7 +291,7 @@ static void SelowTestClass(SELOWTEST_CTX *ctx)
 		"A software interface without a physical medium (WAN Miniport) is hidden", "listed");
 }
 
-// The net-class table of the Local Bridge (MsNetClassEnum, FND-174): one SetupAPI pass over the
+// The net-class table (MsNetClassEnum, FND-174): one SetupAPI pass over the
 // present network adapters. Every entry agrees with the registry that the former lookup walked: its
 // Class key holds its NetCfgInstanceId, and the Enum key of its device instance id names the same
 // driver key. Every runner has at least one present network adapter
@@ -352,7 +332,7 @@ static void SelowTestNetClass(SELOWTEST_CTX *ctx)
 }
 
 // selow: read-only capability query, explicit driver install, one adapter-list read (FIX-2 #98)
-RANZ_TEST("selow", selow_test, "SeLow: the capability query installs nothing, a Local Bridge reaches the driver install, one adapter-list read.");
+RANZ_TEST("selow", selow_test, "SeLow: the capability query installs nothing, the install path reaches the driver install, one adapter-list read.");
 void selow_test(UINT num, char **arg)
 {
 	SELOWTEST_CTX ctx;

@@ -24,7 +24,7 @@
 //   Network carries it, an L3 Network and a Network without one do not, and a delta changes it.
 // Print "L2SECURITY TEST OK" only when every check passes.
 
-#include "harness_int.h"
+#include "golden.h"
 #include "testlist.h"
 
 #include "Mayaqua/FileIO.h"

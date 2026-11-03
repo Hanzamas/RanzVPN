@@ -1,7 +1,7 @@
 """Split the god files of Ranz VPN by responsibility, as tools/split/split-map.json says (issue #29).
 
 Usage (from the repository root):
-    python -I tools/split/apply_split.py [--map FILE] [--module Server] [--dry-run] [--explain]
+    python -I tools/split/apply_split.py [--map FILE] [--module Hub] [--dry-run] [--explain]
                                          [--commit [--linkage]] [--drift-json FILE] [--reference REV]
 
 What it does, for each module of the map:

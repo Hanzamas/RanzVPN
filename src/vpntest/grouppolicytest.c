@@ -91,7 +91,6 @@
 //   dropped as an unknown group and counted as refused.
 // Print "GROUPPOLICY TEST OK" only when every check passes.
 
-#include "harness_int.h"
 #include "testlist.h"
 
 #include "Cedar/ConfigStore.h"

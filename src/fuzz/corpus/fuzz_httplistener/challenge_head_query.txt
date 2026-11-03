@@ -1,3 +1,0 @@
-HEAD /.well-known/acme-challenge/fuzz-token_0123456789abcdef?x=1 HTTP/1.1
-Host: example.test
-

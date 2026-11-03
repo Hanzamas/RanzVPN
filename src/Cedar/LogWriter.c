@@ -41,8 +41,8 @@ void LogMapControlChars(UCHAR *s, UINT size) {
 			s[i] = '?';
 }
 
-// Format the text of the string table entry name with args into buf (size bytes): the one place SLog, HLog, ALog
-// and ELog build their log line
+// Format the text of the string table entry name with args into buf (size bytes): the one place HLog and ELog build
+// their log line
 void LogFormat(wchar_t *buf, UINT size, char *name, va_list args) {
 	UniFormatArgs(buf, size, _UU(name), args);
 }

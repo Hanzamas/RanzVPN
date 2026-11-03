@@ -354,204 +354,6 @@ bool HasIPv6Address() {
 	return ret;
 }
 
-// Certificates of the chain_certs folder next to the exe, deduplicated by SHA-1 digest. The cache is scanned
-// once and again only after the folder changed (a change notification) or InvalidateChainCertCache() was called
-static LOCK *chain_cert_lock = NULL;
-static LIST *chain_cert_list = NULL;                    // X of the folder, each digest once
-static HANDLE chain_cert_notify = INVALID_HANDLE_VALUE; // Change notification of the folder
-static bool chain_cert_valid = false;                   // chain_cert_list is current
-static UINT chain_cert_scans = 0;                       // Scans of the folder so far
-
-// Get the folder of the chain certificates
-static void GetChainCertDirW(wchar_t *dirname, UINT size) {
-	wchar_t exedir[MAX_SIZE];
-
-	GetExeDirW(exedir, sizeof(exedir));
-
-	CombinePathW(dirname, size, exedir, L"chain_certs");
-}
-
-// Create the folder of the chain certificates (once, at server start)
-void PrepareChainCertDir() {
-	wchar_t dirname[MAX_SIZE];
-
-	GetChainCertDirW(dirname, sizeof(dirname));
-
-	MakeDirExW(dirname);
-}
-
-// Mark the cached chain certificates as out of date: the next connection scans the folder again
-void InvalidateChainCertCache() {
-	if (chain_cert_lock == NULL)
-		return;
-
-	Lock(chain_cert_lock);
-	{
-		chain_cert_valid = false;
-	}
-	Unlock(chain_cert_lock);
-}
-
-// Number of scans of the chain_certs folder so far
-UINT GetChainCertScanCount() {
-	UINT ret;
-
-	if (chain_cert_lock == NULL)
-		return 0;
-
-	Lock(chain_cert_lock);
-	{
-		ret = chain_cert_scans;
-	}
-	Unlock(chain_cert_lock);
-
-	return ret;
-}
-
-// Release the cache and the change notification
-static void FreeChainCertCache() {
-	if (chain_cert_list != NULL) {
-		FreeXList(chain_cert_list);
-		chain_cert_list = NULL;
-	}
-
-	if (chain_cert_notify != INVALID_HANDLE_VALUE) {
-		FindCloseChangeNotification(chain_cert_notify);
-		chain_cert_notify = INVALID_HANDLE_VALUE;
-	}
-
-	chain_cert_valid = false;
-}
-
-// Read the folder into the cache. chain_cert_lock is held
-static void ScanChainCertDir(wchar_t *dirname) {
-	LIST *o = NewListFast(NULL);
-	LIST *hashes = NewListFast(NULL);
-
-	DIRLIST *dir = EnumDirW(dirname);
-
-	if (dir != NULL) {
-		for (UINT i = 0; i < dir->NumFiles; i++) {
-			DIRENT *e = dir->File[i];
-
-			if (e->Folder == false) {
-				wchar_t tmp[MAX_SIZE];
-
-				CombinePathW(tmp, sizeof(tmp), dirname, e->FileNameW);
-
-				X *x = FileToXW(tmp);
-
-				if (x != NULL) {
-					bool exists = false;
-					UCHAR hash[SHA1_SIZE];
-
-					GetXDigest(x, hash, true);
-
-					for (UINT j = 0; j < LIST_NUM(hashes); j++) {
-						UCHAR *hash2 = LIST_DATA(hashes, j);
-
-						if (Cmp(hash, hash2, SHA1_SIZE) == 0) {
-							exists = true;
-							break;
-						}
-					}
-
-					if (exists == false) {
-						Add(hashes, Clone(hash, SHA1_SIZE));
-						Add(o, x);
-					} else {
-						FreeX(x);
-					}
-				}
-			}
-		}
-
-		FreeDir(dir);
-	}
-
-	for (UINT i = 0; i < LIST_NUM(hashes); i++)
-		Free(LIST_DATA(hashes, i));
-
-	ReleaseList(hashes);
-
-	chain_cert_list = o;
-	chain_cert_scans++;
-}
-
-// Bring the cache up to date: read the folder again when it changed or was invalidated. chain_cert_lock is held
-static void RefreshChainCertCache() {
-	if (chain_cert_valid && chain_cert_notify != INVALID_HANDLE_VALUE &&
-	    WaitForSingleObject(chain_cert_notify, 0) == WAIT_OBJECT_0) {
-		// The folder changed: arm the notification again before the scan so that a change during it is seen
-		if (FindNextChangeNotification(chain_cert_notify) == false) {
-			FindCloseChangeNotification(chain_cert_notify);
-			chain_cert_notify = INVALID_HANDLE_VALUE;
-		}
-
-		chain_cert_valid = false;
-	}
-
-	if (chain_cert_valid == false) {
-		wchar_t dirname[MAX_SIZE];
-
-		GetChainCertDirW(dirname, sizeof(dirname));
-
-		if (chain_cert_list != NULL) {
-			FreeXList(chain_cert_list);
-			chain_cert_list = NULL;
-		}
-
-		// The notification is opened before the scan so that no change between them is lost
-		if (chain_cert_notify == INVALID_HANDLE_VALUE)
-			chain_cert_notify = FindFirstChangeNotificationW(dirname, FALSE,
-			                                                 FILE_NOTIFY_CHANGE_FILE_NAME | FILE_NOTIFY_CHANGE_SIZE | FILE_NOTIFY_CHANGE_LAST_WRITE);
-
-		ScanChainCertDir(dirname);
-
-		// Without a notification (no folder) every call scans
-		chain_cert_valid = (chain_cert_notify != INVALID_HANDLE_VALUE);
-	}
-}
-
-// Generation of the chain certificates: it changes each time the cached list is read again. The cache is brought
-// up to date first, so a context built after this call has the certificates of this generation (or newer ones)
-UINT GetChainCertGeneration() {
-	UINT ret;
-
-	if (chain_cert_lock == NULL)
-		return 0;
-
-	Lock(chain_cert_lock);
-	{
-		RefreshChainCertCache();
-
-		ret = chain_cert_scans;
-	}
-	Unlock(chain_cert_lock);
-
-	return ret;
-}
-
-// Add the certificates of the chain_certs folder to the chain of ctx. Returns the number added
-UINT AddChainSslCertOnDirectory(struct ssl_ctx_st *ctx) {
-	UINT ret = 0;
-
-	if (ctx == NULL || chain_cert_lock == NULL)
-		return 0;
-
-	Lock(chain_cert_lock);
-	{
-		RefreshChainCertCache();
-
-		for (UINT i = 0; i < LIST_NUM(chain_cert_list); i++)
-			if (AddChainSslCert(ctx, LIST_DATA(chain_cert_list, i)))
-				ret++;
-	}
-	Unlock(chain_cert_lock);
-
-	return ret;
-}
-
 // Drain the OpenSSL error queue of a failed SSL_accept or SSL_connect into the ssl_err code
 static void SslHandshakeError(bool server_mode, UINT *ssl_err) {
 	unsigned long err;
@@ -612,28 +414,22 @@ static void AddSslRootCerts(X509_STORE *store) {
 			X509_STORE_add_cert(store, sk_X509_value(ssl_root_certs, i));
 }
 
-// A TLS start needs a connected socket that does not listen, a key with a certificate, and a server socket for a shared server context
-static bool TlsCanStart(const SOCK *sock, const SSL_CTX *server_ctx, const X *x, const K *priv) {
+// A TLS start needs a connected socket that does not listen and a key with a certificate
+static bool TlsCanStart(const SOCK *sock, const X *x, const K *priv) {
 	if (sock->Connected == false || sock->socket == INVALID_SOCKET ||
 	    sock->ListenMode != false)
 		return false;
 	if (x != NULL && priv == NULL)
 		return false;
-	if (server_ctx != NULL && sock->ServerMode == false)
-		return false;
 
 	return true;
 }
 
-// The context of this TLS start: the shared server context (a reference of this call), a server context built from x, priv
-// and chain, or a client context. NULL when it cannot be built
-static SSL_CTX *TlsGetCtx(const SOCK *sock, SSL_CTX *server_ctx, X *x, K *priv, LIST *chain) {
-	if (server_ctx != NULL) {
-		ShareSSLCtx(server_ctx);
-		return server_ctx;
-	}
+// The context of this TLS start: a server context built from x, priv and chain, or a client context. NULL when it
+// cannot be built
+static SSL_CTX *TlsGetCtx(const SOCK *sock, X *x, K *priv, LIST *chain) {
 	if (sock->ServerMode)
-		return NewServerSSLCtx(x, priv, chain, NULL, NULL);
+		return NewServerSSLCtx(x, priv, chain);
 
 	return NewSSLCtx(false);
 }
@@ -761,21 +557,13 @@ static bool TlsCheckPeer(SOCK *sock, long ssl_verify_err, const char *sni_hostna
 	return false;
 }
 
-static bool StartSSLMain(SOCK *sock, struct ssl_ctx_st *server_ctx, X *x, K *priv, LIST *chain, char *sni_hostname, SSL_VERIFY_OPTION *ssl_option, UINT *ssl_err);
+static bool StartSSLMain(SOCK *sock, X *x, K *priv, LIST *chain, char *sni_hostname, SSL_VERIFY_OPTION *ssl_option, UINT *ssl_err);
 
 bool StartSSLEx3(SOCK *sock, X *x, K *priv, LIST *chain, char *sni_hostname, SSL_VERIFY_OPTION *ssl_option, UINT *ssl_err) {
-	return StartSSLMain(sock, NULL, x, priv, chain, sni_hostname, ssl_option, ssl_err);
+	return StartSSLMain(sock, x, priv, chain, sni_hostname, ssl_option, ssl_err);
 }
-// Start TLS on an accepted connection with a server context that is shared by many connections (NewServerSSLCtx).
-// The caller keeps its own reference of ctx
-bool StartSSLServer(SOCK *sock, struct ssl_ctx_st *ctx, UINT *ssl_err) {
-	if (ctx == NULL)
-		return false;
-
-	return StartSSLMain(sock, ctx, NULL, NULL, NULL, NULL, NULL, ssl_err);
-}
-// server_ctx NULL: a context of this call (a client context, or a server one built from x, priv and chain)
-static bool StartSSLMain(SOCK *sock, struct ssl_ctx_st *server_ctx, X *x, K *priv, LIST *chain, char *sni_hostname, SSL_VERIFY_OPTION *ssl_option, UINT *ssl_err) {
+// A context of this call: a client context, or a server one built from x, priv and chain
+static bool StartSSLMain(SOCK *sock, X *x, K *priv, LIST *chain, char *sni_hostname, SSL_VERIFY_OPTION *ssl_option, UINT *ssl_err) {
 	SSL_CTX *ssl_ctx;
 	UINT dummy_err = 0;
 	long ssl_verify_err;
@@ -784,7 +572,7 @@ static bool StartSSLMain(SOCK *sock, struct ssl_ctx_st *server_ctx, X *x, K *pri
 		return false;
 	if (ssl_err == NULL)
 		ssl_err = &dummy_err;
-	if (TlsCanStart(sock, server_ctx, x, priv) == false)
+	if (TlsCanStart(sock, x, priv) == false)
 		return false;
 
 	if (sock->SecureMode)
@@ -796,7 +584,7 @@ static bool StartSSLMain(SOCK *sock, struct ssl_ctx_st *server_ctx, X *x, K *pri
 		return true;
 	}
 
-	ssl_ctx = TlsGetCtx(sock, server_ctx, x, priv, chain);
+	ssl_ctx = TlsGetCtx(sock, x, priv, chain);
 	if (ssl_ctx == NULL)
 		goto FAIL;
 
@@ -1090,8 +878,6 @@ void InitNetwork() {
 	DnsInit();
 
 	local_mac_list_lock = NewLock();
-
-	chain_cert_lock = NewLock();
 }
 
 COUNTER *GetNumTcpConnectionsCounter() {
@@ -1243,10 +1029,6 @@ void FreeNetwork() {
 	ssl_root_certs = NULL;
 
 	FreeWaitThread();
-
-	FreeChainCertCache();
-	DeleteLock(chain_cert_lock);
-	chain_cert_lock = NULL;
 
 	DnsFree();
 

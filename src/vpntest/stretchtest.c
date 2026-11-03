@@ -34,7 +34,6 @@
 //   1 and host 2, and the leaves keep them.
 // Print "STRETCH TEST OK" only when every check passes. .github/scripts/bgp-spike.ps1 runs it, with ranz.exe next to vpntest.
 
-#include "harness_int.h"
 #include "testlist.h"
 
 #include "Cedar/ConfigStore.h"

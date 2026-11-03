@@ -32,7 +32,6 @@
 //   its timeouts.
 // Prints "KMTEST TEST OK" only when every check passes.
 
-#include "harness_int.h"
 #include "testlist.h"
 
 #include "Cedar/ConfigStore.h"

@@ -17,7 +17,6 @@
 // - A Generation without the leaks: the packets that the leaks carried go nowhere.
 // Print "LEAK TEST OK" only when every check passes.
 
-#include "harness_int.h"
 #include "testlist.h"
 
 #include "Cedar/ConfigStore.h"

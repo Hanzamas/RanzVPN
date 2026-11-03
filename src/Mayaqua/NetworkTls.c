@@ -1,5 +1,5 @@
 // NetworkTls.c
-// TLS: the server SSL context, SSL context sharing and the cipher list, Recv and Send with the TLS record send and receive behind them, and the SNI parser
+// TLS: the server SSL context and the cipher list, Recv and Send with the TLS record send and receive behind them, and the SNI parser
 
 #include "Network.h"
 
@@ -40,39 +40,17 @@ bool AddChainSslCert(struct ssl_ctx_st *ctx, X *x) {
 	return true;
 }
 
-// A server context with every setting that does not depend on the connection applied: version flags, security
-// level, certificate chain, certificate and key, cipher list and groups. x and priv may be NULL (no certificate),
-// chain NULL takes the certificates of the chain_certs folder, cipher_list NULL keeps the OpenSSL default and
-// settings NULL overrides nothing. Connections take the context by reference (ShareSSLCtx, FreeSSLCtx)
-struct ssl_ctx_st *NewServerSSLCtx(X *x, K *priv, LIST *chain, char *cipher_list, SSL_ACCEPT_SETTINGS *settings) {
+// A server context with every setting that does not depend on the connection applied: certificate chain,
+// certificate and key, and groups. x and priv may be NULL (no certificate), chain NULL adds no chain
+struct ssl_ctx_st *NewServerSSLCtx(X *x, K *priv, LIST *chain) {
 	SSL_CTX *ctx;
-	SSL_ACCEPT_SETTINGS none;
 	bool use_cert = (x != NULL && priv != NULL && CheckXandK(x, priv));
 
 	ctx = NewSSLCtx(true);
 	if (ctx == NULL)
 		return NULL;
 
-	if (settings == NULL) {
-		Zero(&none, sizeof(none));
-		settings = &none;
-	}
-
-	if (settings->Tls_Disable1_0)
-		SSL_CTX_set_options(ctx, SSL_OP_NO_TLSv1);
-
-	if (settings->Tls_Disable1_1)
-		SSL_CTX_set_options(ctx, SSL_OP_NO_TLSv1_1);
-
-	if (settings->Tls_Disable1_2)
-		SSL_CTX_set_options(ctx, SSL_OP_NO_TLSv1_2);
-
-	if (settings->Tls_Disable1_3)
-		SSL_CTX_set_options(ctx, SSL_OP_NO_TLSv1_3);
-
-	if (chain == NULL) {
-		AddChainSslCertOnDirectory(ctx);
-	} else {
+	if (chain != NULL) {
 		LockList(chain);
 		{
 			for (UINT i = 0; i < LIST_NUM(chain); i++)
@@ -81,17 +59,9 @@ struct ssl_ctx_st *NewServerSSLCtx(X *x, K *priv, LIST *chain, char *cipher_list
 		UnlockList(chain);
 	}
 
-	if (settings->Override_Security_Level)
-		SSL_CTX_set_security_level(ctx, settings->Override_Security_Level_Value);
-
 	if (use_cert) {
 		SSL_CTX_use_certificate(ctx, x->x509);
 		SSL_CTX_use_PrivateKey(ctx, priv->pkey);
-	}
-
-	if (cipher_list != NULL) {
-		if (SSL_CTX_set_cipher_list(ctx, cipher_list) == 0)
-			SSL_CTX_set_cipher_list(ctx, DEFAULT_CIPHER_LIST);
 	}
 
 	SSL_CTX_set1_groups_list(ctx, PQ_GROUP_LIST);
@@ -241,14 +211,6 @@ UINT Send(SOCK *sock, void *data, UINT size, bool secure) {
 		return (UINT)ret;
 
 	return SockFailResult(sock, sock->AsyncMode && ret == SOCKET_ERROR && WSAGetLastError() == WSAEWOULDBLOCK);
-}
-
-// Take one more reference of ctx: each holder calls FreeSSLCtx once
-void ShareSSLCtx(struct ssl_ctx_st *ctx) {
-	if (ctx == NULL)
-		return;
-
-	SSL_CTX_up_ref(ctx);
 }
 
 void FreeSSLCtx(struct ssl_ctx_st *ctx) {

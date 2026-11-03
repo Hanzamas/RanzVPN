@@ -5,7 +5,6 @@
 
 #include "Connection.h"
 #include "Hub.h"
-#include "Protocol.h"
 
 #include "Mayaqua/Cfg.h"
 #include "Mayaqua/Encrypt.h"
@@ -823,107 +822,6 @@ int CompareUserName(void *p1, void *p2) {
 		return 0;
 
 	return StrCmpi(u1->Name, u2->Name);
-}
-
-
-void CiGetSessionStatus(RPC_CLIENT_GET_CONNECTION_STATUS *st, SESSION *s) {
-	if (st == NULL || s == NULL)
-		return;
-
-	Lock(s->lock);
-	{
-		st->Active = true;
-
-		st->SessionStatus = s->ClientStatus;
-
-		UniStrCpy(st->AccountName, sizeof(st->AccountName), s->ClientOption->AccountName);
-
-		if (s->ClientStatus == CLIENT_STATUS_ESTABLISHED && s->Connection != NULL) {
-			Lock(s->Connection->lock);
-			{
-				st->Connected = true;
-				StrCpy(st->ServerProductName, sizeof(st->ServerProductName), s->Connection->ServerStr);
-				st->ServerProductVer = s->Connection->ServerVer;
-				st->ServerProductBuild = s->Connection->ServerBuild;
-				st->ServerX = CloneX(s->Connection->ServerX);
-				st->ClientX = CloneX(s->Connection->ClientX);
-				st->CurrentConnectionEstablishTime = Tick64ToTime64(s->CurrentConnectionEstablishTime);
-				st->MaxTcpConnections = s->MaxConnection;
-				st->HalfConnection = s->HalfConnection;
-				st->VLanId = s->VLanId;
-				st->QoS = s->QoS;
-				if (s->Connection->Protocol == CONNECTION_TCP) {
-					LockList(s->Connection->Tcp->TcpSockList);
-					{
-						st->NumTcpConnections = LIST_NUM(s->Connection->Tcp->TcpSockList);
-						if (st->HalfConnection) {
-							for (UINT i = 0; i < st->NumTcpConnections; i++) {
-								TCPSOCK *ts = LIST_DATA(s->Connection->Tcp->TcpSockList, i);
-								if (ts->Direction & TCP_SERVER_TO_CLIENT)
-									st->NumTcpConnectionsDownload++;
-								else
-									st->NumTcpConnectionsUpload++;
-							}
-						}
-					}
-					UnlockList(s->Connection->Tcp->TcpSockList);
-				}
-				st->UseEncrypt = s->UseEncrypt;
-				if (st->UseEncrypt) {
-					StrCpy(st->CipherName, sizeof(st->CipherName), s->Connection->CipherName);
-					StrCpy(st->ProtocolName, sizeof(st->ProtocolName), s->Connection->SslVersion);
-				}
-				st->UseCompress = s->UseCompress;
-				StrCpy(st->UnderlayProtocol, sizeof(st->UnderlayProtocol), s->UnderlayProtocol);
-				StrCpy(st->ProtocolDetails, sizeof(st->ProtocolDetails), s->ProtocolDetails);
-				Trim(st->ProtocolDetails);
-				st->IsUdpAccelerationEnabled = s->UseUdpAcceleration;
-				st->IsUsingUdpAcceleration = s->IsUsingUdpAcceleration;
-				Copy(st->SessionKey, s->SessionKey, SHA1_SIZE);
-				Copy(&st->Policy, s->Policy, sizeof(POLICY));
-				if (s->ServerMode == false) {
-					st->TotalSendSize = s->TotalSendSize;
-					st->TotalRecvSize = s->TotalRecvSize;
-					st->TotalRecvSizeReal = s->TotalRecvSizeReal;
-					st->TotalSendSizeReal = s->TotalSendSizeReal;
-				} else {
-					st->TotalSendSize = s->TotalRecvSize;
-					st->TotalRecvSize = s->TotalSendSize;
-					st->TotalRecvSizeReal = s->TotalSendSizeReal;
-					st->TotalSendSizeReal = s->TotalRecvSizeReal;
-				}
-				StrCpy(st->SessionName, sizeof(st->SessionName), s->Name);
-				StrCpy(st->ConnectionName, sizeof(st->ConnectionName), s->Connection->Name);
-				StrCpy(st->ServerName, sizeof(st->ServerName), s->Connection->ServerName);
-				st->ServerPort = s->Connection->ServerPort;
-				Lock(s->TrafficLock);
-				{
-					Copy(&st->Traffic, s->Traffic, sizeof(TRAFFIC));
-				}
-				Unlock(s->TrafficLock);
-
-				st->IsBridgeMode = s->IsBridgeMode;
-				st->IsMonitorMode = s->IsMonitorMode;
-			}
-			Unlock(s->Connection->lock);
-		}
-		st->StartTime = Tick64ToTime64(s->CreatedTime);
-		/* !!! Do not correct the spelling to keep the backward protocol compatibility !!!  */
-		st->FirstConnectionEstablisiedTime = Tick64ToTime64(s->FirstConnectionEstablisiedTime);
-		st->NumConnectionsEstablished = s->NumConnectionsEstablished;
-	}
-	Unlock(s->lock);
-}
-
-void CiFreeClientGetConnectionStatus(RPC_CLIENT_GET_CONNECTION_STATUS *st) {
-	if (st == NULL)
-		return;
-
-	if (st->ServerX != NULL)
-		FreeX(st->ServerX);
-
-	if (st->ClientX != NULL)
-		FreeX(st->ClientX);
 }
 
 void ClientAuthFree(CLIENT_AUTH *auth) {

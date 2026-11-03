@@ -1,9 +1,0 @@
-# RPC_DISCONNECT_CONNECTION RPC_DISCONNECT_CONNECTION syn
-[out]
-#0 Name str[1] = ""
-bytes=24 sha1=936ec9d9fbe9be5f362579e4c7506d2cf8f62f1a
-[in-out]
-#0 Name str[1] = "Name#0"
-bytes=30 sha1=b42f017cd9a2af3e5a3aa6518d737f090ec7ba69
-[in-out-in-out]
-same

@@ -6,16 +6,9 @@
 # The BENCH lines of the arm64 jobs of windows.yml (2026-10-21 and 2026-10-22), runs
 # 39681364674 39681461803 39717490167 39719924806 39720149419 39720435521 39721084040 39721301218
 # 39721302598 39721456040 39724089848 39725058111 39728838791 39735879974 39744052311
-accept_table_1024 462 us 25
-accept_table_16384 17904 us 25
-accept_table_4096 2263 us 25
+# The cases of the cascade path, of the accept table of a listener and of the Pack of an admin RPC left with the code
+# that they timed, the SE-VPN server of the slim fork (CORE-S8-3, #577); the hub cases run on a hub of a node.
 bench_runtime_ms 24359 ms 25
-cascade_path_fps_1500 8018 frames/s 25
-cascade_path_fps_512 8017 frames/s 25
-cascade_path_fps_64 8022 frames/s 25
-cascade_path_mbps_1500 96.22 Mbit/s 25
-cascade_path_mbps_512 32.84 Mbit/s 25
-cascade_path_mbps_64 4.1 Mbit/s 25
 fifo_cycle 5.67653e+06 ops/s 25
 flood_fps_64 30732 frames/s 25
 flood_fps_8 226912 frames/s 25
@@ -28,9 +21,7 @@ ip_table_expire_4096 9 us 70
 ip_table_free_1024 23 us 35
 ip_table_free_16384 350 us 25
 ip_table_free_4096 82 us 25
-pack_decode_enum_session 3513 ops/s 25
 pack_decode_names_500 1406 ops/s 25
-pack_encode_enum_session 3201 ops/s 25
 pack_encode_names_500 1520 ops/s 25
 parse_packet_dns 941532 ops/s 25
 parse_packet_dns_nolog 5.5986e+06 ops/s 25

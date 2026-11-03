@@ -3,14 +3,9 @@
 
 #include "Hub.h"
 
-#include "Admin.h"
-#include "Bridge.h"
 #include "Connection.h"
-#include "Link.h"
 #include "PacketLog.h"
-#include "Protocol.h"
 #include "Sam.h"
-#include "Server.h"
 
 #include "Mayaqua/Cfg.h"
 #include "Mayaqua/DNS.h"
@@ -1000,62 +995,6 @@ SESSION *GetSessionByName(HUB *hub, char *name) {
 	UnlockList(hub->SessionList);
 
 	return NULL;
-}
-
-// Count the hub's sessions that count against the multi-login limit of username:
-// not bridge, not cascade server side, at least one TCP connection, and a UniqueId
-// that is zero or different from unique_id.
-// Lock order: hub->lock, then SessionList, then s->lock, then the TcpSockList lock.
-// The caller must not hold hub->lock (ServerAccept unlocks it around this call).
-UINT HubCountUserSessions(HUB *h, char *username, UCHAR *unique_id) {
-	UINT num = 0;
-	if (h == NULL || username == NULL || unique_id == NULL)
-		return 0;
-
-	LockList(h->SessionList);
-	{
-		for (UINT i = 0; i < LIST_NUM(h->SessionList); i++) {
-			SESSION *s = LIST_DATA(h->SessionList, i);
-			Lock(s->lock);
-			{
-				UINT num_tcp;
-				LockList(s->Connection->Tcp->TcpSockList);
-				{
-					num_tcp = s->Connection->Tcp->TcpSockList->num_item;
-				}
-				UnlockList(s->Connection->Tcp->TcpSockList);
-
-				if (s->BridgeMode == false && s->LinkModeServer == false && num_tcp != 0 &&
-				    StrCmpi(s->Username, username) == 0 &&
-				    (IsZero(s->NodeInfo.UniqueId, 16) || Cmp(s->NodeInfo.UniqueId, unique_id, 16) != 0))
-					num++;
-			}
-			Unlock(s->lock);
-		}
-	}
-	UnlockList(h->SessionList);
-
-	return num;
-}
-
-// SessionGetInfo of every session of the hub, in SessionList order, all taken under the SessionList lock.
-// The caller frees the array with Free
-SESSION_INFO *HubEnumSessions(HUB *h, UINT *num) {
-	SESSION_INFO *ret;
-	if (h == NULL || num == NULL)
-		return NULL;
-
-	LockList(h->SessionList);
-	{
-		*num = LIST_NUM(h->SessionList);
-		ret = ZeroMalloc(sizeof(SESSION_INFO) * (*num));
-
-		for (UINT i = 0; i < *num; i++)
-			SessionGetInfo(LIST_DATA(h->SessionList, i), &ret[i]);
-	}
-	UnlockList(h->SessionList);
-
-	return ret;
 }
 
 static void IpTableSetEntry(IP_TABLE_ENTRY *e, SESSION *s, IP *ip, UCHAR *mac, bool dhcp_allocated, UINT64 now) {
@@ -2237,10 +2176,7 @@ void StopHub(HUB *h) {
 
 	SetHubOffline(h);
 
-	if (h->Halt == false) {
-		SLog(h->Cedar, "LS_HUB_STOP", h->Name);
-		h->Halt = true;
-	}
+	h->Halt = true;
 
 	h->Offline = old_status;
 	h->HubIsOnlineButHalting = false;
@@ -2257,23 +2193,6 @@ void SetHubOnline(HUB *h) {
 			return;
 		}
 		HLog(h, "LH_ONLINE");
-
-		// The cascades of the hub (Link.c), through the hooks of the SE-VPN code
-		if (SeVpnHooks.StartAllLink != NULL)
-			SeVpnHooks.StartAllLink(h);
-
-		LockList(h->Cedar->LocalBridgeList);
-		{
-			for (UINT i = 0; i < LIST_NUM(h->Cedar->LocalBridgeList); i++) {
-				LOCALBRIDGE *br = LIST_DATA(h->Cedar->LocalBridgeList, i);
-
-				if (StrCmpi(br->HubName, h->Name) == 0) {
-					if (br->Bridge == NULL)
-						br->Bridge = BrNewBridge(h, br);
-				}
-			}
-		}
-		UnlockList(h->Cedar->LocalBridgeList);
 
 		h->Offline = false;
 	}
@@ -2292,22 +2211,6 @@ void SetHubOffline(HUB *h) {
 		}
 
 		HLog(h, "LH_OFFLINE");
-
-		if (SeVpnHooks.StopAllLink != NULL)
-			SeVpnHooks.StopAllLink(h);
-
-		LockList(h->Cedar->LocalBridgeList);
-		{
-			for (UINT i = 0; i < LIST_NUM(h->Cedar->LocalBridgeList); i++) {
-				LOCALBRIDGE *br = LIST_DATA(h->Cedar->LocalBridgeList, i);
-
-				if (StrCmpi(br->HubName, h->Name) == 0) {
-					BrFreeBridge(br->Bridge);
-					br->Bridge = NULL;
-				}
-			}
-		}
-		UnlockList(h->Cedar->LocalBridgeList);
 
 		h->Offline = true;
 
@@ -2398,8 +2301,6 @@ void CleanupHub(HUB *h) {
 
 	FreeAccessList(h);
 
-	if (SeVpnHooks.ReleaseAllLink != NULL)
-		SeVpnHooks.ReleaseAllLink(h);
 	DeleteHubDb(h->HubDb);
 	ReleaseCedar(h->Cedar);
 	DeleteLock(h->lock);
@@ -2410,7 +2311,6 @@ void CleanupHub(HUB *h) {
 	FreeIpTableEntries(h->IpTableExpiry.Expired);
 	ReleaseList(h->IpTable);
 	ReleaseList(h->MonitorList);
-	ReleaseList(h->LinkList);
 	DeleteCounter(h->NumSessions);
 	DeleteCounter(h->NumSessionsClient);
 	DeleteCounter(h->NumSessionsBridge);
@@ -2667,7 +2567,6 @@ HUB *NewHub(CEDAR *cedar, char *HubName, HUB_OPTION *option) {
 	h->IpTable = NewList(CompareIpTable);
 	IpTableExpiryInit(&h->IpTableExpiry);
 	h->MonitorList = NewList(NULL);
-	h->LinkList = NewList(NULL);
 
 	h->Traffic = NewTraffic();
 
@@ -2712,11 +2611,6 @@ HUB *NewHub(CEDAR *cedar, char *HubName, HUB_OPTION *option) {
 		StartHubWatchDog(h);
 		h->WatchDogStarted = true;
 	}
-
-	SLog(h->Cedar, "LS_HUB_START", h->Name);
-
-	MacToStr(tmp, sizeof(tmp), h->HubMacAddr);
-	SLog(h->Cedar, "LS_HUB_MAC", h->Name, tmp);
 
 	return h;
 }

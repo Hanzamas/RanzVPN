@@ -23,7 +23,6 @@
 // Print "VRFADAPTER TEST OK" only when every check passes. Needs administrator rights and wintun.dll next to vpntest
 // (.github/scripts/fetch-wintun.ps1).
 
-#include "harness_int.h"
 #include "testlist.h"
 
 #include "Cedar/ConfigStore.h"

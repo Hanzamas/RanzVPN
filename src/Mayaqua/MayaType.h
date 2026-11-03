@@ -195,7 +195,6 @@ typedef struct SSL_VERIFY_OPTION SSL_VERIFY_OPTION;
 typedef struct NIC_ENTRY NIC_ENTRY;
 typedef struct HTTP_VALUE HTTP_VALUE;
 typedef struct HTTP_HEADER HTTP_HEADER;
-typedef struct SSL_ACCEPT_SETTINGS SSL_ACCEPT_SETTINGS;
 
 typedef struct ADJUST_TIME ADJUST_TIME;
 typedef struct TICK64 TICK64;

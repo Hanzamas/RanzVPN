@@ -3,7 +3,6 @@
 # Every other test that "vpntest list" prints runs, in every job that calls the script: a new test is a new file with a
 # RANZ_TEST line (src/vpntest/testlist.h) and needs no line here. A line names a test that vpntest lists, or the script
 # fails. asan-exclude.txt holds what the fuzz-asan job leaves out besides these.
-s              the start/stop smoke test, which the script runs first with a check of its own
 memory_leak    leaks one byte on purpose
 bgp            needs ranz and gobgpd next to vpntest and administrator rights: .github/scripts/bgp-spike.ps1 runs it
 evpn           needs ranz next to vpntest, whose sidecars of two nodes peer with each other: .github/scripts/bgp-spike.ps1 runs it

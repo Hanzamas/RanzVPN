@@ -26,7 +26,7 @@
 //   none arrives anywhere else, and none is refused.
 // Print "VRF TEST OK" only when every check passes.
 
-#include "harness_int.h"
+#include "golden.h"
 #include "testlist.h"
 
 #include "Cedar/ConfigStore.h"

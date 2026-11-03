@@ -19,7 +19,7 @@
 //   default data directory of a node is %ProgramData%\Hanzcodes\Ranz VPN.
 // Print "STORE TEST OK" only when every check passes.
 
-#include "harness_int.h"
+#include "golden.h"
 #include "testlist.h"
 
 #include "Cedar/Cedar.h"
@@ -221,7 +221,7 @@ static BUF *StoreTestPemToDer(char *pem)
 	return ret;
 }
 
-// A self-signed certificate "ranz-certdl-tls" (the fixture of the certdl test in harness.c)
+// A self-signed certificate "ranz-certdl-tls" (a fixture of the certdl test, which CORE-S8-3 retired with the legacy server)
 static char storetest_cert_pem[] =
 	"-----BEGIN CERTIFICATE-----\n"
 	"MIIDBzCCAe+gAwIBAgICEAQwDQYJKoZIhvcNAQELBQAwGjEYMBYGA1UEAwwPcmFu\n"

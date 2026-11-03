@@ -24,7 +24,6 @@
 //   static key, 16 bytes more, and the one of vxlan keeps its size.
 // Print "TRACEPATH TEST OK" only when every check passes.
 
-#include "harness_int.h"
 #include "testlist.h"
 
 #include "Cedar/ConfigStore.h"

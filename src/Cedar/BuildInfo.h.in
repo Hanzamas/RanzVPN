@@ -1,6 +1,6 @@
 // BuildInfo.h
 // Build identity of Cedar. Generated from BuildInfo.h.in by src/Cedar/CMakeLists.txt; do not edit.
-// Include it only where these values are printed (Cedar.c, Admin.c, AdminServer.c, Server.c).
+// Include it only where these values are printed (Cedar.c).
 
 #ifndef	BUILDINFO_H
 #define	BUILDINFO_H

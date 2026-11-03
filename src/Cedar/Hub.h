@@ -259,7 +259,6 @@ struct HUB {
 	LIST *IpTable;
 	IP_TABLE_EXPIRY IpTableExpiry;
 	LIST *MonitorList;
-	LIST *LinkList;
 	UCHAR HubSignature[16];
 	UCHAR HubMacAddr[6];
 	IP HubIp;
@@ -283,7 +282,6 @@ struct HUB {
 	wchar_t *Msg;
 	LIST *UserList;
 	UINT64 LastFlushTick;
-	bool StopAllLinkFlag;
 	bool ForceDisableComm;
 };
 
@@ -331,8 +329,6 @@ void SetHubOnline(HUB *h);
 void SetHubOffline(HUB *h);
 void HubApplyInitialState(HUB *h, bool online);
 SESSION *GetSessionByName(HUB *hub, char *name);
-UINT HubCountUserSessions(HUB *h, char *username, UCHAR *unique_id);
-SESSION_INFO *HubEnumSessions(HUB *h, UINT *num);
 STORM *SearchStormList(HUB_PA *pa, UCHAR *mac_address, IP *src_ip, IP *dest_ip, bool strict);
 bool AddRootCert(HUB *hub, X *x);
 void AddAccessListEx(HUB *hub, ACCESS *a, bool no_sort, bool no_reassign_id);
@@ -363,10 +359,8 @@ bool IsIpDeniedByAcList(IP *ip, LIST *o);
 char *GenerateAcStr(AC *ac);
 void FreeAcList(LIST *o);
 wchar_t *GetHubAdminOptionHelpString(char *name);
-void HubOptionStructToData(RPC_ADMIN_OPTION *ao, HUB_OPTION *o, char *hub_name);
 UINT GetHubOptionField(HUB_OPTION *o, HUB_OPTION_FIELD *f);
 void SetHubOptionField(HUB_OPTION *o, HUB_OPTION_FIELD *f, UINT value);
-void DataToHubOptionStruct(HUB_OPTION *o, RPC_ADMIN_OPTION *ao);
 void SiSetDefaultHubOption(HUB_OPTION *o);
 bool IsURLMsg(wchar_t *str, char *url, UINT url_size);
 void DeleteAllUserListCache(LIST *o);

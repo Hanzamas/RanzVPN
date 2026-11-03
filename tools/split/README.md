@@ -51,7 +51,7 @@ co-author line.
 ```
 git switch -c split-pass origin/integration
 python -I tools/split/apply_split.py --dry-run --explain     # the commits it would make, and the drift
-python -I tools/split/apply_split.py --commit [--linkage] [--module Server ...]
+python -I tools/split/apply_split.py --commit [--linkage] [--module Hub ...]
 python -I C:/Users/hilmi/ranz-devkit/devcheck.py .          # compile check (syntax only)
 ```
 

@@ -35,7 +35,6 @@
 #include "Cedar/Cedar.h"
 #include "Cedar/Connection.h"
 #include "Cedar/Hub.h"
-#include "Cedar/Server.h"
 #include "Cedar/Session.h"
 
 #include "Mayaqua/Kernel.h"
