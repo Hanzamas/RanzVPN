@@ -13,7 +13,7 @@
 #   pull request with the label full-ci and on a pull request that changes src/Core/Crypto*,
 #   src/Core/Noise*, src/SeLow, .github/scripts/self-integrity.ps1, .github/scripts/install.ps1,
 #   .github/signing, .github/msi, .github/scripts/msi-*, docs/first-test.md,
-#   .github/scripts/first-test.ps1, .github/scripts/read-shared.ps1 or compat/ (SENSITIVE in ci-plan.py).
+#   .github/scripts/first-test.ps1 or compat/ (SENSITIVE in ci-plan.py).
 # A job that only the full set runs has needs: plan and if: needs.plan.outputs.full == 'true' (install
 # follows sign_and_integrity, which it needs, and first_test and kmtest follow build_and_test and sign_and_integrity),
 # and a pull request shows it as skipped. A new job

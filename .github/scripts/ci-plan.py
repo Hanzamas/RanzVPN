@@ -48,7 +48,6 @@ SENSITIVE = [
     (r'\.github/scripts/msi-', 'the MSI scripts'),
     (r'docs/first-test\.md$', 'the runbook of the first test'),
     (r'\.github/scripts/first-test\.ps1$', 'the script that proves the runbook'),
-    (r'\.github/scripts/read-shared\.ps1$', 'the reader of a live log that the script of the runbook loads'),
     (r'tests/formal/', 'the formal model of the handshake'),
     (r'\.github/scripts/formal\.py$', 'the script that checks and runs the formal model'),
     (r'\.github/workflows/formal\.yml$', 'the workflow of the formal model'),
