@@ -72,6 +72,10 @@ typedef bool(TRANSPORT_TAKE_PROC)(void *listener, UINT_PTR socket);
 // that a stream that was dialled connected to (AUD1-DT-11, #459). False when the transport does not know it, or it does
 // not fit. It may be NULL: a transport that tells no address.
 typedef bool(TRANSPORT_REMOTE_PROC)(void *stream, char *address, UINT size);
+// Group gives the key exchange group of the outer TLS or QUIC session of a stream as its stack reports it in the connection
+// information of the session (CORE-P2-5, #382): the TLS NamedGroup (CRYPTO_GROUP_*), 0 when the stack tells none. It may be
+// NULL: a transport that nothing encrypts, or one that tells no group.
+typedef UINT(TRANSPORT_GROUP_PROC)(void *stream);
 
 // One transport: its name in a fallback list, its state and its procedures
 typedef struct TRANSPORT {
@@ -89,6 +93,7 @@ typedef struct TRANSPORT {
 	UINT Queue;                                   // TRANSPORT_QUEUE_*: the ingress queue of the sessions over it, NONE for none
 	TRANSPORT_TAKE_PROC *Take;                    // Take a connection that the front door routed to a listener, or NULL
 	TRANSPORT_REMOTE_PROC *Remote;                // The address of the other end of a stream, or NULL
+	TRANSPORT_GROUP_PROC *Group;                  // The key exchange group of the outer session of a stream, or NULL
 } TRANSPORT;
 
 // One entry of a fallback list: a transport and the address it dials
@@ -197,6 +202,9 @@ TRANSPORT *TransportOf(TRANSPORT_STREAM *s);
 // The address of the other end of a stream, as the Remote procedure of its transport gives it (see TRANSPORT_REMOTE_PROC):
 // the source of a stream that a listener accepted. False, with address empty, when the transport tells none.
 bool TransportRemote(TRANSPORT_STREAM *s, char *address, UINT size);
+// The key exchange group of the outer session of a stream, as the Group procedure of its transport gives it (see
+// TRANSPORT_GROUP_PROC; CORE-P2-5, #382): 0 when the transport tells none.
+UINT TransportGroup(TRANSPORT_STREAM *s);
 
 // The front door's handoff to a listener of this process (SDN-29, #205): the listener takes the TCP
 // connection socket (a SOCKET, blocking) and closes it in time; false, with the socket still the
@@ -607,6 +615,10 @@ typedef struct TRANSPORT_TLS_INFO {
 	UINT CipherSuite; // The TLS cipher suite (0x1302 TLS_AES_256_GCM_SHA384, ...)
 	UINT Group;       // The key exchange group of TLS 1.3 (CRYPTO_GROUP_*), 0 for TLS 1.2
 	bool Retried;     // The server asked for a key share of another group first (a HelloRetryRequest)
+	// The key exchange group that Schannel reports for the session in its connection information (the dwKeyType of
+	// SECPKG_ATTR_CIPHER_INFO; CORE-P2-5, #382), 0 when it reports none: the group of the stream (TransportGroup), which
+	// the one of the ServerHello on the wire matches
+	UINT StackGroup;
 } TRANSPORT_TLS_INFO;
 
 // Fill cfg with the defaults: the name "tls", TLS 1.2 and 1.3, the groups set, the ingress queue
@@ -643,6 +655,52 @@ UINT TransportTlsSetGroups();
 // whether it is a HelloRetryRequest; false, with info untouched, when data does not start with a
 // whole record holding a whole ServerHello.
 bool TransportTlsParseHello(const UCHAR *data, UINT size, TRANSPORT_TLS_INFO *info);
+
+// The post-quantum key exchange of the QUIC and TLS-443 paths (TransportGroup.c; CORE-P2-5, #382). Both paths are encrypted
+// once, by QUIC or by TLS 1.3 on Schannel, and the Noise session over them only authenticates, bound to that session
+// (ADR-0023), so a session that is recorded now is as safe against a future quantum computer as the key exchange of its
+// outer session. A group is quantum-resistant when ML-KEM is part of it: X25519MLKEM768 and the other hybrids of
+// draft-ietf-tls-ecdhe-mlkem, and ML-KEM alone. The group of a session is the one that the stack reports once the
+// handshake completed, never one assumed: Schannel in the cipher information of the context (TransportTls.c), msquic in
+// the handshake information of the connection (TransportQuicGroup.c).
+//
+// Schannel offers the groups of the list in force on the host: the list of an ECC Curve Order policy where one is set,
+// which wins, else the list of the machine, the one that TransportTlsSetGroups writes, else the default of Windows, which
+// does not name the hybrid. It takes a change of the machine's list at once, and a change of a policy when Windows starts.
+// msquic takes its TLS from Schannel, so the one list governs both paths. A host asks for the hybrid when CNG has ML-KEM
+// and its list in force names X25519MLKEM768 first: Schannel offers the groups of the list in its order, with the key
+// shares of the first ones, and a server picks one of the groups that the client offers. Two nodes that both ask for it
+// negotiate it, and a node that asks for it falls back to a classical group with a peer that does not, without failing
+// (the classical groups stay in every list): the client offers X25519 first, as the list that TransportTlsSetGroups writes
+// puts it, and the server picks one of the classical groups, not always X25519: the Schannel server of Windows Server 2025
+// picked secp384r1 of the X25519, secp256r1 and secp384r1 that its client offered with a key share each, with no ECC Curve
+// Order policy and the machine's list in that order (vpntest pqtls). Whether the host asks for the hybrid is the
+// Capability pq_tls of a node (NodeCaps.c), and what ranz doctor tells (controller/internal/doctor).
+
+// The name of a TLS NamedGroup: "X25519MLKEM768", "X25519", "secp256r1" and the other groups of the IANA registry that
+// Windows has; "none" for 0, "unknown" for another
+const char *TransportGroupName(UINT group);
+
+// Whether a group is quantum-resistant: ML-KEM is part of it
+bool TransportGroupPostQuantum(UINT group);
+
+// The group list in force on the host, and whether it asks for X25519MLKEM768 (TransportTlsHybrid)
+#define TRANSPORT_TLS_LIST_DEFAULT 0 // The default of Windows: the machine has no list of its own and no policy sets one
+#define TRANSPORT_TLS_LIST_MACHINE 1 // The list of the machine
+#define TRANSPORT_TLS_LIST_POLICY  2 // The list of an ECC Curve Order policy, which wins over the machine's
+
+typedef struct TRANSPORT_TLS_HYBRID {
+	bool MlKem;     // CNG has ML-KEM (CryptoMlKemAvailable)
+	UINT List;      // TRANSPORT_TLS_LIST_*: the list in force
+	bool Listed;    // The list in force names X25519MLKEM768 ...
+	bool First;     // ... first
+	bool Asks;      // The host asks for the hybrid: MlKem and First
+	char Text[512]; // The list in force by its Schannel names, separated by ", ", as much of it as fits
+} TRANSPORT_TLS_HYBRID;
+
+// Fill h with the group list in force on the host and whether the host asks for X25519MLKEM768 on both paths. Any account
+// may call it: it reads the two lists and asks CNG, and changes nothing.
+void TransportTlsHybrid(TRANSPORT_TLS_HYBRID *h);
 
 // The own-decoy reverse proxy (TransportDecoy.c, CORE-S2-2 #70): the Trojan posture of the TLS
 // transport. After the TLS handshake a server reads the first application bytes of a stream. A

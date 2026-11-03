@@ -456,6 +456,20 @@ jobs:
       shell: pwsh
       run: |
         . .github/scripts/explain-conformance.ps1 -BuildDir build
+    # The post-quantum key exchange of the host and ranz doctor (CORE-P2-5, #382), on x64 and arm64: with the hybrid
+    # X25519MLKEM768 switched off by the machine's TLS group list, ranz doctor says that the host cannot negotiate it and
+    # prints the command that switches it on, and the sessions of vpntest pqtls probe negotiate a classical group on QUIC
+    # and TLS-443; once that command ran as it stands, ranz doctor says that the host can, and the sessions negotiate
+    # X25519MLKEM768. With it switched off by an ECC Curve Order policy, which Schannel takes when Windows starts, ranz
+    # doctor prints the command for the policy and tells to restart Windows (.github/scripts/pq-doctor.ps1). A step of its
+    # own, since it changes the TLS group lists of the runner, which it puts back; it needs only the build, so it runs
+    # after a test that failed too.
+    - name: Post-quantum key exchange and ranz doctor
+      if: ${{ !cancelled() }}
+      timeout-minutes: 10
+      shell: pwsh
+      run: |
+        . .github/scripts/pq-doctor.ps1 -BuildDir build
     # The operations tracer (SDN-50-N, #492): the controller of the default VRF tracer with the L2 Network lan, and the harness
     # Node of vpntest opstrace, which holds lan with a switch whose members sent ARP, IPv4 and IPv6: its Hello reports the
     # Capability operations, ranz mac-table and ranz ip-table read the tables of its switch through the controller with the

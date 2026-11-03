@@ -55,4 +55,9 @@ void TransportQuicXdpSettings(const void *api, void *settings, UINT datapath);
 bool TransportQuicXdpListen(const void *api, void *listener, const void *alpn, const void *address, UINT datapath);
 bool TransportQuicXdpOf(TRANSPORT *t, const void **api, void **configuration, UINT *datapath);
 
+// The key exchange group of a QUIC connection (TransportQuicGroup.c; CORE-P2-5, #382): the TlsGroup of the handshake
+// information of connection (an HQUIC whose handshake completed, from the CONNECTED event, while msquic holds its TLS
+// state) under api, the QUIC_API_TABLE of msquic, as msquic reads it from Schannel; 0 when msquic tells none.
+UINT TransportQuicGroup(const void *api, void *connection);
+
 #endif // CORE_TRANSPORT_INTERNAL_H

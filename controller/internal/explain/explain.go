@@ -149,6 +149,13 @@ type Link struct {
 	TagMode  string   `json:"tagMode,omitempty"`
 	Tags     string   `json:"tags,omitempty"`
 	Networks []string `json:"networks,omitempty"`
+	// KeyExchange is the key exchange that the outer QUIC or TLS-443 session of a link of kind noise negotiates, and
+	// QuantumResistant says whether it is: X25519MLKEM768 when both Nodes report the Capability pqTls, else classical, a
+	// group without ML-KEM, and WithoutPQTLS names the Nodes that do not report it (quantum.go; CORE-P2-5). All three are
+	// empty for a link of kind vxlan or geneve, which encrypts nothing.
+	KeyExchange      string   `json:"keyExchange,omitempty"`
+	QuantumResistant bool     `json:"quantumResistant,omitempty"`
+	WithoutPQTLS     []string `json:"withoutPqTls,omitempty"`
 }
 
 // Step is one thing that the packet meets on its way.
@@ -207,6 +214,8 @@ func (r Result) Rules() map[string]string {
 type Model struct {
 	in    intent.Intent
 	nodes map[string]*node
+	// caps are the Capabilities that the Nodes reported last, by Node name (WithCapabilities, quantum.go)
+	caps map[string]*controlpb.Capabilities
 }
 
 // New returns the model of the desired states of the Nodes, by Node name, which desired.Compile made of in.
@@ -332,6 +341,8 @@ func (w *walk) send(s *node, vrf uint32, p packet) {
 	link := &Link{Peer: peer.GetName(), Kind: kind, Encrypted: kind == linkNoise, VNI: vni, Endpoints: endpoints(peer.GetEndpoints()), SourceEndpoints: endpoints(s.self.GetEndpoints())}
 	// The tag mode of a plain link, and whether its source group is authenticated (sourcegroup.go; SDN-87)
 	w.tags(s, into, link)
+	// The key exchange of the outer session of a link of kind noise, and whether it is quantum-resistant (quantum.go; CORE-P2-5)
+	w.keyExchange(s, peer.GetName(), link)
 	if kind != linkNoise && len(peer.GetVtep().GetAddress()) == 0 {
 		w.step(s, StepLink, into, Step{Link: link}, "the link to %s in VRF %s is of kind %s, unencrypted, and %s has no tunnel endpoint", peer.GetName(), w.m.vrfName(into), kind, peer.GetName())
 		w.drop(s, DropLink, "%s has no tunnel endpoint for the link of kind %s of VRF %s", peer.GetName(), kind, w.m.vrfName(into))
@@ -454,6 +465,8 @@ func linkText(s *node, peer *controlpb.Peer, l *Link, vrf string) string {
 	var b strings.Builder
 	if l.Encrypted {
 		fmt.Fprintf(&b, "the Noise session of %s to %s carries the packet in VRF %s, encrypted", s.name, peer.GetName(), vrf)
+		// ... with the key exchange of its outer session (quantum.go; CORE-P2-5)
+		b.WriteString(keyExchangeText(s.name, peer.GetName(), l))
 	} else {
 		fmt.Fprintf(&b, "the link of kind %s of VRF %s carries the packet on VNI %d to the tunnel endpoint of %s: unencrypted, plain on a network that the operator trusts", l.Kind, vrf, l.VNI, peer.GetName())
 		// ... and in the tag mode trusted-underlay its source group, unauthenticated (sourcegroup.go; SDN-87)

@@ -560,6 +560,8 @@ static void ControlSetCaps(CONTROL_CLIENT *c, ranz_control_v1_Hello *hello) {
 	hello->capabilities.egress_tier = (ranz_control_v1_EgressTier)caps.EgressTier;
 	// The gateway of a Stretch (SDN-63, #290)
 	hello->capabilities.evpn = caps.Evpn;
+	// The hybrid X25519MLKEM768 on QUIC and TLS-443 (CORE-P2-5, #382)
+	hello->capabilities.pq_tls = caps.PqTls;
 	// The live operations, which the client does when its owner gives it their procedure (ControlOperation.c; SDN-50-N, #492)
 	hello->capabilities.operations = (c->Config.OperationProc != NULL);
 }

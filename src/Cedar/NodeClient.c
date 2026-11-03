@@ -507,6 +507,11 @@ static bool NodeClientRekey(void *stream) {
 	return TransportRekey(((NODE_CLIENT_STREAM *)stream)->Stream);
 }
 
+// The key exchange group of the stream of the server that the race gave (CORE-P2-5, #382)
+static UINT NodeClientGroup(void *stream) {
+	return TransportGroup(((NODE_CLIENT_STREAM *)stream)->Stream);
+}
+
 //
 // The adapter
 //
@@ -1198,6 +1203,7 @@ bool NodeClientStart(NODE *n) {
 	c->Dialler.Binding = NodeClientBinding;
 	c->Dialler.Rekey = NodeClientRekey;
 	c->Dialler.Queue = TRANSPORT_QUEUE_CODEL;
+	c->Dialler.Group = NodeClientGroup;
 
 	bool ok = NodeClientLoad(c, setting);
 	Free(setting);

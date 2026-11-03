@@ -19,9 +19,12 @@ import (
 // ranz doctor is the system check, the successor of the Check command of vpncmd (SDN-53, #246):
 // it runs the six checks that the command ran, the kernel, memory, strings, the file system,
 // threads and the network, and prints a line for each and the verdict. It exits with 0 when every
-// check passed and with 1 when one failed. With -bundle it also writes the diagnostics bundle of
-// the host (doctorbundle.go, SDN-54, #247): the logs, the configuration and the status of the Node
-// and of the Controller that run there, with no secret in them.
+// check passed and with 1 when one failed. Then it reports the post-quantum key exchange of the host
+// (CORE-P2-5, #382): whether its Node can negotiate the hybrid X25519MLKEM768 on QUIC and TLS-443,
+// and where it cannot, why and what to run to switch it on; the report fails no check. With -bundle
+// it also writes the diagnostics bundle of the host (doctorbundle.go, SDN-54, #247): the logs, the
+// configuration and the status of the Node and of the Controller that run there, with no secret in
+// them.
 func init() {
 	register("doctor", func(args []string) int {
 		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -43,6 +46,7 @@ func runDoctor(ctx context.Context, args []string, stdout, stderr io.Writer) int
 	flags.Usage = func() {
 		fmt.Fprintln(stderr, "usage: ranz doctor [-bundle [-o FILE]]")
 		fmt.Fprintln(stderr, "runs the checks of the vpncmd command Check on this system: the kernel, memory, strings, the file system, threads and the network")
+		fmt.Fprintln(stderr, "then reports whether this host can negotiate the post-quantum key exchange X25519MLKEM768, and what to run to switch it on")
 		flags.PrintDefaults()
 	}
 	if err := flags.Parse(args); err != nil {
@@ -82,6 +86,9 @@ func runDoctor(ctx context.Context, args []string, stdout, stderr io.Writer) int
 	if !doctor.Run(ctx, out, doctor.Checks()) {
 		code = 1
 	}
+	// Whether the host can negotiate the hybrid X25519MLKEM768 on QUIC and TLS-443, and what to run to switch it on where it
+	// cannot (CORE-P2-5, #382): a report, which fails no check, since a host without it still runs Ranz with a classical group
+	doctor.PostQuantum(out)
 	if !*makeBundle {
 		return code
 	}

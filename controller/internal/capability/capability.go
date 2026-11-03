@@ -54,6 +54,10 @@ type Capabilities struct {
 	EVPN bool `json:"evpn,omitempty"`
 	// BGPReflection: the node runs the route reflectors of the BGP peering (SDN-79), as a reflector and as a client.
 	BGPReflection bool `json:"bgpReflection,omitempty"`
+	// PQTLS: the host of the node asks for the hybrid key exchange X25519MLKEM768 on the QUIC and TLS-443 paths (CORE-P2-5):
+	// CNG has ML-KEM and its TLS group list names the hybrid first. The session of two nodes that both report it is
+	// quantum-resistant, which explain shows for each link (internal/explain); no feature needs it.
+	PQTLS bool `json:"pqTls,omitempty"`
 }
 
 var skuNames = map[controlpb.Sku]string{
@@ -90,6 +94,7 @@ func FromProto(p *controlpb.Capabilities) *Capabilities {
 		BGPPeering:      p.GetBgpPeering(),
 		EVPN:            p.GetEvpn(),
 		BGPReflection:   p.GetBgpReflection(),
+		PQTLS:           p.GetPqTls(),
 	}
 	if len(p.GetWireguardKey()) > 0 {
 		c.WireGuardKey = base64.StdEncoding.EncodeToString(p.GetWireguardKey())
@@ -113,6 +118,7 @@ func (c Capabilities) Proto() (*controlpb.Capabilities, error) {
 		BgpPeering:      c.BGPPeering,
 		Evpn:            c.EVPN,
 		BgpReflection:   c.BGPReflection,
+		PqTls:           c.PQTLS,
 	}
 	if c.WireGuardKey != "" {
 		k, err := base64.StdEncoding.DecodeString(c.WireGuardKey)

@@ -797,6 +797,9 @@ typedef struct CONTROL_CAPS {
 	// The node runs the route reflectors of the BGP peering of the standard mode, as a reflector and as a client: its release
 	// has them, and ranz.exe, which holds its sidecar, is next to it (SDN-79, #359)
 	bool BgpReflection;
+	// The host asks for the hybrid X25519MLKEM768 on QUIC and TLS-443: CNG has ML-KEM and the group list in force names it
+	// first (TransportTlsHybrid; CORE-P2-5, #382)
+	bool PqTls;
 } CONTROL_CAPS;
 
 // Fills caps, which is zeroed, with the Capabilities of the node. The client calls it for each Hello, so a node

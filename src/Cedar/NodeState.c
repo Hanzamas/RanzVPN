@@ -95,6 +95,9 @@ static void NodeStateSessions(NODE *n, UINT64 now, cJSON *o, char *listener, UIN
 		cJSON_AddBoolToObject(e, "up", list[i].Up);
 		cJSON_AddStringToObject(e, "transport", list[i].Transport);
 		cJSON_AddNumberToObject(e, "ageSeconds", list[i].Up ? NodeStateAge(list[i].Since, now) : 0.0);
+		// The key exchange of its outer session as the stack reported it, and whether it is quantum-resistant (CORE-P2-5, #382)
+		cJSON_AddStringToObject(e, "keyExchange", list[i].Group != 0 ? TransportGroupName(list[i].Group) : "");
+		cJSON_AddBoolToObject(e, "quantumResistant", TransportGroupPostQuantum(list[i].Group));
 		// How the overlay reaches the peer, and the records that went each way on its datagram path (NodeAgent.c; CORE-S5-5, #411)
 		cJSON_AddStringToObject(e, "path", NodeAgentPathName(list[i].Path));
 		cJSON_AddNumberToObject(e, "datagramsOut", (double)list[i].DatagramsOut);

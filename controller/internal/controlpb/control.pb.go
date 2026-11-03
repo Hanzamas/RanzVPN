@@ -4670,6 +4670,13 @@ type Capabilities struct {
 	// release has them, and ranz.exe is next to it. A node that does not report it is refused as a member of a VRF whose Intent
 	// names reflectors.
 	BgpReflection bool `protobuf:"varint,16,opt,name=bgp_reflection,json=bgpReflection,proto3" json:"bgp_reflection,omitempty"`
+	// The host of the node asks for the hybrid key exchange X25519MLKEM768 on the QUIC and TLS-443 paths (CORE-P2-5 #382):
+	// CNG has ML-KEM and the TLS group list in force on the host names the hybrid first. Two nodes that both report it
+	// negotiate it, so their sessions are quantum-resistant; a session with a node that does not falls back to a classical
+	// group, the one that the server picks of those that the client offers, X25519 first. No feature needs it, and no apply
+	// is refused for the lack of it. 16 is bgp_reflection of SDN-79 (#359) and 17 the field that CORE-P2-3 (#94) takes in its
+	// pull request, so this is 18.
+	PqTls         bool `protobuf:"varint,18,opt,name=pq_tls,json=pqTls,proto3" json:"pq_tls,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -4812,6 +4819,13 @@ func (x *Capabilities) GetEvpn() bool {
 func (x *Capabilities) GetBgpReflection() bool {
 	if x != nil {
 		return x.BgpReflection
+	}
+	return false
+}
+
+func (x *Capabilities) GetPqTls() bool {
+	if x != nil {
+		return x.PqTls
 	}
 	return false
 }
@@ -7119,7 +7133,7 @@ const file_ranz_control_v1_control_proto_rawDesc = "" +
 	"\bprefixes\x18\x02 \x03(\v2\x17.ranz.control.v1.PrefixR\bprefixes\"5\n" +
 	"\tPortRange\x12\x14\n" +
 	"\x05first\x18\x01 \x01(\rR\x05first\x12\x12\n" +
-	"\x04last\x18\x02 \x01(\rR\x04last\"\xac\x04\n" +
+	"\x04last\x18\x02 \x01(\rR\x04last\"\xc3\x04\n" +
 	"\fCapabilities\x12&\n" +
 	"\x03sku\x18\x01 \x01(\x0e2\x14.ranz.control.v1.SkuR\x03sku\x12A\n" +
 	"\farchitecture\x18\x02 \x01(\x0e2\x1d.ranz.control.v1.ArchitectureR\farchitecture\x12\x17\n" +
@@ -7142,7 +7156,8 @@ const file_ranz_control_v1_control_proto_rawDesc = "" +
 	"\vbgp_peering\x18\x0e \x01(\bR\n" +
 	"bgpPeering\x12\x12\n" +
 	"\x04evpn\x18\x0f \x01(\bR\x04evpn\x12%\n" +
-	"\x0ebgp_reflection\x18\x10 \x01(\bR\rbgpReflection\"k\n" +
+	"\x0ebgp_reflection\x18\x10 \x01(\bR\rbgpReflection\x12\x15\n" +
+	"\x06pq_tls\x18\x12 \x01(\bR\x05pqTls\"k\n" +
 	"\aAddress\x12\x18\n" +
 	"\anetwork\x18\x01 \x01(\tR\anetwork\x12\x15\n" +
 	"\x06vrf_id\x18\x02 \x01(\rR\x05vrfId\x12/\n" +

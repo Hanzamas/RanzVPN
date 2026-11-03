@@ -1447,11 +1447,12 @@ static void RelayPathCounters(RELAYPATH_CTX *ctx)
 		ab.DatagramsIn, ba.DatagramsOut, ba.DatagramsIn, ac.DatagramsOut, ac.DatagramsIn, bc.DatagramsOut, bc.DatagramsIn, n);
 
 	// The answer of the admin pipe of node-a to state, which ranz node state prints: the entry of node-b, whole, and the path
-	// and the datagrams of node-c, after its age
+	// and the datagrams of node-c, after its age. node-b has no stream session, so no outer session whose key exchange
+	// the entry could name (CORE-P2-5, #382)
 	char *reply = ZeroMalloc(NODE_ADMIN_REPLY);
 	char relay[MAX_SIZE];
 	NodeAdminCommand(ctx->Nodes[RELAYPATH_A].Node, "state", reply, NODE_ADMIN_REPLY);
-	Format(relay, sizeof(relay), "{\"peer\":\"node-b\",\"up\":false,\"transport\":\"\",\"ageSeconds\":0,\"path\":\"relay\",\"datagramsOut\":%I64u,\"datagramsIn\":%I64u}", n, n);
+	Format(relay, sizeof(relay), "{\"peer\":\"node-b\",\"up\":false,\"transport\":\"\",\"ageSeconds\":0,\"keyExchange\":\"\",\"quantumResistant\":false,\"path\":\"relay\",\"datagramsOut\":%I64u,\"datagramsIn\":%I64u}", n, n);
 	bool shown = InStr(reply, relay) && InStr(reply, "{\"peer\":\"node-c\",\"up\":true,") && InStr(reply, "\"path\":\"stream\",\"datagramsOut\":0,\"datagramsIn\":0}");
 	UINT sessions = SearchStr(reply, "\"sessions\":", 0);
 	RelayPathCheck(ctx, shown,

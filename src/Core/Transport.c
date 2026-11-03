@@ -185,6 +185,14 @@ bool TransportRemote(TRANSPORT_STREAM *s, char *address, UINT size) {
 	return true;
 }
 
+UINT TransportGroup(TRANSPORT_STREAM *s) {
+	// A transport that tells no group, one that nothing encrypts among them, has none to give
+	if (s == NULL || s->Transport->Group == NULL)
+		return 0;
+
+	return s->Transport->Group(s->Stream);
+}
+
 //
 // The fallback list
 //

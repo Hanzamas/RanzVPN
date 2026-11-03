@@ -655,6 +655,7 @@ struct NODE_OVERLAY_SESSION {
 	bool Up;                             // Its Noise session is up ...
 	char Transport[TRANSPORT_NAME_SIZE]; // ... over this transport ...
 	UINT64 Since;                        // ... since this GetTickCount64
+	UINT Group;                          // ... with this key exchange group of its outer session, as the stack reported it, 0 for none (CORE-P2-5, #382)
 
 	// How the overlay reaches the peer now (NODE_PATH_*), and the records of the overlay that went to it and came from it on its
 	// datagram path (NodeAgent.c; CORE-S5-5, #411)

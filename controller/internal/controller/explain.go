@@ -3,6 +3,9 @@ package controller
 import (
 	"maps"
 
+	"google.golang.org/protobuf/proto"
+
+	"github.com/Hanzamas/RanzVPN/controller/internal/controlpb"
 	"github.com/Hanzamas/RanzVPN/controller/internal/desired"
 	"github.com/Hanzamas/RanzVPN/controller/internal/explain"
 )
@@ -17,6 +20,13 @@ func (c *Controller) Explain(q explain.Query) (explain.Result, error) {
 	for name, n := range c.nodes {
 		states[name] = maps.Clone(n.state)
 	}
+	// The Capabilities that the nodes reported last, which the key exchange of each link follows (CORE-P2-5)
+	caps := map[string]*controlpb.Capabilities{}
+	for k, name := range c.byKey {
+		if p, ok := c.caps[k]; ok {
+			caps[name] = proto.Clone(p).(*controlpb.Capabilities)
+		}
+	}
 	c.mu.Unlock()
-	return explain.New(in, states).Explain(q)
+	return explain.New(in, states).WithCapabilities(caps).Explain(q)
 }
