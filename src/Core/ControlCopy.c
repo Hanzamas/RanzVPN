@@ -3,8 +3,8 @@
 // only while the owner's procedure runs; an owner that applies the state again later keeps a copy, as the BGP peering of a
 // node does when the routes that it learned change (SDN-77, #357). The copy holds every field of the state, and each field
 // that points at memory of its own points at a copy of that memory: the rules, the peers with their BGP peering, the zone of
-// overlay DNS of each VRF, the Listener, the WireGuard Devices, the security of the L2 Networks and the BGP peering of the
-// node. A field of that kind that CONTROL_STATE gains is copied here too.
+// overlay DNS of each VRF, the Listener, the mimic part (CORE-P2-7, #424), the WireGuard Devices, the security of the L2
+// Networks and the BGP peering of the node. A field of that kind that CONTROL_STATE gains is copied here too.
 
 #include "Core/Control.h"
 
@@ -54,6 +54,7 @@ CONTROL_STATE *ControlCopyState(const CONTROL_STATE *st) {
 	c->Rules = NULL;
 	c->Peers = NULL;
 	c->Listener = NULL;
+	c->Mimic = NULL;
 	c->Devices = NULL;
 	c->Securities = NULL;
 	c->Peering = NULL;
@@ -67,6 +68,7 @@ CONTROL_STATE *ControlCopyState(const CONTROL_STATE *st) {
 	for (UINT i = 0; i < st->NumVrfs && i < CONTROL_MAX_VRFS; i++)
 		c->Vrfs[i].Dns = ControlCopyItems(st->Vrfs[i].Dns, 1, sizeof(CONTROL_DNS_ZONE), &ok);
 	c->Listener = ControlCopyItems(st->Listener, 1, sizeof(CONTROL_LISTENER), &ok);
+	c->Mimic = ControlCopyItems(st->Mimic, 1, sizeof(CONTROL_MIMIC), &ok);
 	c->Devices = ControlCopyItems(st->Devices, st->NumDevices, sizeof(CONTROL_DEVICE), &ok);
 	c->Securities = ControlCopyItems(st->Securities, st->NumSecurities, sizeof(CONTROL_SECURITY), &ok);
 	c->Peering = ControlCopyItems(st->Peering, 1, sizeof(CONTROL_PEERING), &ok);
@@ -90,6 +92,7 @@ void ControlFreeStateCopy(CONTROL_STATE *st) {
 	for (UINT i = 0; i < CONTROL_MAX_VRFS; i++)
 		ControlCopyRelease(st->Vrfs[i].Dns, sizeof(CONTROL_DNS_ZONE));
 	ControlCopyRelease(st->Listener, sizeof(CONTROL_LISTENER));
+	ControlCopyRelease(st->Mimic, sizeof(CONTROL_MIMIC));
 	ControlCopyRelease(st->Devices, sizeof(CONTROL_DEVICE) * (st->NumDevices != 0 ? st->NumDevices : 1));
 	ControlCopyRelease(st->Securities, sizeof(CONTROL_SECURITY) * (st->NumSecurities != 0 ? st->NumSecurities : 1));
 	ControlCopyRelease(st->Peering, sizeof(CONTROL_PEERING));

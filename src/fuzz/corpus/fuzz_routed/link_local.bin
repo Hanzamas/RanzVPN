@@ -1,0 +1,1 @@
+{"networks": [{"name": "lab", "gateways": ["fe80::1/64"]}]}

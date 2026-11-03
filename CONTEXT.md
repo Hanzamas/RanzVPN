@@ -614,6 +614,18 @@ An interface of the host of an Exit, other than the loopback, that holds an IPv4
 **Fallback to the proxy**:
 An Exit whose NAT of Windows cannot serve its VRFs uses the proxy, tier 3, for the rest of the run. The causes are a VRF seen through 4via6, a supernet wider than /8, a NAT network of another program, and three failed reconciles in a row. Its status says from which tier it fell back.
 
+**Routed network**:
+An L3 Network of the configuration store of a node with the server role that the **Routed setting** gives gateway addresses (CORE-S6-1). A KM-TEST adapter of its own is its access port and carries its **Gateway addresses**, the IPv4 and IPv6 interfaces of the adapter forward, and the Windows IP stack routes between the routed networks (`NODE_ROUTED`, `NodeRouted.c`). WinNAT gives them NAT only where the **NAT network of the Node** can be made, and the node log says why when it cannot.
+
+**Routed setting**:
+`Routed` in the configuration store: one JSON object with the gateway addresses of each routed network and whether the routed networks go through NAT (`NODE_SETTING_ROUTED`, `NodeRoutedParseSetting`).
+
+**Gateway address (of a routed network)**:
+An address of the host in the routed network, with the prefix length of the network, on the interface of its KM-TEST adapter.
+
+**Member side (of the port of a routed network)**:
+The MAC address behind the port at which the host sees every member of the routed network. The port answers the ARP requests and the Neighbor Solicitations for the addresses of the members with it, and its owner takes the packets that the kernel routes to the members.
+
 **Capability**:
 A fact that a Node reports about its host (SKU, architecture, Hyper-V, LBFO, SeLow, XDP, Egress tier, the fallback to 5555), against which the Controller checks the Intent before an apply. Only a gateway or edge feature, or one a platform cannot carry (an L2 Network on arm64), needs one.
 _Avoid_: `CAPS` (the slim fork's server capability list), feature flag
@@ -916,6 +928,18 @@ The least time between two changes of the keys of one Node that the Controller a
 
 **Held report**:
 A `Pins` report that differs from the keys in force and comes within the **PinsInterval** of its Node. The Controller keeps the last one of them, drops it when the Node reports the keys in force again, and applies it at the first look at the keys after the interval ends.
+
+**Mimic server**:
+A Node whose Listener has a `mimic` section. The server role of its **Mimicry sidecar** listens at the address of the section, with the **Key of the mimic server** (`NodeMimicState.c`, CORE-P2-7).
+
+**Mimic part (of a state)**:
+The settings of the **Mimic server** of a Node, with the **Short id** that the Controller made and no key, and the **Mimic links** of the Node. It is `NodeConfig.mimic` of the control protocol and `CONTROL_MIMIC` in the core (`ControlMimic.c`). A state without it takes the settings out of the Configuration store and stops the sidecar of each role.
+
+**Key of the mimic server**:
+The X25519 key pair that a Node makes the first time that a state asks it for a mimic server. The private key is in the `private_key` of its `MimicServer` setting only, and the public key goes to the Controller in `Pins` (`CONTROL_KEYS`), after each Hello and whenever it changes. The Node keeps the key until a state without the server role, and after a restart it reports the same key.
+
+**Mimic tracer**:
+The step `Mimic tracer` of `build_and_test` (`vpntest mimictrace` with `.github/scripts/mimic-tracer.ps1`), on x64 and arm64: a real `ranz controller` with its rqlited, a server Node and a client Node, and the Noise session of the client over the mimic transport.
 
 **Switch**:
 The forwarding plane of one L2 Network (`SWITCH`, the Switch module), in place of the forwarding of the Hub. It is not a name for the Hub, whose entry avoids "virtual switch".

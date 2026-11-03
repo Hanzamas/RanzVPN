@@ -13,8 +13,9 @@
 // and prefix within its bytes, every string ends in its buffer, a TLS fingerprint is 64 hex digits in lower case, a
 // session profile of the node or of a peer that is not set holds nothing (ControlCopyProfiles; SDN-40 #233), the BGP
 // peering of the node and of each peer has the address of a sidecar that is IPv4 or IPv6, and that of a peer a VRF
-// (ControlCopyPeerings; SDN-77 #357), and a source group has a group ID of 16 bits and a VRF a tag mode that the node
-// knows (SDN-87 #386). After
+// (ControlCopyPeerings; SDN-77 #357), a source group has a group ID of 16 bits and a VRF a tag mode that the node
+// knows (SDN-87 #386), and the mimic part of the node has a server with a server name and links with an address
+// (ControlCopyMimic; CORE-P2-7 #424). After
 // a message whose Update was handed to the owner, the client must have taken it and stand at its Generation. Each message
 // is copied into a buffer of its size exactly, so that AddressSanitizer reports a read past it. The client allocates from
 // the process heap, which Mayaqua does not count: AddressSanitizer checks those blocks, and -rss_limit_mb bounds a leak.
@@ -28,8 +29,9 @@
 // The seeds (src/fuzz/seeds/fuzz_control.py) are the control messages that the controller conformance tests and the
 // cluster tests sent and received, each a seed of its own (wire-*.bin), and the messages that each simulated node
 // received, in their order, as one stream (stream-*.bin); a state with L2 and L3 Networks followed by Operations of
-// every kind (operation-*.bin); and a state whose VRFs peer by BGP followed by deltas with a peering that the node cannot
-// read, without it and with it again (peering-*.bin).
+// every kind (operation-*.bin); a state whose VRFs peer by BGP followed by deltas with a peering that the node cannot
+// read, without it and with it again (peering-*.bin); and a state whose node is a mimic server and the client of two
+// followed by deltas with what the node leaves out of its mimic part, without it and with it again (mimic-*.bin).
 //
 // fuzz-max-len: 8192
 // fuzz-libs: corecontrol
@@ -452,6 +454,54 @@ static void FuzzPeerings(const CONTROL_STATE *st)
 	}
 }
 
+// The mimic part of the node (CORE-P2-7 #424): a server with a server name and a mode of the decoy that the node knows, links
+// with an address, each count within its array, each short id within its bytes and every string ending in its buffer
+static void FuzzMimic(const CONTROL_STATE *st)
+{
+	const CONTROL_MIMIC *m = st->Mimic;
+
+	if (m == NULL)
+	{
+		return;
+	}
+	if ((m->HasServer == false && m->NumLinks == 0) || m->NumLinks > CONTROL_MIMIC_LINKS)
+	{
+		FuzzFail("a mimic part holds neither a server nor a link, or too many links");
+	}
+
+	if (m->HasServer)
+	{
+		const CONTROL_MIMIC_SERVER *s = &m->Server;
+
+		if (s->NumServerNames == 0 || s->NumServerNames > CONTROL_MIMIC_NAMES || s->ShortIdSize > CONTROL_MIMIC_SHORT_ID ||
+			(s->DecoyMode != CONTROL_MIMIC_DECOY_OWN && s->DecoyMode != CONTROL_MIMIC_DECOY_BORROW) || FuzzEnds(s->Listen, sizeof(s->Listen)) == false ||
+			FuzzEnds(s->Dest, sizeof(s->Dest)) == false || FuzzEnds(s->AcmeDirectory, sizeof(s->AcmeDirectory)) == false ||
+			FuzzEnds(s->AcmeEmail, sizeof(s->AcmeEmail)) == false || FuzzEnds(s->AcmeCacheDir, sizeof(s->AcmeCacheDir)) == false ||
+			FuzzEnds(s->AcmeCaFile, sizeof(s->AcmeCaFile)) == false || FuzzEnds(s->CertFile, sizeof(s->CertFile)) == false || FuzzEnds(s->KeyFile, sizeof(s->KeyFile)) == false)
+		{
+			FuzzFail("a mimic server has no server name or too many, a short id that does not fit, a decoy mode that the node does not know, or a string that does not end");
+		}
+		for (UINT i = 0;i < s->NumServerNames;i++)
+		{
+			if (s->ServerNames[i][0] == 0 || FuzzEnds(s->ServerNames[i], sizeof(s->ServerNames[i])) == false)
+			{
+				FuzzFail("a server name of a mimic server is empty or does not end");
+			}
+		}
+	}
+
+	for (UINT i = 0;i < m->NumLinks;i++)
+	{
+		const CONTROL_MIMIC_LINK *l = &m->Links[i];
+
+		if (l->Address[0] == 0 || l->ShortIdSize > CONTROL_MIMIC_SHORT_ID || FuzzEnds(l->Peer, sizeof(l->Peer)) == false ||
+			FuzzEnds(l->Address, sizeof(l->Address)) == false || FuzzEnds(l->ServerName, sizeof(l->ServerName)) == false)
+		{
+			FuzzFail("a mimic link has no address, a short id that does not fit, or a string that does not end");
+		}
+	}
+}
+
 // The owner of the clients: it checks each state that it is handed
 static void FuzzControlState(void *param, const CONTROL_STATE *st)
 {
@@ -494,6 +544,7 @@ static void FuzzControlState(void *param, const CONTROL_STATE *st)
 	FuzzTlsPins(st);
 	FuzzSecurities(st);
 	FuzzPeerings(st);
+	FuzzMimic(st);
 }
 
 // The owner of the live operations (SDN-50-N, #492): it checks the Operation that it is handed, and answers it with every entry
