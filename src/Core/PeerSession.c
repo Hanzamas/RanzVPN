@@ -23,16 +23,23 @@
 // initiator reads a response on a copy of its handshake, so a response that does not open is dropped and leaves the
 // handshake on its way, as WireGuard ignores one: the index that it names is in the clear, and anyone can make one
 // (CORE-H2-R1 #436). When both ends start at once, the end with the lower static key keeps its own handshake and
-// ignores the other's initiation, and the other gives its own up and answers, so the two end in one session. The
-// responder sends under the new keys at once when it had none that the initiator confirmed, and keeps the ones that it
-// had as Previous, for the records under them that the initiation overtook on the way (CORE-H2-R1 #436); when it had
-// confirmed keys, the new ones wait as Next until the initiator's first record under them, and the old ones keep the
-// traffic going meanwhile, so a rekey loses nothing. The keys before stay as Previous for the records still on their
-// way. The initiator of the keys replaces them after SessionRekeyTime, and either end after SessionRekeyDatagrams
-// records under them; keys three times older than SessionRekeyTime are dropped. A record with a payload that had no
-// answer for SessionKeepalive gets a keepalive back, and a session with no record from the peer for SessionTimeout is
-// dropped; the next datagram starts a new handshake. The keys belong to the pair of nodes, not to the path, so an
-// Upgrade or a Fallback keeps them.
+// ignores the other's initiation, and the other gives its own up and answers, so the two end in one session. Once its
+// own initiation went again with no answer, the end with the lower key answers the other's as well and keeps its own on
+// its way, with the new keys as Next until the other's first record under them: when its clock is behind the clock at
+// which the other made its entry of it, the other refuses its initiations as replays (PeerFloorOf), and the two would
+// wait for each other for as long as the skew (CORE-H2-R2 #607). The responder sends under the new keys at once when it
+// had none that the initiator confirmed, and keeps the ones that it had as Previous, for the records under them that the
+// initiation overtook on the way (CORE-H2-R1 #436). The keys before those go, so when that initiation is the retry of
+// one whose response was lost, the records that the initiator sends under the keys that it still has until the response
+// to the retry comes are dropped, about a round trip: the responder cannot tell a retry from a rekey whose initiation
+// overtook the records under the keys that it replaces, which the initiator has, and keeping both takes a fourth set of
+// keys (CORE-H2-R2 #607, accepted; docs/formal-model.md). When the responder had confirmed keys, the new ones wait as
+// Next until the initiator's first record under them, and the old ones keep the traffic going meanwhile, so a rekey
+// loses nothing. The keys before stay as Previous for the records still on their way. The initiator of the keys
+// replaces them after SessionRekeyTime, and either end after SessionRekeyDatagrams records under them; keys three
+// times older than SessionRekeyTime are dropped. A record with a payload that had no answer for SessionKeepalive gets a
+// keepalive back, and a session with no record from the peer for SessionTimeout is dropped; the next datagram starts a
+// new handshake. The keys belong to the pair of nodes, not to the path, so an Upgrade or a Fallback keeps them.
 //
 // Locks: the caller holds the lock of the layer, shared, so the PEER stays; the session has a lock of its own, and
 // the handshake takes KeyLock for the Diffie-Hellman of the node's static key. Nothing here sends: the layer sends
@@ -426,8 +433,8 @@ static void PeerWindowUpdate(PEER_KEYPAIR *k, UINT64 c) {
 }
 
 // An initiation from the peer p: answer it with a response in o and take the new keys, unless it does not open, is not
-// from p, is a replay, or crosses the node's own initiation and the node has the lower key. The caller holds the lock
-// of the session.
+// from p, is a replay, or crosses the node's own initiation, which went once only, and the node has the lower key. The
+// caller holds the lock of the session.
 static UINT PeerSessionTakeInit(PEER_AGENT *a, PEER *p, PEER_SESSION *s, const PEER_RECORD_INFO *r, const UCHAR *data, UINT size, PEER_SESSION_OUT *o) {
 	NOISE_HANDSHAKE hs;
 	UCHAR payload[PEER_INIT_PAYLOAD];
@@ -437,6 +444,7 @@ static UINT PeerSessionTakeInit(PEER_AGENT *a, PEER *p, PEER_SESSION *s, const P
 	UINT len = 0;
 	UINT out = 0;
 	UINT reason = PEER_OK;
+	bool lower = (memcmp(a->Key.Public, p->Info.Key, PEER_KEY_SIZE) < 0);
 
 	ZeroMemory(&k, sizeof(k));
 
@@ -450,8 +458,8 @@ static UINT PeerSessionTakeInit(PEER_AGENT *a, PEER *p, PEER_SESSION *s, const P
 		reason = PEER_DROP_FORGED;
 	} else if (h.Timestamp <= PeerFloorOf(p, s->LastInit)) {
 		reason = PEER_DROP_REPLAY;
-	} else if (s->Pending && memcmp(a->Key.Public, p->Info.Key, PEER_KEY_SIZE) < 0) {
-		// Two handshakes at once: the node with the lower key keeps its own, which the peer answers
+	} else if (lower && s->Pending && s->PendingTries < 2) {
+		// Two handshakes at once: the node with the lower key keeps its own, which went once only, and the peer answers it
 		reason = PEER_OK;
 	} else {
 		UINT index = PeerSessionIndex(s);
@@ -468,23 +476,33 @@ static UINT PeerSessionTakeInit(PEER_AGENT *a, PEER *p, PEER_SESSION *s, const P
 		if (ok == false || PEER_RESPONSE_HEADER + out != PEER_RESPONSE_SIZE || NoiseHandshakeSplit(&hs, &k.Send, &k.Recv) == false) {
 			reason = PEER_DROP_SESSION;
 		} else {
+			// The node that lost the tie of two handshakes at once gives its own up. The node with the lower key whose own
+			// initiation went again with no answer keeps it on its way and answers the peer's as well: the peer may refuse
+			// its initiations as replays, while its clock is behind the clock of the peer's entry of it (PeerFloorOf), and
+			// would wait for the answer to its own for as long as the skew (CORE-H2-R2 #607)
+			bool keep = (lower && s->Pending);
+
 			s->LastInit = h.Timestamp;
 
-			// The node that lost the tie of two handshakes at once gives its own up
-			if (s->Pending)
-				NoiseHandshakeFree(&s->Handshake);
-			s->Pending = false;
-			s->PendingTries = 0;
+			if (keep == false) {
+				if (s->Pending)
+					NoiseHandshakeFree(&s->Handshake);
+				s->Pending = false;
+				s->PendingTries = 0;
+			}
 
 			k.Valid = true;
 			k.LocalIndex = index;
 			k.RemoteIndex = h.Sender;
 			k.Created = PeerNow();
 
-			// Keys the peer has confirmed stay in use until its first record under the new ones. Else the new ones
-			// replace them at once, and keys that the peer has not confirmed yet stay as the keys before: the peer may
-			// have sent records under them that this initiation overtook on the way (CORE-H2-R1 #436)
-			if (s->Current.Valid && s->Current.Confirmed) {
+			// Keys the peer has confirmed stay in use until its first record under the new ones, and the new keys of a node
+			// that keeps its own handshake wait for that record too: the peer gives them up when it takes the node's own
+			// initiation, as two handshakes at once end. Else the new ones replace the keys at once, and keys that the peer
+			// has not confirmed yet stay as the keys before: the peer may have sent records under them that this initiation
+			// overtook on the way (CORE-H2-R1 #436). The keys before those go, also when this initiation is the retry of one
+			// whose response was lost (accepted, header)
+			if ((s->Current.Valid && s->Current.Confirmed) || keep) {
 				PeerKeypairMove(&s->Next, &k);
 			} else {
 				if (s->Current.Valid)

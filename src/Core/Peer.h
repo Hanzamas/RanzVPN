@@ -347,6 +347,10 @@ void PeerSessionTickAt(PEER_AGENT *a, UINT64 now);
 // was sent or taken after the tick read it
 void PeerTickAt(PEER_AGENT *a, UINT64 now);
 
+// Peer.c: the floor of the entry of a peer raised to a wall clock that the caller gives (100 ns units, the clock of the
+// sequences), for a test of a peer whose clock is behind the node's by a skew that stays while the test runs
+bool PeerSetFloor(PEER_AGENT *a, const UCHAR *key, UINT64 wall);
+
 // PeerSignal.c
 bool PeerKeyFromScalar(PEER_KEY *k, const UCHAR *priv);
 bool PeerKeyOpen(PEER_KEY *k, const wchar_t *name);

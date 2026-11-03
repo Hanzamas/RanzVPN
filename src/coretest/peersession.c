@@ -18,6 +18,9 @@
 //     order that each case needs: the records under keys that the peer had not confirmed yet, which the peer's next
 //     initiation overtakes, are taken; a response made from the clear header of an initiation leaves the handshake on
 //     its way; and a peer whose clock is behind is a replay to a new entry for as long as its skew, and no longer.
+//   - The case of the review of PR 580 (CORE-H2-R2 #607), on two such nodes: a peer whose clock is behind, with the
+//     lower static key and a handshake on its way, and a node whose entry of it is new, both with traffic, have a
+//     session within two tries of the peer, though the node refuses its initiations as replays for the whole case.
 // The control plane is stood in for by the test, which hands each signal from one node to the other.
 
 #include "coretest.h"
@@ -1091,6 +1094,67 @@ static void ps_skew() {
 	PeerKeyClose(&ks);
 }
 
+// The case of the review of PR 580 (CORE-H2-R2 #607): how far the clock of S is behind N's, 2 minutes in the 100 ns units
+// of the sequences, which no run of the case lasts
+#define PS_BEHIND 1200000000ULL
+
+// A peer S whose clock is behind N's, with the lower static key, and N, whose entry of S is new, as after a restart of N,
+// both with traffic for the other (note 1 of the review of PR 580). The case holds the skew still: N refuses every
+// initiation of S as a replay to its entry. S ignores the initiation of N while its own went once only, as the end with
+// the lower key of two handshakes at once, and from its second try on answers N's as well and keeps its own on its way,
+// so the pair has a session at the next initiation of N, within two of S's tries and not after the skew. Before, S
+// ignored every initiation of N while its own waited, and the pair had no session until S's clock passed N's entry.
+static void ps_skew_both() {
+	PEER_STATUS sn, ss;
+
+	PS_WIRE *x = ps_wire_new(1, 37, NULL);
+	PS_WIRE *y = ps_wire_new(33, 38, NULL);
+	if (coretest_check(x != NULL && y != NULL, "N and S, whose datagrams the test hands on, start") == false) {
+		ps_wire_free(x);
+		ps_wire_free(y);
+		return;
+	}
+	ps_wire_pair(x, y);
+
+	// S is the node of the lower static key; N made its entry of S when its clock was PS_BEHIND ahead of S's
+	PS_WIRE *s = (memcmp(x->Key.Public, y->Key.Public, PEER_KEY_SIZE) < 0 ? x : y);
+	PS_WIRE *n = (s == x ? y : x);
+	bool behind = PeerSetFloor(n->Agent, s->Key.Public, ps_wall_clock() + PS_BEHIND);
+
+	// Both have traffic: S's initiation is a replay to N, and N's, which crosses it, finds S's own on its first try
+	bool s_sent = PeerSend(s->Agent, n->Key.Public, "from s", 6);
+	ULONGLONG ts = GetTickCount64();
+	bool n_sent = PeerSend(n->Agent, s->Key.Public, "from n", 6);
+	ULONGLONG tn = GetTickCount64();
+	ps_wire_hand(s, 0, n);
+	ps_wire_hand(n, 0, s);
+	coretest_check(behind && s_sent && n_sent && ps_agent_drop(n->Agent, PEER_DROP_REPLAY) == 1 && s->Num == 1 && n->Num == 1,
+	               "N refuses S's initiation as a replay to its entry of S, and S, whose own initiation went once only, ignores N's: the end with the lower key keeps its own of two handshakes at once");
+
+	// The second try of S is a replay too; N's next initiation finds the one of S gone again with no answer
+	PeerSessionTickAt(s->Agent, ts + PEER_SESSION_RETRY);
+	ps_wire_hand(s, 1, n);
+	PeerSessionTickAt(n->Agent, tn + PEER_SESSION_RETRY);
+	ps_wire_hand(n, 1, s);
+	PeerGetStatus(s->Agent, n->Key.Public, &ss);
+	coretest_check(s->Num == 3 && n->Num == 2 && s->Data[2][0] == PEER_MSG_RESPONSE && ps_agent_drop(n->Agent, PEER_DROP_REPLAY) == 2 && ss.Session == PEER_SESSION_HANDSHAKE,
+	               "N refuses the second try of S as a replay too, and S answers N's next initiation, as its own went again with no answer, and keeps its own on its way");
+
+	// N takes the response and sends its datagram that waited under the new keys; S takes it, and its own datagram goes
+	ps_wire_hand(s, 2, n);
+	ps_wire_hand(n, 2, s);
+	ps_wire_hand(s, 3, n);
+	PeerGetStatus(n->Agent, s->Key.Public, &sn);
+	PeerGetStatus(s->Agent, n->Key.Public, &ss);
+	bool up = (sn.Session == PEER_SESSION_UP && ss.Session == PEER_SESSION_UP && memcmp(sn.SessionId, ss.SessionId, PEER_SESSION_ID_SIZE) == 0 && sn.Handshakes == 1 && ss.Handshakes == 1);
+	coretest_check(up && s->Received == 1 && s->LastSize == 6 && memcmp(s->Last, "from n", 6) == 0 && n->Received == 1 && n->LastSize == 6 && memcmp(n->Last, "from s", 6) == 0 &&
+	                   ps_agent_drop(n->Agent, PEER_DROP_REPLAY) == 2,
+	               "The pair has a session within two tries of S, though N refused both of them as replays: the datagram that waited at each end arrives");
+
+	ps_wire_free(x);
+	ps_wire_free(y);
+}
+
 void peersession_test() {
 	PS_WORLD w;
 
@@ -1112,4 +1176,7 @@ void peersession_test() {
 	ps_unconfirmed();
 	ps_forged_response();
 	ps_skew();
+
+	// The case of the review of PR 580 (CORE-H2-R2 #607)
+	ps_skew_both();
 }
