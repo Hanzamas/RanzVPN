@@ -13,6 +13,7 @@
 <main>
 <h1>Networks</h1>
 <p class="lead">Each Network belongs to one VRF and is L3 or L2, with its address pools. Change them on the <a href="/intent">Intent</a> page.</p>
+<p id="tcp-split">TCP splitting (<code>tcpSplit</code> of an L3 Network, off by default) removes the TCP-over-TCP meltdown on the TLS-443 fallback: a node terminates the TCP connections of its host and carries only their byte streams. It changes what an ACK means: an application's ACK says that its client node has the data, not that the far end has it, and the far end sees the connection come from the node at the other end of the tunnel. Connect, refusal, timeout, half-close and reset still map to the far end.</p>
 <ranz-problem></ranz-problem>
 <form id="filter" class="inline">
 <label for="vrf">VRF</label>

@@ -700,6 +700,12 @@ message Network {
   // the host whose source or destination is in a pool of the Network as its ingress node, and records each traced packet
   // that it handles in the VRF. Off by default.
   bool trace = 9;
+  // TCP splitting of an L3 Network (CORE-P2-3 #94, ADR-0022 amendment of 2026-10-21): in the state of every node of its
+  // VRF while it is on, off by default. A node terminates the TCP connections that its host opens from its address in the
+  // Network on the Windows TCP stack and carries only their byte streams to the peer that the destination routes to,
+  // which opens each connection to its real destination; that peer opens one only for a source in such a Network. A
+  // node of an older release skips the field it does not know. 9 is the trace of SDN-89 (#388), so this is 10.
+  bool tcp_split = 10;
 }
 
 // The security of an L2 Network (SDN-41 #234, ADR-0019 decision 1): the protections of the fork
@@ -925,6 +931,11 @@ message Capabilities {
   // release has them, and ranz.exe is next to it. A node that does not report it is refused as a member of a VRF whose Intent
   // names reflectors.
   bool bgp_reflection = 16;
+  // The node runs the TCP splitting of the L3 Networks (CORE-P2-3 #94): it splits the TCP connections of its host in a Network
+  // with tcp_split, and answers the split flows that its peers open to it. A node that does not report it is refused as a
+  // member of a VRF that has such a Network, since the split connections of its peers to it would time out. 16 is the
+  // Capability bgp_reflection of SDN-79 (#359), so this is 17.
+  bool tcp_split = 17;
 }
 
 // The Windows edition of a node's host.

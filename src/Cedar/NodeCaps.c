@@ -211,6 +211,9 @@ void NodeCapsProc(void *param, CONTROL_CAPS *caps) {
 	// The source groups travel with the packets of every node (NodeSourceGroup.c; SDN-87, #386)
 	if (caps != NULL)
 		caps->Tags = true;
+	// TCP splitting runs on the Windows TCP stack and the filter engine of every host (NodeSplit.c; CORE-P2-3, #94)
+	if (caps != NULL)
+		caps->TcpSplit = true;
 }
 
 void NodeCapsPeering(NODE *n, CONTROL_CAPS *caps) {

@@ -54,6 +54,9 @@ type Capabilities struct {
 	EVPN bool `json:"evpn,omitempty"`
 	// BGPReflection: the node runs the route reflectors of the BGP peering (SDN-79), as a reflector and as a client.
 	BGPReflection bool `json:"bgpReflection,omitempty"`
+	// TCPSplit: the node runs the TCP splitting of the L3 Networks (CORE-P2-3). The Controller refuses a node that does not
+	// report it as a member of a VRF with a Network that splits TCP (split.go).
+	TCPSplit bool `json:"tcpSplit,omitempty"`
 }
 
 var skuNames = map[controlpb.Sku]string{
@@ -90,6 +93,7 @@ func FromProto(p *controlpb.Capabilities) *Capabilities {
 		BGPPeering:      p.GetBgpPeering(),
 		EVPN:            p.GetEvpn(),
 		BGPReflection:   p.GetBgpReflection(),
+		TCPSplit:        p.GetTcpSplit(),
 	}
 	if len(p.GetWireguardKey()) > 0 {
 		c.WireGuardKey = base64.StdEncoding.EncodeToString(p.GetWireguardKey())
@@ -113,6 +117,7 @@ func (c Capabilities) Proto() (*controlpb.Capabilities, error) {
 		BgpPeering:      c.BGPPeering,
 		Evpn:            c.EVPN,
 		BgpReflection:   c.BGPReflection,
+		TcpSplit:        c.TCPSplit,
 	}
 	if c.WireGuardKey != "" {
 		k, err := base64.StdEncoding.DecodeString(c.WireGuardKey)

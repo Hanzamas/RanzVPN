@@ -101,6 +101,8 @@ func Compile(in intent.Intent) (map[string]State, error) {
 		nw.Security = security(in, name)
 		// The trace of its packets, for every node of its VRF (SDN-89)
 		nw.Trace = n.Trace
+		// The TCP splitting of an L3 Network, for every node of its VRF (split.go; CORE-P2-3)
+		nw.TcpSplit = tcpSplit(in, name)
 		networks[n.VRF] = append(networks[n.VRF], nw)
 	}
 	keys := map[string][]byte{}
