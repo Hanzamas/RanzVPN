@@ -1,0 +1,26 @@
+{
+  "description": "The import of both Virtual Hubs of the sample Config file (SDN-27, #203): LAB and OFFICE are two VRFs, each with one Network, and what the one lets through or drops never reaches the other, as a Virtual Hub of the fork never saw the frames of another. OFFICE has no access list, so its one Policy lets through what no entry matches, which is what the fork did on it: tests/golden/policyimport records kim to lee on TCP 445 and lee to max on UDP 53 as passed, and the ping of max to kim goes the same way. The access list of LAB still judges the Nodes of LAB alone, with OFFICE imported beside it (the SSH of bob to the server is dropped by its entry 2), and no Node of the one VRF has a route to an address of the other: bob and kim reach nothing in the other hub, whatever the rules of that hub say.",
+  "nodes": {"bob": 1, "srv": 33, "kim": 65, "lee": 97, "max": 129},
+  "import": {"config": "../golden/configimport/sample.config", "pools": {"LAB": "10.0.0.0/24", "OFFICE": "10.1.0.0/24"}},
+  "intent": {"resources": [
+    {"kind": "Node", "name": "bob", "spec": {"vrfs": ["lab"], "owner": "bob", "addresses": {"lab": "10.0.0.2"}}},
+    {"kind": "Node", "name": "srv", "spec": {"vrfs": ["lab"], "owner": "srv", "addresses": {"lab": "10.0.0.10"}}},
+    {"kind": "Node", "name": "kim", "spec": {"vrfs": ["office"], "owner": "kim", "addresses": {"office": "10.1.0.1"}}},
+    {"kind": "Node", "name": "lee", "spec": {"vrfs": ["office"], "owner": "lee", "addresses": {"office": "10.1.0.2"}}},
+    {"kind": "Node", "name": "max", "spec": {"vrfs": ["office"], "owner": "max", "addresses": {"office": "10.1.0.3"}}}
+  ]},
+  "packets": [
+    {"name": "kim-smb-lee", "from": "kim", "to": "lee", "protocol": "tcp", "sourcePort": 42001, "port": 445,
+     "expect": {"delivered": true, "node": "lee", "vrf": "office", "source": "10.1.0.1", "destination": "10.1.0.2", "rules": {"kim": "office-default-allow", "lee": "office-default-allow"}}},
+    {"name": "lee-dns-max", "from": "lee", "to": "max", "protocol": "udp", "sourcePort": 42002, "port": 53,
+     "expect": {"delivered": true, "node": "max", "vrf": "office", "source": "10.1.0.2", "destination": "10.1.0.3", "rules": {"lee": "office-default-allow", "max": "office-default-allow"}}},
+    {"name": "max-ping-kim", "from": "max", "to": "kim",
+     "expect": {"delivered": true, "node": "kim", "vrf": "office", "source": "10.1.0.3", "destination": "10.1.0.1", "rules": {"max": "office-default-allow", "kim": "office-default-allow"}}},
+    {"name": "bob-ssh-srv", "from": "bob", "to": "srv", "protocol": "tcp", "sourcePort": 42004, "port": 22,
+     "expect": {"delivered": false, "node": "bob", "reason": "policy", "rules": {"bob": "lab-acl-2"}}},
+    {"name": "bob-smb-kim", "from": "bob", "to": "10.1.0.1", "protocol": "tcp", "sourcePort": 42005, "port": 445,
+     "expect": {"delivered": false, "node": "bob", "reason": "route"}},
+    {"name": "kim-ssh-srv", "from": "kim", "to": "10.0.0.10", "protocol": "tcp", "sourcePort": 42006, "port": 22,
+     "expect": {"delivered": false, "node": "kim", "reason": "route"}}
+  ]
+}

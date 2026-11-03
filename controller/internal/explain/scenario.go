@@ -50,10 +50,15 @@ type Scenario struct {
 	Nodes map[string]uint8 `json:"nodes"`
 	// Intent is the intent document of the scenario, applied to an empty intent.
 	Intent intent.Document `json:"intent"`
+	// Import adds the resources that the import of a fork Config file makes to the intent, before those of Intent
+	// (forkimport.go, SDN-27 #203). Left out, Intent is all of it.
+	Import *ForkImport `json:"import,omitempty"`
 	// Packets are the test packets, each the first of a flow, in the order that the harness sends them.
 	Packets []ScenarioPacket `json:"packets"`
 	// Fault breaks the data plane of the harness on purpose, nil for a scenario that the suite must pass.
 	Fault *Fault `json:"fault,omitempty"`
+	// dir is the directory of the file of the scenario, which the path of Import is relative to.
+	dir string
 }
 
 // ScenarioPacket is a test packet of a scenario: its query, and the verdict that Explain and the data plane must
@@ -97,6 +102,7 @@ func LoadScenario(path string) (Scenario, error) {
 		return Scenario{}, fmt.Errorf("%s: %w", path, err)
 	}
 	s.Name = strings.TrimSuffix(filepath.Base(path), ".json")
+	s.dir = filepath.Dir(path)
 	return s, nil
 }
 
@@ -128,6 +134,13 @@ func ScenarioKey(first uint8) []byte {
 // intent without a key in Nodes, or one whose publicKey is not that key, is an error.
 func (s Scenario) Document() (intent.Document, error) {
 	doc := intent.Document{Resources: slices.Clone(s.Intent.Resources)}
+	if s.Import != nil {
+		imported, err := s.Import.resources(s.dir)
+		if err != nil {
+			return intent.Document{}, fmt.Errorf("scenario %s: %w", s.Name, err)
+		}
+		doc.Resources = append(imported, doc.Resources...)
+	}
 	seen := map[string]bool{}
 	for i, r := range doc.Resources {
 		if r.Kind != intent.KindNode {

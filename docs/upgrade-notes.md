@@ -2,6 +2,33 @@
 
 What an existing server shows after an upgrade. Newest first.
 
+## SDN-27 (#203): `ranz import-config` turns the Virtual Hubs of the old server into intent
+
+The Controller does not read `ranz_server.config`. `ranz import-config` reads it once and writes an intent document that `ranz apply -f` takes (ADR-0031, decision 11). The old server runs on until every Virtual Hub has moved, so the command takes the hubs that you name and changes nothing of the old server. It reads the file and calls no Controller, so it needs no token.
+
+- **What each Virtual Hub becomes.** A VRF with one Network, both named after the hub in lower case (`LAB` is `lab`, `My Hub` is `my-hub`). The hub `DEFAULT`, which every server has, is the VRF `default-2` and not `default`, so that the import never replaces the VRF default of a first install. Each group of the hub is a Group and each user is a User of the Group of its group. The name of a Group is a tag of policy (ADR-0031, amendment of 2026-10-25), so the Node of a user holds the tags of its Groups. A user or a group that an entry of the access list names is a tag too: a user that an entry names gets a Group of its own.
+- **The access list.** Each active entry is a Policy of the VRF, in the order that the fork judges by, and one more Policy lets through what no entry matches, as the fork does. The Policies are named `<vrf>-acl-N`, where N is the Id of the entry in `vpncmd`, and `<vrf>-default-allow`.
+- **What a Policy cannot match.** A Policy has no source port, no MAC address, no TCP state and no list of users in a file, and it takes a mask only when the mask is a prefix. The import never lets through the first packet of a flow that the fork dropped. An entry that denies and has such a match is carried without it, so it denies more than the fork did. An entry that allows and has one is left out, so it lets nothing through. An entry with a redirect URL is carried as a deny entry. The delay, the jitter and the loss of an entry are left out. The report names each of them with the number of the entry, so read it before you apply the document.
+- **The replies.** The Policies judge the first packet of a flow, and the replies of a flow that a Policy allowed pass (ADR-0029), where the fork judged every frame by itself. A reply that an entry of the fork drops, to a flow that no entry drops, passes after the import.
+- **What is not imported.** The passwords (a User has none until `ranz user password` sets one), the login by certificate, RADIUS or NT domain, the limits and the options of a user, a group and a Virtual Hub (the expiry of a user and its flags `FixPassword` and `NoSavePassword` are imported), the Cascades, the Local Bridges, the listeners, the certificates and the administrators of the server.
+- **The pool.** A Virtual Hub of the fork has no IPv4 pool, so a Network gets one only from `-pool`. The report says which Networks have none, and no Node gets an address in a Network without one.
+
+1. **Make the document.** The report is on standard error and the document on standard output:
+
+   ```powershell
+   ranz import-config -pool 'LAB=10.20.0.0/24' -pool 'OFFICE=10.21.0.0/24' 'C:\path\to\ranz_server.config' > hubs.yaml
+   ```
+
+   `-hub NAME` takes one hub, and can be given more than once. `-mode L2` makes L2 Networks and `-o json` writes JSON. The names of the resources are the ones that the import of every hub makes, so two runs that take different hubs never make one name twice.
+
+2. **Read the report and the document.** Each Virtual Hub has a line with the VRF and the Network that it became, and its notes under it.
+
+3. **Apply the document.** `ranz apply -f hubs.yaml` adds the resources and changes none of the others, and `ranz diff` and `ranz rollback` show and undo it. Do not use `ranz import -f` for this document: it makes the document the whole intent and deletes every resource that the document does not name.
+
+4. **Set the passwords.** `ranz user password NAME` for each user that signs in. Then give each Node the `owner` that is its User, so that it holds the tags of the Groups of that User.
+
+5. **Check what the access list does.** `ranz explain -vrf lab -protocol tcp -port 22 A B` says which Policy judges a packet from the Node A to the Node B, and the scenarios of `tests/explain` (`forkimport`, `forkimport-exact` and `forkimport-hubs`) show the same verdict in the data plane of real Nodes.
+
 ## AUD1-DT-18-R1 (#554): `ranz install` works on the data directory through a handle
 
 The data directory of a Controller that is installed is not touched by the upgrade, and the service starts in it as before. What changes is how the install and the service make a new data directory, and how the install takes over one that is there:

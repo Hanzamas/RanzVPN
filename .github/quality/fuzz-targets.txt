@@ -238,6 +238,11 @@ controller/internal/control  Conn.SetReadDeadline  exempt  sets the deadline of 
 # of FrontDoorHandoffDecode)
 controller/internal/port  DecodeHandoff  FuzzDecodeHandoff
 
+# The Config file of the fork, ranz_server.config, and its import into an intent document (SDN-27 #203): Parse reads the text
+# tree of its Cfg module, and Import walks the Virtual Hubs of the tree into resources, which FuzzImport applies to an empty intent
+controller/internal/forkimport  Parse   FuzzParse
+controller/internal/forkimport  Import  FuzzImport
+
 # The Controller settings of a Node, as an operator types them into ranz node controller set (SDN-90 #395)
 controller/internal/nodecontroller  Parse  FuzzParse
 src/Cedar  NodeAdminCommand  exempt  one command line of an Administrator on the admin pipe of the Node, which only SYSTEM and the Administrators may open: ParseToken splits it, and the three values of the Controller settings in it pass the checks of the address, the base64 key of 32 bytes and the 64 hex digits, which nodecontroller.Parse (FuzzParse) makes before ranz node sends them
