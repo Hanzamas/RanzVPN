@@ -31,7 +31,7 @@
 //   the member translated back. Once the node stopped, the NAT network of the node and the gateway addresses are gone.
 // Prints "L3ROUTE TEST OK" only when every check passes.
 
-#include "harness_int.h"
+#include "golden.h"
 #include "testlist.h"
 
 #include "Cedar/ConfigStore.h"
