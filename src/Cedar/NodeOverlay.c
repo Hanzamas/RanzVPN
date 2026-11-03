@@ -383,6 +383,11 @@ static void NodeOverlayState(void *param, const CONTROL_STATE *state) {
 		NodeEgressApplied(ov->Node, st);
 	// The sidecar of the BGP peering takes the Generation that went in (NodePeering.c; SDN-77, #357)
 	NodePeeringApplied(ov->Node, state, swapped);
+	// The mimic part of the Generation goes in last: the settings and the key of its mimic server, and its links. A sidecar
+	// that it starts or stops is waited for, so the rest of the Generation is in force before, and only the acknowledgement
+	// waits for it (NodeMimicState.c; CORE-P2-7, #424)
+	if (swapped)
+		NodeMimicApplied(ov->Node, st);
 	NodeExitFreeState(exits);
 	NodePeeringDone(with, state);
 	ReleaseSRWLockExclusive(&ov->ApplyLock);
@@ -575,6 +580,9 @@ static bool NodeOverlayAccept(NODE_OVERLAY *ov) {
 	// transport listens nowhere, as that of the client role and the one of a node without it do (SDN-93, #410)
 	if (stream == NULL)
 		stream = NodeListenerAccept(ov->Node);
+	// ... or one that the mimic server of the node took from a client that proved its key (NodeMimicState.c; CORE-P2-7, #424)
+	if (stream == NULL)
+		stream = NodeMimicAcceptServed(ov->Node);
 	if (stream != NULL)
 		NodeHandshakeSubmit(ov->Handshakes, stream);
 
@@ -974,6 +982,8 @@ bool NodeOverlayStart(NODE *n, NODE_OVERLAY_CONFIG *cfg) {
 	cc.Paths = NodeAgentPaths(n);
 	// The counters of the EVPN of a gateway, which the Controller exports too (NodeEvpn.c; SDN-25-R3, #571)
 	cc.Evpn = n->EvpnReport;
+	// The public key of the mimic server of the node, which the Controller gives its clients (NodeMimicState.c; CORE-P2-7, #424)
+	cc.Keys = n->MimicKeys;
 	// The BGP peering of the standard mode, whose report goes on the control stream (NodePeering.c; SDN-77, #357)
 	cc.Peering = NodePeeringStart(n);
 	// The live operations of the Controller read and clear the tables of the switches of the L2 Networks, and the Hello reports
