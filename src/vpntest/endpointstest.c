@@ -21,6 +21,9 @@
 //   c. The endpoints of the Listener, QUIC first: node-c dials, the first entry that connects wins, and the Noise session
 //      comes up on both nodes, node-s taking the stream from its Listener.
 //   d. The first entry reaches nothing: node-c sleeps and wakes, and the race goes on to TLS and the session comes up again.
+//   In c and d both nodes report the key exchange of the session (CORE-P2-5, #382), the group that the stack of their end
+//   gave for the outer QUIC or TLS-443 session: the same at both ends, X25519MLKEM768 where the host asks for it, as the
+//   TLS transports of the nodes set the machine's list where no policy decides it, else a classical group.
 // Print "ENDPOINTS TEST OK" only when every check passes. Needs administrator rights (the LocalMachine\My store, the Wintun
 // adapter) and wintun.dll next to vpntest (.github/scripts/fetch-wintun.ps1).
 
@@ -56,6 +59,7 @@
 #define	ENDPOINTSTEST_NODE_C	"node-c"	// The client role, which dials it
 #define	ENDPOINTSTEST_CN		L"CN=localhost"		// The subject of the certificate of node-s
 #define	ENDPOINTSTEST_SAN		L"localhost"		// ... and its subject alternative name
+#define	ENDPOINTSTEST_SESSIONS	4			// The sessions of a node that the test reads at most
 
 // One node of the test
 typedef struct ENDPOINTSTEST_NODE
@@ -480,6 +484,43 @@ static bool EndpointsTestWaitUp(ENDPOINTSTEST_CTX *ctx, UINT64 dials)
 	return false;
 }
 
+// The key exchange group of the session of the node n to its peer, as its overlay reports it: the group that the stack of its
+// end gave for the outer QUIC or TLS-443 session (CORE-P2-5, #382), 0 when the session is not up or the stack told none
+static UINT EndpointsTestGroupOf(NODE *n, char *peer)
+{
+	NODE_OVERLAY_SESSION list[ENDPOINTSTEST_SESSIONS];
+	UINT num = MIN(NodeOverlayGetSessions(n, list, ENDPOINTSTEST_SESSIONS, NULL, 0), ENDPOINTSTEST_SESSIONS);
+
+	for (UINT i = 0;i < num;i++)
+	{
+		if (StrCmp(list[i].Name, peer) == 0 && list[i].Up)
+		{
+			return list[i].Group;
+		}
+	}
+
+	return 0;
+}
+
+// The key exchange of the session of the two nodes over the path what, which is up (CORE-P2-5, #382): each node reports the
+// group that the stack of its end gave, the same one at both ends, X25519MLKEM768 where the host asks for it, as a Node that
+// reports the Capability pq_tls does (TransportTlsHybrid), else a classical group, which is not quantum-resistant
+static void EndpointsTestGroup(ENDPOINTSTEST_CTX *ctx, char *what)
+{
+	TRANSPORT_TLS_HYBRID h;
+	char tmp[MAX_SIZE];
+	UINT c = EndpointsTestGroupOf(ctx->C.Node, ENDPOINTSTEST_NODE_S);
+	UINT s = EndpointsTestGroupOf(ctx->S.Node, ENDPOINTSTEST_NODE_C);
+
+	TransportTlsHybrid(&h);
+	Print("  [INFO] the %s session: node-c reports the key exchange %s (0x%04X), node-s %s (0x%04X); the host asks for X25519MLKEM768: %s\n", what,
+		TransportGroupName(c), c, TransportGroupName(s), s, h.Asks ? "yes" : "no");
+	Format(tmp, sizeof(tmp), "both nodes report one key exchange for the %s session, as their stacks gave it: %s", what,
+		h.Asks ? "X25519MLKEM768, quantum-resistant, which the host asks for" : "a classical group, not quantum-resistant, as the host does not ask for X25519MLKEM768");
+	EndpointsTestCheck(ctx, c != 0 && c == s && (h.Asks ? c == CRYPTO_GROUP_X25519MLKEM768 : TransportGroupPostQuantum(c) == false), tmp,
+		"node-c 0x%04X, node-s 0x%04X", c, s);
+}
+
 // Whether node-c has no session within ENDPOINTSTEST_BOUND
 static bool EndpointsTestWaitDown(ENDPOINTSTEST_CTX *ctx)
 {
@@ -687,6 +728,10 @@ static void EndpointsTestSteps(ENDPOINTSTEST_CTX *ctx)
 		quic_port != 0 ? "quic" : "tls");
 	EndpointsTestCheck(ctx, up && os.Dials >= 1 && ls.Accepted >= 1, "node-s took the stream from its Listener, though its data transport listens nowhere",
 		"%I64u dials, %I64u streams that node-s took", os.Dials, ls.Accepted);
+	if (up)
+	{
+		EndpointsTestGroup(ctx, StrCmp(cs.Transport, "quic") == 0 ? "QUIC" : "TLS-443");
+	}
 
 	// The first entry reaches nothing: the race goes on to TLS once node-c dials again
 	Print("[the first entry of the list reaches nothing]\n");
@@ -701,6 +746,10 @@ static void EndpointsTestSteps(ENDPOINTSTEST_CTX *ctx)
 	NodeClientGetStatus(ctx->C.Node, &cs);
 	EndpointsTestCheck(ctx, up && StrCmp(cs.Transport, "tls") == 0, "the race goes on to TLS when the QUIC endpoint reaches nothing, and the session comes up again",
 		"applied %u, down %u, up %u, %I64u streams connected, transport %s", (UINT)applied, (UINT)down, (UINT)up, cs.NumDials, cs.Transport);
+	if (up)
+	{
+		EndpointsTestGroup(ctx, StrCmp(cs.Transport, "quic") == 0 ? "QUIC" : "TLS-443");
+	}
 }
 
 RANZ_TEST("endpoints", endpoints_test, "Endpoints of a Node (SDN-93): which of two Nodes dials and which endpoints make the entries of the fallback list, and the client role on a Wintun adapter dials the endpoints of the Peer object of a hub whose Listener takes the stream over QUIC and TLS, not a peer without endpoints and not in a loop (administrator rights, wintun.dll).");

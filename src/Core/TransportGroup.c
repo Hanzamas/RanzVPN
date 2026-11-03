@@ -129,10 +129,13 @@ void TransportTlsHybrid(TRANSPORT_TLS_HYBRID *h) {
 		CopyMemory(list, group_default_list, sizeof(group_default_list));
 	}
 
-	// Each group of the list, read within the buffer, whose last two characters stay NUL
+	// Each group of the list, read within the buffer, whose last two characters stay NUL: its length is counted within what
+	// is left of the buffer, as TransportTlsSetGroups counts it, so that the next group starts inside the buffer too
 	for (UINT i = 0; i < GROUP_LIST_SIZE - 1 && list[i] != 0;) {
-		UINT len = (UINT)wcsnlen(list + i, GROUP_LIST_SIZE - 1 - i);
+		UINT len = 0;
 
+		while (len < GROUP_LIST_SIZE - 1 - i && list[i + len] != 0)
+			len++;
 		if (CompareStringOrdinal(list + i, (int)len, GROUP_HYBRID, -1, TRUE) == CSTR_EQUAL) {
 			h->Listed = true;
 			if (i == 0)

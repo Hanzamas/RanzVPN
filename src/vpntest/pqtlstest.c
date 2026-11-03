@@ -26,8 +26,10 @@
 //   that node-c offers, not quantum-resistant: the one that the server of the host picks, which is not always the first
 //   that the client offers (secp384r1 on the x64 runner, Windows Server 2025, with no ECC Curve Order policy set: its
 //   Schannel server picked it of the X25519, secp256r1 and secp384r1 that node-c offered with a key share each).
-// The listeners of node-s start again in each step, so that their credentials take the list of the step. The test puts the
-// two lists back as it found them, also when its watchdog ends it.
+// The listeners of node-s start again in each step, so that their credentials take the list of the step. node-c makes its TLS
+// transport within a bounded wait, since Schannel may refuse the credential of a transport for a moment right after the lists
+// changed, as it did on the arm64 runner right after the switch off. The test puts the two lists back as it found them, also
+// when its watchdog ends it.
 //
 // "vpntest pqtls probe" changes nothing: it runs one session over TLS-443 and one over QUIC between two transports of this
 // process under the list in force, transports that set no list, and prints the group of each end as "PQTLS PROBE <path>
@@ -493,6 +495,27 @@ static void PqTlsTestClientHello(TRANSPORT *t, PQTLSTEST_HELLO *h)
 	Free(buf);
 }
 
+// node-c's TLS transport of cfg, made again within PQTLSTEST_BOUND while it does not start: Schannel may refuse the credential
+// of a transport for a moment right after the lists changed. On the arm64 runner (Windows 11, build 26200) it refused the one
+// that node-c made at once after the switch off, and gave its own to the front door of node-s a moment later. tries gets the
+// number of transports made, and took the ms from the first to the one that started; NULL when none started.
+static TRANSPORT *PqTlsTestTlsClient(TRANSPORT_TLS_CONFIG *cfg, UINT *tries, UINT64 *took)
+{
+	UINT64 start = Tick64();
+	TRANSPORT *t = TransportTlsClientNew(cfg);
+
+	*tries = 1;
+	while (t == NULL && Tick64() < start + PQTLSTEST_BOUND)
+	{
+		SleepThread(PQTLSTEST_POLL);
+		t = TransportTlsClientNew(cfg);
+		(*tries)++;
+	}
+	*took = Tick64() - start;
+
+	return t;
+}
+
 // The groups as text into str: "X25519MLKEM768 (0x11EC), X25519 (0x001D)", or "none"
 static void PqTlsTestGroupText(char *str, UINT size, UINT *groups, UINT num)
 {
@@ -681,6 +704,8 @@ static void PqTlsTestStep(PQTLSTEST_CTX *ctx, char *thumbprint, bool on)
 	PQTLSTEST_SESSION r;
 	char offered[MAX_SIZE * 2];
 	char shares[MAX_SIZE * 2];
+	UINT tries = 0;
+	UINT64 took = 0;
 
 	if (on)
 	{
@@ -720,14 +745,28 @@ static void PqTlsTestStep(PQTLSTEST_CTX *ctx, char *thumbprint, bool on)
 		"it reports %u", (UINT)caps.PqTls);
 
 	// What the host asks for: the groups of node-c's ClientHello, with the TLS transport that a Node dials the endpoints of
-	// its peers with
+	// its peers with, which starts within a bounded wait once Schannel took the lists of the step
 	TransportTlsDefaultConfig(&tls_cfg, thumbprint, false);
-	TRANSPORT *tls = TransportTlsClientNew(&tls_cfg);
+	TRANSPORT *tls = PqTlsTestTlsClient(&tls_cfg, &tries, &took);
+	if (tls != NULL && tries > 1)
+	{
+		Print("  [GROUP] node-c's TLS transport started at its attempt %u, %I64u ms after the first: Schannel refused the credential of the ones before\n", tries, took);
+	}
 	PqTlsTestClientHello(tls, &hello);
 	PqTlsTestGroupText(offered, sizeof(offered), hello.Groups, hello.NumGroups);
 	PqTlsTestGroupText(shares, sizeof(shares), hello.Shares, hello.NumShares);
 	Print("  [GROUP] node-c's ClientHello offers %s, with the key shares of %s\n", offered, shares);
-	if (PqTlsTestCheck(ctx, hello.Read, "  the test reads the groups that node-c's ClientHello offers", "the transport %s, and no ClientHello came", tls != NULL ? "started" : "did not start"))
+	if (tls == NULL)
+	{
+		// What a transport of TLS 1.3 alone, as the Listener of a Node has it, does under the same lists, which tells a refusal
+		// of the versions of node-c from one of every credential
+		tls_cfg.Versions = TRANSPORT_TLS_13;
+		TRANSPORT *tls13 = TransportTlsClientNew(&tls_cfg);
+		PqTlsTestCheck(ctx, false, "  the test reads the groups that node-c's ClientHello offers", "the transport did not start in %u attempts within %I64u ms, while one of TLS 1.3 alone %s, and no ClientHello came",
+			tries, took, tls13 != NULL ? "started" : "did not start either");
+		TransportTlsFree(tls13);
+	}
+	else if (PqTlsTestCheck(ctx, hello.Read, "  the test reads the groups that node-c's ClientHello offers", "the transport started, and no ClientHello came"))
 	{
 		if (h.Asks)
 		{
