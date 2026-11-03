@@ -48,6 +48,11 @@ import (
 // its exact name in its folder and as itself, and reads its attributes, its number of names, its owner and what a folder
 // holds through that one handle. It looks again once the list is set. What is still open is in checkDataDirChildren and in
 // ST-3.
+//
+// A volume that keeps no access lists, such as a FAT drive, is refused by the flag FILE_PERSISTENT_ACLS of the volume, before
+// anything is made for the data directory (checkDataDirVolume), and again through the handle of the folder that is made or kept
+// (folderOwner); and the owner that a new folder has is judged (protectNewFolder). The owner that a volume answers a query with is
+// no proof that it keeps owners (AUD1-DT-18-R2, #604).
 
 // installDataDirSDDL is dataDirSDDL with the Administrators as its owner, as NODE_DATA_DIR_SDDL of
 // src/Cedar/Node.c is.
@@ -79,6 +84,67 @@ var (
 	afterDataDirLook   = func(dir string) {}
 	dataDirEntryOpened = func(path string) {}
 )
+
+// volumeFlags returns the flags of the volume that the handle h is on (GetVolumeInformationByHandle), which say what its file
+// system keeps: FILE_PERSISTENT_ACLS is the flag of a volume that keeps owners and access lists. A test replaces it to show a volume
+// that keeps none, since no runner has a FAT drive.
+var volumeFlags = func(h windows.Handle) (uint32, error) {
+	var flags uint32
+	if err := windows.GetVolumeInformationByHandle(h, nil, 0, nil, nil, &flags, nil, 0); err != nil {
+		return 0, err
+	}
+	return flags, nil
+}
+
+// needACLs refuses the data directory dir when the flags of its volume (volumeFlags) lack FILE_PERSISTENT_ACLS: a volume that keeps
+// no access lists, such as a FAT drive, has no owner and no list to protect the folder with (finding 3 of the fourth read-only
+// review of PR 541). The flag is what the rest of the package asks of a volume (createBackupFile, checkFingerprintFile and the key
+// files of certgen), not what a query for an owner answers: a volume that keeps no security may answer a query with an owner of its
+// own and a set with success, and then nothing says that the folder was protected.
+func needACLs(dir string, flags uint32) error {
+	if flags&windows.FILE_PERSISTENT_ACLS == 0 {
+		return fmt.Errorf("the data directory %s is on a volume that keeps no access lists, such as a FAT drive, so it can have no owner and no access list to protect it with: name a folder on a volume that keeps them, such as an NTFS volume, with -data", dir)
+	}
+	return nil
+}
+
+// checkDataDirVolume refuses the data directory dir, which need not be there, before anything is made for it, when the volume that
+// will hold it keeps no access lists (needACLs). The install and the start of the service made the folder above the data directory
+// first (os.MkdirAll), and then the data directory, and removed only the data directory again when its volume turned out to keep no
+// lists. The volume is the one of the nearest folder that is there, opened by its path as the call that makes the folder opens the
+// folder above it, so that a link above is followed here as it is there. The handle of the folder that is made, and of one that is
+// kept, is asked again (folderOwner), which holds wherever a rename takes the folder.
+func checkDataDirVolume(dir string) error {
+	above := dir
+	for {
+		_, err := os.Stat(above)
+		if err == nil {
+			break
+		}
+		if !errors.Is(err, fs.ErrNotExist) {
+			return fmt.Errorf("the data directory %s: %w", dir, err)
+		}
+		up := filepath.Dir(above)
+		if up == above {
+			return fmt.Errorf("the data directory %s: no folder above it is there", dir)
+		}
+		above = up
+	}
+	name, err := windows.UTF16PtrFromString(above)
+	if err != nil {
+		return err
+	}
+	h, err := windows.CreateFile(name, windows.FILE_READ_ATTRIBUTES, shareAll, nil, windows.OPEN_EXISTING, windows.FILE_FLAG_BACKUP_SEMANTICS, 0)
+	if err != nil {
+		return fmt.Errorf("the volume of the data directory %s: %w", dir, err)
+	}
+	defer windows.CloseHandle(h)
+	flags, err := volumeFlags(h)
+	if err != nil {
+		return fmt.Errorf("the volume of the data directory %s: %w", dir, err)
+	}
+	return needACLs(dir, flags)
+}
 
 // checkDataDirName refuses the path dir of a data directory when its last element, as filepath.Clean leaves it, ends in a
 // period or a space (finding E of the read-only review of PR 541, at the head 8d282cf3). Windows takes trailing periods and
@@ -179,7 +245,7 @@ func createFolder(dir string, sd *windows.SECURITY_DESCRIPTOR) (*os.File, error)
 // folderOwner returns the owner of the data directory dir, which f holds open as itself. It refuses a link, a junction or a
 // symbolic link, which whoever made it points anywhere, and what is no directory: the folder itself must be the data
 // directory. And it refuses a folder on a volume that keeps no access lists, such as a FAT drive, which has none to protect
-// the directory with: GetSecurityInfo is not asked there.
+// the directory with (needACLs): GetSecurityInfo is not asked there.
 func folderOwner(f *os.File, dir string) (*windows.SID, error) {
 	h := windows.Handle(f.Fd())
 	var info windows.ByHandleFileInformation
@@ -192,12 +258,12 @@ func folderOwner(f *os.File, dir string) (*windows.SID, error) {
 	case info.FileAttributes&windows.FILE_ATTRIBUTE_DIRECTORY == 0:
 		return nil, fmt.Errorf("the data directory %s is not a directory", dir)
 	}
-	var flags uint32
-	if err := windows.GetVolumeInformationByHandle(h, nil, 0, nil, nil, &flags, nil, 0); err != nil {
+	flags, err := volumeFlags(h)
+	if err != nil {
 		return nil, fmt.Errorf("the volume of the data directory %s: %w", dir, err)
 	}
-	if flags&windows.FILE_PERSISTENT_ACLS == 0 {
-		return nil, fmt.Errorf("the data directory %s has no security descriptor: its volume has no access lists", dir)
+	if err := needACLs(dir, flags); err != nil {
+		return nil, err
 	}
 	owner, err := ownerOf(h)
 	if err != nil {
@@ -369,8 +435,10 @@ func stillNamed(dir string, f *os.File) error {
 // put there. Before, the steps read the owner and set the list by name, and gave the folder of the user, or the folder that
 // the junction names, to the Administrators.
 //
-// A volume that keeps no access lists, such as a FAT drive, takes the folder and ignores the descriptor: the folder is removed
-// again, and the error says so (folderOwner).
+// A volume that keeps no access lists, such as a FAT drive, is refused before anything is made, by the flag of the volume
+// (checkDataDirVolume, called by the two steps that make the folder above this one). The folder that the call made is asked
+// again through its handle, which holds wherever a rename takes it, and its owner is read and judged (protectNewFolder): a volume
+// that takes the folder and ignores the descriptor has no owner that it keeps, so the folder is removed again and the error says so.
 //
 // CreateDirectory gives the folder its list as a protected list and no more: the flag of a list that passes a change
 // down to what the folder holds (auto-inherited, AI in the text of a descriptor) is not set, whatever the descriptor says,
@@ -404,11 +472,22 @@ func makeProtectedDir(dir, sddl string) error {
 }
 
 // protectNewFolder reads the owner of the new folder dir that f holds open, the one that createFolder made, which fails on a
-// volume that keeps no access lists, sets the security that sd gives it through f, and refuses it when its path names another
-// folder or a link by then.
+// volume that keeps no access lists, and refuses the folder when that owner may not own a data directory (ownerIsTrusted): the
+// call that made it asked for the Administrators, for the install, and for no owner otherwise, which is the account that made it,
+// so another owner is one that the volume gave it, and the volume then keeps nothing of what the descriptor says (finding 3 of the
+// fourth read-only review of PR 541: the owner was read and dropped). It then sets the security that sd gives the folder through f,
+// and refuses it when its path names another folder or a link by then.
 func protectNewFolder(f *os.File, dir string, sd *windows.SECURITY_DESCRIPTOR) error {
-	if _, err := folderOwner(f, dir); err != nil {
+	owner, err := folderOwner(f, dir)
+	if err != nil {
 		return err
+	}
+	trusted, err := ownerIsTrusted(owner)
+	if err != nil {
+		return err
+	}
+	if !trusted {
+		return fmt.Errorf("the new data directory %s is owned by %s, and only SYSTEM, the Administrators and %s may own it, so the folder that was made for it is removed again: the volume gave it an owner that the call that made it did not ask for", dir, accountName(owner), serviceAccount)
 	}
 	if err := setDataDirSecurity(f, dir, sd); err != nil {
 		return err
@@ -431,10 +510,13 @@ func removeNewFolder(f *os.File) {
 // makeOwnedDataDir makes the data directory dir, which is not there, with the Administrators as its owner and
 // the protected access list of dataDirSDDL from the moment it exists (makeProtectedDir). The path is cleaned
 // first, as createDataDir says, and one that ends in a period or a space is refused before the folder above it is
-// made (checkDataDirName).
+// made (checkDataDirName), and so is a volume that keeps no access lists (checkDataDirVolume).
 func makeOwnedDataDir(dir string) error {
 	dir = filepath.Clean(dir)
 	if err := checkDataDirName(dir); err != nil {
+		return err
+	}
+	if err := checkDataDirVolume(dir); err != nil {
 		return err
 	}
 	if err := os.MkdirAll(filepath.Dir(dir), 0o700); err != nil {
@@ -456,11 +538,17 @@ func makeOwnedDataDir(dir string) error {
 // read-only review of PR 541; TestNewDataDirWithATrailingSeparatorIsMadeWithItsOwnList).
 //
 // A path whose last element ends in a period or a space is refused before the folder above it is made, and nothing is
-// made (checkDataDirName says why; finding E, and the same test): filepath.Clean keeps the tail and Windows drops it, so
+// made (checkDataDirName says why; finding E, TestNewDataDirWithAPathThatEndsInAPeriodOrASpaceIsRefused): filepath.Clean keeps the tail and Windows drops it, so
 // the folder above the cleaned path is the data directory itself, as it was with a trailing separator.
+//
+// A volume that keeps no access lists is refused as well, before the folder above is made, and nothing is made
+// (checkDataDirVolume says why; finding 3 of the fourth read-only review of PR 541).
 func createDataDir(dir string) error {
 	dir = filepath.Clean(dir)
 	if err := checkDataDirName(dir); err != nil {
+		return err
+	}
+	if err := checkDataDirVolume(dir); err != nil {
 		return err
 	}
 	if err := os.MkdirAll(filepath.Dir(dir), 0o700); err != nil {
@@ -657,10 +745,10 @@ func checkEntry(dir string, folder *os.File, name, path string, trusted []*windo
 	if err := windows.GetFileInformationByHandle(h, &info); err != nil {
 		return refuseChild(dir, path, "could not be looked at ("+err.Error()+")")
 	}
-	if info.FileAttributes&windows.FILE_ATTRIBUTE_REPARSE_POINT != 0 {
-		return refuseReparsePoint(dir, path)
-	}
 	isFolder := info.FileAttributes&windows.FILE_ATTRIBUTE_DIRECTORY != 0
+	if info.FileAttributes&windows.FILE_ATTRIBUTE_REPARSE_POINT != 0 {
+		return refuseReparsePoint(dir, path, isFolder, reparseTag(h))
+	}
 	if !isFolder && info.NumberOfLinks > 1 {
 		return refuseHardLink(dir, path, info.NumberOfLinks)
 	}
@@ -730,14 +818,52 @@ func takeownAdvice(path, then string) string {
 	return fmt.Sprintf(`Only when an administrator made it and all that it holds, give it to the Administrators and reset its access list instead (takeown /F "%s" /A /R /D Y, then icacls "%s" /reset /T), and %s: takeown alone changes only the owner, and keeps an entry that a user put on the list`, path, path, then)
 }
 
-// refuseReparsePoint is the refusal of the kept data directory dir, because the file or folder path in it is a
-// reparse point. Most are links, a junction or a symbolic link, which point anywhere, so the message says to remove
-// the link itself, and never to give it to the Administrators, which would leave it a link. A reparse point of
-// another kind, a file that Data Deduplication or a cloud sync made one, is refused the same way, and the advice is
-// then for a link: the message names it a reparse point and says to look at it first.
-func refuseReparsePoint(dir, path string) error {
-	return fmt.Errorf(`the data directory %s is kept with what it holds, so the install did not take it over: "%s" is a reparse point, such as a junction or a symbolic link. A link points anywhere, so the install does not look into one and does not keep one. `+
-		`Look at it, remove the link itself, and run the install again: rmdir "%s" removes a junction or a link to a folder, del "%s" removes a link to a file, and neither touches what it points at. Do not give it to the Administrators: it would stay a link.%s`, dir, path, path, path, literalNameNote(path))
+// fileAttributeTagInfo is FILE_ATTRIBUTE_TAG_INFO, which GetFileInformationByHandleEx fills for the class FileAttributeTagInfo: the
+// attributes of a file or a folder and, for a reparse point, its tag.
+type fileAttributeTagInfo struct {
+	FileAttributes uint32
+	ReparseTag     uint32
+}
+
+// reparseTag returns the reparse tag of the reparse point that the handle h holds open as itself, or 0 when it cannot be read, which
+// no tag is: Windows reserves it. The tag says what kind of reparse point it is: a mount point (a junction) or a symbolic link, which
+// are links, or one of the others that a file system or a filter makes for a purpose of its own.
+func reparseTag(h windows.Handle) uint32 {
+	var info fileAttributeTagInfo
+	if err := windows.GetFileInformationByHandleEx(h, windows.FileAttributeTagInfo, (*byte)(unsafe.Pointer(&info)), uint32(unsafe.Sizeof(info))); err != nil {
+		return 0
+	}
+	return info.ReparseTag
+}
+
+// refuseReparsePoint is the refusal of the kept data directory dir, because the file or folder path in it, a folder when folder is
+// true, is a reparse point with the tag tag (finding 1 of the fourth read-only review of PR 541). The advice is that of the kind
+// of reparse point that the tag names:
+//
+//   - A mount point (a junction) or a symbolic link is a link, which points anywhere. The message says to remove the link itself,
+//     with rmdir for a link to a folder and del for a link to a file, which leave what it points at, and never to give it to the
+//     Administrators, which would leave it a link.
+//   - Any other tag is not known to be a link. A file that Data Deduplication, a compression of Windows (WOF) or a cloud sync made
+//     a reparse point, a file of the rqlite store for one, keeps its data behind the tag, and the command that removes a link
+//     removes that data. So the message gives no command that removes it: it names the tag, says to look at it first, to make it an
+//     ordinary file again or to move it out of the data directory and keep it, and never to give it to the Administrators either.
+//     A tag that could not be read is 0, which is this case.
+func refuseReparsePoint(dir, path string, folder bool, tag uint32) error {
+	refused := fmt.Sprintf(`the data directory %s is kept with what it holds, so the install did not take it over: "%s" is a reparse point`, dir, path)
+	if tag == windows.IO_REPARSE_TAG_MOUNT_POINT || tag == windows.IO_REPARSE_TAG_SYMLINK {
+		remove := fmt.Sprintf(`del "%s" removes a link to a file`, path)
+		if folder {
+			remove = fmt.Sprintf(`rmdir "%s" removes a junction or a link to a folder`, path)
+		}
+		return fmt.Errorf(`%s, a junction or a symbolic link. A link points anywhere, so the install does not look into one and does not keep one. `+
+			`Look at it, remove the link itself, and run the install again: %s, and not what it points at. Do not give it to the Administrators: it would stay a link.%s`, refused, remove, literalNameNote(path))
+	}
+	which := fmt.Sprintf("with the tag 0x%08X", tag)
+	if tag == 0 {
+		which = "whose tag could not be read"
+	}
+	return fmt.Errorf(`%s %s, which is neither a junction nor a symbolic link, so it may be no link at all: a file that Data Deduplication, a compression of Windows or a cloud sync made one keeps its data behind the tag, and removing it may delete that data itself. `+
+		`The Controller makes no reparse point, and the install does not keep one. Look at it first (fsutil reparsepoint query "%s"), make it an ordinary file again with the tool that made it, or move it out of the data directory and keep it, and run the install again. Do not give it to the Administrators: it would stay a reparse point.%s`, refused, which, path, literalNameNote(path))
 }
 
 // refuseHardLink is the refusal of the kept data directory dir, because the file path in it has links names in all, this one

@@ -99,6 +99,10 @@ $waitSeconds = 60
 
 $since = (Get-Date).AddSeconds(-2)
 
+# Read-Shared, which reads controller.log while the service writes to it (AUD1-DT-18-R2, #604; first-test.ps1 and
+# controller-frontdoor.ps1 load it too)
+. (Join-Path $PSScriptRoot 'read-shared.ps1')
+
 # Run a program, fail on a non-zero exit code, return its standard output
 function Invoke-Checked([string] $exe, [string[]] $argv) {
 	$out = & $exe @argv
@@ -208,7 +212,9 @@ function Test-Hardening {
 		Pop-Location
 	}
 	if ($code -ne 0) { throw "the process of $service lacks a mitigation or loaded a DLL outside System32 (go test exited with code $code)" }
-	$log = Get-Content -LiteralPath (Join-Path $data 'controller.log') -Raw
+	# The service is running and writes to its log, so the read is Read-Shared, which gives one string (Get-Content -Raw can give
+	# more, and -notmatch on an array keeps the strings that do not hold the line)
+	$log = Read-Shared (Join-Path $data 'controller.log')
 	if ($log -notmatch [regex]::Escape('msg="DLLs load from System32 only"') -or $log -match [regex]::Escape('msg="process mitigation not set"')) {
 		throw 'controller.log does not record the process mitigations and the DLL search of the service'
 	}
@@ -329,7 +335,7 @@ try {
 	if ($licence.tier -ne 'Personal' -or $licence.state -ne 'none' -or $licence.nodes -lt 1) { throw 'without a licence key the licence in force is not the Personal tier' }
 	$script:redirectOurs = $status.capabilities.plainHttp -match [regex]::Escape($redirectPrefix)
 	if (-not $script:redirectOurs) {
-		$log = Get-Content -LiteralPath (Join-Path $data 'controller.log') -Raw
+		$log = Read-Shared (Join-Path $data 'controller.log')
 		if ($log -notmatch [regex]::Escape("another HTTP.sys user holds this URL prefix") -or $log -notmatch [regex]::Escape($redirectPrefix)) {
 			throw "the controller does not hold $redirectPrefix and logged no warning about it"
 		}

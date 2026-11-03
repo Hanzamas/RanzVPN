@@ -29,6 +29,11 @@ import (
 // kept its owner, and the owner of an object has full control of it through the entry for OWNER RIGHTS of the list that
 // the install passes down. The tests of the first run a user that waits for the folder, and the tests of the second make
 // the folders that a user left. Both need an elevated Administrator, as the tests of datadir_windows_test.go do.
+//
+// The file is named for the first, the window at the creation of the data directory (AUD1-DT-18-R2, #604): the tests of the
+// paths that a new data directory may not have are here too, and the first tests of a kept folder. The tests of a kept folder
+// that came later are in datadir_kept_windows_test.go, and those of a volume that keeps no access lists in
+// datadir_volume_windows_test.go.
 
 // programDataSDDL is the access list of C:\ProgramData as Windows makes it: SYSTEM and the Administrators have full
 // control, the Users group may read it and add files and folders to it, and what an account makes in it is the
@@ -55,10 +60,11 @@ func openForAdding(path *uint16) error {
 // A watcher is a thread that acts as a standard user and, as long as it runs, tries again and again to open the folder
 // that target names with the right to add to it, which is what a local user does that polls for the data directory.
 type watcher struct {
-	target atomic.Pointer[uint16]
-	stop   atomic.Bool
-	opened atomic.Int64 // how many of its attempts opened the folder
-	done   chan struct{}
+	target   atomic.Pointer[uint16]
+	stop     atomic.Bool
+	opened   atomic.Int64 // how many of its attempts opened the folder
+	attempts atomic.Int64 // how many attempts it has made, each counted once its open, if it opened the folder, is
+	done     chan struct{}
 }
 
 // watch starts a watcher as the standard user that token stands for (standardUserToken), and returns once its thread
@@ -80,6 +86,7 @@ func watch(t *testing.T, token windows.Token) *watcher {
 			if path := w.target.Load(); path != nil && openForAdding(path) == nil {
 				w.opened.Add(1)
 			}
+			w.attempts.Add(1)
 		}
 		if err := windows.RevertToSelf(); err == nil {
 			runtime.UnlockOSThread()
@@ -98,16 +105,31 @@ func (w *watcher) end() int64 {
 	return w.opened.Load()
 }
 
+// settle waits until the watcher has made two attempts that began after this call. The watcher counts an open a moment after it
+// made it, so an open that it made while the last folder was made can be counted when the call that made the folder has returned:
+// the first of the two attempts may have begun before this call, and the second began after it and ends, with its count, before
+// settle returns.
+func (w *watcher) settle() {
+	want := w.attempts.Load() + 2
+	for deadline := time.Now().Add(5 * time.Second); w.attempts.Load() < want && time.Now().Before(deadline); {
+		runtime.Gosched()
+	}
+}
+
 // openedWhileMade makes rounds new folders in parent, one after the other, each with create, while a watcher that acts as
 // a standard user tries as fast as it can to open the folder that is being made with the right to add files and folders
-// to it. It returns in how many of the rounds the watcher opened the folder, whatever the moment.
-func openedWhileMade(t *testing.T, parent, label string, rounds int, create func(string) error) int {
+// to it. It returns how many times the watcher opened a folder in all, as it counted them when it stopped. The count of each
+// round, which was taken when create returned, missed an open that the watcher counted a moment later: that open went into the
+// starting count of the next round, and for the last round into nothing, and the total was dropped (finding 4 of the fourth
+// read-only review of PR 541). So the answer is the total, and a way of making a folder that must have no window must make it 0,
+// whenever the watcher counts an open. The watcher keeps the last folder for two more attempts before it stops (settle), so a
+// window that is still open when the last call returns is counted too.
+func openedWhileMade(t *testing.T, parent, label string, rounds int, create func(string) error) int64 {
 	t.Helper()
 	token := standardUserToken(t)
 	defer token.Close()
 	w := watch(t, token)
 	defer w.end()
-	caught := 0
 	for i := range rounds {
 		dir := filepath.Join(parent, fmt.Sprintf("%s-%d", label, i))
 		name, err := windows.UTF16PtrFromString(dir)
@@ -115,39 +137,31 @@ func openedWhileMade(t *testing.T, parent, label string, rounds int, create func
 			t.Fatal(err)
 		}
 		w.target.Store(name)
-		before := w.opened.Load()
 		if err := create(dir); err != nil {
 			t.Fatalf("making %s: %v", dir, err)
 		}
-		if w.opened.Load() > before {
-			caught++
-		}
 	}
-	w.end()
-	return caught
+	w.settle()
+	return w.end()
 }
 
-// A user that waits for the data directory does not get it open for adding files and folders at any moment while it is
-// made, by the install or by the start of the service. The folder is made in a folder that has the access list of
-// C:\ProgramData, so a folder that is made with that list first and gets its own after is open to the Users group in
-// between, and the watcher, a thread with the token of a standard user, tries to open each new folder as fast as it can
-// while it is made, 300 times for each way of making one. Two controls show that the watcher sees what it is there for:
-// a folder with the list of its folder is open to a standard user, and a folder that is made as the install made it
-// before, with the list of its folder first and its own after, is caught by the watcher when the two steps are 5 ms
-// apart, so a window that the watcher can see is a window that it does see. Measured on the hosted runners with the
-// two steps of before and no pause (run 41066865697 of the throwaway workflow exp-datadir-sd.yml): the watcher opened
-// the folder in 300 of 300 rounds on x64 and in 283 of 300 on arm64, and it opened none of the folders that the install
-// and the start of the service make now.
-func TestNoStandardUserOpensANewDataDirWhileItIsMade(t *testing.T) {
-	requireAdministrator(t)
+// programDataFolder makes a folder with the access list of C:\ProgramData (programDataSDDL) in a temporary folder, and returns it:
+// a folder that is made in it takes the right of the Users group to add files and folders.
+func programDataFolder(t *testing.T) string {
+	t.Helper()
 	parent := filepath.Join(t.TempDir(), "ProgramData")
 	if err := os.Mkdir(parent, 0o700); err != nil {
 		t.Fatal(err)
 	}
 	setDACL(t, parent, programDataSDDL)
+	return parent
+}
 
-	// A folder that is made as the install made it before, with the list of its folder, is open to a standard user for
-	// adding files and folders: without that this test would show nothing
+// requireAPlainFolderIsOpen fails the test when a folder that is made in parent as the install made a new data directory before,
+// with the list of its folder, is not open to a standard user for adding files and folders: without that a test of a window would
+// show nothing.
+func requireAPlainFolderIsOpen(t *testing.T, parent string) {
+	t.Helper()
 	plain := filepath.Join(parent, "plain")
 	if err := os.Mkdir(plain, 0o700); err != nil {
 		t.Fatal(err)
@@ -161,6 +175,29 @@ func TestNoStandardUserOpensANewDataDirWhileItIsMade(t *testing.T) {
 	if opened != nil {
 		t.Fatalf("a standard user cannot open %s, which has the security %s, for adding files and folders (%v): this test shows nothing", plain, securityOf(t, plain), opened)
 	}
+}
+
+// A user that waits for the data directory does not get it open for adding files and folders at any moment while it is
+// made, by the install or by the start of the service. The folder is made in a folder that has the access list of
+// C:\ProgramData, so a folder that is made with that list first and gets its own after is open to the Users group in
+// between, and the watcher, a thread with the token of a standard user, tries to open each new folder as fast as it can
+// while it is made, 300 times for each way of making one. Two controls show that the watcher sees what it is there for:
+// a folder with the list of its folder is open to a standard user, and a folder that is made as the install made it
+// before, with the list of its folder first and its own after, is caught by the watcher when the two steps are 5 ms
+// apart, so a window that the watcher can see is a window that it does see. Measured on the hosted runners with the
+// two steps of before and no pause (run 41066865697 of the throwaway workflow exp-datadir-sd.yml): the watcher opened
+// the folder in 300 of 300 rounds on x64 and in 283 of 300 on arm64, and it opened none of the folders that the install
+// and the start of the service make now.
+//
+// The count is every open that the watcher counted before it stopped, and not the opens that it had counted in each round when
+// create returned: it counts an open a moment after it makes it, so an open that was made while create ran can be counted just
+// after create returned, which the count of a round took for the opening of the next round, or of none (finding 4 of the fourth
+// read-only review of PR 541; TestNewDataDirWindowTestCountsAnOpenAfterCreateReturned plants such an open). A way of making a
+// folder that must have no window must have none counted at all, whenever.
+func TestNoStandardUserOpensANewDataDirWhileItIsMade(t *testing.T) {
+	requireAdministrator(t)
+	parent := programDataFolder(t)
+	requireAPlainFolderIsOpen(t, parent)
 
 	// The two steps of before, 5 ms apart: the watcher must catch the folder in the moment between them
 	const controls = 20
@@ -176,7 +213,7 @@ func TestNoStandardUserOpensANewDataDirWhileItIsMade(t *testing.T) {
 		defer f.Close()
 		return ownDataDir(f, dir)
 	}
-	if caught := openedWhileMade(t, parent, "two-steps", controls, twoSteps); caught == 0 {
+	if opened := openedWhileMade(t, parent, "two-steps", controls, twoSteps); opened == 0 {
 		t.Fatalf("the watcher opened none of %d folders that had the list of their folder for 5 ms: this test shows nothing", controls)
 	}
 
@@ -189,10 +226,27 @@ func TestNoStandardUserOpensANewDataDirWhileItIsMade(t *testing.T) {
 		{"the start of the service", makeDataDir},
 	} {
 		t.Run(c.name, func(t *testing.T) {
-			if caught := openedWhileMade(t, parent, strings.ReplaceAll(c.name, " ", "-"), rounds, c.create); caught > 0 {
-				t.Errorf("a standard user opened the new data directory for adding files and folders while %s made it, in %d of %d rounds: the folder had the access list of its folder before its own", c.name, caught, rounds)
+			if opened := openedWhileMade(t, parent, strings.ReplaceAll(c.name, " ", "-"), rounds, c.create); opened > 0 {
+				t.Errorf("a standard user opened the new data directory for adding files and folders %d times while %s made %d of them: the folder had the access list of its folder before its own", opened, c.name, rounds)
 			}
 		})
+	}
+}
+
+// The test above counts an open that the watcher makes while create runs and counts after create returned (finding 4 of the
+// fourth read-only review of PR 541). The watcher counts an open a moment after it makes it, and a count that was taken when create
+// returned missed the open of a window that closed in the last moments of create: it went into the starting count of the next
+// round, or, in the last round, into nothing. The test plants such an open. Its create makes the folder with the list of its
+// folder, which a standard user opens for adding, and returns at once, so the watcher opens the folder after create returned and
+// counts it later still, and the folder is the last. The count must see it, which it does when it is the total that the watcher
+// counted when it stopped; a count that is taken when create returns sees none, and this test fails for it.
+func TestNewDataDirWindowTestCountsAnOpenAfterCreateReturned(t *testing.T) {
+	requireAdministrator(t)
+	parent := programDataFolder(t)
+	requireAPlainFolderIsOpen(t, parent)
+	plant := func(dir string) error { return os.Mkdir(dir, 0o700) }
+	if opened := openedWhileMade(t, parent, "late", 1, plant); opened == 0 {
+		t.Fatal("the watcher opened a folder that was open to it after create returned, and its count did not see it: the test of the window misses an open that the watcher counts late")
 	}
 }
 
@@ -241,6 +295,18 @@ func TestNewDataDirPassesALaterChangeOfItsListDown(t *testing.T) {
 	}
 }
 
+// newDataDirWays are the ways of making a new data directory from the path that -data was typed with: the install and the start
+// of the service, and the step of each that makes the folder above the data directory and the data directory.
+var newDataDirWays = []struct {
+	name   string
+	create func(string) error
+}{
+	{"the install", takeOverDataDir},
+	{"the step of the install that makes the folder", makeOwnedDataDir},
+	{"the start of the service", makeDataDir},
+	{"the step of the start of the service that makes the folder", createDataDir},
+}
+
 // A trailing separator in -data names the same folder, and a new data directory that the text names is made with its own
 // list all the same. `ranz controller install -data D:\RanzData\` registers the service with that text as it was typed, and
 // the service, or a Controller that an administrator starts by hand with it, makes the folder from it when it is missing.
@@ -251,70 +317,20 @@ func TestNewDataDirPassesALaterChangeOfItsListDown(t *testing.T) {
 // fba7a078). The test gives each way of making a new data directory the path with a trailing backslash and with a trailing
 // slash, in a folder that has the access list of C:\ProgramData, and wants the call to make the folder, with its own protected
 // list that has no entry for the Users group, so that a standard user cannot open it for adding files and folders, and the
-// start of the service that follows to keep it.
-//
-// A tail that ends in a period or a space is one that filepath.Clean keeps and Windows drops: Windows takes trailing periods
-// and spaces off the end of a path, so `D:\RanzData\ `, `D:\RanzData\...` and `D:\RanzData\. ` name D:\RanzData, and so does
-// `D:\RanzData\ \` once filepath.Clean has taken its separator off. filepath.Dir of the cleaned path is the folder itself, so
-// the step that made the folder above it made the data directory with the access list of its folder, as with the trailing
-// separator before (finding E of the read-only review of PR 541, at the head 8d282cf3). And the files of the Controller,
-// whose names are joined to the path, would go into a folder of that name inside it, which Windows keeps. The test wants each
-// way of making the folder, and the start that follows, to refuse such a path, and nothing to be made.
+// start of the service that follows to keep it. A tail that ends in a period or a space is the other test, below.
 func TestNewDataDirWithATrailingSeparatorIsMadeWithItsOwnList(t *testing.T) {
 	requireAdministrator(t)
-	for _, c := range []struct {
-		name   string
-		create func(string) error
-	}{
-		{"the install", takeOverDataDir},
-		{"the step of the install that makes the folder", makeOwnedDataDir},
-		{"the start of the service", makeDataDir},
-		{"the step of the start of the service that makes the folder", createDataDir},
-	} {
-		for _, tail := range []struct {
-			name, text string
-			refused    bool // Windows drops the tail, and filepath.Clean does not
-		}{
-			{"a trailing backslash", `\`, false},
-			{"a trailing slash", "/", false},
-			{"a trailing space", `\ `, true},
-			{"three trailing periods", `\...`, true},
-			{"a trailing period and space", `\. `, true},
-			{"a trailing space and backslash", `\ \`, true},
+	for _, c := range newDataDirWays {
+		for _, tail := range []struct{ name, text string }{
+			{"a trailing backslash", `\`},
+			{"a trailing slash", "/"},
 		} {
 			t.Run(c.name+" with "+tail.name, func(t *testing.T) {
-				parent := filepath.Join(t.TempDir(), "ProgramData")
-				if err := os.Mkdir(parent, 0o700); err != nil {
-					t.Fatal(err)
-				}
-				setDACL(t, parent, programDataSDDL)
-				dir := filepath.Join(parent, "Ranz", "controller")
+				dir := filepath.Join(programDataFolder(t), "Ranz", "controller")
 				typed := dir + tail.text
-				// The folder above that a step makes: from the path as it was typed, or, for a tail that filepath.Clean
-				// keeps, from the path as filepath.Clean leaves it
-				above := filepath.Dir(typed)
-				if tail.refused {
-					above = filepath.Dir(filepath.Clean(typed))
-				}
-				if above != dir {
+				// The folder above that a step makes, from the path as it was typed
+				if above := filepath.Dir(typed); above != dir {
 					t.Fatalf("the folder above %q is %q, not the folder itself: a step that makes the folder above does not make the folder with the list of its folder, so this test shows nothing", typed, above)
-				}
-
-				if tail.refused {
-					wantRefused := func(what string, err error) {
-						t.Helper()
-						if err == nil || !strings.Contains(err.Error(), "ends in a period or a space") {
-							t.Errorf("%s answered %v for %q, want a refusal that says that it ends in a period or a space", what, err, typed)
-						}
-					}
-					wantRefused(c.name, c.create(typed))
-					wantRefused("the start of the service that follows", makeDataDir(typed))
-					if _, err := os.Lstat(dir); err == nil {
-						t.Errorf("the data directory %s is there, with the security %s, after %s was given %q: want nothing made", dir, securityOf(t, dir), c.name, typed)
-					} else if !errors.Is(err, fs.ErrNotExist) {
-						t.Errorf("looking for %s: %v", dir, err)
-					}
-					return
 				}
 
 				if err := c.create(typed); err != nil {
@@ -341,6 +357,50 @@ func TestNewDataDirWithATrailingSeparatorIsMadeWithItsOwnList(t *testing.T) {
 				asStandardUser(t, func() { opened = openForAdding(name) })
 				if opened == nil {
 					t.Errorf("a standard user opened the new data directory %s for adding files and folders", dir)
+				}
+			})
+		}
+	}
+}
+
+// A tail that ends in a period or a space is one that filepath.Clean keeps and Windows drops: Windows takes trailing periods
+// and spaces off the end of a path, so `D:\RanzData\ `, `D:\RanzData\...` and `D:\RanzData\. ` name D:\RanzData, and so does
+// `D:\RanzData\ \` once filepath.Clean has taken its separator off. filepath.Dir of the cleaned path is the folder itself, so
+// the step that made the folder above it made the data directory with the access list of its folder, as with the trailing
+// separator before (finding E of the read-only review of PR 541, at the head 8d282cf3). And the files of the Controller,
+// whose names are joined to the path, would go into a folder of that name inside it, which Windows keeps. The test wants each
+// way of making the folder, and the start that follows, to refuse such a path, and nothing to be made. It was one test with
+// TestNewDataDirWithATrailingSeparatorIsMadeWithItsOwnList, whose paths are made and not refused (finding 5 of the fourth
+// read-only review).
+func TestNewDataDirWithAPathThatEndsInAPeriodOrASpaceIsRefused(t *testing.T) {
+	requireAdministrator(t)
+	for _, c := range newDataDirWays {
+		for _, tail := range []struct{ name, text string }{
+			{"a trailing space", `\ `},
+			{"three trailing periods", `\...`},
+			{"a trailing period and space", `\. `},
+			{"a trailing space and backslash", `\ \`},
+		} {
+			t.Run(c.name+" with "+tail.name, func(t *testing.T) {
+				dir := filepath.Join(programDataFolder(t), "Ranz", "controller")
+				typed := dir + tail.text
+				// The folder above that a step makes, from the path as filepath.Clean leaves it, which keeps the tail
+				if above := filepath.Dir(filepath.Clean(typed)); above != dir {
+					t.Fatalf("the folder above %q is %q, not the folder itself: a step that makes the folder above does not make the folder with the list of its folder, so this test shows nothing", typed, above)
+				}
+
+				wantRefused := func(what string, err error) {
+					t.Helper()
+					if err == nil || !strings.Contains(err.Error(), "ends in a period or a space") {
+						t.Errorf("%s answered %v for %q, want a refusal that says that it ends in a period or a space", what, err, typed)
+					}
+				}
+				wantRefused(c.name, c.create(typed))
+				wantRefused("the start of the service that follows", makeDataDir(typed))
+				if _, err := os.Lstat(dir); err == nil {
+					t.Errorf("the data directory %s is there, with the security %s, after %s was given %q: want nothing made", dir, securityOf(t, dir), c.name, typed)
+				} else if !errors.Is(err, fs.ErrNotExist) {
+					t.Errorf("looking for %s: %v", dir, err)
 				}
 			})
 		}
@@ -391,7 +451,7 @@ func TestCheckDataDirName(t *testing.T) {
 // (checkDataDirOwner) and never reach the steps that make one, which refuse such a path too. So the check of the name in
 // checkDataDirOwner is what refuses a Controller that was registered with `-data "D:\RanzData\ "` before the upgrade, whose
 // folder the install of then made (finding E of the read-only review of PR 541). The third review found that no test failed
-// without that check, since each case of TestNewDataDirWithATrailingSeparatorIsMadeWithItsOwnList starts with no folder.
+// without that check, since each case of TestNewDataDirWithAPathThatEndsInAPeriodOrASpaceIsRefused starts with no folder.
 // The folder is the one that the install makes, which the Administrators own, so that its owner is no reason to refuse it.
 // Two controls show that the check of the name is the one that refuses: Windows finds the folder by each path, so the start
 // does not go to the steps that make a folder, and the rest of checkDataDirOwner, the owner read by the path, passes it.
