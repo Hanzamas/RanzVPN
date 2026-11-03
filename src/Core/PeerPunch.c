@@ -57,7 +57,10 @@
 // echo one only from where the nonce reached it, so a probe that names an address the peer does not own sets no path.
 // An end keeps one nonce for an address until its echo comes, and every challenge or response to that address carries
 // it, so the probes of a burst from one address draw no nonce that evicts the first, and the echo of any answer to them
-// meets (PeerPunchNonce, CORE-H2-R1 #436).
+// meets (PeerPunchNonce, CORE-H2-R1 #436). It keeps the nonces of PEER_PUNCH_NONCES (4) addresses only: a probe from a
+// fifth distinct address evicts the oldest nonce, as the challenge that answers it carries a fresh one in its place, and
+// so does a challenge from a fifth address at the other end, with its response; an echo of the evicted nonce no longer
+// meets, which loses that meeting and sets no path (CORE-H2-R2 #607).
 // A proof can be lost on the way, which would leave the other end on the relay while the leader sends on the direct
 // path. So the other end says from the direct path with a keepalive that it moved there, and the leader sends the proof
 // again every PEER_PUNCH_PROOF_RETRY until it hears that or a record of the peer session from there, PEER_PUNCH_PROOFS
