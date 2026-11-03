@@ -30,8 +30,15 @@ UINT64 PeerWallClock() {
 // of p was made, at least. A receiver that lost its memory of the peer, by a restart or a new entry, so takes no
 // sequence of before that, and the sequences of binds, signals and punches survive the loss (finding F3 of AUD-5). A
 // peer whose clock is behind the receiver's by d is so refused for d after the entry, until its clock passes the
-// floor, and no longer. The floor tolerates no skew: a sequence that a slow clock sealed just now and one that a right
-// clock sealed before the loss look the same, and taking the one takes the other again (CORE-H2-R1 #436).
+// floor, and no longer, with no cap on d. The floor tolerates no skew: a sequence that a slow clock sealed just now and
+// one that a right clock sealed before the loss look the same, and taking the one takes the other again, which the
+// checks of coretest relaypolicy, punch and peersession refuse (CORE-H2-R1 #436). The refusal held both ends of a peer
+// session in one case: when a node N restarts and a peer S, 2 minutes behind with the lower static key, has traffic for
+// N while N has traffic for S, N refuses each initiation of S as a replay, and S ignored each of N's while its own was
+// on its way, as the end with the lower key of two handshakes at once, so the pair had no session for 2 minutes. S
+// answers N's initiation once its own went again with no answer (PeerSessionTakeInit), so the pair has a session within
+// two of S's tries; what S sends alone, its binds, signals and punches, and its initiations while N sends none, still
+// waits for the skew (CORE-H2-R2 #607).
 UINT64 PeerFloorOf(const PEER *p, UINT64 last) {
 	return (last > p->Floor ? last : p->Floor);
 }
@@ -1277,6 +1284,31 @@ void PeerSessionTickAt(PEER_AGENT *a, UINT64 now) {
 		return;
 
 	PeerSessionTimers(a, &now);
+}
+
+// Raise the floor of the entry of the peer of key to the wall clock wall (100 ns units, the clock of the sequences), as
+// the node makes its entry when its clock is ahead of the peer's: a test gives it a floor that the peer's clock does not
+// reach while the test runs, a skew that the test holds still (CORE-H2-R2 #607). A wall clock below the floor of the
+// entry changes nothing, so no sequence of before the entry is ever taken. False when key is no peer.
+bool PeerSetFloor(PEER_AGENT *a, const UCHAR *key, UINT64 wall) {
+	bool ret = false;
+
+	if (a == NULL || key == NULL)
+		return false;
+
+	AcquireSRWLockExclusive(&a->Lock);
+	{
+		PEER *p = PeerFind(a, key);
+
+		if (p != NULL) {
+			if (wall > p->Floor)
+				p->Floor = wall;
+			ret = true;
+		}
+	}
+	ReleaseSRWLockExclusive(&a->Lock);
+
+	return ret;
 }
 
 // How the node reaches the peer of key; false when key is no peer
