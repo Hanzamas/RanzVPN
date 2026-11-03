@@ -222,6 +222,8 @@ void NodeCapsPeering(NODE *n, CONTROL_CAPS *caps) {
 	caps->BgpPeering = (n != NULL && IsFileExistsW(n->BgpSidecar));
 	// ... and so are its route reflectors, which the same sidecar runs (protocol 7, NODE_PEERING_PROTOCOL; SDN-79, #359)
 	caps->BgpReflection = caps->BgpPeering;
+	// ... and its EVPN peering, which the same sidecar runs with the EVPN of the node (protocol 8; SDN-78, #358)
+	caps->EvpnPeering = caps->BgpPeering;
 }
 
 // The architecture of the Capabilities as the node log names it

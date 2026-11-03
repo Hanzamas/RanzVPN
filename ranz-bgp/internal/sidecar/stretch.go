@@ -62,12 +62,14 @@ type EVPNStretch struct {
 // StretchRoute is one EVPN route of an L2 VNI in a stretch message: a MAC/IP advertisement route (type 2) when it has a
 // mac, with an ip for the MAC plus IP form, or an inclusive multicast Ethernet tag route (type 3) when it has none. A
 // route of the sidecar has the VTEP of the fabric as next_hop; a route of the node has none. With withdraw, the route goes.
+// A type-2 route of the sidecar with moved is of a MAC that moved from the node to that VTEP (mobility.go; SDN-78 #358).
 type StretchRoute struct {
 	VNI      uint32 `json:"vni"`
 	MAC      string `json:"mac,omitempty"`
 	IP       string `json:"ip,omitempty"`
 	NextHop  string `json:"next_hop,omitempty"`
 	Withdraw bool   `json:"withdraw,omitempty"`
+	Moved    bool   `json:"moved,omitempty"`
 }
 
 // stretchVNI is a stretch of an evpn object, checked.
@@ -100,6 +102,9 @@ type stretchState struct {
 	names    map[string]stretchKey
 	offers   map[stretchKey]map[string]netip.Addr
 	reported map[stretchKey]netip.Addr
+	// ... and the sequence number of MAC mobility of each type-2 route of the gateway, by its MAC and by its NLRI (mobility.go;
+	// SDN-78 #358)
+	own map[macKey]map[string]int64
 }
 
 // parseStretches checks the stretches of an evpn object whose router id is routerID, and whose VRFs have the L3 VNIs l3;
@@ -326,7 +331,8 @@ func (s *session) stretchMessage(m Message) error {
 		id, had := st.announced[key]
 		switch {
 		case r.Withdraw && had:
-			if err := s.bgp.DeletePath(apiutil.DeletePathRequest{UUIDs: []uuid.UUID{id}}); err != nil {
+			// ... which GoBGP may have withdrawn already for MAC mobility (mobility.go; SDN-78 #358)
+			if err := s.deleteStretch(id); err != nil {
 				return fmt.Errorf("stretch: the withdraw of %s %s of vni %d: %w", key.mac, key.ip, key.vni, err)
 			}
 			delete(st.announced, key)
@@ -351,7 +357,7 @@ func (s *session) stretchMessage(m Message) error {
 			if st.full[key] {
 				continue
 			}
-			if err := s.bgp.DeletePath(apiutil.DeletePathRequest{UUIDs: []uuid.UUID{st.announced[key]}}); err != nil {
+			if err := s.deleteStretch(st.announced[key]); err != nil {
 				return fmt.Errorf("stretch: the withdraw of %s %s of vni %d after the resync: %w", key.mac, key.ip, key.vni, err)
 			}
 			delete(st.announced, key)
@@ -452,6 +458,8 @@ func (st *stretchState) routeOf(p *apiutil.Path, n *bgp.EVPNNLRI) (key stretchKe
 // a peer.
 func (s *session) onStretchPaths(paths []*apiutil.Path, _ time.Time) {
 	st := s.stretches()
+	// The MAC addresses of the gateway that these paths move to a peer (mobility.go; SDN-78 #358)
+	moved := st.movedAway(paths)
 	touched := make(map[stretchKey]bool)
 	var order []stretchKey
 	touch := func(key stretchKey) {
@@ -486,7 +494,7 @@ func (s *session) onStretchPaths(paths []*apiutil.Path, _ time.Time) {
 			routes = append(routes, r)
 		}
 	}
-	s.sendStretch(routes)
+	s.sendStretch(st.markMoved(routes, moved))
 }
 
 // offer records vtep as the VTEP that the NLRI name offers for key.

@@ -9,9 +9,10 @@ package sidecar
 // distinguisher of the VRF, no ESI, Ethernet tag 0, no gateway IP and the L3 VNI of the VRF as its label, the VTEP as its
 // next hop, and the export route targets of the VRF, the VXLAN encapsulation and the router MAC as its extended
 // communities: the interface-less model of RFC 9136 section 4.4.1. One with the vrf of no such VRF is refused, and so is
-// one with a vrf in a session without EVPN, unless it runs the peering of the standard mode (peering.go), which has no
-// evpn: the prefix of a VRF never goes to the peers as a unicast route, where the prefixes of two VRFs would meet in one
-// table. An IP prefix route of a peer goes to each VRF whose
+// one with a vrf in a session without EVPN, unless it runs the peering of the standard mode (peering.go), where a VRF that
+// peers by BGP goes as VPN routes and one that peers by EVPN as IP prefix routes (evpnpeering.go; SDN-78 #358): the prefix of
+// a VRF never goes to the peers as a unicast route, where the prefixes of two VRFs would meet in one table. An IP prefix
+// route of a peer goes to each VRF whose
 // import route targets it carries and whose accept list covers its prefix, as a learned message with the vrf, the VTEP
 // of the fabric as the next hop, the VNI and the router MAC of the fabric, and the next hops of all the routes that the
 // peers offer for the prefix in the VRF, which the node takes frames from (evpn_vteps.go); when it goes, as a withdrawn
@@ -507,7 +508,8 @@ func (s *session) onEVPNPaths(paths []*apiutil.Path, _ time.Time) {
 				touched[key] = true
 				order = append(order, key)
 			}
-			if p.Withdrawal || why != "" || !v.importsAny(targets) || !v.accepts(prefix) {
+			// ... and in the peering of the standard mode only a prefix that the peer may announce there (evpnpeering.go; SDN-78 #358)
+			if p.Withdrawal || why != "" || !v.importsAny(targets) || !s.evpnTakes(v, p.PeerAddress.Unmap(), prefix) {
 				e.drop(key, name)
 			} else {
 				e.offer(key, name, route)

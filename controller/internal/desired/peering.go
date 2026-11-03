@@ -17,10 +17,14 @@ import (
 // and its LAN subnets there. The Controller writes nothing else: the routes go by BGP. A VRF that does
 // not peer compiles as before the peering existed.
 
-// vrfPeering returns the peering of the VRF v as the control protocol carries it.
+// vrfPeering returns the peering of the VRF v as the control protocol carries it: by BGP, or by EVPN with the settings of the
+// sidecars of the BGP peering (evpnpeering.go; SDN-78).
 func vrfPeering(v intent.VRF) controlpb.Peering {
-	if v.Peering.Protocol == intent.PeeringBGP {
+	switch v.Peering.Protocol {
+	case intent.PeeringBGP:
 		return controlpb.Peering_PEERING_BGP
+	case intent.PeeringEVPN:
+		return controlpb.Peering_PEERING_EVPN
 	}
 	return controlpb.Peering_PEERING_UNSPECIFIED
 }

@@ -481,6 +481,9 @@ struct NODE {
 	// The EVPN of a gateway (NodeEvpn.c; SDN-25, #201): the VTEP and the routes of the fabric of a sidecar whose Bgp setting
 	// has an evpn object, from the start of the sidecar to its stop; NULL without one
 	struct NODE_EVPN *Evpn;
+	// An EVPN runs: of the Bgp setting, or of the EVPN peering of the standard mode (NodeEvpnPeering.c; SDN-78, #358), which
+	// share the table snapshot and the stretch of the node, so one runs at a time (NodeEvpnOpen)
+	volatile LONG EvpnTaken;
 	// The stretch of a gateway (NodeStretch.c; SDN-64, #291): the switches of the L2 Networks that the L2 data path attached and the
 	// stretches of the running sidecar; NULL until the first of them, kept until FreeNode
 	struct NODE_STRETCH *volatile Stretch;

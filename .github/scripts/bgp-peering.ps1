@@ -21,6 +21,13 @@ $PSNativeCommandUseErrorActionPreference = $false
 #     route crosses into another VRF, a session from an address that the Controller did not name is refused, and the routes
 #     of the clients go within the hold time when the only reflector stops and stay through the second one when one of two
 #     stops.
+#   - vpntest evpnpeering runs nodes whose sidecars listen on TCP 179 of 127.0.0.2 to 127.0.0.4 and peer by EVPN in a VRF of
+#     a link of kind vxlan (SDN-78 #358, src/vpntest/evpnpeeringtest.c), with harness VTEPs on those addresses, and must print
+#     "EVPNPEERING TEST OK" and "NO MEMORY LEAKS": a MAC address of one node is a type-2 route at the other and a frame to it
+#     goes there over VXLAN, the flood list follows the type-3 routes of the peers as a node joins and leaves, a prefix is
+#     reachable by a type-5 route with the L3 VNI of the VRF, the links of the Controller carry nothing of the VRF, a MAC that
+#     moves moves its route and the old node stops forwarding to it, and a session from an address that the Controller did
+#     not name is refused.
 
 $build = (Resolve-Path -LiteralPath $BuildDir).Path
 
@@ -32,7 +39,7 @@ if ($LASTEXITCODE -ne 0) { throw "go build of ranz exited with $LASTEXITCODE" }
 & (Join-Path $build 'ranz.exe') version
 
 $failed = @()
-foreach ($test in @(@{ Name = 'peering'; Ok = 'PEERING TEST OK' }, @{ Name = 'bgpboth'; Ok = 'BGPBOTH TEST OK' }, @{ Name = 'reflector'; Ok = 'REFLECTOR TEST OK' })) {
+foreach ($test in @(@{ Name = 'peering'; Ok = 'PEERING TEST OK' }, @{ Name = 'bgpboth'; Ok = 'BGPBOTH TEST OK' }, @{ Name = 'reflector'; Ok = 'REFLECTOR TEST OK' }, @{ Name = 'evpnpeering'; Ok = 'EVPNPEERING TEST OK' })) {
 	$full = (Write-Output "q\n" | & (Join-Path $build 'vpntest.exe') $test.Name | Out-String)
 	$code = $LASTEXITCODE
 	Write-Host $full
@@ -46,4 +53,4 @@ foreach ($test in @(@{ Name = 'peering'; Ok = 'PEERING TEST OK' }, @{ Name = 'bg
 if ($failed.Count -ne 0) {
 	throw ('failed: ' + ($failed -join '; '))
 }
-Write-Host 'BGP peering of the standard mode, the two sidecars of one host and the route reflectors: ok'
+Write-Host 'BGP peering of the standard mode, the two sidecars of one host, the route reflectors and the EVPN peering: ok'

@@ -54,6 +54,9 @@ type Capabilities struct {
 	EVPN bool `json:"evpn,omitempty"`
 	// BGPReflection: the node runs the route reflectors of the BGP peering (SDN-79), as a reflector and as a client.
 	BGPReflection bool `json:"bgpReflection,omitempty"`
+	// EVPNPeering: the node runs the EVPN peering of the standard mode (SDN-78, evpnpeering.go): its release has it, and
+	// ranz.exe is next to it.
+	EVPNPeering bool `json:"evpnPeering,omitempty"`
 }
 
 var skuNames = map[controlpb.Sku]string{
@@ -90,6 +93,7 @@ func FromProto(p *controlpb.Capabilities) *Capabilities {
 		BGPPeering:      p.GetBgpPeering(),
 		EVPN:            p.GetEvpn(),
 		BGPReflection:   p.GetBgpReflection(),
+		EVPNPeering:     p.GetEvpnPeering(),
 	}
 	if len(p.GetWireguardKey()) > 0 {
 		c.WireGuardKey = base64.StdEncoding.EncodeToString(p.GetWireguardKey())
@@ -113,6 +117,7 @@ func (c Capabilities) Proto() (*controlpb.Capabilities, error) {
 		BgpPeering:      c.BGPPeering,
 		Evpn:            c.EVPN,
 		BgpReflection:   c.BGPReflection,
+		EvpnPeering:     c.EVPNPeering,
 	}
 	if c.WireGuardKey != "" {
 		k, err := base64.StdEncoding.DecodeString(c.WireGuardKey)

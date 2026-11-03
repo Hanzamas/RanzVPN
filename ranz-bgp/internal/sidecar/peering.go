@@ -234,7 +234,8 @@ func (s *session) setPeers(ctx context.Context, m Message) error {
 			s.log.Info("peer known without a session: its routes come through the route reflectors", "address", addr, "vrfs", len(next[addr].vrfs))
 			continue
 		}
-		if err := s.bgp.AddPeer(ctx, &api.AddPeerRequest{Peer: s.peerRequest(next[addr])}); err != nil {
+		// ... with the L2VPN EVPN family while the node peers by EVPN too (evpnpeering.go; SDN-78 #358)
+		if err := s.bgp.AddPeer(ctx, &api.AddPeerRequest{Peer: s.withEVPN(s.peerRequest(next[addr]))}); err != nil {
 			s.send(Message{Type: TypeError, Peer: addr.String(), Error: fmt.Sprintf("peer %s: %v", addr, err)})
 			continue
 		}

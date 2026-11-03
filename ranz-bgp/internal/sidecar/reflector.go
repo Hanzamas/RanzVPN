@@ -270,7 +270,7 @@ func (s *session) updateReflectorLimits(ctx context.Context, prev, next map[neti
 		}
 		capped := s.prefixCapped(ctx, addr)
 		// peerRequest gives the peer the maximum of the peers in force (reflectorPeer), which is limit
-		if _, err := s.bgp.UpdatePeer(ctx, &api.UpdatePeerRequest{Peer: s.peerRequest(p)}); err != nil {
+		if _, err := s.bgp.UpdatePeer(ctx, &api.UpdatePeerRequest{Peer: s.withEVPN(s.peerRequest(p))}); err != nil {
 			r.limits[addr] = was
 			s.send(Message{Type: TypeError, Peer: addr.String(), Error: fmt.Sprintf("peer %s: the maximum of paths of a route reflector: %v", addr, err)})
 			continue

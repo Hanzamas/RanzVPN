@@ -86,6 +86,15 @@
 // form, ip; with withdraw one goes), where full starts a full resync and more says that more of it
 // follows; from the sidecar the routes of the fabric (a type-2 route with its mac and ip, a type-3
 // route without a mac), each with the VTEP of the fabric as next_hop, and with withdraw once it went.
+//
+// A start of the peering of the standard mode may name an evpn object too (evpnpeering.go; SDN-78
+// #358): the EVPN of the VRFs of the node that peer by EVPN, whose vtep is the address of the node,
+// whose vrfs name no accept list and whose peers are the Ranz nodes of the peering. An announce or
+// withdraw with the vrf of such a VRF is an IP prefix route of it, which a peer takes when it is
+// exactly a prefix that the node may announce there; one with the vrf of a VRF that peers by BGP is
+// a VPN route. A type-2 route of a stretch message of the sidecar with moved is of a MAC address that
+// moved from the node to the VTEP of the route: a peer announced it with a higher sequence number of
+// MAC mobility (RFC 7432 section 15, mobility.go).
 package sidecar
 
 import (
@@ -101,8 +110,9 @@ import (
 // standard mode and the refused message, 3 the EVPN of a gateway, 4 the more of a peers message,
 // ping and pong, 5 the vteps of a learned message of an EVPN VRF (SDN-25-R3 #571), 6 the
 // stretches of a gateway and the stretch message (SDN-64 #291), 7 the role of a VRF of a peer (the
-// route reflector, SDN-79 #359).
-const ProtocolVersion = 7
+// route reflector, SDN-79 #359), 8 the evpn of the peering of the standard mode and the moved of a
+// type-2 route of a stretch message (SDN-78 #358).
+const ProtocolVersion = 8
 
 // MaxLine is the size of one message at most, with its newline.
 const MaxLine = 64 * 1024

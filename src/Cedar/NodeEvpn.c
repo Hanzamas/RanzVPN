@@ -50,6 +50,10 @@
 // judge a packet between a peer and the fabric as one between the peer and the host of the gateway, and a Mirror of the VRF
 // copies it, as they do with the packet of a peer to a LAN subnet behind a gateway; a packet between the host of the gateway
 // and the fabric they judge not at all, as Windows forwards it without the overlay.
+//
+// The EVPN peering of the standard mode runs the same EVPN, whose fabric is the other nodes of its VRFs, with the sidecar of the
+// peering (NodeEvpnPeering.c; SDN-78, #358): NodeEvpnOpen opens an EVPN that its owner keeps, and NodeEvpnClose closes it. One EVPN
+// runs at a node at a time (NODE.EvpnTaken), as both share the table snapshot and the stretch of the node.
 
 #include "NodeEvpn.h"
 
@@ -734,10 +738,15 @@ static NODE_EVPN_TABLE *NodeEvpnBuild(NODE_EVPN *e) {
 // NodeEvpnCommit puts into the table snapshot. True for such a message, which never reaches the Windows routing table, also
 // when the node cannot take it; false for any other message.
 bool NodeEvpnRoute(NODE *n, const char *line) {
+	return NodeEvpnRouteInto(n, (n != NULL ? n->Evpn : NULL), line);
+}
+
+// ... into the EVPN e of the node n, NULL for none: the EVPN of the Bgp setting (NodeEvpnRoute), or of the EVPN peering of the
+// standard mode (NodeEvpnPeering.c; SDN-78, #358)
+bool NodeEvpnRouteInto(NODE *n, NODE_EVPN *e, const char *line) {
 	NODE_EVPN_ROUTE r;
 	char mac[NODE_EVPN_TEXT];
 	UINT what = NodeEvpnParseRoute(line, &r);
-	NODE_EVPN *e = (n != NULL ? n->Evpn : NULL);
 	bool full = false;
 
 	if (what == NODE_EVPN_NO_ROUTE)
@@ -793,11 +802,15 @@ bool NodeEvpnRoute(NODE *n, const char *line) {
 // Put the routes of the fabric into the table snapshot of the node when they changed (NodeSwapEvpn). The reader thread of the
 // sidecar calls it after each read of the pipe, so that the routes of one read go in together.
 void NodeEvpnCommit(NODE *n) {
-	NODE_EVPN *e = (n != NULL ? n->Evpn : NULL);
+	NodeEvpnCommitOf(n, (n != NULL ? n->Evpn : NULL));
+}
+
+// ... of the EVPN e of the node n, NULL for none (NodeEvpnRouteOf)
+void NodeEvpnCommitOf(NODE *n, NODE_EVPN *e) {
 	NODE_EVPN_TABLE *t = NULL;
 	bool dirty = false;
 
-	if (e == NULL)
+	if (n == NULL || e == NULL)
 		return;
 
 	Lock(e->Lock);
@@ -816,10 +829,14 @@ void NodeEvpnCommit(NODE *n) {
 // Forget every route of the fabric and take them out of the table snapshot, as the sidecar closed the pipe (NodeBgp.c): the
 // number of the routes that went
 UINT NodeEvpnFlush(NODE *n) {
-	NODE_EVPN *e = (n != NULL ? n->Evpn : NULL);
+	return NodeEvpnFlushOf(n, (n != NULL ? n->Evpn : NULL));
+}
+
+// ... of the EVPN e of the node n, NULL for none (NodeEvpnRouteOf)
+UINT NodeEvpnFlushOf(NODE *n, NODE_EVPN *e) {
 	UINT num = 0;
 
-	if (e == NULL)
+	if (n == NULL || e == NULL)
 		return 0;
 
 	Lock(e->Lock);
@@ -836,7 +853,7 @@ UINT NodeEvpnFlush(NODE *n) {
 	}
 	Unlock(e->Lock);
 
-	NodeEvpnCommit(n);
+	NodeEvpnCommitOf(n, e);
 
 	return num;
 }
@@ -962,6 +979,17 @@ static bool NodeEvpnVrfs(NODE_EVPN *e, cJSON *vrfs, char *error, UINT error_size
 // the route targets of each stretch. A node whose evpn object is not one runs without EVPN, and the node log says why; the
 // sidecar refuses such an object too. The caller holds the node lock.
 void NodeEvpnStart(NODE *n, struct cJSON *cfg) {
+	if (n == NULL || n->Evpn != NULL)
+		return;
+
+	n->Evpn = NodeEvpnOpen(n, cfg);
+}
+
+// Open the EVPN of the evpn object of cfg (NodeEvpnStart), NULL for none: cfg has no evpn object, it is not one, or the node runs
+// another EVPN, which the node log says. The EVPN of the Bgp setting and the EVPN peering of the standard mode (NodeEvpnPeering.c;
+// SDN-78, #358) share the table snapshot and the stretch of the node, so one runs at a time (NODE.EvpnTaken), until NodeEvpnClose.
+// The caller holds the node lock, or is the worker of the EVPN peering, which keeps the EVPN to itself.
+NODE_EVPN *NodeEvpnOpen(NODE *n, struct cJSON *cfg) {
 	cJSON *o = cJSON_GetObjectItemCaseSensitive(cfg, "evpn");
 	cJSON *vrfs = cJSON_GetObjectItemCaseSensitive(o, "vrfs");
 	const char *vtep = NodeEvpnJsonStr(o, "vtep");
@@ -972,8 +1000,13 @@ void NodeEvpnStart(NODE *n, struct cJSON *cfg) {
 	char error[MAX_SIZE];
 	char mac_text[NODE_EVPN_TEXT];
 
-	if (n == NULL || n->Evpn != NULL || cJSON_IsObject(o) == false)
-		return;
+	if (n == NULL || cJSON_IsObject(o) == false)
+		return NULL;
+
+	if (InterlockedCompareExchange(&n->EvpnTaken, 1, 0) != 0) {
+		NodeLog(n, "EVPN not started: the node runs another EVPN, of its Bgp setting or of the EVPN peering of the standard mode, and it runs one at a time");
+		return NULL;
+	}
 
 	NODE_EVPN *e = ZeroMalloc(sizeof(NODE_EVPN));
 	e->Node = n;
@@ -1025,10 +1058,10 @@ void NodeEvpnStart(NODE *n, struct cJSON *cfg) {
 	if (IsEmptyStr(error) == false) {
 		NodeLog(n, "EVPN not started: %s", error);
 		NodeEvpnFree(e);
-		return;
+		InterlockedExchange(&n->EvpnTaken, 0);
+		return NULL;
 	}
 
-	n->Evpn = e;
 	// The counters go to the Controller with the report of the control stream (SDN-25-R3, #571)
 	NodeEvpnReportStart(e);
 	NodeEvpnMacText(mac_text, sizeof(mac_text), e->RouterMac);
@@ -1037,31 +1070,95 @@ void NodeEvpnStart(NODE *n, struct cJSON *cfg) {
 
 	// The stretches run on the module, and the fabric joins the switch of each of their Networks (NodeStretch.c; SDN-64, #291)
 	NodeStretchBind(n, e->Vxlan, e->FabricPort, e->Stretches, e->NumStretches);
+
+	return e;
 }
 
-// Stop the EVPN of the gateway with its sidecar (NodeBgpStop), once the reader thread of the sidecar ended: the routes of the
-// fabric leave the table snapshot, then the socket closes, which joins the receive thread, and the module goes. The caller
-// holds the node lock and is no online reader of the table snapshot.
+// Stop the EVPN of the gateway with its sidecar (NodeBgpStop), once the reader thread of the sidecar ended (NodeEvpnClose). The
+// caller holds the node lock and is no online reader of the table snapshot.
 void NodeEvpnStop(NODE *n) {
 	NODE_EVPN *e = (n != NULL ? n->Evpn : NULL);
 
 	if (e == NULL)
 		return;
 
+	n->Evpn = NULL;
+	NodeEvpnClose(n, e);
+}
+
+// Close the EVPN e that NodeEvpnOpen opened, once the reader thread of its sidecar ended and the thread of the stretch halted
+// (NodeStretchHalt): the routes of the fabric leave the table snapshot, then the socket closes, which joins the receive thread,
+// and the module goes; then another EVPN may open. The caller is no online reader of the table snapshot.
+void NodeEvpnClose(NODE *n, NODE_EVPN *e) {
+	if (n == NULL || e == NULL)
+		return;
+
 	// No reader reaches the module once the snapshot holds no route of it, and no stretch once the fabric left the switches of its
 	// Networks (NodeStretch.c; SDN-64, #291)
 	NodeSwapEvpn(n, NULL);
-	n->Evpn = NULL;
 	NodeStretchUnbind(n);
 
 	NodeLog(n, "EVPN stopped: %u routes of the fabric removed; %I64u packets sent to the fabric, %I64u of the fabric delivered", LIST_NUM(e->Routes), (UINT64)ReadAcquire64(&e->Sent), (UINT64)ReadAcquire64(&e->Delivered));
 	NodeEvpnFree(e);
+	InterlockedExchange(&n->EvpnTaken, 0);
 }
 
-// The state of the EVPN of the node
-void NodeEvpnGetStatus(NODE *n, NODE_EVPN_STATUS *st) {
+// The status of the EVPN e into st, as NodeEvpnGetStatus reports the EVPN of the Bgp setting; all 0 for none. The caller keeps e
+// open while it runs (NodeEvpnPeering.c; SDN-78, #358).
+void NodeEvpnStatusOf(NODE_EVPN *e, NODE_EVPN_STATUS *st) {
 	CONTROL_EVPN_COUNTERS c;
 
+	if (st == NULL)
+		return;
+
+	Zero(st, sizeof(NODE_EVPN_STATUS));
+	if (e == NULL)
+		return;
+
+	NodeEvpnCounters(e, &c);
+	st->Running = true;
+	st->Port = VxlanUdpPort(e->Udp);
+	st->FabricPort = e->FabricPort;
+	st->NumVrfs = e->NumVrfs;
+
+	Lock(e->Lock);
+	{
+		st->NumRoutes = LIST_NUM(e->Routes);
+	}
+	Unlock(e->Lock);
+
+	st->Sent = c.Sent;
+	st->Failed = c.Failed;
+	st->Delivered = c.Delivered;
+	st->Undelivered = c.Undelivered;
+	st->UnknownVtep = c.UnknownVtep;
+	st->Strangers = c.Strangers;
+	st->NotOurs = c.NotOurs;
+	st->UnknownVni = c.UnknownVni;
+	st->Malformed = c.Malformed;
+}
+
+// The IP prefix routes of the fabric that the EVPN e holds, at most max of them into list, in the order they came: their number,
+// which may be more than max. The caller keeps e open while it runs (NodeEvpnPeering.c; SDN-78, #358).
+UINT NodeEvpnRoutesOf(NODE_EVPN *e, NODE_EVPN_ROUTE *list, UINT max) {
+	UINT num = 0;
+
+	if (e == NULL)
+		return 0;
+
+	Lock(e->Lock);
+	{
+		num = LIST_NUM(e->Routes);
+		for (UINT i = 0; list != NULL && i < num && i < max; i++)
+			Copy(&list[i], LIST_DATA(e->Routes, i), sizeof(NODE_EVPN_ROUTE));
+	}
+	Unlock(e->Lock);
+
+	return num;
+}
+
+// The state of the EVPN of the node (NodeEvpnStatusOf)
+void NodeEvpnGetStatus(NODE *n, NODE_EVPN_STATUS *st) {
 	if (st == NULL)
 		return;
 
@@ -1071,37 +1168,13 @@ void NodeEvpnGetStatus(NODE *n, NODE_EVPN_STATUS *st) {
 
 	Lock(n->Lock);
 	{
-		NODE_EVPN *e = n->Evpn;
-
-		if (e != NULL) {
-			NodeEvpnCounters(e, &c);
-			st->Running = true;
-			st->Port = VxlanUdpPort(e->Udp);
-			st->FabricPort = e->FabricPort;
-			st->NumVrfs = e->NumVrfs;
-
-			Lock(e->Lock);
-			{
-				st->NumRoutes = LIST_NUM(e->Routes);
-			}
-			Unlock(e->Lock);
-
-			st->Sent = c.Sent;
-			st->Failed = c.Failed;
-			st->Delivered = c.Delivered;
-			st->Undelivered = c.Undelivered;
-			st->UnknownVtep = c.UnknownVtep;
-			st->Strangers = c.Strangers;
-			st->NotOurs = c.NotOurs;
-			st->UnknownVni = c.UnknownVni;
-			st->Malformed = c.Malformed;
-		}
+		NodeEvpnStatusOf(n->Evpn, st);
 	}
 	Unlock(n->Lock);
 }
 
 // The IP prefix routes of the fabric that the gateway holds, at most max of them into list, in the order they came: their
-// number, which may be more than max
+// number, which may be more than max (NodeEvpnRoutesOf)
 UINT NodeEvpnGetRoutes(NODE *n, NODE_EVPN_ROUTE *list, UINT max) {
 	UINT num = 0;
 
@@ -1110,17 +1183,7 @@ UINT NodeEvpnGetRoutes(NODE *n, NODE_EVPN_ROUTE *list, UINT max) {
 
 	Lock(n->Lock);
 	{
-		NODE_EVPN *e = n->Evpn;
-
-		if (e != NULL) {
-			Lock(e->Lock);
-			{
-				num = LIST_NUM(e->Routes);
-				for (UINT i = 0; list != NULL && i < num && i < max; i++)
-					Copy(&list[i], LIST_DATA(e->Routes, i), sizeof(NODE_EVPN_ROUTE));
-			}
-			Unlock(e->Lock);
-		}
+		num = NodeEvpnRoutesOf(n->Evpn, list, max);
 	}
 	Unlock(n->Lock);
 

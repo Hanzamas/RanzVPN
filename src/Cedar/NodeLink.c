@@ -316,12 +316,14 @@ static void NodeLinkOpen(NODE_LINK *l, bool geneve, UINT port) {
 }
 
 // The links of the desired state st into the table t: the VRFs with a link of kind vxlan or geneve, and the tunnel
-// endpoint of each peer, as next hop i of the tables is the peer of st->Peers[i]
+// endpoint of each peer, as next hop i of the tables is the peer of st->Peers[i]. A VRF whose nodes peer by EVPN is none of
+// them: its VNI is the L3 VNI of the EVPN of the node, whose VTEP holds the port of VXLAN, and the routes of its peers fill its
+// flood lists and name the VTEPs that its frames come from, in place of the Controller (NodeEvpnPeering.c; SDN-78, #358).
 static void NodeLinkBuild(NODE_LINK_TABLE *t, const CONTROL_STATE *st) {
 	for (UINT i = 0; i < st->NumVrfs && i < CONTROL_MAX_VRFS; i++) {
 		const CONTROL_VRF *c = &st->Vrfs[i];
 
-		if (c->Link != CONTROL_LINK_VXLAN && c->Link != CONTROL_LINK_GENEVE)
+		if ((c->Link != CONTROL_LINK_VXLAN && c->Link != CONTROL_LINK_GENEVE) || c->PeeringEvpn)
 			continue;
 
 		NODE_LINK_VRF *lv = &t->Vrfs[t->NumVrfs++];

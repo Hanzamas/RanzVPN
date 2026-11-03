@@ -69,7 +69,7 @@ func TestApplyPeeringRejects(t *testing.T) {
 		dc, a, b string
 		want     string
 	}{
-		{`"link": "vxlan", "peering": {"protocol": "ospf"}`, ``, `10.1.0.2`, `VRF "dc": the peering protocol must be bgp, not "ospf"`},
+		{`"link": "vxlan", "peering": {"protocol": "ospf"}`, ``, `10.1.0.2`, `VRF "dc": the peering protocol must be bgp or evpn, not "ospf"`},
 		{`"link": "noise", "peering": {"protocol": "bgp"}`, ``, `10.1.0.2`, `VRF "dc": BGP peering needs a link of kind vxlan or geneve, and the link is noise`},
 		{`"peering": {"protocol": "bgp"}`, ``, `10.1.0.2`, `VRF "dc": BGP peering needs a link of kind vxlan or geneve, and the link is noise`},
 		{`"link": "vxlan", "topology": "hub-and-spoke", "hub": "a", "peering": {"protocol": "bgp"}`, ``, `10.1.0.2`, `VRF "dc": BGP peering is a full mesh, and the topology is hub-and-spoke`},

@@ -34,6 +34,14 @@
 // error, so that a client of it took no route that a reflector passed on and a reflector of it passed on none: the node needs
 // protocol 7 (NODE_PEERING_PROTOCOL) and ends an older sidecar on its ready, as it ends one of protocol 3 (SDN-77-R3, below).
 //
+// The EVPN peering of the standard mode (SDN-78, #358): in a VRF whose peering is evpn (CONTROL_VRF.PeeringEvpn), the nodes exchange
+// their MAC addresses, IP addresses and prefixes by EVPN with this sidecar. Its start names the evpn object of the EVPN of those
+// VRFs (NodeEvpnPeering.c), which the node opens before the reader thread of the sidecar starts (NodeEvpnOpen) and closes after that
+// thread ended: an IP prefix route of such a VRF goes to that EVPN and never among the routes of a peer, a stretch message goes to
+// the stretch of the node, and the thread of the stretch announces the MAC addresses of the L2 Networks of those VRFs through the
+// sidecar, writing the pipe under its lock with the worker. A sidecar whose EVPN changed starts anew with the new one, and the node
+// needs protocol 8 of its sidecar, which has the evpn of the peering.
+//
 // What the review of SDN-77 asked of the node (SDN-77-R1, #531):
 // - No change of the learned routes is lost: the worker never waits for an apply of the overlay, whose lock it only tries. A
 //   rebuild that meets an apply tries again once the apply is done, and one that finds another Generation in force then leaves
@@ -62,6 +70,7 @@
 //   (the refusal line says so); the sidecar toward the routers of the operator is a sidecar of its own (NodeBgp.c).
 
 #include "NodePeering.h"
+#include "NodeEvpn.h"
 
 #include "Mayaqua/FileIO.h"
 #include "Mayaqua/Internat.h"
@@ -149,6 +158,10 @@ typedef struct NODE_PEERING_SIDECAR {
 	UINT AddressSize;
 	char *Peers; // The peers that it took last, as the JSON array of the protocol
 	bool Dead;   // The worker's: it gets no message any more, as one did not reach it, it hangs, or the overlay stops
+	// The evpn object of its start, as JSON, NULL for none (NodeEvpnPeering.c; SDN-78, #358), and the lock of its pipe, which the
+	// worker and the thread of the stretch of its EVPN write one line at a time
+	char *Evpn;
+	LOCK *WriteLock;
 } NODE_PEERING_SIDECAR;
 
 // A sidecar that stopped and that the worker does not wait for (NodePeeringLetGo): a wait of the thread pool closes its handles
@@ -203,6 +216,12 @@ struct NODE_PEERING {
 	LIST *Peers;                   // The peers of the sidecar (NODE_PEERING_PEER)
 	LIST *Routes;                  // The learned routes (NODE_PEERING_ROUTE)
 	LIST *Announced;               // The prefixes that the node announces (NODE_PEERING_PREFIX): the worker's
+
+	// The EVPN of the VRFs that peer by EVPN while a sidecar with an evpn object runs, NULL for none (NodeEvpnPeering.c; SDN-78,
+	// #358): the worker opens it before the reader thread of the sidecar starts and closes it after that thread ended, so the
+	// reader reads it without the lock; and a test's UDP port of the VTEPs of the peers, 0 for the port of the node (NodePeeringSetFabricPort)
+	NODE_EVPN *Evpn;
+	UINT FabricPort;
 };
 
 //
@@ -582,6 +601,9 @@ static void NodePeeringOnMessage(NODE_PEERING *p, const char *line) {
 
 	StrCpy(peer_text, sizeof(peer_text), NodePeeringJsonStr(m, "peer"));
 	bool has_peer = NodePeeringParse(peer_text, NET_STRING_IP_ADDRESS_NO_SCOPE, peer, &peer_size, NULL);
+	// An IP prefix route of a VRF that peers by EVPN goes to the EVPN of the node, never among the routes of a peer, also while the
+	// node runs none (NodeEvpnPeering.c; SDN-78, #358)
+	bool evpn = (cJSON_IsObject(m) && (StrCmp(type, "learned") == 0 || StrCmp(type, "withdrawn") == 0) && NodeEvpnRouteInto(p->Node, p->Evpn, line));
 
 	if (cJSON_IsObject(m) == false) {
 		NodeLog(p->Node, "BGP peering: a message of the sidecar that is not a JSON object");
@@ -617,7 +639,7 @@ static void NodePeeringOnMessage(NODE_PEERING *p, const char *line) {
 		Unlock(p->Lock);
 
 		NodeLog(p->Node, "BGP peering: peer %s (AS %u): %s%s", peer_text, NodePeeringJsonUint(m, "asn"), NodePeeringJsonStr(m, "state"), wake ? "" : " (not a peer that the Controller named)");
-	} else if (StrCmp(type, "learned") == 0 || StrCmp(type, "withdrawn") == 0) {
+	} else if ((StrCmp(type, "learned") == 0 || StrCmp(type, "withdrawn") == 0) && evpn == false) {
 		bool learned = (StrCmp(type, "learned") == 0);
 		UINT vrf_id = NodePeeringJsonUint(m, "vrf");
 		const char *text = NodePeeringJsonStr(m, "prefix");
@@ -641,6 +663,13 @@ static void NodePeeringOnMessage(NODE_PEERING *p, const char *line) {
 			wake = NodePeeringWithdrawn(p, vrf_id, prefix, prefix_size, length);
 			NodeLog(p->Node, "BGP peering: route %s of VRF %u withdrawn%s%s", text, vrf_id, has_peer ? " by " : "", peer_text);
 		}
+	} else if (StrCmp(type, "stretch") == 0) {
+		// The type-2 and type-3 routes of the peers on the L2 VNIs of the VRFs that peer by EVPN (NodeStretch.c; SDN-78, #358): the
+		// stretch of the node is the one of the EVPN of the peering only while that EVPN runs
+		if (p->Evpn != NULL)
+			NodeStretchMessage(p->Node, line);
+		else
+			NodeLog(p->Node, "BGP peering: a stretch message of the sidecar ignored: the EVPN of the VRFs that peer by EVPN does not run");
 	} else if (StrCmp(type, "refused") == 0) {
 		Lock(p->Lock);
 		{
@@ -670,7 +699,7 @@ static void NodePeeringOnMessage(NODE_PEERING *p, const char *line) {
 			p->Answered = GetTickCount64();
 		}
 		Unlock(p->Lock);
-	} else {
+	} else if (evpn == false) {
 		NodeLog(p->Node, "BGP peering: a message of the unknown type \"%s\" of the sidecar ignored", type);
 	}
 
@@ -736,6 +765,13 @@ static DWORD WINAPI NodePeeringReaderThread(void *param) {
 			s->LineSize = 0;
 		}
 
+		// The routes of the EVPN of the VRFs that peer by EVPN that the messages of this read changed go in together (NodeEvpnPeering.c;
+		// SDN-78, #358)
+		if (p->Evpn != NULL) {
+			NodeEvpnCommitOf(p->Node, p->Evpn);
+			NodeStretchCommit(p->Node);
+		}
+
 		if (too_long) {
 			NodeLog(p->Node, "BGP peering: a message of the sidecar longer than %u bytes, the node stops reading", (UINT)NODE_BGP_MAX_LINE);
 			break;
@@ -761,6 +797,10 @@ static DWORD WINAPI NodePeeringReaderThread(void *param) {
 			p->Reported = true;
 		}
 		Unlock(p->Lock);
+
+		// ... and so do the routes of its EVPN (NodeEvpnPeering.c; SDN-78, #358)
+		if (p->Evpn != NULL)
+			num += NodeEvpnFlushOf(p->Node, p->Evpn) + NodeStretchFlush(p->Node);
 
 		NodeLog(p->Node, "BGP peering: the sidecar closed the pipe: BGP stopped, %u learned routes go", num);
 		SetEvent(p->Wake);
@@ -796,7 +836,8 @@ static void NodePeeringUnsent(NODE_PEERING *p, NODE_PEERING_SIDECAR *s, const ch
 	NodePeeringEnd(s);
 }
 
-// Send the line text to the sidecar s, on the worker, the one writer of the pipe. A line longer than the protocol allows, or that
+// Send the line text to the sidecar s, on the worker, or on the thread of the stretch of the EVPN of the peering, which write the
+// pipe under its lock (SDN-78, #358). A line longer than the protocol allows, or that
 // does not reach the pipe within NODE_PEERING_WRITE_WAIT, a full pipe, ends the sidecar (NodePeeringUnsent). The halt ends the
 // wait at once: the sidecar then gets no message any more, as it stops anyway. False when the line did not reach the sidecar, and
 // for a sidecar that gets no message any more.
@@ -819,21 +860,26 @@ static bool NodePeeringSendLine(NODE_PEERING *p, NODE_PEERING_SIDECAR *s, const 
 	Copy(line, text, len);
 	line[len] = '\n';
 
-	Zero(&ov, sizeof(ov));
-	ov.hEvent = s->WriteEvent;
-	ResetEvent(s->WriteEvent);
+	// The worker and the thread of the stretch of the EVPN of the peering write the pipe one line at a time (SDN-78, #358)
+	Lock(s->WriteLock);
+	{
+		Zero(&ov, sizeof(ov));
+		ov.hEvent = s->WriteEvent;
+		ResetEvent(s->WriteEvent);
 
-	if (WriteFile(s->Pipe, line, len + 1, NULL, &ov) || GetLastError() == ERROR_IO_PENDING) {
-		// The write first: WaitForMultipleObjects reports the lowest signalled index
-		HANDLE waits[2] = {s->WriteEvent, p->Halt};
-		DWORD w = WaitForMultipleObjects(2, waits, FALSE, NODE_PEERING_WRITE_WAIT);
+		if (WriteFile(s->Pipe, line, len + 1, NULL, &ov) || GetLastError() == ERROR_IO_PENDING) {
+			// The write first: WaitForMultipleObjects reports the lowest signalled index
+			HANDLE waits[2] = {s->WriteEvent, p->Halt};
+			DWORD w = WaitForMultipleObjects(2, waits, FALSE, NODE_PEERING_WRITE_WAIT);
 
-		if (w != WAIT_OBJECT_0)
-			CancelIoEx(s->Pipe, &ov);
-		halted = (w == WAIT_OBJECT_0 + 1);
+			if (w != WAIT_OBJECT_0)
+				CancelIoEx(s->Pipe, &ov);
+			halted = (w == WAIT_OBJECT_0 + 1);
 
-		ret = (GetOverlappedResult(s->Pipe, &ov, &done, TRUE) && done == len + 1);
+			ret = (GetOverlappedResult(s->Pipe, &ov, &done, TRUE) && done == len + 1);
+		}
 	}
+	Unlock(s->WriteLock);
 
 	Free(line);
 
@@ -878,9 +924,12 @@ static void NodePeeringFreeSidecar(NODE_PEERING_SIDECAR *s) {
 		CloseHandle(s->WriteEvent);
 	if (s->StopEvent != NULL)
 		CloseHandle(s->StopEvent);
+	if (s->WriteLock != NULL)
+		DeleteLock(s->WriteLock);
 
 	Free(s->Line);
 	Free(s->Peers);
+	Free(s->Evpn);
 	Free(s);
 }
 
@@ -1238,11 +1287,25 @@ static void NodePeeringStopSidecar(NODE_PEERING *p, const char *why) {
 	if (s == NULL)
 		return;
 
+	// The thread of the stretch of the EVPN writes the pipe: it ends first (NodeEvpnPeering.c; SDN-78, #358)
+	if (p->Evpn != NULL)
+		NodeStretchHalt(p->Node);
+
 	// The reader thread ends at its stop event
 	SetEvent(s->StopEvent);
 	WaitForSingleObject(s->Reader, INFINITE);
 	CloseHandle(s->Reader);
 	s->Reader = NULL;
+
+	// ... and then the EVPN, whose routes leave the table snapshot, as no reader hands it a route any more
+	NODE_EVPN *evpn = NULL;
+	Lock(p->Lock);
+	{
+		evpn = p->Evpn;
+		p->Evpn = NULL;
+	}
+	Unlock(p->Lock);
+	NodeEvpnClose(p->Node, evpn);
 
 	CloseHandle(s->Pipe);
 	s->Pipe = INVALID_HANDLE_VALUE;
@@ -1293,15 +1356,66 @@ static void NodePeeringStopSidecar(NODE_PEERING *p, const char *why) {
 
 static void NodePeeringUpdatePeers(NODE_PEERING *p, const CONTROL_STATE *st);
 
+// One stretch message of the thread of the stretch of the EVPN of the peering to the sidecar that runs (NODE_STRETCH_SEND_PROC;
+// SDN-78, #358): the thread starts after the sidecar, and the worker halts it before it takes the sidecar away
+// (NodePeeringStopSidecar)
+static bool NodePeeringStretchSend(void *param, cJSON *m) {
+	NODE_PEERING *p = (NODE_PEERING *)param;
+	NODE_PEERING_SIDECAR *s = p->Sidecar;
+
+	return (s != NULL && NodePeeringSend(p, s, m));
+}
+
+// The UDP port of the VTEPs of the peers for the EVPN of the peering: 0 for the port of the node, or the port of a test
+// (NodePeeringSetFabricPort)
+static UINT NodePeeringFabricPort(NODE_PEERING *p) {
+	UINT port = 0;
+
+	Lock(p->Lock);
+	port = p->FabricPort;
+	Unlock(p->Lock);
+
+	return port;
+}
+
+// The evpn object of the EVPN of the peering for the state st as JSON text, NULL for none (NodeEvpnPeeringObject; SDN-78, #358).
+// The caller frees it.
+static char *NodePeeringEvpnText(NODE_PEERING *p, const CONTROL_STATE *st) {
+	const CONTROL_PEERING *own = st->Peering;
+	char router_id[MAX_SIZE];
+	char address[MAX_SIZE];
+	char *ret = NULL;
+
+	if (own == NULL)
+		return NULL;
+
+	Format(router_id, sizeof(router_id), "%u.%u.%u.%u", (UINT)own->RouterId[0], (UINT)own->RouterId[1], (UINT)own->RouterId[2], (UINT)own->RouterId[3]);
+	NodePeeringAddrText(address, sizeof(address), own->Address, own->AddressSize);
+
+	cJSON *evpn = NodeEvpnPeeringObject(st, address, router_id, NodePeeringFabricPort(p));
+	char *text = (evpn != NULL ? cJSON_PrintUnformatted(evpn) : NULL);
+
+	if (text != NULL) {
+		ret = CopyStr(text);
+		cJSON_free(text);
+	}
+	cJSON_Delete(evpn);
+
+	return ret;
+}
+
 // Start a sidecar with the settings of the state st, which has a peering of the node: its pipe, its process in its job, the
 // start message, the thread that reads it, and then the peers of st (NodePeeringUpdatePeers). False when a step before the peers
-// fails, and nothing of it is left; peers that do not reach it end it, and another starts after NODE_PEERING_RESTART.
+// fails, and nothing of it is left; peers that do not reach it end it, and another starts after NODE_PEERING_RESTART. While a VRF
+// of st peers by EVPN, the start has the evpn object of the EVPN of those VRFs, which the node opens before the reader thread
+// starts, and the thread of its stretch starts after it (NodeEvpnPeering.c; SDN-78, #358).
 static bool NodePeeringStartSidecar(NODE_PEERING *p, const CONTROL_STATE *st) {
 	NODE *n = p->Node;
 	const CONTROL_PEERING *own = st->Peering;
 	char text[MAX_SIZE];
 	char address[MAX_SIZE];
 	DWORD thread_id = 0;
+	NODE_EVPN *evpn = NULL;
 
 	if (IsFileExistsW(n->BgpSidecar) == false) {
 		NodeLog(n, "BGP peering not started: ranz.exe, which holds the sidecar, is not installed at %S", n->BgpSidecar);
@@ -1313,6 +1427,7 @@ static bool NodePeeringStartSidecar(NODE_PEERING *p, const CONTROL_STATE *st) {
 	s->Line = Malloc(NODE_BGP_MAX_LINE + 1);
 	s->WriteEvent = CreateEventW(NULL, TRUE, FALSE, NULL);
 	s->StopEvent = CreateEventW(NULL, TRUE, FALSE, NULL);
+	s->WriteLock = NewLock();
 	s->Asn = own->Asn;
 	Copy(s->RouterId, own->RouterId, sizeof(s->RouterId));
 	Copy(s->Address, own->Address, sizeof(s->Address));
@@ -1330,18 +1445,27 @@ static bool NodePeeringStartSidecar(NODE_PEERING *p, const CONTROL_STATE *st) {
 	cJSON_AddStringToObject(m, "router_id", text);
 	NodePeeringAddrText(address, sizeof(address), own->Address, own->AddressSize);
 	cJSON_AddStringToObject(m, "address", address);
+	// ... and the EVPN of the VRFs that peer by EVPN (NodeEvpnPeering.c; SDN-78, #358)
+	s->Evpn = NodePeeringEvpnText(p, st);
+	if (s->Evpn != NULL)
+		cJSON_AddItemToObject(m, "evpn", cJSON_Parse(s->Evpn));
 
 	bool ok = (s->WriteEvent != NULL && s->StopEvent != NULL && NodePeeringLaunch(n, s, p->Halt));
 	if (ok && NodePeeringSend(p, s, m) == false) {
 		NodeLog(n, "BGP peering not started: the settings did not reach the sidecar");
 		ok = false;
 	}
+	// The EVPN runs before the reader thread starts, which hands it the routes of the peers; a node that runs another EVPN runs
+	// none for the peering, and its node log says so (NodeEvpnOpen)
+	if (ok && s->Evpn != NULL)
+		evpn = NodeEvpnOpen(n, m);
 	cJSON_Delete(m);
 
 	if (ok) {
 		Lock(p->Lock);
 		{
 			p->Sidecar = s;
+			p->Evpn = evpn;
 			p->Ready = false;
 			p->Exited = false;
 			p->Old = false;
@@ -1357,7 +1481,9 @@ static bool NodePeeringStartSidecar(NODE_PEERING *p, const CONTROL_STATE *st) {
 
 			Lock(p->Lock);
 			p->Sidecar = NULL;
+			p->Evpn = NULL;
 			Unlock(p->Lock);
+			NodeEvpnClose(n, evpn);
 			ok = false;
 		}
 	}
@@ -1373,6 +1499,11 @@ static bool NodePeeringStartSidecar(NODE_PEERING *p, const CONTROL_STATE *st) {
 
 	NodeLog(n, "BGP peering: sidecar %S bgp started: process %u, AS %u, router id %s, listening on TCP 179 of %s, pipe %S", n->BgpSidecar, s->ProcessId, own->Asn, text, address,
 	        s->PipeName);
+
+	// The thread of the stretch of the EVPN announces the MAC addresses of the L2 Networks of the VRFs that peer by EVPN, a full resync
+	// first (NodeStretch.c; SDN-78, #358)
+	if (evpn != NULL)
+		NodeStretchRunWith(n, NodePeeringStretchSend, p);
 
 	NodePeeringUpdatePeers(p, st);
 
@@ -1591,6 +1722,15 @@ static void NodePeeringSettle(NODE_PEERING *p) {
 	// A sidecar whose own settings changed starts again with the new ones
 	if (p->Sidecar != NULL && NodePeeringSameSettings(p->Sidecar, st->Peering) == false)
 		NodePeeringStopSidecar(p, "the AS, the router id or the address of the node changed");
+	// ... and so does one whose EVPN changed: the VRFs that peer by EVPN, their L3 VNIs, their L2 Networks or the port of VXLAN
+	// (NodeEvpnPeering.c; SDN-78, #358)
+	if (p->Sidecar != NULL) {
+		char *evpn = NodePeeringEvpnText(p, st);
+
+		if (StrCmp(evpn != NULL ? evpn : "", p->Sidecar->Evpn != NULL ? p->Sidecar->Evpn : "") != 0)
+			NodePeeringStopSidecar(p, "the EVPN of the VRFs that peer by EVPN changed");
+		Free(evpn);
+	}
 
 	if (p->Sidecar == NULL) {
 		if (now < p->NextStart || NodePeeringStartSidecar(p, st) == false) {
@@ -2156,6 +2296,59 @@ UINT NodePeeringGetPeers(NODE *n, CONTROL_PEERING_PEER *list, UINT max) {
 	if (num != 0)
 		Copy(list, peers, sizeof(CONTROL_PEERING_PEER) * num);
 	Free(peers);
+
+	return num;
+}
+
+// A test names the UDP port of the VTEPs of the peers for the EVPN of the VRFs that peer by EVPN, 0 for the port of VXLAN of the node,
+// before the first Generation with such a VRF: the nodes of one host need ports of their own, as each VTEP holds its port
+// (NodeEvpnPeering.c; SDN-78, #358)
+void NodePeeringSetFabricPort(NODE *n, UINT port) {
+	NODE_PEERING *p = (n != NULL ? n->Peering : NULL);
+
+	if (p == NULL)
+		return;
+
+	Lock(p->Lock);
+	p->FabricPort = port;
+	Unlock(p->Lock);
+}
+
+// The state of the EVPN of the VRFs that peer by EVPN into st, as NodeEvpnGetStatus reports the EVPN of the Bgp setting: false, and all
+// 0, while none runs (SDN-78, #358)
+bool NodePeeringGetEvpnStatus(NODE *n, NODE_EVPN_STATUS *st) {
+	NODE_PEERING *p = (n != NULL ? n->Peering : NULL);
+	bool ret = false;
+
+	if (st == NULL)
+		return false;
+
+	Zero(st, sizeof(NODE_EVPN_STATUS));
+	if (p == NULL)
+		return false;
+
+	Lock(p->Lock);
+	{
+		ret = (p->Evpn != NULL);
+		NodeEvpnStatusOf(p->Evpn, st);
+	}
+	Unlock(p->Lock);
+
+	return ret;
+}
+
+// The IP prefix routes of the peers that the EVPN of the VRFs that peer by EVPN holds, at most max of them into list: their number, 0
+// while none runs (SDN-78, #358)
+UINT NodePeeringGetEvpnRoutes(NODE *n, NODE_EVPN_ROUTE *list, UINT max) {
+	NODE_PEERING *p = (n != NULL ? n->Peering : NULL);
+	UINT num = 0;
+
+	if (p == NULL)
+		return 0;
+
+	Lock(p->Lock);
+	num = NodeEvpnRoutesOf(p->Evpn, list, max);
+	Unlock(p->Lock);
 
 	return num;
 }

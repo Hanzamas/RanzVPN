@@ -116,6 +116,7 @@ typedef struct NODE_STRETCH_ROUTE {
 	UINT IpSize;    // ... their number, 0 for MAC only
 	UCHAR Vtep[16]; // The VTEP of the fabric, the next hop of the route, an IPv4 address as an IPv4-mapped one
 	bool Withdraw;  // In a message: the route went
+	bool Moved;     // In a message, a type-2 route: its MAC address moved from the node to the VTEP of the route (MAC mobility, RFC 7432 section 15; SDN-78, #358)
 } NODE_STRETCH_ROUTE;
 
 // What NodeStretchGetStatus reports: the stretch of the gateway since the node started, all 0 without one
@@ -133,7 +134,13 @@ typedef struct NODE_STRETCH_STATUS {
 	UINT64 Undelivered; // ... that it delivered to none, or that came while the fabric was on no switch
 	UINT64 UnknownVtep; // Frames of an L2 VNI from an address that is the VTEP of no route of the VNI (NodeStretchInput): dropped, whatever they hold
 	UINT64 Refused;     // Routes of the fabric that the gateway did not take: none that it can take, of no stretch, or one too many
+	UINT64 Moved;       // MAC addresses of the gateway that moved to a VTEP of the fabric, which took them off their ports (MAC mobility; SDN-78, #358)
 } NODE_STRETCH_STATUS;
+
+// Sends one stretch message m to the sidecar of the stretch, from the thread of the stretch: true when it reached the sidecar
+// (NodeBgpSend of the sidecar of the Bgp setting, or the sidecar of the EVPN peering of the standard mode; SDN-78, #358)
+struct cJSON;
+typedef bool(NODE_STRETCH_SEND_PROC)(void *param, struct cJSON *m);
 
 // NodeEvpn.c
 UINT NodeEvpnParseRoute(const char *line, NODE_EVPN_ROUTE *r);
@@ -144,12 +151,19 @@ UINT NodeEvpnParseFrame(const UCHAR *frame, UINT size, const UCHAR *router_mac, 
 bool NodeEvpnEnds(const UCHAR *packet, UINT size, UCHAR *src, UCHAR *dst, UINT *addr_size);
 UINT NodeEvpnSortVteps(NODE_EVPN_VTEP *vteps, UINT num);
 bool NodeEvpnHasVtep(const NODE_EVPN_VTEP *vteps, UINT num, UINT vrf_id, const UCHAR *ip);
-struct cJSON;
 void NodeEvpnStart(NODE *n, struct cJSON *cfg);
 void NodeEvpnStop(NODE *n);
 bool NodeEvpnRoute(NODE *n, const char *line);
 void NodeEvpnCommit(NODE *n);
 UINT NodeEvpnFlush(NODE *n);
+// ... of an EVPN that its owner keeps: the EVPN peering of the standard mode (NodeEvpnPeering.c; SDN-78, #358)
+NODE_EVPN *NodeEvpnOpen(NODE *n, struct cJSON *cfg);
+void NodeEvpnClose(NODE *n, NODE_EVPN *e);
+bool NodeEvpnRouteInto(NODE *n, NODE_EVPN *e, const char *line);
+void NodeEvpnCommitOf(NODE *n, NODE_EVPN *e);
+UINT NodeEvpnFlushOf(NODE *n, NODE_EVPN *e);
+void NodeEvpnStatusOf(NODE_EVPN *e, NODE_EVPN_STATUS *st);
+UINT NodeEvpnRoutesOf(NODE_EVPN *e, NODE_EVPN_ROUTE *list, UINT max);
 void NodeEvpnFreeTable(NODE_EVPN_TABLE *t);
 bool NodeEvpnOutput(NODE *n, NODE_VRF_TABLES *v, UINT vrf_id, const UCHAR *packet, UINT size);
 struct NODE_SOURCE_CLAIM;
@@ -168,6 +182,7 @@ void NodeStretchMessage(NODE *n, const char *line);
 void NodeStretchCommit(NODE *n);
 UINT NodeStretchFlush(NODE *n);
 void NodeStretchRun(NODE *n, NODE_BGP *b);
+void NodeStretchRunWith(NODE *n, NODE_STRETCH_SEND_PROC *send, void *param);
 void NodeStretchHalt(NODE *n);
 void NodeStretchFree(NODE *n);
 bool NodeStretchAttach(NODE *n, const char *network, struct SWITCH *sw, UINT vlan);
